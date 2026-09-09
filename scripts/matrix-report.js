@@ -20,7 +20,7 @@ for (const f of files) {
     promptTok: r.usage?.promptTokens ?? null, compTok: r.usage?.completionTokens ?? null,
     calls: r.usage?.calls ?? null, costUsd: r.usage?.costUsd?.toFixed(4) ?? null,
     elapsedS: r.elapsedMs ? Math.round(r.elapsedMs / 1000) : null,
-    voiceCostUsd: r.tts === 'kokoro' || r.tts === 'local' ? '0.0000' : 'n/a',
+    voiceCostUsd: r.tts === 'kokoro' ? '0.0000' : 'n/a',
     error: (r.error || '').slice(0, 90), ...extra,
   });
 }

@@ -5,10 +5,12 @@
  *    node dist/scripts/generate-video.js --url https://arxiv.org/pdf/1706.03762 --minutes 1
  *    node dist/scripts/generate-video.js --pdf ./paper.pdf --minutes 1 --model qwen/qwen3.8-flash
  *    node dist/scripts/generate-video.js --prompt "Explain ..." --minutes 1,5
- *  Robot (local) narration is the demo default — no speech key needed. Each (source,
- *  minutes) pair is generated sequentially, then exported to MP4 under --out-dir.
- *  Requires OPENROUTER_API_KEY. Pass --tts elevenlabs for natural voice (needs
- *  ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID). */
+ *  Kokoro local neural narration is the demo default — no speech key needed, and the
+ *  persistent server auto-starts itself if it isn't already running (run
+ *  scripts/setup-kokoro.sh once first). Each (source, minutes) pair is generated
+ *  sequentially, then exported to MP4 under --out-dir. Requires OPENROUTER_API_KEY.
+ *  Pass --tts elevenlabs for natural voice (needs ELEVENLABS_API_KEY +
+ *  ELEVENLABS_VOICE_ID). */
 import {JobStore} from '../src/jobs.js';
 import {ingestSource} from '../src/sources.js';
 import {buildRichBrief,briefStats} from '../src/prompt-builder.js';
@@ -43,8 +45,8 @@ const budgetPerMinute = Number(arg('--budget-per-minute', '0.5'));
 const jobRetries = Number(arg('--retries', '3'));
 const narrate = !flag('--no-narration');
 // Robot (local) voice is the demo default: no speech key, unlimited use.
-const ttsProvider = arg('--tts', 'local');
-if (ttsProvider !== 'elevenlabs' && ttsProvider !== 'local' && ttsProvider !== 'kokoro') throw new Error(`--tts must be elevenlabs, local or kokoro (got ${ttsProvider})`);
+const ttsProvider = arg('--tts', 'kokoro');
+if (ttsProvider !== 'elevenlabs' && ttsProvider !== 'kokoro') throw new Error(`--tts must be elevenlabs or kokoro (got ${ttsProvider})`);
 const modelFlag = arg('--model', null);
 if (modelFlag) process.env.OPENROUTER_MODEL = modelFlag;
 const enrich = !flag('--no-enrich');
@@ -96,7 +98,7 @@ for (const {input, label: sourceLabel} of rawSources) {
         const options: GenerationOptions = {
           mode: 'model', source: {...jobSource}, durationMinutes: minutes,
           maxCostUsd: Math.min(10, Math.max(0.2, budgetPerMinute * minutes)),
-          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'local'|'kokoro', visualCritic, cachePrompts,
+          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'kokoro', visualCritic, cachePrompts,
           ...(voiceId ? {voiceId} : {}),
         };
         const created = await store.create(options);

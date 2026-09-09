@@ -33,9 +33,9 @@ The main rendering surface is SVG, not HTML Canvas 2D. The research question is 
 
 ## Enable actual AI generation
 
-Copy `.env.example` to `.env`. Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` (default `google/gemini-2.5-flash-lite`). Restart `npm start`, choose **AI planner → OpenRouter**, and enter a prompt or paste source text / URL / PDF.
+Copy `.env.example` to `.env`. Set `OPENROUTER_API_KEY` (default model `google/gemini-3.8-flash`, set via `OPENROUTER_MODEL` to override). Restart `npm start`, choose **AI planner → OpenRouter**, and enter a prompt or paste source text / URL / PDF.
 
-To synthesize audio, also configure `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`. The narration checkbox then becomes available (9,950/10,000 credits remaining in last check). These operations use your paid provider accounts. The repository contains no keys.
+Narration defaults to **Kokoro** — a free, local neural voice with native word timings. Run `npm run kokoro:setup` once (creates a persistent venv at `.kokoro-venv/`, not `/tmp`); its server then auto-starts itself on first use, no manual step needed afterward. ElevenLabs (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`) is available as a paid alternative for more natural speech. These operations use your paid provider accounts where applicable. The repository contains no keys.
 
 Provider adapters were verified with mocked responses and now also with live OpenRouter/ElevenLabs runs for 1-minute chapters. Missing keys or provider failures produce visible errors (including `402 quota` / `429 rate limit`); they never silently substitute a fixture. Budget reservation is per-call progressive — already prepared chapters remain playable on budget/quota exhaustion.
 
@@ -85,31 +85,25 @@ The script creates a **private** repository and pushes the source. Pass `--publi
 
 This is a loopback-only, single-process prototype, not a deployed multi-user product. Delivery is JSON snapshot polling, not HLS video streaming. Default timing is estimated. Layout uses heuristic text widths; multilingual shaping and exact browser font metrics need further work. AI content quality, real narration synchronization, browser audio edge cases and production cost/latency remain unverified. There is no training pipeline, billing, cloud storage or automatic model-repair loop.
 
-### Local Python robot narration (2026-09-08)
+### Narration voices
 
-The UI defaults to **ElevenLabs**, with the tested premade Alice voice configured locally. **Python robot voice** is an optional alternative using Python 3 and macOS `say` (Alex).
-No speech API key or Python package installation is needed. Set `PYTHON_BIN` if
-`python3` is not on PATH. It synthesizes individual word segments, trims their
-silence, joins PCM audio, and records measured segment boundaries in a WAV file.
-This intentionally sounds robotic; it is not natural continuous-speech alignment.
-The browser uses the audio clock for drawings and highlighted words, including
-pause, seek, speed changes and scene tails. Disable narration for a silent preview.
-ElevenLabs remains selectable with a configured default or custom voice ID.
-Provider failures are visible errors; they never become successful silent jobs.
+**Kokoro** (default, `--tts kokoro`) is a free local neural voice (Kokoro-82M via
+MLX on Apple Silicon) with native word timings — no API key. Run
+`npm run kokoro:setup` once to create the persistent venv (`.kokoro-venv/`,
+gitignored); after that the server auto-starts itself whenever it's needed, so
+no manual `npm run kokoro-server` step is required in normal use. Five voices:
+`af_heart` (default), `af_bella`, `am_michael`, `am_adam`, `bf_emma`.
 
-Run `TEST_LOCAL_TTS=1 npm test` on macOS to include the real audio integration test.
-Speech must run with normal macOS access: a restricted sandbox may return empty
-speech files. `npm run test:live -- --minutes 1 --voice --tts local --budget 0.1`
-uses configured OpenRouter credentials; `--tts elevenlabs` selects paid speech.
-Reopen a saved job using `/?job=JOB_UUID` on the local server.
+**ElevenLabs** (`--tts elevenlabs`) provides more natural continuous speech with
+word-level alignment, using your configured `ELEVENLABS_API_KEY` +
+`ELEVENLABS_VOICE_ID`. This uses your paid provider account.
 
-MP4 export still requires a working FFmpeg installation. Local WAV narration does
-not. The current machine's Homebrew FFmpeg has a missing `libx265.215.dylib`;
-video export is blocked until that installation is repaired.
+Provider failures are visible errors (including `402 quota` / `429 rate limit`);
+they never become successful silent jobs. Reopen a saved job using
+`/?job=JOB_UUID` on the local server.
 
-ElevenLabs retest: the former library voice returned HTTP 402
-`paid_plan_required` (free users cannot use library voices via the API), not
-exhausted credits. Premade Alice succeeded with the same API key. A 4-scene
-attention fixture produced 84.149 seconds of aligned MP3 in 13.558 seconds.
-`npm run test:live -- --voice` now defaults to ElevenLabs; use `--tts local`
-only when local robotic speech is desired.
+`TEST_KOKORO_TTS=1 npm test` includes the real Kokoro audio integration test
+(needs the persistent server running or auto-startable).
+`npm run test:live -- --minutes 1 --voice --tts kokoro --budget 0.1` uses
+configured OpenRouter credentials for a quick end-to-end check without a full
+MP4 export; `--tts elevenlabs` selects paid speech.

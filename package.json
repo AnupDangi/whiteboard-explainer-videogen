@@ -16,7 +16,8 @@
     "export": "npm run build && node dist/scripts/export.js",
     "test:live": "npm run build && node --env-file-if-exists=.env dist/scripts/live-evaluation.js",
     "generate-video": "npm run build && node --env-file-if-exists=.env dist/scripts/generate-video.js",
-    "kokoro-server": "sh -c '${KOKORO_PYTHON:-python3} scripts/kokoro_server.py'"
+    "kokoro:setup": "sh scripts/setup-kokoro.sh",
+    "kokoro-server": "sh -c '${KOKORO_PYTHON:-.kokoro-venv/bin/python} scripts/kokoro_server.py'"
   },
   "optionalDependencies": {
     "sharp": "0.35.4"

@@ -8,7 +8,6 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {fixtures} from './fixtures.js';
 import {validatePlan,compileScene,durationOf} from './engine.js';
-import {generateLocalSpeech} from './local-speech.js';
 import {generateKokoroSpeech} from './kokoro-speech.js';
 import {generateSpeech} from './providers.js';
 import {semaphore} from './concurrency.js';
@@ -25,7 +24,7 @@ export class JobStore {
     const delayMs=options.delayMs??0;
     if(!Number.isFinite(delayMs)||delayMs<0||delayMs>20000)throw new Error('Delay must be 0–20000 ms');
     if(typeof options.narration!=='boolean')throw new Error('Invalid narration option');
-    if(options.ttsProvider&&!['local','elevenlabs','kokoro'].includes(options.ttsProvider))throw new Error('Unknown TTS provider');
+    if(options.ttsProvider&&!['elevenlabs','kokoro'].includes(options.ttsProvider))throw new Error('Unknown TTS provider');
     if(options.visualCritic!==undefined&&typeof options.visualCritic!=='boolean')throw new Error('Invalid visual critic option');
     if(options.cachePrompts!==undefined&&typeof options.cachePrompts!=='boolean')throw new Error('Invalid cache prompts option');
     if(options.voiceId&& !/^[a-zA-Z0-9_-]{1,100}$/.test(options.voiceId))throw new Error('Invalid voice ID');
@@ -33,11 +32,11 @@ export class JobStore {
     if(active.length>=2)throw new Error('Two jobs already active; wait or cancel one.');
     const job:InternalJob={id:randomUUID(),status:'queued',revision:0,createdAt:Date.now(),mode:options.mode,
       targetMinutes:options.durationMinutes??1,plannerBudgetUsd:options.maxCostUsd??1,ttsCharacters:0,
-      timingMode:options.narration?(options.ttsProvider==='local'?'local-segment-aligned':options.ttsProvider==='kokoro'?'kokoro-aligned':'provider-aligned'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[]};
+      timingMode:options.narration?(options.ttsProvider==='elevenlabs'?'provider-aligned':'kokoro-aligned'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[]};
     this.jobs.set(job.id,job);await mkdir(join(this.root,job.id),{recursive:true});
     await this.save(job,'queued');
     const controller=new AbortController();job.controller=controller;
-    log('job.created',{jobId:job.id,mode:options.mode,fixture:options.fixture,narration:options.narration,ttsProvider:options.ttsProvider||'elevenlabs',voiceId:options.voiceId||process.env.ELEVENLABS_VOICE_ID,targetMinutes:job.targetMinutes,budgetUsd:job.plannerBudgetUsd,simulatedDelayMs:delayMs});
+    log('job.created',{jobId:job.id,mode:options.mode,fixture:options.fixture,narration:options.narration,ttsProvider:options.ttsProvider||'kokoro',voiceId:options.voiceId||process.env.ELEVENLABS_VOICE_ID,targetMinutes:job.targetMinutes,budgetUsd:job.plannerBudgetUsd,simulatedDelayMs:delayMs});
     job.task=logContext.run({...logContext.getStore(),jobId:job.id},()=>this.run(job,{...options,delayMs},controller.signal));
     return this.snapshot(job);
   }
@@ -96,7 +95,7 @@ export class JobStore {
                 await queueSave('speech-started');
                 try {
                   const speechStarted=performance.now();
-                  const speech=await (this.providers.speech||(options.ttsProvider==='local'?generateLocalSpeech:options.ttsProvider==='kokoro'?generateKokoroSpeech:generateSpeech))(source.narration,{signal,voiceId:options.voiceId});
+                  const speech=await (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateKokoroSpeech))(source.narration,{signal,voiceId:options.voiceId});
                   signal.throwIfAborted();timing=speech.timing;
                   ttsMsByScene[source.id]=Math.round(performance.now()-speechStarted);
                   log('speech.ready',{sceneId:source.id,elapsedMs:ttsMsByScene[source.id],bytes:speech.audio.length,format:speech.format||'mp3',words:speech.timing.words.length,timing:speech.timing.kind,durationMs:speech.timing.durationMs});

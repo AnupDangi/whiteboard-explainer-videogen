@@ -8,42 +8,53 @@ description: End-to-end whiteboard video generation — plan chapters, synthesiz
 Generate narrated whiteboard videos with the prompt-builder → planner →
 director → compiler → speech → renderer pipeline. Default model stack:
 planner + director on `OPENROUTER_MODEL` (default
-`google/gemini-3.8-flash`; tested alternatives: `google/gemini-3.7-flash`),
+`google/gemini-3.8-flash` — confirmed current best fast/structured-JSON
+model in the OpenRouter catalog; tested alternative: `google/gemini-3.7-flash`),
 optional critic on `openai/gpt-5.6-luna`, speech on Kokoro local neural
-voice (`--tts kokoro`; robot `--tts local` and ElevenLabs remain available).
-Deterministic engine only — no generated drawing code, no Manim.
+voice (`--tts kokoro`, the default; ElevenLabs available via `--tts elevenlabs`).
+There is no robot/local-espeak voice anymore — Kokoro replaced it entirely
+(better quality, still free, still no key). Deterministic engine only — no
+generated drawing code, no Manim.
 
 ## Prerequisites
 
 `.env` with `OPENROUTER_API_KEY` (+ optional `OPENROUTER_MODEL`).
-FFmpeg + `npm install` (sharp) required for MP4 export. Kokoro and robot
-narration need no speech key. Never commit `.env`, `.data/`, or `output/`.
+FFmpeg + `npm install` (sharp) required for MP4 export. Kokoro narration
+needs no speech key. Never commit `.env`, `.data/`, or `output/`.
 
 ## Kokoro voice setup (free, local, no key)
 
 Apple Silicon + `espeak-ng` on PATH (`brew install espeak-ng`):
 
 ```bash
-uv venv /tmp/kokoro-spike
-uv pip install --python /tmp/kokoro-spike/bin/python kokoro-mlx \
-  https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
-export KOKORO_PYTHON=/tmp/kokoro-spike/bin/python  # or set in .env
+npm run kokoro:setup
 ```
 
-Pinned: kokoro-mlx 0.1.2, misaki 0.9.4, mlx 0.32.2 — the bridge
-(`scripts/kokoro_tts.py`) mirrors `phonemize_long` chunking and the
-`forward()` duration ops, so repin/review on any upgrade. Voices:
-`af_heart` (default), `af_bella`, `am_michael`, `am_adam`, `bf_emma`.
-Word timings are native (`pred_dur`, English). Warm synth ≈ 14× realtime;
-per-spawn scene cost ≈ 4–5s (model load + G2P + synth).
+This creates a **persistent** venv at `.kokoro-venv/` inside the repo (not
+`/tmp` — that was the actual reliability problem: it gets wiped, forcing a
+manual rebuild every session). After this one-time setup, `generateKokoroSpeech`
+(`src/kokoro-speech.ts`) self-heals: it checks the persistent server's
+`/health`, and if it's not running, spawns it from `.kokoro-venv/bin/python`
+automatically and waits for it to come up — no manual `npm run kokoro-server`
+step needed in normal use. `KOKORO_SERVER_URL` defaults to
+`http://127.0.0.1:8765`; `KOKORO_PYTHON` only needs setting to override the
+persistent venv path.
+
+Pinned: kokoro-mlx 0.1.2, misaki 0.9.4, mlx 0.32.2 (see `scripts/setup-kokoro.sh`)
+— `scripts/kokoro_tts.py` (run inside the persistent `scripts/kokoro_server.py`)
+mirrors `phonemize_long` chunking and the `forward()` duration ops, so
+repin/review on any upgrade. Voices: `af_heart` (default), `af_bella`,
+`am_michael`, `am_adam`, `bf_emma`. Word timings are native (`pred_dur`,
+English). Warm synth ≈ 14× realtime; the persistent server pays model-load
+cost once, not per scene.
 
 ## Quick evaluations (JSON + thumbnail, no MP4)
 
 ```bash
 npm run build
-npm run test:live -- --minutes 1 --voice --tts elevenlabs --budget 0.5 \
+npm run test:live -- --minutes 1 --voice --tts kokoro --budget 0.5 \
   --prompt "Your rich topic prompt here"
-# --minutes 1|5|10|30 · --tts elevenlabs|local · --budget USD cap
+# --minutes 1|5|10|30 · --tts kokoro|elevenlabs · --budget USD cap
 # --prompt TEXT | --url URL | --pdf FILE
 ```
 
@@ -54,13 +65,13 @@ Output: `.data/JOB/job.json` + `output/evaluations/JOB.json|.png`.
 
 ```bash
 npm run build
-export KOKORO_PYTHON=/tmp/kokoro-spike/bin/python
-npm run generate-video -- --url https://arxiv.org/pdf/1512.03385 --minutes 1 --tts kokoro
-npm run generate-video -- --pdf ./paper.pdf --minutes 1 --model google/gemini-3.7-flash --tts kokoro
-npm run generate-video -- --prompt "Explain how a refrigerator works" --minutes 1 --tts kokoro
+npm run kokoro:setup   # once — persistent venv, then the server auto-starts itself
+npm run generate-video -- --url https://arxiv.org/pdf/1512.03385 --minutes 1
+npm run generate-video -- --pdf ./paper.pdf --minutes 1 --model google/gemini-3.7-flash
+npm run generate-video -- --prompt "Explain how a refrigerator works" --minutes 1
 # --minutes accepts 1,5,10,30 (comma list allowed: 1,5,10)
-# --model overrides OPENROUTER_MODEL per run · --tts elevenlabs for natural
-#   voice (needs ELEVENLABS_* keys) · --tts local for the robot voice
+# --model overrides OPENROUTER_MODEL per run · --tts kokoro is the default (no
+#   flag needed) · --tts elevenlabs for natural voice (needs ELEVENLABS_* keys)
 #   --no-enrich to skip the prompt-builder
 #   --no-narration for silent preview · --visual-critic for repair pass
 ```
@@ -79,8 +90,8 @@ planner enforces 110–160 narration words per chapter.
 
 ## Verify before delivering
 
-1. `npm test` — 44+ passing, 0 failing (`TEST_KOKORO_TTS=1` adds the live
-   Kokoro contract test; needs `KOKORO_PYTHON`).
+1. `npm test` — 65 passing, 0 failing (`TEST_KOKORO_TTS=1` adds the live
+   Kokoro contract test; auto-starts the persistent server if needed).
 2. Job status `complete`; scene count = 2 × minutes; narration word count
    ≈ 110–160/chapter; shapes mixed (not all-box — check
    `job.json` node `shape` fields); `renderSVG` deterministic.

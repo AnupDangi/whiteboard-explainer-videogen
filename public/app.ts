@@ -86,14 +86,14 @@ $('generate').onsubmit=async (e:SubmitEvent)=>{
     const source:any={kind,text:$('prompt').value,url:$('source-url').value};
     if(kind==='pdf'){const file=$('source-file').files[0];if(!file)throw new Error('Choose a PDF');if(file.size>50*1024*1024)throw new Error('PDF exceeds 50 MB');source.name=file.name;source.base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);});}
     const provider=$('tts-provider').value;
-    const voiceId=provider==='kokoro'?$('kokoro-voice').value:provider==='elevenlabs'?($('voice').value==='custom'?$('custom-voice').value.trim():$('voice').value):'';
+    const voiceId=provider==='kokoro'?$('kokoro-voice').value:($('voice').value==='custom'?$('custom-voice').value.trim():$('voice').value);
     const data=await request('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:$('mode').value,fixture:$('fixture').value,prompt:$('prompt').value,source,durationMinutes:Number($('duration').value),maxCostUsd:Number($('budget').value),delayMs:0,narration:$('narration').checked,ttsProvider:provider,voiceId,visualCritic:$('visual-critic').checked})});showJob(data);refresh(data.id);}catch(error){$('message').textContent=error instanceof Error?error.message:String(error);$('create').disabled=false;$('status').textContent='Error';$('title').textContent='Explanation could not be prepared';$('voice-message').textContent='';}
 };
 $('cancel').onclick=async()=>{if(job){await request('/api/jobs/'+job.id+'/cancel',{method:'POST'});clearTimeout(poll);await refresh(job.id);}};
 $('download').onclick=()=>{const data=job||{title:'Explanation',status:'complete',scenes};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='explanation.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 request('/api/config').then(function(c){
   $('tts-provider').querySelector('[value=elevenlabs]').disabled=!c.elevenlabs;
-  if(!c.localSpeech)$('voice-message').textContent='Local speech currently requires macOS and Python 3.';
+  if(!c.kokoroSpeech)$('voice-message').textContent='Kokoro local speech currently requires macOS — run scripts/setup-kokoro.sh once first.';
   if(!c.model)$('message').textContent='Configure OPENROUTER_API_KEY in .env to generate an explanation.';
   else if(c.openRouter===false)$('message').textContent='Using legacy Anthropic planner; set OPENROUTER_API_KEY for OpenRouter.';
 }).catch(function(e){$('message').textContent=e instanceof Error?e.message:String(e);});

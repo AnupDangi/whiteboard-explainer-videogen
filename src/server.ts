@@ -25,7 +25,7 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
         const anKey=!!process.env.ANTHROPIC_API_KEY;
         const eleKey=!!(process.env.ELEVENLABS_API_KEY&&process.env.ELEVENLABS_VOICE_ID);
         log('server.config',{plannerConfigured:orKey||anKey,openRouter:orKey,speechConfigured:eleKey});
-        return json(res,200,{model:orKey||anKey,openRouter:orKey,speech:process.platform==='darwin'||eleKey,elevenlabs:!!process.env.ELEVENLABS_API_KEY,localSpeech:process.platform==='darwin',modelId:process.env.OPENROUTER_MODEL||process.env.ANTHROPIC_MODEL||null});
+        return json(res,200,{model:orKey||anKey,openRouter:orKey,speech:process.platform==='darwin'||eleKey,elevenlabs:!!process.env.ELEVENLABS_API_KEY,kokoroSpeech:process.platform==='darwin',modelId:process.env.OPENROUTER_MODEL||process.env.ANTHROPIC_MODEL||null});
       }
       if(req.method==='POST'&&url.pathname==='/api/client-events'){
         const event=await body(req);
