@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget} from '../dist/src/planner.js';
 
 test('quantity manifest: narrated number+noun must be drawn or labeled',()=>{
   const ok=[{id:'s',narration:'The cluster runs on 8 GPUs.',nodes:[{id:'a',label:'GPU cluster (8 units)'}],note:''}];
@@ -69,4 +69,13 @@ test('edge naming: every arrow gets a name',()=>{
   assert.deepEqual(checkEdgeLabels(singleNamed),[]);
   const noEdges=[{id:'s',narration:'x',nodes:[]}];
   assert.deepEqual(checkEdgeLabels(noEdges),[]);
+});
+test('concept budget: split crowded scenes past 5 distinct kinds, generic never counts',()=>{
+  const crowded=[{id:'s',narration:'x',nodes:[{id:'a',kind:'database'},{id:'b',kind:'server'},{id:'c',kind:'user'},{id:'d',kind:'cloud'},{id:'e',kind:'model'},{id:'f',kind:'agent'}]}];
+  assert.match(checkConceptBudget(crowded).join('|'),/6 distinct concepts/);
+  const roomy=[{id:'s',narration:'x',nodes:[{id:'a',kind:'database'},{id:'b',kind:'server'},{id:'c',kind:'user'}]}];
+  assert.deepEqual(checkConceptBudget(roomy),[]);
+  // Repeated kinds and generic don't count toward the budget.
+  const repeatsAndGeneric=[{id:'s',narration:'x',nodes:[{id:'a',kind:'database'},{id:'b',kind:'database'},{id:'c'},{id:'d'},{id:'e'},{id:'f'}]}];
+  assert.deepEqual(checkConceptBudget(repeatsAndGeneric),[]);
 });

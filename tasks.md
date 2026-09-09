@@ -60,6 +60,83 @@
 - [x] Human spot-check vs Replication Quality Checklist (V2 §45)
 - **Acceptance:** critic +$0.001/1 repair; matrix 32 scenes green ($0.2005/$0); checklist mechanically verified, subjective items flagged for human
 
+## Phase 6 — Teacher persona wiring fix (DONE)
+> Source: `docs/OPTIMIZATION_PLAN.md` Phase 6. Triggered by user report: "doesn't feel like a
+> real teacher," scene inconsistencies, overlap, visuals not polished. Reprioritized against
+> the plan's own impact ranking to match what the user actually called out.
+- [x] `teacherTone` was added to the outline schema (uncommitted, prior session) but was a
+      bug: validated and stored, never read again. Now wired into the per-chapter
+      `contentSystem` prompt (explicit mood/approach instruction) and the JSON payload.
+- **Acceptance:** two chapters with different arcs (e.g. hook vs recap) produce narration a
+  human reviewer can tell apart in tone without seeing the arc label; suite stays green.
+  Verified: prompt wiring in place, suite green. Human tone comparison needs a live model
+  run (costs $) — left for the next real generation, not a blocker for this commit.
+
+## Phase 8 — Scene density & overlap prevention (DONE)
+- [x] Found and fixed a real bug in the uncommitted `textExpand`: it grew box width from the
+      *unwrapped* label length, ignoring that `wrapText` had already wrapped it to fit the
+      column — forced boxes wider than their grid slot, defeating the whole mechanism.
+- [x] Found and fixed a second bug: growing height could cross the `h<70` font-size
+      threshold used later in rendering, so the grown height and the eventually-rendered
+      font size disagreed and could still overflow. Fixed with a small convergence loop.
+- [x] Found and fixed a third bug: even after height growth, very tight slots (radial
+      satellite rows) could still not fit a long label — generalized the number-badge's
+      shrink-to-fit fallback (font size down to the 14px floor) to every label-bearing shape.
+- [x] Replaced the original iterative pairwise push-apart (converged only asymptotically,
+      could cascade — resolving one pair re-broke an adjacent one, leaving sub-pixel
+      residual overlap) with a provably-correct one-pass sweep: sort nodes top-to-bottom,
+      push each down only as far as an already-placed, X-range-overlapping node requires.
+- **Acceptance:** new engine test (`Phase 8: long labels on a crowded 6-node scene...`) and a
+  broader ad-hoc stress sweep (all 7 layouts × counts 2–6 × long labels) both show zero
+  overlaps and zero out-of-bounds nodes; full suite green (62/62, 2 skipped needing live TTS).
+
+## Phase 7 — Semantic Storyboard v2 (NOT STARTED — biggest lever for "scene inconsistency")
+- [ ] Add `visualIntent` (short string, ≤80 chars) alongside `keyPoint` on every content-stage
+      node: what the diagram should visually show for this node (e.g. "arrow from query to
+      each key, comparison"). This is the shared semantic-event field V2 §8 calls for — same
+      2-stage pipeline, no new agent call, but narration and visual direction both now trace to
+      one written intent instead of the director re-guessing from the label alone.
+- [ ] `contentShape`/`contentSchema`/`types.ts` PlanNode: add the field (optional on old
+      fixtures, required from the LLM schema).
+- [ ] `directorPrompt`: pass `visualIntent` per node; update `SELECTION_GUIDANCE` to say it is
+      more authoritative than the label when choosing kind/shape/emphasis/layout.
+- [ ] `validatePlan` in `engine.ts`: validate + preserve (planning metadata, like keyPoint).
+- **Acceptance:** a scene's director-chosen kind/shape can be explained by reading its
+  `visualIntent` rather than by pattern-matching the label; suite green; one real chapter
+  generation shows visualIntent driving a non-obvious shape choice.
+
+## Phase 9 — Visual polish (SCOPED DOWN — full icon redesign deferred, see note)
+- [ ] Whiteboard background texture: subtle dot-grid or paper-grain fill behind scenes
+      (V2 §9 "rich visuals... belong on one whiteboard").
+- [ ] Improve the emphasis highlight sweep (currently a flat yellow rect/ellipse wash) with a
+      slightly textured/imperfect marker-stroke look.
+- **Deferred, not done this pass:** per-icon redesign across all 32+ kinds in `icons.ts` for
+  "more detail, consistent stroke weight" — large surface area, low marginal value vs. the
+  overlap/coherence fixes above; a future agent can pick this up as its own bounded pass.
+- **Acceptance:** rendered scene visibly shows background texture without interfering with
+  text/overlap checks; suite green.
+
+## Phase 10 — Pencil & transitions (MOSTLY DONE — verify only)
+- [x] Scene-start fade-in and pencil fade-out near a local event's end already landed
+      (uncommitted `renderSVG` changes: `transitionFade`, `pencilFade`).
+- [ ] Confirm pencil "jumping between regions" already falls out of the existing
+      first-active-node/edge selection (staggered `startMs` per node/edge) — no code change
+      expected, just a verification note in this file once confirmed.
+- **Acceptance:** visual check on one rendered video: pencil never lingers on a completed
+  stroke, fades out between scenes.
+
+## Phase 11 — Connector routing (SCOPED DOWN — text measurement deferred, see note)
+- [ ] Curved (quadratic bezier) connector routing instead of straight lines, still anchored to
+      boundary points per `compileScene`'s existing edge geometry.
+- **Deferred, not done this pass:** real glyph-accurate text measurement (opentype.js/canvas
+  measureText) — the current heuristic is now used consistently by both layout and the new
+  Phase 8 overlap prevention, so it's internally consistent even if not pixel-perfect; V2 marks
+  this lower-impact than the items above.
+- **Acceptance:** edges render as curves in an engine test snapshot; no new overlaps
+  introduced; suite green.
+
+## Phase 12 — Latency (SKIPPED — not one of the user's reported gaps this round)
+
 ## Run log (append per execution)
 | Date | Phase | Jobs | Cost | Wall | Result |
 |---|---|---|---|---|---|

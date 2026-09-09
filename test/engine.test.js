@@ -48,6 +48,23 @@ test('H21 buffer clamps and resumes without jumping over unavailable time',()=>{
   assert.deepEqual(advancePlayback(1000,100,2000,false),{timeMs:1100,buffering:false,ended:false});
   assert.deepEqual(advancePlayback(1900,200,2000,true),{timeMs:2000,buffering:false,ended:true});
 });
+test('Phase 8: long labels on a crowded 6-node scene still compile to disjoint, in-bounds geometry',()=>{
+  const LONG_LABELS=[
+    'Distributed cache invalidation protocol','Asynchronous request queue backlog',
+    'Cross-region replication latency budget','Session token rotation policy',
+    'Rate limiter token bucket refill','Structured logging correlation identifier',
+  ];
+  for(const layout of ['flow','branch','compare','hierarchy','timeline','radial','convergence']){
+    const s=copy().scenes[0];s.layout=layout;
+    s.nodes=LONG_LABELS.map((label,i)=>({id:`n${i}`,label,wordIndex:i,emphasis:i===0}));
+    s.edges=[];
+    const {nodes}=compileScene(s);
+    for(const a of nodes){
+      assert(a.x>=0&&a.y>=150&&a.x+a.w<=1280&&a.y+a.h<=600,`${layout}: ${a.id} escapes the safe region`);
+      for(const b of nodes)if(a!==b)assert(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.h<=b.y||b.y+b.h<=a.y,`${layout}: ${a.id} overlaps ${b.id}`);
+    }
+  }
+});
 test('preflightScene passes real fixtures and catches an induced cross-node overlap',()=>{
   for(const fixture of Object.values(fixtures))for(const source of fixture.scenes)preflightScene(compileScene(source));
   const s=compileScene(copy().scenes[0]);

@@ -12,7 +12,7 @@ export interface JobSpans { outlineMs?:number; chapters?:Record<string,{contentM
 export interface SourceInput { kind:'prompt'|'text'|'url'|'pdf'; text?:string; url?:string; base64?:string; name?:string }
 export interface SourceDocument { kind:string; label:string; text:string; sha256:string }
 export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'local'|'elevenlabs'|'kokoro'; voiceId?:string; visualCritic?:boolean; cachePrompts?:boolean }
-export interface CompiledNode extends PlanNode { x:number; y:number; w:number; h:number; fontSize:number; lines:string[]; color:string; startMs:number; drawMs:number }
+export interface CompiledNode extends PlanNode { x:number; y:number; w:number; h:number; fontSize:number; lines:string[]; color:string; fillOpacity?:number; startMs:number; drawMs:number }
 export interface CompiledEdge extends PlanEdge { x1:number; y1:number; x2:number; y2:number; startMs:number; drawMs:number }
 export interface CompiledScene extends Scene { nodes:CompiledNode[]; edges:CompiledEdge[]; timing:Timing; audioUrl?:string; durationMs:number }
 export interface JobSnapshot {

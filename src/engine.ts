@@ -2,7 +2,7 @@ import type {Plan,Scene,Timing,CompiledScene,CompiledNode,CompiledEdge} from './
 import {NODE_KINDS,LAYOUTS} from './vocabulary.js';
 import {renderIcon,hasIcon} from './icons.js';
 import {renderIllustration,hasIllustration} from './illustrations.js';
-import {KIND_ACCENT,STROKE as STROKE_TOKENS} from './style.js';
+import {KIND_ACCENT,STROKE as STROKE_TOKENS,SEMANTIC_COLORS} from './style.js';
 /** Pure, browser-compatible scene compiler. No generated code is evaluated. */
 export const WIDTH = 1280;
 export const HEIGHT = 720;
@@ -11,8 +11,8 @@ export const HEIGHT = 720;
 export const SAFE_TOP = 150;
 export const SAFE_BOTTOM = 600;
 const COLORS = ['#d9edf4', '#e6dff5', '#f9ebbd', '#dbecdd', '#f6ded4'];
-// Semantic-ish palette cycle: kept as a flat array (not per-kind) so unrelated concepts
-// sharing a kind (e.g. two 'document' nodes) still read as visually distinct siblings.
+// Semantic color system: same concept gets the same color across scenes (V2 §25).
+// Fallback to flat palette cycle for generic nodes or when kind has no semantic color.
 const fail = (message:string):never => { throw new Error(message); };
 const string = (value:unknown, max:number, name:string) => typeof value === 'string' && value.trim() && value.length <= max || fail(`Invalid ${name}: expected 1–${max} characters; received ${typeof value === 'string' ? value.length : typeof value}`);
 
@@ -185,6 +185,59 @@ export function compileScene(scene: Scene, timing: Timing = estimateTiming(scene
   const geometry=LAYOUT_GEOMETRY[scene.layout]||LAYOUT_GEOMETRY.flow;
   const baseGeoms=scene.nodes.map((_,i)=>layoutIdx.has(i)?geometry(layoutIdx.get(i)!,count):{x:0,y:SAFE_TOP,w:100,h:40});
   const finalGeoms=baseGeoms.map(g=>({...g}));
+  // Phase 8 overlap prevention: measure actual (wrapped) text and grow nodes taller when
+  // their label needs more lines than the base slot allows, then gently push apart any that
+  // still collide. Grows HEIGHT only, never width: wrapText already wraps the label to fit
+  // the slot's own width, so its wrapped lines are — by construction — no wider than that
+  // slot. Growing width from the label's *unwrapped* length (a prior bug here) ignored that
+  // wrapping had already happened and forced boxes wider than their grid column, which no
+  // amount of push-apart could recover in a multi-column layout.
+  const textExpand=(geom:Geometry,label:string,shape:string,emphasis:boolean):Geometry=>{
+    const maxWidth=shape==='icon'?geom.w-60:shape==='bullet'?geom.w-40:geom.w-36;
+    // Font size buckets on h<70 (small slot -> smaller font), same rule the final render
+    // step uses. Growing h can cross that threshold and change the font size, which changes
+    // how many lines are needed — so converge to a fixed point instead of computing once
+    // against the pre-growth font size (a prior bug: could grow into a self-inconsistent
+    // height that still overflowed once the final step recomputed a bigger font for it).
+    let h=geom.h;
+    for(let iter=0;iter<4;iter++){
+      const fontSize=shape==='number'?(h<70?20:28):(h<70?20:25);
+      const lines=wrapText(label,Math.max(40,maxWidth),fontSize);
+      const neededH=Math.max(geom.h,lines.length*fontSize*1.18+24);
+      if(Math.abs(neededH-h)<0.5){h=neededH;break;}
+      h=neededH;
+    }
+    return {...geom,h:Math.min(h,SAFE_BOTTOM-geom.y-10)};
+  };
+  scene.nodes.forEach((node,i)=>{
+    if(node.shape==='annotation'||node.shape==='illustration')return;
+    finalGeoms[i]=textExpand(finalGeoms[i],node.label||'',node.shape||'box',!!node.emphasis);
+  });
+  // Overlap resolution: textExpand only ever grows HEIGHT (never width — see its comment),
+  // and every base layout geometry is already mutually disjoint at every supported node count
+  // (locked in by the H07 test). So any overlap that appears here is strictly a same-column
+  // vertical conflict introduced by that height growth — never a fresh horizontal conflict.
+  // Sweep top-to-bottom (by original y): for each node, push it down only as far as any
+  // already-placed node it actually shares X-range with requires (max of their bottoms) —
+  // never further. This is provably correct in one pass (processing in Y order means every
+  // constraint a later node needs has already been resolved on the earlier node), and unlike
+  // grouping-by-transitive-X-overlap-into-one-linear-family (a first attempt), it does not
+  // wrongly serialize two siblings that both overlap a common wide node above them (e.g. two
+  // hierarchy children on either side of the root) but don't overlap *each other* — that
+  // version pushed the second sibling down against the first even though nothing above it
+  // required that, corrupting an otherwise-fine layout that never needed touching.
+  {
+    const xOverlap=(a:Geometry,b:Geometry)=>a.x<b.x+b.w&&b.x<a.x+a.w;
+    const order=finalGeoms.map((_,i)=>i).sort((i,j)=>finalGeoms[i].y-finalGeoms[j].y);
+    const placed:number[]=[];
+    for(const i of order){
+      const g=finalGeoms[i];
+      let requiredY=g.y;
+      for(const j of placed){const o=finalGeoms[j];if(xOverlap(g,o))requiredY=Math.max(requiredY,o.y+o.h);}
+      g.y=requiredY;
+      placed.push(i);
+    }
+  }
   scene.nodes.forEach((node,i)=>{
     if (node.shape!=='illustration') return;
     // Annotation layout slots are meaningless (annotations are repositioned post-growth),
@@ -257,13 +310,24 @@ export function compileScene(scene: Scene, timing: Timing = estimateTiming(scene
         if(points.length>5)fail(`Too many bullet points ${node.id}`);
         return points.flatMap(p=>{const wrapped=wrapText(p,Math.max(40,maxWidth-18),fontSize);return ['• '+wrapped[0],...wrapped.slice(1)];});})()
       :wrapText(node.label,maxWidth,fontSize);
-    // Number badges shrink type to fit the circle instead of failing: a count must show.
-    if(isNumber)while(lines.length*fontSize*1.18>h*0.7&&fontSize>14){fontSize-=2;lines=wrapText(node.label,maxWidth,fontSize);}
     const labelBudget=isIllustration?24:isNumber?h*0.7:h-12;
+    // Phase 8: shrink type to fit before failing — a slot with little vertical room left
+    // (e.g. a radial layout's satellite row) may still not have enough height even after
+    // textExpand's growth, and a real label must show rather than blow up the whole scene.
+    // Illustrations/annotations keep their fixed caption size; every other shape shrinks
+    // down to the preflight-enforced 14px floor. Bullet re-splits its points at each size
+    // since the point count itself is size-independent but wrapping per point is not.
+    if(!isIllustration&&!isAnnotation)while(lines.length*fontSize*1.18>labelBudget&&fontSize>14){
+      fontSize-=2;
+      lines=isBullet
+        ?(()=>{const points=node.label.split(/\s*[|•]\s*|\.\s+/).map(s=>s.trim()).filter(Boolean);
+          return points.flatMap(p=>{const wrapped=wrapText(p,Math.max(40,maxWidth-18),fontSize);return ['• '+wrapped[0],...wrapped.slice(1)];});})()
+        :wrapText(node.label,maxWidth,fontSize);
+    }
     if(lines.length*fontSize*1.18>labelBudget) fail(`Label overflows ${node.id}`);
     const anchor=timing.words[node.wordIndex];
     if(!anchor) fail(`Missing speech anchor ${node.wordIndex}`);
-    return {...node,x,y,w,h,fontSize,lines,color:COLORS[i%COLORS.length],startMs:Math.max(0,anchor.startMs-80),drawMs:isIllustration?1700:900};
+    const semanticColor=node.kind?SEMANTIC_COLORS[node.kind]:undefined; const baseColor=semanticColor||COLORS[i%COLORS.length]; const fillOpacity=node.shape==='icon'||node.shape==='annotation'?0:0.25; return {...node,x,y,w,h,fontSize,lines,color:baseColor,fillOpacity,startMs:Math.max(0,anchor.startMs-80),drawMs:isIllustration?1700:900};
   });
   const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
   const edges=scene.edges.map(e=>{
@@ -352,11 +416,12 @@ function renderPencil(x:number,y:number,angle:number) {
 export function renderSVG(scene:CompiledScene,timeMs:number) {
   const s=sceneState(scene,timeMs);
   const titleProgress=progressAt(timeMs,0,700);
+  const transitionFade=timeMs<300?progressAt(timeMs,0,300):1;
   const texts=(lines:string[],x:number,y:number,size:number)=>lines.map((line,i)=>`<text x="${x}" y="${y+i*size*1.18}" text-anchor="middle" font-size="${size}">${esc(line)}</text>`).join('');
   const textsLeft=(lines:string[],x:number,y:number,size:number)=>lines.map((line,i)=>`<text x="${x}" y="${y+i*size*1.18}" text-anchor="start" font-size="${size}">${esc(line)}</text>`).join('');
   const captionStart=Math.max(0,s.activeWord-6);
   const caption=scene.timing.words.slice(captionStart,captionStart+14);
-  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><rect width="1280" height="720" fill="#fffef9"/><g font-family="DejaVu Sans, sans-serif" fill="#182d33"><text x="60" y="49" font-size="14" letter-spacing="3">EXPLAIN / CANVAS LAB</text><g opacity="${titleProgress}">${texts(wrapText(s.title,1140,38),640,113,38)}</g>`;
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><rect width="1280" height="720" fill="#fffef9"/><g font-family="DejaVu Sans, sans-serif" fill="#182d33" opacity="${transitionFade}"><text x="60" y="49" font-size="14" letter-spacing="3">EXPLAIN / CANVAS LAB</text><g opacity="${titleProgress}">${texts(wrapText(s.title,1140,38),640,113,38)}</g>`;
   // Pencil follows whichever single node or edge is actively mid-stroke (0<progress<1); a
   // scene at rest (everything settled at 0 or 1) shows no pencil at all.
   let pencil:{x:number;y:number;angle:number}|null=null;
@@ -408,7 +473,7 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
       const perimeter=isC?Math.PI*(3*(rx+ry)-Math.sqrt((3*rx+ry)*(rx+3*ry))):2*(n.w+n.h);
       const strokeWidth=n.emphasis?STROKE_TOKENS.emphasis:STROKE_TOKENS.border;
       const open=isC?`<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"`:`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="0"`;
-      svg+=`${open} fill="${n.color}" fill-opacity="${Math.max(0,(n.progress-.35)/.65)}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
+      svg+=`${open} fill="${n.color}" fill-opacity="${n.fillOpacity?Math.max(0,(n.progress-.35)/.65):0}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
       // Emphasis wash: marker-like highlight sweep behind the label for the result node.
       if(n.emphasis&&n.progress>.55)svg+=isC
         ?`<ellipse cx="${cx}" cy="${cy}" rx="${rx*0.78}" ry="${ry*0.42}" fill="#f2c94c" fill-opacity="${0.4*Math.min(1,(n.progress-.55)/.45)}"/>`
@@ -436,13 +501,17 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     }
     const perimeter=2*(n.w+n.h);
     const strokeWidth=n.emphasis?STROKE_TOKENS.emphasis:STROKE_TOKENS.border;
-    svg+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" fill="${n.color}" fill-opacity="${Math.max(0,(n.progress-.35)/.65)}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
+    svg+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" fill="${n.color}" fill-opacity="${n.fillOpacity?Math.max(0,(n.progress-.35)/.65):0}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
     if(n.emphasis&&n.progress>.55)svg+=`<rect x="${n.x+10}" y="${n.y+n.h*0.3}" width="${n.w-20}" height="${n.h*0.4}" rx="8" fill="#f2c94c" fill-opacity="${0.4*Math.min(1,(n.progress-.55)/.45)}"/>`;
     if(n.progress>.4)svg+=`<g opacity="${Math.min(1,(n.progress-.4)/.3)}">${renderIcon(n.kind,n.x+22,n.y+22,15,stroke)}</g>`;
     if(n.progress>.45)svg+=`<g opacity="${(n.progress-.45)/.55}">${texts(n.lines,n.x+n.w/2,n.y+n.h/2-(n.lines.length-1)*n.fontSize*.59+n.fontSize*.35,n.fontSize)}</g>`;
     if(!pencil&&n.progress<1)pencil=pointOnRectPerimeter(n.x,n.y,n.w,n.h,n.progress);
   }
-  if(pencil)svg+=renderPencil(pencil.x,pencil.y,pencil.angle);
+  if(pencil){
+    const localEventEnd=Math.max(...scene.nodes.map(n=>n.startMs+n.drawMs),...scene.edges.map(e=>e.startMs+e.drawMs));
+    const pencilFade=progressAt(timeMs,Math.max(0,localEventEnd-400),400);
+    svg+=`<g opacity="${0.6+0.4*pencilFade}">${renderPencil(pencil.x,pencil.y,pencil.angle)}</g>`;
+  }
   svg+=`<g opacity="${titleProgress}"><rect x="70" y="640" width="1140" height="58" rx="8" fill="#f4f1e6" stroke="#d8d2c0"/><text x="90" y="676" font-size="22" xml:space="preserve">`;
   caption.forEach((word,i)=>{const spoken=captionStart+i===s.activeWord;svg+=`<tspan fill="${spoken?'#1a4d3a':'#2b3d38'}" font-weight="${spoken?'700':'400'}">${esc(word.word)} </tspan>`;});
   svg+='</text></g>';
