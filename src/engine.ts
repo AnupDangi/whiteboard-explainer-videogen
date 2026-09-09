@@ -80,13 +80,31 @@ export function estimateTiming(text:string, wordsPerMinute = 145) {
   return {kind:'estimated', words:words.map((word,i)=>({word,startMs: i*ms,endMs:(i+1)*ms})), durationMs:words.length*ms};
 }
 
-// Per-character-class width ratios (of font size) — a materially closer isomorphic stand-in
-// for DejaVu Sans than a single flat constant, without a font-metrics dependency. A full
-// glyph-accurate measurement (opentype.js or canvas measureText) remains a future upgrade.
+// Phase 11: per-glyph width ratios (of font size), sourced from the standard published
+// Helvetica AFM advance widths (Adobe's font metrics, /1000 em units — widely-documented,
+// stable reference data, not a synthesized estimate). DejaVu Sans isn't byte-identical to
+// Helvetica, but this table's per-character granularity is materially closer than the prior
+// 5-bucket category heuristic (narrow/wide/upper/digit/default), while staying fully
+// synchronous and dependency-free — real glyph-accurate measurement (opentype.js in Node +
+// canvas measureText in the browser, kept in sync) needs `compileScene` to become async
+// (it's called synchronously from the browser's live renderer, the export CLI, and every
+// test), which is a bigger architectural change than this table's accuracy gain justifies
+// right now. Falls back to the old category heuristic for anything not in the table —
+// accented Latin, Devanagari, CJK, etc. (non-Latin shaping remains a known gap).
+const HELVETICA_WIDTHS: Record<string,number> = {
+  ' ':278,'!':278,'"':355,'#':556,'$':556,'%':889,'&':667,"'":191,'(':333,')':333,'*':389,'+':584,',':278,'-':333,'.':278,'/':278,
+  '0':556,'1':556,'2':556,'3':556,'4':556,'5':556,'6':556,'7':556,'8':556,'9':556,
+  ':':278,';':278,'<':584,'=':584,'>':584,'?':556,'@':1015,
+  A:667,B:667,C:722,D:722,E:667,F:611,G:778,H:722,I:278,J:500,K:667,L:556,M:833,N:722,O:778,P:667,Q:778,R:722,S:667,T:611,U:722,V:667,W:944,X:667,Y:667,Z:611,
+  '[':278,'\\':278,']':278,'^':469,_:556,'`':333,
+  a:556,b:556,c:500,d:556,e:556,f:278,g:556,h:556,i:222,j:222,k:500,l:222,m:833,n:556,o:556,p:556,q:556,r:333,s:500,t:278,u:556,v:500,w:722,x:500,y:500,z:500,
+  '{':334,'|':260,'}':334,'~':584,
+};
 const NARROW_CHARS = new Set('iIlj.,;:\'`|!ft-'.split(''));
 const WIDE_CHARS = new Set('mwMW@%'.split(''));
 function charWidthRatio(ch:string):number {
-  if (ch === ' ') return 0.28;
+  const tabled = HELVETICA_WIDTHS[ch];
+  if (tabled !== undefined) return tabled / 1000;
   if (NARROW_CHARS.has(ch)) return 0.32;
   if (WIDE_CHARS.has(ch)) return 0.85;
   if (/[A-Z]/.test(ch)) return 0.66;

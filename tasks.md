@@ -199,23 +199,29 @@
   Suite: 65/65 (0 skipped when the persistent server is warm — `TEST_KOKORO_TTS=1` now runs
   for real instead of being permanently skipped).
 
-## Phase 11 (re-opened) — Real text measurement (DEFERRED AGAIN — see reasoning)
+## Phase 11 (re-opened) — Real text measurement (PARTIAL — bounded win shipped, full fix still deferred)
 > Re-evaluated this session after being deferred once already.
-- **Why still deferred**: a real fix needs to be isomorphic — `public/app.ts` imports and
-  calls `compileScene` directly in the browser (fixture/offline-demo path), while `jobs.ts`
-  calls it server-side in Node (AI-generated jobs) — both must measure identically or preview
-  vs. export geometry diverges, which would violate the codebase's own determinism guarantee
-  (locked in by the "H05/H13/H17 frame is deterministic" test). A real fix (opentype.js in
-  Node + canvas measureText in browser, or an embedded font) also needs `measureText`/
-  `wrapText` to stay fully SYNCHRONOUS (deep inside the synchronous `compileScene`, called
-  from tests/renderer/export scripts) — font loading is normally async in both environments,
-  so this needs care (Node: `readFileSync` + opentype.js's synchronous `parse()`; browser:
-  ensure `document.fonts.ready` before first compile). Not attempted this pass: the existing
-  heuristic is calibrated (per-character-class width ratios, not a flat constant) and used
-  *consistently* by both layout and the Phase 8 overlap-prevention system, so it's internally
-  coherent even if not pixel-perfect. A rushed "quick calibration" without verified real font
-  metrics risked making it *less* accurate while claiming improvement — worse than deferring
-  honestly. **Next agent**: this is the highest-value remaining item if picked up next.
+- [x] Replaced the 5-bucket category heuristic (`narrow`/`wide`/upper/digit/default) with a
+      per-glyph width table sourced from the standard published Helvetica AFM advance widths
+      (Adobe's font metrics, real documented data — not synthesized). ~90 characters covered
+      (a-z, A-Z, 0-9, common punctuation); falls back to the old category heuristic for
+      anything not in the table (accented Latin, Devanagari, CJK — non-Latin shaping is still
+      a known gap). Stays fully synchronous, no new dependency, identical in browser and Node.
+- **Why full glyph-accurate measurement (opentype.js/canvas measureText) is still deferred**:
+  needs to be isomorphic — `public/app.ts` imports and calls `compileScene` directly in the
+  browser (fixture/offline-demo path), while `jobs.ts` calls it server-side in Node
+  (AI-generated jobs) — both must measure identically or preview vs. export geometry
+  diverges, violating the codebase's own determinism guarantee (locked in by the
+  "H05/H13/H17 frame is deterministic" test). It also needs `measureText`/`wrapText` to stay
+  fully SYNCHRONOUS (deep inside the synchronous `compileScene`, called from
+  tests/renderer/export scripts) — font loading is normally async in both environments, so a
+  correct fix needs care (Node: `readFileSync` + opentype.js's synchronous `parse()`;
+  browser: ensure `document.fonts.ready` before first compile). That's a bigger
+  architectural change than remaining budget covered this pass — the per-glyph table above
+  captures most of the practical accuracy gain without that risk.
+- **Acceptance:** suite green (65/65, 1 skipped); re-ran the all-layouts × all-counts ×
+  long-labels stress sweep from the Phase 8 work — still zero overlaps, zero out-of-bounds
+  with the new (generally different) measured widths.
 
 ## Phase 9 remainder + Skills/prompt consistency audit — DISPATCHED to parallel Opus agents
 > Session context: Sep 9 2026. Both work on non-overlapping files (icons.ts/illustrations.ts

@@ -70,26 +70,35 @@ This is not a production multi-user service. Job snapshots remain in memory afte
 - External image assets, background music, PDF extraction and source citation verification.
 - Production latency/cost claims and open-domain quality claims.
 
-## Local narration update (2026-09-08)
+## Narration (updated 2026-09-09 — supersedes the 2026-09-08 local-robot-voice entry below)
 
-`src/local-speech.ts` launches the fixed `scripts/robot_tts.py` helper with JSON
-on stdin. Narration is data, never generated executable code. Python invokes
-macOS say (Alex) per word, trims PCM silence, adds a fixed short gap and records
-boundaries using sample counts. WAV media uses the same player and export
-timeline as ElevenLabs MP3. This mode is labeled local-segment-aligned and has
-robotic cadence. It requires Python 3 and macOS speech access, not FFmpeg.
-ElevenLabs uses per-job voiceId or its configured default. TTS errors fail
-visibly; there is no automatic silent fallback.
+`src/kokoro-speech.ts` is the default TTS path (`generateKokoroSpeech`). It
+talks to a persistent local server (`scripts/kokoro_server.py`, model loaded
+once) over HTTP, self-healing: if the server isn't answering `/health`, it
+spawns one detached from a persistent venv (`.kokoro-venv/`, created once via
+`scripts/setup-kokoro.sh`) and polls until ready — no manual server-start step
+in normal use. Narration is data, never generated executable code; word
+timings are native to the model (`pred_dur`), not estimated. WAV media uses
+the same player and export timeline as ElevenLabs MP3. ElevenLabs
+(`src/providers.ts`, `generateSpeech`) remains available as a paid alternative
+via `--tts elevenlabs`, using per-job voiceId or its configured default. TTS
+errors fail visibly; there is no automatic silent fallback.
+
+The former Python-`say`-based "robot voice" (`src/local-speech.ts`,
+`scripts/robot_tts.py`) was removed entirely (2026-09-09, user request) —
+Kokoro replaced it as the free/local/no-key option with materially better
+quality.
 
 Browser media is the master clock during speech, with a separate visual tail.
 Seeking resets audio identity; seeking into the tail does not replay narration.
 A generation counter ignores stale play-promise updates. Preparation events
 are persisted in snapshots and shown in the UI. `/?job=UUID` opens a saved job.
 
-### ElevenLabs default
+### Provider default history
 
-Following the user's voice-quality feedback, omitted ttsProvider now selects
-ElevenLabs; local Python speech requires explicit selection. The ignored .env
-uses the successfully tested premade Alice voice. Speech failures preserve the
-provider HTTP status/code/message. Library-plan restrictions must not be labeled
-as exhausted quota. The UI defaults match the API.
+2026-09-08: omitted `ttsProvider` selected ElevenLabs (voice-quality feedback
+at the time). 2026-09-09: omitted `ttsProvider` now selects **Kokoro** — free,
+local, no key, and the reliability problem (see above) is fixed. ElevenLabs
+requires explicit `--tts elevenlabs`. Speech failures preserve the provider
+HTTP status/code/message; library-plan restrictions must not be labeled as
+exhausted quota. The UI default matches the API.
