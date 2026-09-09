@@ -90,20 +90,23 @@
   broader ad-hoc stress sweep (all 7 layouts × counts 2–6 × long labels) both show zero
   overlaps and zero out-of-bounds nodes; full suite green (62/62, 2 skipped needing live TTS).
 
-## Phase 7 — Semantic Storyboard v2 (NOT STARTED — biggest lever for "scene inconsistency")
-- [ ] Add `visualIntent` (short string, ≤80 chars) alongside `keyPoint` on every content-stage
-      node: what the diagram should visually show for this node (e.g. "arrow from query to
-      each key, comparison"). This is the shared semantic-event field V2 §8 calls for — same
-      2-stage pipeline, no new agent call, but narration and visual direction both now trace to
-      one written intent instead of the director re-guessing from the label alone.
-- [ ] `contentShape`/`contentSchema`/`types.ts` PlanNode: add the field (optional on old
-      fixtures, required from the LLM schema).
-- [ ] `directorPrompt`: pass `visualIntent` per node; update `SELECTION_GUIDANCE` to say it is
-      more authoritative than the label when choosing kind/shape/emphasis/layout.
-- [ ] `validatePlan` in `engine.ts`: validate + preserve (planning metadata, like keyPoint).
-- **Acceptance:** a scene's director-chosen kind/shape can be explained by reading its
-  `visualIntent` rather than by pattern-matching the label; suite green; one real chapter
-  generation shows visualIntent driving a non-obvious shape choice.
+## Phase 7 — Semantic Storyboard v2 (DONE — mechanism verified, live model run still pending)
+- [x] Added `visualIntent` (short string, ≤80 chars) alongside `keyPoint` on every
+      content-stage node: what the diagram should visually show for this node (e.g. "arrow
+      from query to each key, comparison"). Shared semantic-event field per V2 §8 — same
+      2-stage pipeline, no new agent call; narration and visual direction now trace to one
+      written intent instead of the director re-guessing from the label alone.
+- [x] `contentShape`/`contentSchema`/`types.ts` PlanNode: field added (optional on old
+      fixtures — verified backward compatible — required in the LLM-facing JSON schema).
+- [x] `directorPrompt` (and the critic's `repairFromCritique` payload) now pass `visualIntent`
+      per node; `SELECTION_GUIDANCE` rewritten to say it is more authoritative than the label
+      when choosing kind/shape/emphasis/layout.
+- [x] `validatePlan` in `engine.ts`: validates (1-80 chars, non-empty) + preserves through the
+      renderer whitelist (planning metadata, like keyPoint — never drawn directly).
+- **Acceptance:** mechanism verified — new test confirms validation, preservation, and old
+  no-visualIntent fixtures still pass; suite green (63/63, 2 skipped). **Not yet verified live**:
+  whether a real chapter generation actually produces non-obvious shape choices traceable to
+  visualIntent — needs one real (paid) generation run; flag for the next agent with API access.
 
 ## Phase 9 — Visual polish (SCOPED DOWN — full icon redesign deferred, see note)
 - [ ] Whiteboard background texture: subtle dot-grid or paper-grain fill behind scenes
@@ -126,6 +129,13 @@
   stroke, fades out between scenes.
 
 ## Phase 11 — Connector routing (SCOPED DOWN — text measurement deferred, see note)
+- [ ] **Live-verified bug** (found running a real gradient-descent generation, see
+      `output/videos/How-gradient-descent-optimizes-a-model-s-weights-1min.mp4` and the job at
+      `.data/ecb25d5a-d8de-42ce-a9f7-24a44ccfe5df/`): edge labels render at the raw midpoint of
+      `(x1,y1)`-`(x2,y2)`, so on a short connector between two close nodes the label sits
+      overlapping/clipped behind the destination shape (e.g. "determin[es]" clipped behind the
+      "Prediction Error" ellipse, "reaches" clipped behind "Minimum Loss Valley"). Fix as part
+      of this phase's connector work, not just the curve.
 - [ ] Curved (quadratic bezier) connector routing instead of straight lines, still anchored to
       boundary points per `compileScene`'s existing edge geometry.
 - **Deferred, not done this pass:** real glyph-accurate text measurement (opentype.js/canvas

@@ -6,9 +6,12 @@ export const outlineSchema=(count:number)=>obj({title:str(90),chapters:array(obj
 // Stage 1 — Teaching Planner: content only. No layout/kind/emphasis — those are the Visual
 // Director's job (stage 2), kept in a separate schema/call so content quality and visual
 // quality can be validated, repaired and reasoned about independently.
-// Each node carries keyPoint: the exact chapter key point it visualizes — the link
-// between teaching intent and canvas object (storyboard-lite). Validated deterministically.
-export const contentSchema=obj({version:{type:'integer',const:1},title:str(90),scenes:array(obj({id:str(40),title:str(70),narration:str(1800),nodes:array(obj({id:str(40),label:str(120),anchor:str(100),keyPoint:str(60)}),2,6),edges:array(obj({from:str(40),to:str(40),label:{type:'string',maxLength:24}}),0,10),note:{type:'string',maxLength:170}}),2,2)});
+// Each node carries keyPoint (the exact chapter key point it visualizes) and visualIntent
+// (what the diagram should visually show for it — an arrow, a growth, a comparison). Both
+// are the shared semantic-event link between teaching intent and the Visual Director's
+// choices (V2 §8 storyboard): the director receives visualIntent as ground truth instead of
+// re-guessing kind/shape/emphasis from the label text alone. Validated deterministically.
+export const contentSchema=obj({version:{type:'integer',const:1},title:str(90),scenes:array(obj({id:str(40),title:str(70),narration:str(1800),nodes:array(obj({id:str(40),label:str(120),anchor:str(100),keyPoint:str(60),visualIntent:str(80)}),2,6),edges:array(obj({from:str(40),to:str(40),label:{type:'string',maxLength:24}}),0,10),note:{type:'string',maxLength:170}}),2,2)});
 // Stage 2 — Visual Director: given validated content, choose composition topology per scene
 // and a visual metaphor/emphasis per node. Never touches narration, wording or geometry.
 // attachTo/position ride on every node (strict schemas require all fields) but are only

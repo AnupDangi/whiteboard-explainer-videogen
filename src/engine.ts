@@ -55,6 +55,10 @@ function validateCandidate(input: Plan): Plan {
       // keyPoint is planning metadata (which chapter key point this node visualizes),
       // not render data — validated here, preserved below, ignored by the renderer.
       if (node.keyPoint !== undefined && (typeof node.keyPoint !== 'string' || !node.keyPoint.trim() || node.keyPoint.length > 60)) fail(`Invalid keyPoint ${JSON.stringify(String(node.keyPoint)).slice(0,80)} (node ${node.id}): copy EXACTLY one chapter key point, 1-60 chars`);
+      // visualIntent is the Semantic Storyboard link (V2 §8): what this node should visually
+      // show, shared upstream of both narration and the Visual Director's kind/shape choice.
+      // Planning metadata like keyPoint — validated, preserved, never rendered directly.
+      if (node.visualIntent !== undefined && (typeof node.visualIntent !== 'string' || !node.visualIntent.trim() || node.visualIntent.length > 80)) fail(`Invalid visualIntent (node ${node.id}): 1-80 chars`);
     }
     if (!Array.isArray(scene.edges) || scene.edges.length > 10) fail('Invalid edges');
     for (const e of scene.edges) if (!nodeIds.has(e.from) || !nodeIds.has(e.to) || e.from === e.to) fail('Dangling or self connector');
@@ -64,7 +68,7 @@ function validateCandidate(input: Plan): Plan {
   // Whitelist all data crossing into the renderer; discard unknown provider fields.
   return {version: 1, title: input.title, scenes: input.scenes.map(s => ({
     id: s.id, title: s.title, narration: s.narration, layout: s.layout,
-    nodes: s.nodes.map(n => ({id:n.id,label:n.label,wordIndex:n.wordIndex,...(n.kind&&n.kind!=='generic'?{kind:n.kind}:{}),...(n.emphasis?{emphasis:true}:{}),...(n.shape&&n.shape!=='box'?{shape:n.shape}:{}),...(typeof n.keyPoint==='string'&&n.keyPoint?{keyPoint:n.keyPoint}:{}),...(n.shape==='annotation'?{attachTo:n.attachTo,position:n.position}:{})})),
+    nodes: s.nodes.map(n => ({id:n.id,label:n.label,wordIndex:n.wordIndex,...(n.kind&&n.kind!=='generic'?{kind:n.kind}:{}),...(n.emphasis?{emphasis:true}:{}),...(n.shape&&n.shape!=='box'?{shape:n.shape}:{}),...(typeof n.keyPoint==='string'&&n.keyPoint?{keyPoint:n.keyPoint}:{}),...(typeof n.visualIntent==='string'&&n.visualIntent?{visualIntent:n.visualIntent}:{}),...(n.shape==='annotation'?{attachTo:n.attachTo,position:n.position}:{})})),
     edges:s.edges.map(e=>({from:e.from,to:e.to,...(typeof e.label==='string'&&e.label?{label:e.label}:{})})), note:s.note || ''
   }))};
 }

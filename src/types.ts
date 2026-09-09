@@ -1,5 +1,5 @@
 import type {NodeKind,LayoutName} from './vocabulary.js';
-export interface PlanNode { id: string; label: string; wordIndex: number; kind?: NodeKind; emphasis?: boolean; shape?: 'box'|'illustration'|'icon'|'circle'|'square'|'bullet'|'number'|'annotation'; keyPoint?: string; attachTo?: string; position?: 'below'|'above'|'left'|'right' }
+export interface PlanNode { id: string; label: string; wordIndex: number; kind?: NodeKind; emphasis?: boolean; shape?: 'box'|'illustration'|'icon'|'circle'|'square'|'bullet'|'number'|'annotation'; keyPoint?: string; visualIntent?: string; attachTo?: string; position?: 'below'|'above'|'left'|'right' }
 export interface PlanEdge { from: string; to: string; label?: string }
 export interface Scene { id: string; title: string; narration: string; layout: LayoutName; nodes: PlanNode[]; edges: PlanEdge[]; note?: string }
 export interface Plan { version: 1; title: string; scenes: Scene[] }

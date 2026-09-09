@@ -10,6 +10,16 @@ test('H04/H22 rejects invalid references, anchors, IDs and primitive layouts',()
   }
   const p=copy();p.scenes[0].code='dangerous';assert.equal(validatePlan(p).scenes[0].code,undefined);
 });
+test('Phase 7: visualIntent is validated and preserved as planning metadata',()=>{
+  const withIntent=copy();withIntent.scenes[0].nodes[0].visualIntent='arrow from query to each key, comparison';
+  assert.equal(validatePlan(withIntent).scenes[0].nodes[0].visualIntent,'arrow from query to each key, comparison');
+  const tooLong=copy();tooLong.scenes[0].nodes[0].visualIntent='x'.repeat(81);
+  assert.throws(()=>validatePlan(tooLong),/visualIntent/);
+  const empty=copy();empty.scenes[0].nodes[0].visualIntent='   ';
+  assert.throws(()=>validatePlan(empty),/visualIntent/);
+  // Older fixtures without visualIntent still validate (backward compatible, absent from output).
+  const without=copy();assert.equal(validatePlan(without).scenes[0].nodes[0].visualIntent,undefined);
+});
 test('H05/H13/H17 frame is deterministic after arbitrary seeking; prior geometry stable',()=>{
   const scene=compileScene(copy().scenes[0]);const before=renderSVG(scene,7000);
   for(const t of [0,90000,2500,1,300])renderSVG(scene,t);
