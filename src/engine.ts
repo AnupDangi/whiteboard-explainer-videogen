@@ -410,6 +410,18 @@ function pointOnEllipsePerimeter(cx:number,cy:number,rx:number,ry:number,t:numbe
   const a=Math.max(0,Math.min(1,t))*Math.PI*2-Math.PI/2;
   return {x:cx+rx*Math.cos(a),y:cy+ry*Math.sin(a),angle:Math.atan2(ry*Math.cos(a),-rx*Math.sin(a))};
 }
+/** Phase 9: emphasis wash as two slightly offset, slightly rotated translucent rects instead
+ *  of one flat one — reads as an imperfect hand-drawn marker stroke rather than a CSS
+ *  highlight. Same total ink (opacities chosen so the overlap doesn't read visibly darker). */
+function renderHighlightRect(x:number,y:number,w:number,h:number,rx:number,opacity:number) {
+  const cx=x+w/2,cy=y+h/2;
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="#f2c94c" fill-opacity="${opacity*0.6}"/>`+
+    `<rect x="${x+2}" y="${y-1.5}" width="${w-3}" height="${h}" rx="${rx}" fill="#f2c94c" fill-opacity="${opacity*0.45}" transform="rotate(-1.1 ${cx} ${cy})"/>`;
+}
+function renderHighlightEllipse(cx:number,cy:number,rx:number,ry:number,opacity:number) {
+  return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="#f2c94c" fill-opacity="${opacity*0.6}"/>`+
+    `<ellipse cx="${cx+1.5}" cy="${cy-1}" rx="${rx*0.94}" ry="${ry*0.94}" fill="#f2c94c" fill-opacity="${opacity*0.45}"/>`;
+}
 /** A small pencil cursor whose tip sits exactly at (x,y), rotated to face the direction of
  *  travel. Renderer-only decoration: it never decides content, only follows already-resolved
  *  path/perimeter progress. */
@@ -425,7 +437,10 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
   const textsLeft=(lines:string[],x:number,y:number,size:number)=>lines.map((line,i)=>`<text x="${x}" y="${y+i*size*1.18}" text-anchor="start" font-size="${size}">${esc(line)}</text>`).join('');
   const captionStart=Math.max(0,s.activeWord-6);
   const caption=scene.timing.words.slice(captionStart,captionStart+14);
-  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><rect width="1280" height="720" fill="#fffef9"/><g font-family="DejaVu Sans, sans-serif" fill="#182d33" opacity="${transitionFade}"><text x="60" y="49" font-size="14" letter-spacing="3">EXPLAIN / CANVAS LAB</text><g opacity="${titleProgress}">${texts(wrapText(s.title,1140,38),640,113,38)}</g>`;
+  // Phase 9: a faint dot-grid texture so the board reads as a physical whiteboard rather
+  // than a flat fill (V2 §9/§11 "rich visuals... belong on one whiteboard"). Subtle enough
+  // to never compete with content — a fixed pattern def, not re-generated per frame's data.
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><defs><pattern id="board-grain" width="26" height="26" patternUnits="userSpaceOnUse"><rect x="0.2" y="0.2" width="1.6" height="1.6" rx="0.8" fill="#e7e1cf"/></pattern></defs><rect width="1280" height="720" fill="#fffef9"/><rect width="1280" height="720" fill="url(#board-grain)" opacity="0.55"/><g font-family="DejaVu Sans, sans-serif" fill="#182d33" opacity="${transitionFade}"><text x="60" y="49" font-size="14" letter-spacing="3">EXPLAIN / CANVAS LAB</text><g opacity="${titleProgress}">${texts(wrapText(s.title,1140,38),640,113,38)}</g>`;
   // Pencil follows whichever single node or edge is actively mid-stroke (0<progress<1); a
   // scene at rest (everything settled at 0 or 1) shows no pencil at all.
   let pencil:{x:number;y:number;angle:number}|null=null;
@@ -508,8 +523,8 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
       svg+=`${open} fill="${n.color}" fill-opacity="${n.fillOpacity?Math.max(0,(n.progress-.35)/.65):0}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
       // Emphasis wash: marker-like highlight sweep behind the label for the result node.
       if(n.emphasis&&n.progress>.55)svg+=isC
-        ?`<ellipse cx="${cx}" cy="${cy}" rx="${rx*0.78}" ry="${ry*0.42}" fill="#f2c94c" fill-opacity="${0.4*Math.min(1,(n.progress-.55)/.45)}"/>`
-        :`<rect x="${n.x+10}" y="${n.y+n.h*0.3}" width="${n.w-20}" height="${n.h*0.4}" rx="8" fill="#f2c94c" fill-opacity="${0.4*Math.min(1,(n.progress-.55)/.45)}"/>`;
+        ?renderHighlightEllipse(cx,cy,rx*0.78,ry*0.42,0.4*Math.min(1,(n.progress-.55)/.45))
+        :renderHighlightRect(n.x+10,n.y+n.h*0.3,n.w-20,n.h*0.4,8,0.4*Math.min(1,(n.progress-.55)/.45));
       if(!isC&&n.progress>.4)svg+=`<g opacity="${Math.min(1,(n.progress-.4)/.3)}">${renderIcon(n.kind,n.x+22,n.y+22,15,stroke)}</g>`;
       if(n.progress>.45)svg+=`<g opacity="${(n.progress-.45)/.55}">${texts(n.lines,n.x+n.w/2,n.y+n.h/2-(n.lines.length-1)*n.fontSize*.59+n.fontSize*.35,n.fontSize)}</g>`;
       if(!pencil&&n.progress<1)pencil=isC?pointOnEllipsePerimeter(cx,cy,rx,ry,n.progress):pointOnRectPerimeter(n.x,n.y,n.w,n.h,n.progress);
@@ -534,7 +549,7 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     const perimeter=2*(n.w+n.h);
     const strokeWidth=n.emphasis?STROKE_TOKENS.emphasis:STROKE_TOKENS.border;
     svg+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" fill="${n.color}" fill-opacity="${n.fillOpacity?Math.max(0,(n.progress-.35)/.65):0}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
-    if(n.emphasis&&n.progress>.55)svg+=`<rect x="${n.x+10}" y="${n.y+n.h*0.3}" width="${n.w-20}" height="${n.h*0.4}" rx="8" fill="#f2c94c" fill-opacity="${0.4*Math.min(1,(n.progress-.55)/.45)}"/>`;
+    if(n.emphasis&&n.progress>.55)svg+=renderHighlightRect(n.x+10,n.y+n.h*0.3,n.w-20,n.h*0.4,8,0.4*Math.min(1,(n.progress-.55)/.45));
     if(n.progress>.4)svg+=`<g opacity="${Math.min(1,(n.progress-.4)/.3)}">${renderIcon(n.kind,n.x+22,n.y+22,15,stroke)}</g>`;
     if(n.progress>.45)svg+=`<g opacity="${(n.progress-.45)/.55}">${texts(n.lines,n.x+n.w/2,n.y+n.h/2-(n.lines.length-1)*n.fontSize*.59+n.fontSize*.35,n.fontSize)}</g>`;
     if(!pencil&&n.progress<1)pencil=pointOnRectPerimeter(n.x,n.y,n.w,n.h,n.progress);

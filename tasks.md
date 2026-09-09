@@ -108,25 +108,31 @@
   whether a real chapter generation actually produces non-obvious shape choices traceable to
   visualIntent — needs one real (paid) generation run; flag for the next agent with API access.
 
-## Phase 9 — Visual polish (SCOPED DOWN — full icon redesign deferred, see note)
-- [ ] Whiteboard background texture: subtle dot-grid or paper-grain fill behind scenes
-      (V2 §9 "rich visuals... belong on one whiteboard").
-- [ ] Improve the emphasis highlight sweep (currently a flat yellow rect/ellipse wash) with a
-      slightly textured/imperfect marker-stroke look.
+## Phase 9 — Visual polish (DONE — full icon redesign still deferred, see note)
+- [x] Whiteboard background texture: a faint dot-grid pattern (`<pattern id="board-grain">`,
+      26px spacing, ~0.55 opacity over the base cream fill). First attempt used `<circle>` for
+      the dot and broke an existing test asserting background decoration adds no extra
+      `<circle>`/`<ellipse>` tags (a real, useful invariant) — switched to a rounded `<rect>`.
+- [x] Emphasis highlight sweep: `renderHighlightRect`/`renderHighlightEllipse` draw two
+      slightly offset, slightly rotated translucent shapes instead of one flat wash — reads as
+      an imperfect hand-marker stroke. Wired into all three emphasis-wash call sites (box,
+      circle, square).
 - **Deferred, not done this pass:** per-icon redesign across all 32+ kinds in `icons.ts` for
   "more detail, consistent stroke weight" — large surface area, low marginal value vs. the
   overlap/coherence fixes above; a future agent can pick this up as its own bounded pass.
-- **Acceptance:** rendered scene visibly shows background texture without interfering with
-  text/overlap checks; suite green.
+- **Acceptance:** re-rendered the real gradient-descent job's scenes — dot-grid visible but
+  unobtrusive, doesn't interfere with any content; suite green (64/64, 2 skipped).
 
-## Phase 10 — Pencil & transitions (MOSTLY DONE — verify only)
-- [x] Scene-start fade-in and pencil fade-out near a local event's end already landed
-      (uncommitted `renderSVG` changes: `transitionFade`, `pencilFade`).
-- [ ] Confirm pencil "jumping between regions" already falls out of the existing
-      first-active-node/edge selection (staggered `startMs` per node/edge) — no code change
-      expected, just a verification note in this file once confirmed.
-- **Acceptance:** visual check on one rendered video: pencil never lingers on a completed
-  stroke, fades out between scenes.
+## Phase 10 — Pencil & transitions (DONE — verified)
+- [x] Scene-start fade-in and pencil fade-out near a local event's end (`transitionFade`,
+      `pencilFade` in `renderSVG`), landed and committed as part of the Phase 6+8 commit.
+- [x] Verified pencil "jumping between regions" falls out of the existing first-active-
+      node/edge selection (staggered `startMs` per node/edge, one `pencil` picked per frame
+      as whichever single element has `0<progress<1`) — confirmed by code inspection, no
+      change needed. Also verified the pencil now follows the true curved-connector tangent
+      (Phase 11), not just straight lines/box perimeters.
+- **Acceptance:** re-rendered real job frames (gradient-descent) show the pencil tracking the
+  active stroke correctly; code path confirmed for region-jumping; suite green.
 
 ## Phase 11 — Connector routing (DONE — text measurement still deferred, see note)
 - [x] **Live-verified bug**, fixed (found running a real gradient-descent generation, see
