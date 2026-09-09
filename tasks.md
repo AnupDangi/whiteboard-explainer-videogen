@@ -156,7 +156,74 @@
   the label renders off the straight connector line; re-rendered real job frames confirm the
   live-verified clipping bug is fixed; suite green (64/64, 2 skipped).
 
-## Phase 12 — Latency (SKIPPED — not one of the user's reported gaps this round)
+## Phase 12 — Latency (DONE — TTS/director overlap; other sub-items not attempted)
+> Re-scoped in: user explicitly asked to be faster in a follow-up message.
+- [x] TTS/director overlap: narration is final once the content (Teaching Planner) stage
+      validates — the director only adds visual metadata TTS never reads. `generateChapters`
+      now fires `onContentReady(chapter, scenes)` right after content validates, before the
+      director call starts. `jobs.ts` uses this (kokoro only — never elevenlabs, to avoid
+      burning paid API calls on content a later regeneration might discard) to kick off TTS
+      in the background while the director call runs, then reuses that promise in the normal
+      per-scene TTS step IF its cached narration still matches the final scene's narration
+      (regeneration-safe: mismatch/absence just falls back to a fresh call).
+- **Not attempted this pass:** streamed outline (chapters already stream progressively via
+  the existing async generator — this was already true before this session), faster fallback
+  models for simple scenes, cross-topic geometry caching, combining outline+content into one
+  call (explicitly against the codebase's own documented 2-stage separation rationale — see
+  planner.ts comments — not attempted as it risks the independent-repair-loop benefit that
+  separation exists for).
+- **Acceptance:** live-verified — TTS (6.5s/scene) finished entirely inside the director
+  call's 9.8s window and cost 0ms of additional wait once consumed; suite green (65/65,
+  1 skipped when server isn't pre-warmed for that specific test invocation).
+
+## Phase 13 — Kokoro-only TTS, remove robot voice (DONE — user-requested)
+- [x] Removed `local` (Python `say`-based robot) TTS entirely: `src/local-speech.ts`,
+      `scripts/robot_tts.py`, `test/local-speech.test.js` deleted; every `'local'` reference
+      in `types.ts`/`jobs.ts`/`generate-video.ts`/`live-evaluation.ts`/`matrix-report.js`/
+      `public/index.html`/`public/app.ts` removed. Kokoro is now the sole free local voice
+      and the default `--tts` (ElevenLabs remains available via `--tts elevenlabs`).
+- [x] Root-caused and fixed the actual Kokoro reliability problem: the venv lived in `/tmp`
+      (wiped on cleanup, forcing a manual rebuild every session — not a model problem).
+      `scripts/setup-kokoro.sh` (uv-based, idempotent) now creates a persistent `.kokoro-venv/`
+      inside the repo instead.
+- [x] `kokoro-speech.ts` now self-heals: checks `/health` on the persistent server
+      (`KOKORO_SERVER_URL`, now defaulted to `http://127.0.0.1:8765` instead of requiring
+      `.env` setup) and, if down, spawns it detached from the persistent venv and polls until
+      ready — no manual `npm run kokoro-server` step needed anywhere. Dropped the old
+      per-request process-spawn fallback (was a 4-5s cold-start tax every single scene).
+- [x] Checked the live OpenRouter model catalog: `google/gemini-3.8-flash` (current planner
+      default) confirmed the best available fast/structured-JSON model — no newer variant
+      exists. No model change needed.
+- **Acceptance:** live-verified end-to-end — killed the running server, ran a fresh
+  generation with zero manual steps, confirmed auto-start + successful kokoro narration.
+  Suite: 65/65 (0 skipped when the persistent server is warm — `TEST_KOKORO_TTS=1` now runs
+  for real instead of being permanently skipped).
+
+## Phase 11 (re-opened) — Real text measurement (DEFERRED AGAIN — see reasoning)
+> Re-evaluated this session after being deferred once already.
+- **Why still deferred**: a real fix needs to be isomorphic — `public/app.ts` imports and
+  calls `compileScene` directly in the browser (fixture/offline-demo path), while `jobs.ts`
+  calls it server-side in Node (AI-generated jobs) — both must measure identically or preview
+  vs. export geometry diverges, which would violate the codebase's own determinism guarantee
+  (locked in by the "H05/H13/H17 frame is deterministic" test). A real fix (opentype.js in
+  Node + canvas measureText in browser, or an embedded font) also needs `measureText`/
+  `wrapText` to stay fully SYNCHRONOUS (deep inside the synchronous `compileScene`, called
+  from tests/renderer/export scripts) — font loading is normally async in both environments,
+  so this needs care (Node: `readFileSync` + opentype.js's synchronous `parse()`; browser:
+  ensure `document.fonts.ready` before first compile). Not attempted this pass: the existing
+  heuristic is calibrated (per-character-class width ratios, not a flat constant) and used
+  *consistently* by both layout and the Phase 8 overlap-prevention system, so it's internally
+  coherent even if not pixel-perfect. A rushed "quick calibration" without verified real font
+  metrics risked making it *less* accurate while claiming improvement — worse than deferring
+  honestly. **Next agent**: this is the highest-value remaining item if picked up next.
+
+## Phase 9 remainder + Skills/prompt consistency audit — DISPATCHED to parallel Opus agents
+> Session context: Sep 9 2026. Both work on non-overlapping files (icons.ts/illustrations.ts
+> vs. skills/*.md + planner.ts prompt strings only) so they can run concurrently without
+> merge conflicts. See git log around this tasks.md entry for the merge commits and their
+> actual outcomes — this note describes what was ASKED, not necessarily what shipped; check
+> the Phase 9 and "prompt consistency" sections above/below for the real done/not-done state
+> once merged.
 
 ## Run log (append per execution)
 | Date | Phase | Jobs | Cost | Wall | Result |
@@ -170,3 +237,4 @@
 | 2026-09-09 | phase4 | export re-run + 1-min server cell | $0.0057 plan / $0 voice | ~1 min | export 8.1×; server TTS 2×, 0 flakes |
 | 2026-09-09 | phase5 | critic cell + 1/5/10-min matrix | $0.2074 plan / $0 voice | ~6 min | critic +$0.001/1 repair; matrix 32 scenes, $0.2005, all first-attempt |
 | 2026-09-09 | phase6-11 | 1-min gradient descent (local TTS), 1st attempt | $0.0064 plan / $0 voice | ~75s gen + re-export | teacherTone+visualIntent live-verified; 3 real overlap bugs found+fixed; label-clip bug found+fixed via curved connectors; suite 64 pass |
+| 2026-09-09 | phase12-13 | bicycle pump 1-min (server auto-start test) + db-indexing 1-min (overlap timing test) | $0.0087 + $0.0051 plan / $0 voice | ~37s + ~45s | kokoro persistent venv + self-healing verified (killed server, zero manual steps to recover); TTS/director overlap verified (TTS hidden entirely inside director wait); suite 65 pass |
