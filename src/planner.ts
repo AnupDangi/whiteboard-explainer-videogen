@@ -8,7 +8,7 @@ import {hasIcon} from './icons.js';
 import type {Plan,Scene,SourceDocument,Usage} from './types.js';
 export const DURATIONS=[1,5,10,30] as const;
 export function validateDuration(value:number):number {if(!DURATIONS.includes(value as any))throw new Error('Duration must be 1, 5, 10 or 30 minutes');return value;}
-interface PlannerOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;durationMinutes?:number;maxCostUsd?:number;visualCritic?:boolean;sessionId?:string;cachePrompts?:boolean;onUsage?:(usage:Usage)=>void;onResponse?:(value:unknown,index:number)=>Promise<void>}
+interface PlannerOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;durationMinutes?:number;maxCostUsd?:number;visualCritic?:boolean;sessionId?:string;cachePrompts?:boolean;onUsage?:(usage:Usage)=>void;onResponse?:(value:unknown,index:number)=>Promise<void>;onContentReady?:(chapter:number,scenes:Array<{id:string;narration:string}>)=>void}
 // Optional Stage 3 — Visual Critic (openai/gpt-5.6-luna): reviews a rendered scene thumbnail
 // and may request one bounded repair pass. Off by default (extra cost/latency); never fails
 // the chapter itself — any critic-path error is swallowed and the un-repaired scene is kept.
@@ -162,7 +162,7 @@ export function checkConceptBudget(scenes:LooseScene[]):string[] {
   }
   return failures;
 }
-export async function* generateChapters(source:SourceDocument,{env=process.env,fetcher=fetch,signal,durationMinutes=1,maxCostUsd=1,visualCritic=false,sessionId,cachePrompts=true,onUsage,onResponse}:PlannerOptions={}):AsyncGenerator<Plan>{
+export async function* generateChapters(source:SourceDocument,{env=process.env,fetcher=fetch,signal,durationMinutes=1,maxCostUsd=1,visualCritic=false,sessionId,cachePrompts=true,onUsage,onResponse,onContentReady}:PlannerOptions={}):AsyncGenerator<Plan>{
   fetcher=loggedFetch('openrouter',fetcher);
   log('planner.started',{durationMinutes,maxCostUsd,model:env.OPENROUTER_MODEL||'google/gemini-3.8-flash'});
   validateDuration(durationMinutes);
@@ -375,7 +375,14 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
       const CHAPTER_REGENERATIONS=2;
       for(let regen=0;regen<CHAPTER_REGENERATIONS;regen++){
         try{
-          plan=await directScene(await planContent(),outline.chapters[chapter].arc);
+          const content=await planContent();
+          // Phase 12: narration is final the moment content validates — the director only
+          // adds visual metadata TTS never reads. Let the caller start synthesis now instead
+          // of waiting ~8s for the director call too. Fired on every regen attempt; a stale
+          // notification (this attempt's content later gets discarded) is harmless — the
+          // consumer only trusts a cached result if its narration text still matches.
+          onContentReady?.(chapter,content.scenes.map(s=>({id:s.id,narration:s.narration})));
+          plan=await directScene(content,outline.chapters[chapter].arc);
           break;
         }catch(error){
           log('planner.chapter-regenerate',{chapter:chapter+1,regen:regen+1,willRetry:regen<CHAPTER_REGENERATIONS-1,error},'warn');

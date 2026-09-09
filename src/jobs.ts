@@ -1,5 +1,5 @@
 import {log,logContext} from './logger.js';
-import type {GenerationOptions,Usage,SourceDocument,Plan,JobSnapshot,InternalJob,Providers} from './types.js';
+import type {GenerationOptions,Usage,SourceDocument,Plan,JobSnapshot,InternalJob,Providers,Timing} from './types.js';
 import {ingestSource} from './sources.js';
 import {generateChapters,validateDuration} from './planner.js';
 import {randomUUID} from 'node:crypto';
@@ -57,6 +57,25 @@ export class JobStore {
     // on completion or failure alongside the planner spans already on job.usage.
     const ttsMsByScene:Record<string,number>={};
     const persistSpans=()=>{job.spans={...job.usage?.spans,ttsMsByScene:{...ttsMsByScene}};};
+    // Phase 12: overlap TTS with the Visual Director call instead of waiting for it. The
+    // director only decides kind/shape/layout — narration text is already final the moment
+    // the Teaching Planner (content stage) validates, so there's no real reason TTS has to
+    // wait ~8s for a call that produces visual metadata TTS never reads. Only wired for
+    // kokoro (free/local): starting a speculative ElevenLabs call before a chapter is fully
+    // committed would burn paid API usage on content a later regeneration might discard.
+    // Correctness: keyed by (sceneId, narration) so a stale speculative result (from an
+    // earlier CHAPTER_REGENERATIONS attempt whose narration differs) is never reused — the
+    // real call below falls back to a fresh synth if the text doesn't match.
+    const speculativeSpeech=new Map<string,{narration:string;promise:Promise<{audio:Buffer;timing:Timing;format?:'wav'|'mp3'}>}>();
+    const onContentReady=(options.narration&&options.ttsProvider!=='elevenlabs')
+      ?(_chapter:number,scenes:Array<{id:string;narration:string}>)=>{
+          for(const s of scenes){
+            const speech=(this.providers.speech||generateKokoroSpeech)(s.narration,{signal,voiceId:options.voiceId});
+            speech.catch(()=>{}); // real consumer (below) reports the failure; this just prevents an unhandled-rejection warning if it's never awaited (stale/discarded)
+            speculativeSpeech.set(s.id,{narration:s.narration,promise:speech});
+          }
+        }
+      :undefined;
     try {
       job.status='planning';await this.save(job,'planning');
       let sourceDocument!:SourceDocument;
@@ -67,7 +86,7 @@ export class JobStore {
         job.source={kind:sourceDocument.kind,label:sourceDocument.label,sha256:sourceDocument.sha256,characters:sourceDocument.text.length};
         await writeFile(join(this.root,job.id,'source.json'),JSON.stringify(sourceDocument));
       }
-      const plans=options.mode==='fixture'?[validatePlan(fixtures[options.fixture||''])]:this.providers.plan?[await this.providers.plan(options.prompt||'',{signal})]:generateChapters(sourceDocument,{signal,durationMinutes:options.durationMinutes??1,maxCostUsd:options.maxCostUsd??1,visualCritic:options.visualCritic??false,sessionId:job.id,cachePrompts:options.cachePrompts??true,onUsage:(usage:Usage)=>{job.usage=usage;log('planner.usage',{...usage});},onResponse:async(value,index)=>{await writeFile(join(this.root,job.id,`planner-${index}.json`),JSON.stringify(value,null,2));}});
+      const plans=options.mode==='fixture'?[validatePlan(fixtures[options.fixture||''])]:this.providers.plan?[await this.providers.plan(options.prompt||'',{signal})]:generateChapters(sourceDocument,{signal,durationMinutes:options.durationMinutes??1,maxCostUsd:options.maxCostUsd??1,visualCritic:options.visualCritic??false,sessionId:job.id,cachePrompts:options.cachePrompts??true,onUsage:(usage:Usage)=>{job.usage=usage;log('planner.usage',{...usage});},onResponse:async(value,index)=>{await writeFile(join(this.root,job.id,`planner-${index}.json`),JSON.stringify(value,null,2));},onContentReady});
       job.totalScenes=options.mode==='model'&&!this.providers.plan?(options.durationMinutes??1)*2:undefined;
       for await(const plan of plans){
         signal.throwIfAborted();job.title=plan.title;job.totalScenes??=plan.scenes.length;job.status='preparing';await queueSave('chapter-ready');
@@ -95,7 +114,10 @@ export class JobStore {
                 await queueSave('speech-started');
                 try {
                   const speechStarted=performance.now();
-                  const speech=await (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateKokoroSpeech))(source.narration,{signal,voiceId:options.voiceId});
+                  const speculative=speculativeSpeech.get(source.id);
+                  const speech=await (speculative&&speculative.narration===source.narration
+                    ? speculative.promise
+                    : (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateKokoroSpeech))(source.narration,{signal,voiceId:options.voiceId}));
                   signal.throwIfAborted();timing=speech.timing;
                   ttsMsByScene[source.id]=Math.round(performance.now()-speechStarted);
                   log('speech.ready',{sceneId:source.id,elapsedMs:ttsMsByScene[source.id],bytes:speech.audio.length,format:speech.format||'mp3',words:speech.timing.words.length,timing:speech.timing.kind,durationMs:speech.timing.durationMs});
