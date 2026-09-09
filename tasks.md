@@ -169,3 +169,4 @@
 | 2026-09-09 | phase3 | 10-min solar A/B (cached vs --no-cache) | $0.0749 vs $0.0778 plan / $0 voice | ~10 + 6 min | 34% tokens cached; idempotence fix unblocks export; suite 60 pass |
 | 2026-09-09 | phase4 | export re-run + 1-min server cell | $0.0057 plan / $0 voice | ~1 min | export 8.1×; server TTS 2×, 0 flakes |
 | 2026-09-09 | phase5 | critic cell + 1/5/10-min matrix | $0.2074 plan / $0 voice | ~6 min | critic +$0.001/1 repair; matrix 32 scenes, $0.2005, all first-attempt |
+| 2026-09-09 | phase6-11 | 1-min gradient descent (local TTS), 1st attempt | $0.0064 plan / $0 voice | ~75s gen + re-export | teacherTone+visualIntent live-verified; 3 real overlap bugs found+fixed; label-clip bug found+fixed via curved connectors; suite 64 pass |

@@ -1,3 +1,55 @@
+# Agent handoff — 2026-09-09 (Phases 6-11: quality optimization pass)
+
+## Current state (latest session)
+
+User reported: doesn't feel like a real teacher, scene inconsistencies,
+overlapping content, icons/visuals not polished. Followed
+`docs/OPTIMIZATION_PLAN.md` (Phase 6-12), reprioritized to match the
+report, executed Phases 6, 8, 7, 9, 10, 11 in that order (Phase 12
+latency explicitly skipped — not a reported gap). Full checklist,
+acceptance criteria and evidence in `tasks.md` (search "Phase 6").
+Suite: 64 pass, 0 fail, 2 skipped (need live TTS creds). One real paid
+generation run ($0.0064, gradient descent, first attempt) used to
+validate live, not just synthetic tests.
+
+**What shipped:**
+- Phase 6: `teacherTone` (captured on the outline since a prior session,
+  never wired) now actually reaches the narration prompt.
+- Phase 8: found and fixed THREE real bugs in uncommitted overlap-
+  prevention code from a prior session (width grown from unwrapped label
+  ignoring wrapping; height growth crossing the font-size threshold used
+  later so the two disagreed; no shrink-to-fit fallback for tight slots).
+  Replaced the iterative pairwise push-apart (converged only
+  asymptotically, could cascade) with a provably-correct one-pass sweep.
+  Verified via a stress test across all 7 layouts × counts 2-6 × long
+  labels: zero overlaps, zero out-of-bounds.
+- Phase 7: added `visualIntent` per node — a Semantic Storyboard field
+  (V2 §8) the Visual Director now treats as more authoritative than the
+  label. Same 2-stage pipeline, no new agent. Live-verified: a real
+  generation produced e.g. visualIntent "U-shaped bowl curve" → circle
+  shape.
+- Phase 9: dot-grid whiteboard background texture + a two-layer
+  slightly-offset highlight wash instead of one flat rect.
+- Phase 10: verified (no code change) pencil region-jumping already
+  falls out of the existing per-frame active-element selection; now
+  also follows the Phase 11 curve tangent correctly.
+- Phase 11: curved (quadratic bezier) connectors, replacing straight
+  lines. Fixed a bug found DURING live validation of Phase 7: edge
+  labels rendered at the raw straight-line midpoint and could clip
+  behind an adjacent node on a short connector — re-rendered the same
+  real job's frames before/after to confirm the fix.
+
+**Next bounded task for a future agent:** Phase 11's remaining label-
+clip residual on very tight gaps (small edge-touch, not a hard overlap
+— see tasks.md Phase 11 note) could use another pass if it still reads
+as a problem in more real generations. Otherwise: Phase 9's deferred
+per-icon redesign (all 32+ kinds in `icons.ts`), or Phase 11's deferred
+real text measurement (opentype.js/canvas measureText replacing the
+character-width heuristic), are the next-highest-value items per
+`docs/OPTIMIZATION_PLAN.md`.
+
+---
+
 # Agent handoff — 2026-09-09 (ALL PHASES COMPLETE: teacher program + critic + matrix)
 
 ## Current state
