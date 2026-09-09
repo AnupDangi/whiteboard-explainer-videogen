@@ -1,3 +1,16 @@
+# Latest observed results — 2026-09-09, multi-video review
+
+Evidence and method: [VIDEO_QUALITY_REVIEW.md](VIDEO_QUALITY_REVIEW.md). Proposed next work: [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md). Earlier entries below are historical and can contain superseded provider behavior, test counts and unverified claims; do not use them as current acceptance evidence.
+
+- Five additional videos, 877.583 seconds total, reviewed through ordered frame samples, selected dense windows, saved narration/timing and WAV energy. No auditory quality rating was performed.
+- Full suite: `npm test` with loopback access, 64 passed / 0 failed / 1 skipped; build passed. Log: `output/review-2026-09-09/tests.log`.
+- 32 saved WAV scenes: last-word timestamp precedes audio end by 1.55–5.125 s; uncovered tails have non-silent energy. This challenges alignment confidence but does not establish exact word errors without listening/independent alignment.
+- Reproduced current-source defects: .25 configured fill becomes full opacity; captions return to opening text when activeWord is -1; repeated key kinds and uniform token boxes rejected; one-scene repair response constrained to two scenes.
+- Historical prepared-completion spans: DNA 41.477 s, tectonics 39.487 s, printing 45.201 s. These exclude MP4 export and local compute cost; no new provider throughput benchmark was run.
+- Source, tests and media were not modified by fixes. Documentation and ignored evidence only; roadmap implementation remains pending.
+
+---
+
 # Observed results
 
 Date: 2026-09-07. Environment: Linux x64, Node v24.19.0. Local prototype only.

@@ -1,5 +1,23 @@
 # Whiteboard Teacher Program — phased task tracker
 
+## Current program — multi-video review, 2026-09-09
+
+Status tracking lives here; detailed contracts/tasks/gates live in [docs/OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md). Evidence: [docs/VIDEO_QUALITY_REVIEW.md](docs/VIDEO_QUALITY_REVIEW.md). Older phases and standing decisions below are historical; new findings supersede their quality assumptions, and the robot/local default notes are obsolete (current default is Kokoro).
+
+- [x] Review five additional full video timelines through samples, scripts and WAV analysis; create evidence-backed roadmap. No continuous listening claim.
+- [ ] A — Alignment diagnosis and baseline correctness (A1–A6); begin with A1–A5.
+- [ ] B — Versioned rich mechanism fixtures and asset contracts.
+- [ ] C — Measured geometry, paths, drawing events and preflight.
+- [ ] D — Semantic storyboards, director capability and continuity.
+- [ ] E — Verified speech-bound events and pacing.
+- [ ] F — Bounded semantic/visual quality review.
+- [ ] G — Measured scheduling, caching and export optimization.
+- [ ] H — Held-out evaluation and scoped parity decision.
+
+Planning is complete; implementation is pending. Mark a phase complete only when its acceptance evidence is recorded. No source edits, paid generations, commits or pushes were made during the review.
+
+---
+
 > Source of truth for all phases below. Update discipline: tick `[ ]`→`[x]`
 > only when that phase's acceptance criteria are verified by a passing run,
 > never on intent. Each phase logs: date, job IDs, cost, wall time, result.
@@ -9,7 +27,7 @@
 - [x] Consistency enforced by **deterministic validators**, not LLM reviewers (V2 §32)
 - [x] **DeepSeek dropped** from matrix (Gemini-only multi-chapter; DeepSeek 1-min spot checks)
 - [x] No new LLM micro-agents (V2 §6/§30); researcher stays deterministic (V2 §7)
-- [x] Voices: ElevenLabs + robot + Kokoro all kept; demo default `local`
+- [x] Voices: ElevenLabs + robot + Kokoro all kept; demo default is now **Kokoro** (robot/`local` was the earlier default, now obsolete)
 
 ## Phase 0 — Time instrumentation (FIRST)
 - [x] Per-stage spans in job events: `outlineMs`, per-chapter `contentMs`/`directorMs`, per-scene `ttsMs`, `exportRenderMs`/`exportMuxMs`

@@ -1,5 +1,7 @@
 # Hypothesis register
 
+> **Historical.** Superseded by [VIDEO_QUALITY_REVIEW.md](VIDEO_QUALITY_REVIEW.md) (2026-09-09) and the roadmap in [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md). Entries below reflect a pre-illustrations, pre-critic, pre-Kokoro state of the code; do not use them as current acceptance evidence.
+
 Updated: 2026-09-07. Owner: Anup Dangi. Version: 0.1.
 
 ## Research question

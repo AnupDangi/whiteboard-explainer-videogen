@@ -3,7 +3,7 @@ export interface PlanNode { id: string; label: string; wordIndex: number; kind?:
 export interface PlanEdge { from: string; to: string; label?: string }
 export interface Scene { id: string; title: string; narration: string; layout: LayoutName; nodes: PlanNode[]; edges: PlanEdge[]; note?: string }
 export interface Plan { version: 1; title: string; scenes: Scene[] }
-export interface Timing { kind: string; words: {word:string;startMs:number;endMs:number}[]; durationMs:number }
+export interface Timing { kind: string; words: {word:string;startMs:number;endMs:number}[]; durationMs:number; gapMs?:number; trailingNonSilent?:boolean }
 export interface Usage { model:string; promptTokens:number; completionTokens:number; cachedTokens:number; costUsd:number; calls:number; spans?: PlannerSpans }
 /** Phase 0 timing spans: wall ms per planner stage, accumulated across attempts. */
 export interface PlannerSpans { outlineMs:number; chapters:Record<string,{contentMs:number;directorMs:number}> }

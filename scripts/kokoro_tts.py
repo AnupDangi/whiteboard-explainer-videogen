@@ -152,8 +152,22 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
         out.setparams((1, 2, SAMPLE_RATE, 0, 'NONE', 'not compressed'))
         out.writeframes(pcm16.tobytes())
     duration_ms = len(samples) / SAMPLE_RATE * 1000
-    return dict(audio_base64=base64.b64encode(buffer.getvalue()).decode(),
-                timing=dict(kind='kokoro-aligned', words=words, durationMs=duration_ms))
+    # A1: Diagnose trailing audio after last word timestamp.
+    # The total WAV duration (duration_ms) may exceed the last word's endMs;
+    # this gap contains the trailing non-silent signal identified in the video review.
+    last_word_end = words[-1]['endMs'] if words else 0
+    gap_ms = duration_ms - last_word_end
+    trailing_non_silent = False
+    if gap_ms > 0:
+        # Check the final 200 ms of audio for non-silence (RMS > -40 dBFS).
+        start_idx = max(0, len(samples) - int(SAMPLE_RATE * 0.2))
+        segment = samples[start_idx:]
+        rms = float(np.sqrt(np.mean(segment ** 2))) if segment.size else 0.0
+        trailing_non_silent = rms > 0.001  # -40 dBFS threshold relative to peak=1
+    result = dict(audio_base64=base64.b64encode(buffer.getvalue()).decode(),
+                  timing=dict(kind='kokoro-aligned', words=words, durationMs=duration_ms,
+                              gapMs=gap_ms, trailingNonSilent=trailing_non_silent))
+    return result
 
 
 if __name__ == '__main__':

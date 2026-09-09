@@ -1,3 +1,5 @@
+> Historical report notice — 2026-09-09: the analysis below is retained as history, not current evidence. Its silent-fallback descriptions, pricing/test counts, broad duration claims and inference about Lamina's limits are superseded or unverified. Current code surfaces provider failures. Consult [VIDEO_QUALITY_REVIEW.md](VIDEO_QUALITY_REVIEW.md), [RESULTS.md](RESULTS.md) and [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) before implementation decisions.
+
 # Analysis Report — Quantified Voice & Cost Model
 
 **Date:** 2026-09-07. Environment: Node v24, Linux x64. This is an independent feasibility experiment on structured scene data → timed whiteboard animation. No claim about Lamina Labs' private implementation.

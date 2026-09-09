@@ -1,3 +1,17 @@
+# Current handoff — 2026-09-09, multi-video architecture review
+
+The user requested a broader video review and a complete implementation plan, not code changes. Read [VIDEO_QUALITY_REVIEW.md](VIDEO_QUALITY_REVIEW.md), then [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md). The roadmap supersedes the older priority ordering below; historical completed phases do not establish current quality parity.
+
+Reviewed full timelines of the DNA, tectonics and printing five-minute outputs plus the test bicycle-pump and GPS videos using sampled frames, saved scripts/timings, and WAV energy. This was not continuous audiovisual listening. Evidence is in ignored `output/review-2026-09-09/` with hashes, contact sheets, matched jobs and audio-tail measurements.
+
+Highest-priority new evidence: all 32 audited WAV scenes have 1.55–5.125 seconds of audio after the final recorded word, containing substantial non-silent signal. Exact spoken boundaries/root cause still need listening or independent alignment. Current code also confirms caption reset in timing gaps, numeric fill opacity treated as boolean, rejection of useful repeated kinds/all-box token rows, and a single-scene critic repair using a two-scene schema. These are not fixed yet.
+
+Next bounded implementation batch: roadmap A1–A5 (alignment diagnosis, captions, opacity, repeated-instance validation, repair schema). Then authored V2 mechanism fixtures for DNA, pump and attention before model generation. Preserve deterministic data, V1 compatibility and existing media. Do not start a framework rewrite or an uncontrolled generation matrix.
+
+Verification: `npm test` with loopback access → build passed, 64 passed, 0 failed, 1 skipped. No application source changed, paid generation, commits or pushes. This session produced documentation and local ignored evidence only. See the review for baseline/provenance limitations and the roadmap for proposed acceptance gates.
+
+---
+
 # Agent handoff — 2026-09-09 (Phases 6-11: quality optimization pass)
 
 ## Current state (latest session)

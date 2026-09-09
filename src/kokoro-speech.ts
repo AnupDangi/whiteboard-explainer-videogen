@@ -48,6 +48,13 @@ function ensureServer(serverUrl: string, env: NodeJS.ProcessEnv, fetcher: typeof
  *  the per-request spawn path (~4-5s of cold model load every single scene) is now
  *  only a fallback ensureServer reaches for when the venv exists but the server isn't
  *  running yet; once it's up, every subsequent call reuses it. */
+function classifyGap(timing:Timing):{gapClassification:string;activeAfterLastWordMs:number}{
+  const lastWordEnd=timing.words[timing.words.length-1].endMs;
+  const gapMs=timing.durationMs-lastWordEnd;
+  if(gapMs<=0)return{gapClassification:'none',activeAfterLastWordMs:0};
+  if(timing.trailingNonSilent)return{gapClassification:'non-silent-signal',activeAfterLastWordMs:gapMs};
+  return{gapClassification:'silent-tail',activeAfterLastWordMs:gapMs};
+}
 export function generateKokoroSpeech(text: string, {signal, env = process.env, voiceId, fetcher = fetch}: ProviderOptions & {fetcher?: typeof fetch} = {}) {
   const voice = voiceId || 'af_heart';
   log('speech.request', {provider: 'kokoro', voice, characters: text.length});
@@ -62,8 +69,11 @@ export function generateKokoroSpeech(text: string, {signal, env = process.env, v
       async response => {
         const result = await response.json() as {audio_base64?: string; timing?: Timing; error?: string};
         if (!response.ok || !result.audio_base64 || !result.timing?.words?.length) throw new Error(result.error || `Kokoro server HTTP ${response.status}`);
+        const timing=result.timing as Timing;
+        const gapClassification=classifyGap(timing);
+        log('speech.alignment', {provider: 'kokoro', gapMs:timing.durationMs-timing.words[timing.words.length-1].endMs, gapClassification:gapClassification.gapClassification, words:timing.words.length, trailingNonSilent:timing.trailingNonSilent});
         log('speech.transport', {provider: 'kokoro', via: 'server', elapsedMs: Math.round(performance.now() - started)});
-        return {audio: Buffer.from(result.audio_base64, 'base64'), timing: result.timing, format: 'wav' as const};
+        return {audio: Buffer.from(result.audio_base64, 'base64'), timing, format: 'wav' as const, _gapClassification:gapClassification.gapClassification, _activeAfterLastWordMs:gapClassification.activeAfterLastWordMs};
       },
     );
   });

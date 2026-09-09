@@ -216,3 +216,40 @@ test('Compile is idempotent: recompiling compiled scenes reproduces geometry',()
     }
   }
 });
+
+test('A2: caption holds the last spoken phrase through a mid-narration gap',()=>{
+  // Regression: the "hold" branch used to index from sceneState().activeWord, which is -1
+  // for every gap by definition, so it always resolved to an empty window and the caption
+  // blanked out on every inter-word pause — not just on the long tail after the last word.
+  const words=[
+    {word:'alpha',   startMs:0,    endMs:250},
+    {word:'bravo',   startMs:250,  endMs:500},
+    {word:'charlie', startMs:500,  endMs:750},
+    {word:'delta',   startMs:750,  endMs:1000},  // word A: last word before the gap
+    {word:'echo',    startMs:1800, endMs:2100},  // word B: 800 ms later
+    {word:'foxtrot', startMs:2100, endMs:2400},
+  ];
+  const timing={kind:'estimated',words,durationMs:2400};
+  const source={id:'gap',title:'Gap scene',narration:words.map(w=>w.word).join(' '),layout:'flow',
+    nodes:[{id:'n0',label:'First idea',wordIndex:0},{id:'n1',label:'Second idea',wordIndex:4}],
+    edges:[{from:'n0',to:'n1'}]};
+  const scene=compileScene(structuredClone(source),timing);
+  const caption=svg=>[...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(m=>m[1].trim()).filter(Boolean);
+
+  // Inside the 800 ms mid-narration gap: no word is active, but the phrase must be held.
+  assert.equal(sceneState(scene,1400).activeWord,-1,'time 1400 sits between words');
+  const held=caption(renderSVG(scene,1400));
+  assert(held.length>0,'caption is held (non-empty) during a mid-narration gap');
+  assert(held.join(' ').includes('delta'),'held caption contains the last spoken word');
+  assert(!held.join(' ').includes('[object Object]'),'caption renders word text, not object stringification');
+  assert(!held.join(' ').includes('echo'),'held caption does not leak words not yet spoken');
+
+  // Sanity: a word that IS active still renders, and the long tail still blanks out.
+  assert(caption(renderSVG(scene,900)).join(' ').includes('delta'),'active word renders');
+  assert.equal(caption(renderSVG(scene,2400)).length,0,'caption hides after the final word ends');
+  // Before the very first word there is nothing to hold, so the caption stays empty.
+  const late={...timing,words:words.map(w=>({...w,startMs:w.startMs+400,endMs:w.endMs+400})),durationMs:2800};
+  const lateScene=compileScene(structuredClone(source),late);
+  assert.equal(sceneState(lateScene,200).activeWord,-1,'time 200 is before the first word');
+  assert.equal(caption(renderSVG(lateScene,200)).length,0,'no caption before the first word completes');
+});

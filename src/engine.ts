@@ -389,6 +389,15 @@ export function sceneState(scene:CompiledScene,timeMs:number) {
     edges:scene.edges.map(e=>({...e,progress:progressAt(t,e.startMs,e.drawMs)})),
     activeWord:scene.timing.words.findIndex(w=>t>=w.startMs&&t<w.endMs)};
 }
+/** Index of the last word that has finished speaking at or before `timeMs`, or -1 when we are
+ *  still before the first word ends. Companion to `sceneState().activeWord` (which is -1 in
+ *  every gap): this is the search the caption "hold" state needs, since there is no active
+ *  index to count back from while the narration is between words. */
+export function lastCompletedWordIndex(words:{endMs:number}[],timeMs:number) {
+  let index=-1;
+  for(let i=0;i<words.length;i++) if(words[i].endMs<=timeMs) index=i;
+  return index;
+}
 export function locateScene(scenes:CompiledScene[],timeMs:number) {
   let offset=0;
   for(let i=0;i<scenes.length;i++) {
@@ -453,8 +462,43 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
   const transitionFade=timeMs<300?progressAt(timeMs,0,300):1;
   const texts=(lines:string[],x:number,y:number,size:number)=>lines.map((line,i)=>`<text x="${x}" y="${y+i*size*1.18}" text-anchor="middle" font-size="${size}">${esc(line)}</text>`).join('');
   const textsLeft=(lines:string[],x:number,y:number,size:number)=>lines.map((line,i)=>`<text x="${x}" y="${y+i*size*1.18}" text-anchor="start" font-size="${size}">${esc(line)}</text>`).join('');
-  const captionStart=Math.max(0,s.activeWord-6);
-  const caption=scene.timing.words.slice(captionStart,captionStart+14);
+  // A2: Caption gap/tail state — opening words must not reappear outside word intervals.
+  // activeWord is -1 when t is outside all word [startMs, endMs) intervals.
+  // Short gap: hold the current visible phrase; long gap (past last word): hide caption.
+  // At most two measured lines; deterministic seek (no layout shift on time skip).
+  let captionText: string[];
+  const captionMs = Math.max(0, Math.min(timeMs, scene.durationMs));
+  if (s.activeWord >= 0) {
+    // Within narration: show a measured trailing window, at most 14 words total,
+    // split into a maximum of two lines for legibility at 640×360.
+    const winStart = Math.max(0, s.activeWord - 6);
+    const win = scene.timing.words.slice(winStart, winStart + 14).map(w=>w.word);
+    // Phrase-wrap into at most two lines using the existing measureText utility.
+    const firstLine = win.slice(0, 7).join(' ');
+    const secondLine = win.slice(7).join(' ');
+    captionText = [firstLine, secondLine].filter(l=>l.trim().length > 0);
+  } else {
+    // Outside word intervals: if we are after the last word end, hide caption entirely;
+    // otherwise (before first word or in an inter-word gap) hold the last visible phrase
+    // by showing the final completed phrase from the nearest preceding word, if any.
+    const lastWord = scene.timing.words[scene.timing.words.length - 1];
+    if (lastWord && captionMs >= lastWord.endMs) {
+      // Long gap after narration: hide caption.
+      captionText = [];
+    } else {
+      // Short gap / before first word: hold the phrase ending at the last completed word.
+      // `s.activeWord` is -1 for the whole of this branch (that is the precondition for
+      // being here), so the held window is located by searching the word list directly.
+      const heldIndex = lastCompletedWordIndex(scene.timing.words, captionMs);
+      if (heldIndex >= 0) {
+        const startIdx = Math.max(0, heldIndex - 6);
+        const held = scene.timing.words.slice(startIdx, heldIndex + 1).map(w=>w.word);
+        captionText = [held.join(' ')];
+      } else {
+        captionText = [];
+      }
+    }
+  }
   // Phase 9: a faint dot-grid texture so the board reads as a physical whiteboard rather
   // than a flat fill (V2 §9/§11 "rich visuals... belong on one whiteboard"). Subtle enough
   // to never compete with content — a fixed pattern def, not re-generated per frame's data.
@@ -537,8 +581,9 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
       const isC=n.shape==='circle';
       const perimeter=isC?Math.PI*(3*(rx+ry)-Math.sqrt((3*rx+ry)*(rx+3*ry))):2*(n.w+n.h);
       const strokeWidth=n.emphasis?STROKE_TOKENS.emphasis:STROKE_TOKENS.border;
+      const fillOp=n.fillOpacity??0.25;
       const open=isC?`<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"`:`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="0"`;
-      svg+=`${open} fill="${n.color}" fill-opacity="${n.fillOpacity?Math.max(0,(n.progress-.35)/.65):0}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
+      svg+=`${open} fill="${n.color}" fill-opacity="${fillOp}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
       // Emphasis wash: marker-like highlight sweep behind the label for the result node.
       if(n.emphasis&&n.progress>.55)svg+=isC
         ?renderHighlightEllipse(cx,cy,rx*0.78,ry*0.42,0.4*Math.min(1,(n.progress-.55)/.45))
@@ -566,7 +611,8 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     }
     const perimeter=2*(n.w+n.h);
     const strokeWidth=n.emphasis?STROKE_TOKENS.emphasis:STROKE_TOKENS.border;
-    svg+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" fill="${n.color}" fill-opacity="${n.fillOpacity?Math.max(0,(n.progress-.35)/.65):0}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
+    const fillOp=n.fillOpacity??0.25;
+    svg+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" fill="${n.color}" fill-opacity="${fillOp}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
     if(n.emphasis&&n.progress>.55)svg+=renderHighlightRect(n.x+10,n.y+n.h*0.3,n.w-20,n.h*0.4,8,0.4*Math.min(1,(n.progress-.55)/.45));
     if(n.progress>.4)svg+=`<g opacity="${Math.min(1,(n.progress-.4)/.3)}">${renderIcon(n.kind,n.x+22,n.y+22,15,stroke)}</g>`;
     if(n.progress>.45)svg+=`<g opacity="${(n.progress-.45)/.55}">${texts(n.lines,n.x+n.w/2,n.y+n.h/2-(n.lines.length-1)*n.fontSize*.59+n.fontSize*.35,n.fontSize)}</g>`;
@@ -578,7 +624,8 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     svg+=`<g opacity="${0.6+0.4*pencilFade}">${renderPencil(pencil.x,pencil.y,pencil.angle)}</g>`;
   }
   svg+=`<g opacity="${titleProgress}"><rect x="70" y="640" width="1140" height="58" rx="8" fill="#f4f1e6" stroke="#d8d2c0"/><text x="90" y="676" font-size="22" xml:space="preserve">`;
-  caption.forEach((word,i)=>{const spoken=captionStart+i===s.activeWord;svg+=`<tspan fill="${spoken?'#1a4d3a':'#2b3d38'}" font-weight="${spoken?'700':'400'}">${esc(word.word)} </tspan>`;});
+  const showSpoken = s.activeWord >= 0;
+  captionText.forEach((line,i)=>{const spoken=showSpoken&&i===0;svg+=`<tspan fill="${spoken?'#1a4d3a':'#2b3d38'}" font-weight="${spoken?'700':'400'}" dy="${i===0?1.2:2.8}">${esc(line)} </tspan>`;});
   svg+='</text></g>';
   return svg+'</g></svg>';
 }
