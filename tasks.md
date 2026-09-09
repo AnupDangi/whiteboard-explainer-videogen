@@ -223,13 +223,33 @@
   long-labels stress sweep from the Phase 8 work — still zero overlaps, zero out-of-bounds
   with the new (generally different) measured widths.
 
-## Phase 9 remainder + Skills/prompt consistency audit — DISPATCHED to parallel Opus agents
-> Session context: Sep 9 2026. Both work on non-overlapping files (icons.ts/illustrations.ts
-> vs. skills/*.md + planner.ts prompt strings only) so they can run concurrently without
-> merge conflicts. See git log around this tasks.md entry for the merge commits and their
-> actual outcomes — this note describes what was ASKED, not necessarily what shipped; check
-> the Phase 9 and "prompt consistency" sections above/below for the real done/not-done state
-> once merged.
+## Phase 9 remainder + Skills/prompt consistency audit (DONE — merged from two parallel Opus agents)
+> Session context: Sep 9 2026. Both worked on non-overlapping files (icons.ts vs. planner.ts
+> prompt strings) in isolated worktrees so they could run concurrently without merge
+> conflicts. Both worktrees had drifted behind `main` by the time of merge, but neither had
+> touched a file the other side had since changed, so each agent's file was copied onto the
+> then-current `main` verbatim rather than git-merged (avoids resurrecting stale reverts of
+> unrelated Phase 6-13 work already on `main`). Verified: `npm run build` clean, suite 64/64
+> (1 skipped — Kokoro server not pre-warmed in this run).
+- [x] **Icon rewrite** (`src/icons.ts`): replaced the old icon set with a shared low-level
+      stroke primitive (`draw`/`glyph`) so every icon draws with consistent stroke width,
+      dash caps and paper-colored knockout circles at joints — plus new multi-part glyphs
+      (bust/head figures, gear teeth, radial burst variants) reused across several kinds
+      instead of one-off paths per icon.
+- [x] **Prompt consistency audit** (`src/planner.ts`): addressed the user's original
+      cross-chapter coherence complaint directly in the two-stage prompt rather than in
+      skills/*.md. Added a fixed `VOICE_CONTRACT` (byte-identical narrator voice rules across
+      all chapters — banned AI-tell phrases, consistent register, contractions) and a
+      `CONTINUITY_GUIDANCE` block (chapters are dispatched concurrently and can't read each
+      other, so continuity is enforced via a shared canonical-term glossary built from the
+      outline's own chapter titles/key points, injected into every chapter's content prompt).
+      Outline prompt now also fixes one canonical term per concept up front. `teacherTone`
+      guidance reworded so it varies energy/pacing only, never voice/persona — closing the
+      Phase 6 risk that tone drift would read as a different narrator per chapter.
+      `SELECTION_GUIDANCE` gained explicit same-concept-same-kind/shape consistency rules
+      (outranking the earlier variety rules) and `LAYOUT_GUIDANCE` now tells the director
+      both scenes of a chapter are one call and should share a layout only when their
+      relationship genuinely matches.
 
 ## Run log (append per execution)
 | Date | Phase | Jobs | Cost | Wall | Result |
