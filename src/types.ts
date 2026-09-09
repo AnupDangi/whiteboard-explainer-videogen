@@ -1,0 +1,24 @@
+import type {NodeKind,LayoutName} from './vocabulary.js';
+export interface PlanNode { id: string; label: string; wordIndex: number; kind?: NodeKind; emphasis?: boolean; shape?: 'box'|'illustration'|'icon'|'circle'|'square'|'bullet'|'number'|'annotation'; keyPoint?: string; attachTo?: string; position?: 'below'|'above'|'left'|'right' }
+export interface PlanEdge { from: string; to: string; label?: string }
+export interface Scene { id: string; title: string; narration: string; layout: LayoutName; nodes: PlanNode[]; edges: PlanEdge[]; note?: string }
+export interface Plan { version: 1; title: string; scenes: Scene[] }
+export interface Timing { kind: string; words: {word:string;startMs:number;endMs:number}[]; durationMs:number }
+export interface Usage { model:string; promptTokens:number; completionTokens:number; cachedTokens:number; costUsd:number; calls:number; spans?: PlannerSpans }
+/** Phase 0 timing spans: wall ms per planner stage, accumulated across attempts. */
+export interface PlannerSpans { outlineMs:number; chapters:Record<string,{contentMs:number;directorMs:number}> }
+/** Persisted per-job spans: planner stages plus per-scene TTS wall ms. */
+export interface JobSpans { outlineMs?:number; chapters?:Record<string,{contentMs:number;directorMs:number}>; ttsMsByScene?:Record<string,number> }
+export interface SourceInput { kind:'prompt'|'text'|'url'|'pdf'; text?:string; url?:string; base64?:string; name?:string }
+export interface SourceDocument { kind:string; label:string; text:string; sha256:string }
+export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'local'|'elevenlabs'|'kokoro'; voiceId?:string; visualCritic?:boolean; cachePrompts?:boolean }
+export interface CompiledNode extends PlanNode { x:number; y:number; w:number; h:number; fontSize:number; lines:string[]; color:string; startMs:number; drawMs:number }
+export interface CompiledEdge extends PlanEdge { x1:number; y1:number; x2:number; y2:number; startMs:number; drawMs:number }
+export interface CompiledScene extends Scene { nodes:CompiledNode[]; edges:CompiledEdge[]; timing:Timing; audioUrl?:string; durationMs:number }
+export interface JobSnapshot {
+ id:string;status:string;revision:number;createdAt:number;mode:string;targetMinutes:number;plannerBudgetUsd:number;ttsCharacters:number;timingMode:string;simulatedDelayMs:number;scenes:CompiledScene[];availableMs:number;events:{sequence:number;type:string;atMs:number;availableMs:number}[];
+ title?:string;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;actualMinutes?:number;error?:string;usage?:Usage;source?:Omit<SourceDocument,'text'>&{characters:number};spans?:JobSpans;
+}
+export interface InternalJob extends JobSnapshot {controller?:AbortController;task?:Promise<void>}
+export interface ProviderOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;voiceId?:string}
+export interface Providers {plan?:(prompt:string,options:ProviderOptions)=>Promise<Plan>;speech?:(text:string,options:ProviderOptions)=>Promise<{audio:Buffer;timing:Timing;format?:'wav'|'mp3'}>}

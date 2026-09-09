@@ -1,0 +1,32 @@
+{
+  "name": "explain-canvas-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hypothesis-driven whiteboard explainer engine: scene data, deterministic playback, progressive delivery and MP4 export",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && node --env-file-if-exists=.env dist/src/server.js",
+    "test": "npm run build && node --test test/*.test.js",
+    "benchmark": "npm run build && node dist/scripts/benchmark.js",
+    "export": "npm run build && node dist/scripts/export.js",
+    "test:live": "npm run build && node --env-file-if-exists=.env dist/scripts/live-evaluation.js",
+    "generate-video": "npm run build && node --env-file-if-exists=.env dist/scripts/generate-video.js",
+    "kokoro-server": "sh -c '${KOKORO_PYTHON:-python3} scripts/kokoro_server.py'"
+  },
+  "optionalDependencies": {
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "ipaddr.js": "^2.5.0"
+  }
+}

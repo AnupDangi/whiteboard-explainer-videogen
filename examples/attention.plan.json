@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "title": "Attention, one idea at a time",
+  "scenes": [
+    {
+      "id": "context",
+      "title": "Words need context",
+      "narration": "A word changes meaning with its surroundings. Consider the word bank. In one sentence it describes a financial institution. In another it describes the edge of a river. Attention lets a token gather information from the other tokens in its context.",
+      "layout": "flow",
+      "note": "The same token can need different information in different sentences.",
+      "nodes": [
+        {
+          "id": "n0",
+          "label": "A token: bank",
+          "wordIndex": 0
+        },
+        {
+          "id": "n1",
+          "label": "Nearby words",
+          "wordIndex": 10
+        },
+        {
+          "id": "n2",
+          "label": "Contextual meaning",
+          "wordIndex": 20
+        }
+      ],
+      "edges": [
+        {
+          "from": "n0",
+          "to": "n1"
+        },
+        {
+          "from": "n1",
+          "to": "n2"
+        }
+      ]
+    },
+    {
+      "id": "qkv",
+      "title": "Query, key, value",
+      "narration": "Each token representation is projected into a query, a key, and a value. The query represents what information this token seeks. Keys determine how compatible other tokens are with that query. Values carry the information that will be combined. These are learned vectors, not literal questions or labels.",
+      "layout": "branch",
+      "note": "Q = XWq     K = XWk     V = XWv",
+      "nodes": [
+        {
+          "id": "n0",
+          "label": "Token representation",
+          "wordIndex": 0,
+          "kind": "token"
+        },
+        {
+          "id": "n1",
+          "label": "Query: what to seek",
+          "wordIndex": 9,
+          "kind": "question"
+        },
+        {
+          "id": "n2",
+          "label": "Key: compatibility",
+          "wordIndex": 19,
+          "kind": "key"
+        },
+        {
+          "id": "n3",
+          "label": "Value: information",
+          "wordIndex": 28,
+          "kind": "container"
+        }
+      ],
+      "edges": [
+        {
+          "from": "n0",
+          "to": "n1"
+        },
+        {
+          "from": "n0",
+          "to": "n2"
+        },
+        {
+          "from": "n0",
+          "to": "n3"
+        }
+      ]
+    },
+    {
+      "id": "weights",
+      "title": "From compatibility to weights",
+      "narration": "Compare a query against every allowed key using dot products. Divide those scores by the square root of the key dimension. Apply any required mask, then softmax. The resulting nonnegative weights sum to one across the allowed positions. A causal mask blocks access to future tokens.",
+      "layout": "flow",
+      "note": "Attention(Q, K, V) = softmax(QKᵀ / √dk + mask)V",
+      "nodes": [
+        {
+          "id": "n0",
+          "label": "Dot products",
+          "wordIndex": 0
+        },
+        {
+          "id": "n1",
+          "label": "Scale and mask",
+          "wordIndex": 11
+        },
+        {
+          "id": "n2",
+          "label": "Softmax weights",
+          "wordIndex": 23
+        }
+      ],
+      "edges": [
+        {
+          "from": "n0",
+          "to": "n1"
+        },
+        {
+          "from": "n1",
+          "to": "n2"
+        }
+      ]
+    },
+    {
+      "id": "combine",
+      "title": "Blend information, preserve meaning",
+      "narration": "Use the attention weights to combine value vectors. For illustration, suppose three weights are zero point five, zero point four, and zero point one. Multiply each value by its weight and add the results. This produces the output for one query in one head. Multiple heads learn different projections.",
+      "layout": "flow",
+      "note": "Illustrative weights only. A full transformer also has projections, residual paths and feed-forward layers.",
+      "nodes": [
+        {
+          "id": "n0",
+          "label": "0.5 v₁ + 0.4 v₂ + 0.1 v₃",
+          "wordIndex": 0
+        },
+        {
+          "id": "n1",
+          "label": "Weighted sum",
+          "wordIndex": 12
+        },
+        {
+          "id": "n2",
+          "label": "Output of one head",
+          "wordIndex": 24
+        }
+      ],
+      "edges": [
+        {
+          "from": "n0",
+          "to": "n1"
+        },
+        {
+          "from": "n1",
+          "to": "n2"
+        }
+      ]
+    }
+  ]
+}
