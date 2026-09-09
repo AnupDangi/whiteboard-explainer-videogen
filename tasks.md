@@ -128,22 +128,27 @@
 - **Acceptance:** visual check on one rendered video: pencil never lingers on a completed
   stroke, fades out between scenes.
 
-## Phase 11 — Connector routing (SCOPED DOWN — text measurement deferred, see note)
-- [ ] **Live-verified bug** (found running a real gradient-descent generation, see
+## Phase 11 — Connector routing (DONE — text measurement still deferred, see note)
+- [x] **Live-verified bug**, fixed (found running a real gradient-descent generation, see
       `output/videos/How-gradient-descent-optimizes-a-model-s-weights-1min.mp4` and the job at
-      `.data/ecb25d5a-d8de-42ce-a9f7-24a44ccfe5df/`): edge labels render at the raw midpoint of
-      `(x1,y1)`-`(x2,y2)`, so on a short connector between two close nodes the label sits
-      overlapping/clipped behind the destination shape (e.g. "determin[es]" clipped behind the
-      "Prediction Error" ellipse, "reaches" clipped behind "Minimum Loss Valley"). Fix as part
-      of this phase's connector work, not just the curve.
-- [ ] Curved (quadratic bezier) connector routing instead of straight lines, still anchored to
-      boundary points per `compileScene`'s existing edge geometry.
+      `.data/ecb25d5a-d8de-42ce-a9f7-24a44ccfe5df/`): edge labels rendered at the raw midpoint
+      of `(x1,y1)`-`(x2,y2)`, so on a short connector between two close nodes the label sat
+      overlapping/clipped behind the destination shape. Re-rendered the same real job's scenes
+      before/after: "determin[es]" and "reaches" went from clipped-inside-the-shape to clear
+      of it (small residual edge-touch on very tight gaps, not a hard overlap — acceptable).
+- [x] Curved (quadratic bezier) connector routing instead of straight lines: control point
+      bows perpendicular to the straight connector, deterministically toward -y ("up") rather
+      than a random wobble. Arc-length sampled for stroke-dasharray/dashoffset reveal (same
+      technique already used for box/circle outlines elsewhere in the renderer). Pencil
+      position and arrowhead angle both now follow the true bezier tangent, not the old
+      straight-line approximation.
 - **Deferred, not done this pass:** real glyph-accurate text measurement (opentype.js/canvas
   measureText) — the current heuristic is now used consistently by both layout and the new
   Phase 8 overlap prevention, so it's internally consistent even if not pixel-perfect; V2 marks
   this lower-impact than the items above.
-- **Acceptance:** edges render as curves in an engine test snapshot; no new overlaps
-  introduced; suite green.
+- **Acceptance:** new engine test confirms the path uses a bezier (`Q` command, not `L`) and
+  the label renders off the straight connector line; re-rendered real job frames confirm the
+  live-verified clipping bug is fixed; suite green (64/64, 2 skipped).
 
 ## Phase 12 — Latency (SKIPPED — not one of the user's reported gaps this round)
 

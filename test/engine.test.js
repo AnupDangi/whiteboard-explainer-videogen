@@ -20,6 +20,22 @@ test('Phase 7: visualIntent is validated and preserved as planning metadata',()=
   // Older fixtures without visualIntent still validate (backward compatible, absent from output).
   const without=copy();assert.equal(validatePlan(without).scenes[0].nodes[0].visualIntent,undefined);
 });
+test('Phase 11: edges route as a curve, not a straight line, and the label clears the line',()=>{
+  const p=copy();p.scenes[0].edges[0]={...p.scenes[0].edges[0],label:'becomes'};
+  const scene=compileScene(p.scenes[0]);
+  const edge=scene.edges[0];
+  const done=renderSVG(scene,edge.startMs+edge.drawMs);
+  assert.match(done,/<path d="M [\d.-]+ [\d.-]+ Q [\d.-]+ [\d.-]+ [\d.-]+ [\d.-]+"/,'edge path uses a quadratic bezier (Q), not a straight line (L)');
+  // Label position must not sit on the straight line between endpoints (i.e. it must have
+  // been nudged off-axis by the curve's bow) — this is the fix for the live-verified bug
+  // where a short connector's label rendered clipped behind the destination shape.
+  const straightMidX=(edge.x1+edge.x2)/2,straightMidY=(edge.y1+edge.y2)/2;
+  const textTags=[...done.matchAll(/<text x="([\d.-]+)" y="([\d.-]+)" text-anchor="middle" font-size="14"/g)];
+  assert(textTags.length>0,'edge label text was rendered');
+  const [,lx,ly]=textTags[0];
+  const distFromStraightMid=Math.hypot(Number(lx)-straightMidX,Number(ly)-straightMidY);
+  assert(distFromStraightMid>5,'label sits off the straight connector line, not on top of it');
+});
 test('H05/H13/H17 frame is deterministic after arbitrary seeking; prior geometry stable',()=>{
   const scene=compileScene(copy().scenes[0]);const before=renderSVG(scene,7000);
   for(const t of [0,90000,2500,1,300])renderSVG(scene,t);

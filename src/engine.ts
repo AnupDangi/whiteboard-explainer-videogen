@@ -431,13 +431,41 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
   let pencil:{x:number;y:number;angle:number}|null=null;
   for(const e of s.edges) {
     if(e.progress<=0)continue;
-    const x=e.x1+(e.x2-e.x1)*e.progress,y=e.y1+(e.y2-e.y1)*e.progress;
-    svg+=`<path d="M ${e.x1} ${e.y1} L ${x} ${y}" fill="none" stroke="#3a5a52" stroke-width="3.2" stroke-linecap="round"/>`;
-    const angle=Math.atan2(e.y2-e.y1,e.x2-e.x1);
-    if(e.progress===1) {svg+=`<path d="M ${x-14*Math.cos(angle-.4)} ${y-14*Math.sin(angle-.4)} L ${x} ${y} L ${x-14*Math.cos(angle+.4)} ${y-14*Math.sin(angle+.4)}" fill="none" stroke="#3a5a52" stroke-width="3.2" stroke-linecap="round"/>`;}
-    else if(!pencil)pencil={x,y,angle};
-    // Named relationships read at the arrow midpoint; halo keeps them legible over lines.
-    if(e.label&&e.progress>.7)svg+=`<g opacity="${Math.min(1,(e.progress-.7)/.3)}"><text x="${(e.x1+e.x2)/2}" y="${(e.y1+e.y2)/2-8}" text-anchor="middle" font-size="14" paint-order="stroke" stroke="#fffef9" stroke-width="3">${esc(e.label)}</text></g>`;
+    // Phase 11: gentle quadratic-bezier routing instead of a dead-straight line (V2 §19
+    // "support curved routing"). The control point bows perpendicular to the straight
+    // connector, always toward -y ("up" on screen) for a consistent, deterministic hand-
+    // drawn arc rather than a random wobble. This also fixes a live-verified bug: on a
+    // short connector between close nodes, the label used to sit at the raw straight-line
+    // midpoint and could render clipped behind the destination shape — the curve's bow
+    // (plus a further outward nudge below) pushes the label clear of both endpoints.
+    const dx=e.x2-e.x1,dy=e.y2-e.y1,dist=Math.hypot(dx,dy)||1;
+    // Short connectors between close nodes need proportionally MORE bow, not less, to give
+    // the label any clearance at all — a fixed floor was too flat for the tightest gaps.
+    const bow=Math.max(16,Math.min(34,dist*0.3));
+    let px=-dy/dist,py=dx/dist; if(py>0){px=-px;py=-py;} // pick the "-y" (upward) normal
+    const midX=(e.x1+e.x2)/2,midY=(e.y1+e.y2)/2;
+    const cx=midX+px*bow,cy=midY+py*bow;
+    const bezierPoint=(t:number)=>{
+      const mt=1-t;
+      return {x:mt*mt*e.x1+2*mt*t*cx+t*t*e.x2,y:mt*mt*e.y1+2*mt*t*cy+t*t*e.y2};
+    };
+    const bezierTangentAngle=(t:number)=>{
+      const mt=1-t;
+      const tx=2*mt*(cx-e.x1)+2*t*(e.x2-cx),ty=2*mt*(cy-e.y1)+2*t*(e.y2-cy);
+      return Math.atan2(ty,tx);
+    };
+    // Arc length via sampling — the curve is gentle (bow is small relative to dist) so a
+    // coarse sample is already accurate enough for a dash-offset reveal.
+    let arcLen=0,prev=bezierPoint(0);
+    const SAMPLES=16;
+    for(let k=1;k<=SAMPLES;k++){const pt=bezierPoint(k/SAMPLES);arcLen+=Math.hypot(pt.x-prev.x,pt.y-prev.y);prev=pt;}
+    svg+=`<path d="M ${e.x1} ${e.y1} Q ${cx} ${cy} ${e.x2} ${e.y2}" fill="none" stroke="#3a5a52" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="${arcLen}" stroke-dashoffset="${arcLen*(1-e.progress)}"/>`;
+    const tip=bezierPoint(e.progress),angle=bezierTangentAngle(e.progress);
+    if(e.progress===1) {const x=tip.x,y=tip.y;svg+=`<path d="M ${x-14*Math.cos(angle-.4)} ${y-14*Math.sin(angle-.4)} L ${x} ${y} L ${x-14*Math.cos(angle+.4)} ${y-14*Math.sin(angle+.4)}" fill="none" stroke="#3a5a52" stroke-width="3.2" stroke-linecap="round"/>`;}
+    else if(!pencil)pencil={x:tip.x,y:tip.y,angle};
+    // Named relationships read near the curve's own midpoint, nudged further outward along
+    // the same bow direction so the label clears both the curve and the endpoint shapes.
+    if(e.label&&e.progress>.7){const mid=bezierPoint(0.5);svg+=`<g opacity="${Math.min(1,(e.progress-.7)/.3)}"><text x="${mid.x+px*14}" y="${mid.y+py*14}" text-anchor="middle" font-size="14" paint-order="stroke" stroke="#fffef9" stroke-width="3">${esc(e.label)}</text></g>`;}
   }
   for(const n of s.nodes) {
     if(n.progress<=0)continue;
