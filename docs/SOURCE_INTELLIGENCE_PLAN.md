@@ -1,5 +1,13 @@
 # Source Intelligence Plan — large-document support (LD1–LD8)
 
+> Status 2026-09-10 (end of batched session): **LD1–LD7 implemented and committed**
+> (suite 118 tests, 116 pass, 0 fail, 2 skip). **LD8 (live validation) pending** — needs a
+> real multi-hundred-page PDF from the user plus paid keys. Implementation notes beyond this
+> plan: chunk ids are `p{page}:c{n}` (per-page index; the `s{section}` component was dropped
+> so ids stay stable under section re-routing); retrieval chunk granularity is configurable
+> via opts.maxChars; straddling section-boundary chunks are excluded from both sections by
+> full-containment scoping. See `docs/RESULTS.md` 2026-09-10 entries for exact tests.
+
 > Status: approved 2026-09-10, not yet implemented. Primary goal per user decision:
 > **large-document support** (P0). This plan supersedes the generic P0–P5 ordering in
 > `docs/OPTIMIZATION_PLAN.md` for the source/retrieval layer; Phase C–H there remain

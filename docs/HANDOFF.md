@@ -1,4 +1,26 @@
-# Current handoff — 2026-09-10, source-intelligence program: LD1 complete
+# Current handoff — 2026-09-10, source-intelligence program: LD1–LD7 complete, LD8 pending
+
+`docs/SOURCE_INTELLIGENCE_PLAN.md` phases LD1–LD7 shipped and committed on `opt-v3-harness`
+(LD1 `199332b`; LD2+LD3; LD4+LD5; LD6+LD7 — see git log and the RESULTS.md 2026-09-10
+LD2–LD7 entry). Suite: 118 tests, 116 pass, 0 fail, 2 skip. `src/planner.ts` still carries
+pre-existing uncommitted changes from an earlier session (require_parameters conditional,
+content max_tokens 5000→9000 now expressed via getOutputBudget) — ask the user before
+committing those separately.
+
+**Next bounded task: LD8 — live validation ($0.15–0.40).** Needs: (a) a real
+multi-hundred-page PDF from the user (nothing suitable in-repo), (b) OPENROUTER_API_KEY +
+optionally EMBEDDINGS_API_KEY in `.env`. Run 1-min + optionally 5-min; record in
+RESULTS.md: page coverage (>15 pages used), retrieval mode (bm25 vs hybrid), section-routing
+correctness (human check), grounding pass rate, cost, wall time, repair count.
+
+**Known residuals after LD2–LD7:** outline prompt maxTokens unchanged for the map path
+(fine — map text is small); straddling section-boundary chunks serve neither section;
+embedding provider untested live; `run-visual-bench`/judge not yet re-run on the new
+retrieval path; LD8 is the acceptance gate before claiming large-document support works.
+
+---
+
+# Handoff — 2026-09-10, LD1 (superseded by the LD1–LD7 entry above)
 
 User approved the next program: **large-document support** (`docs/SOURCE_INTELLIGENCE_PLAN.md`,
 LD1–LD8). Grounded limitation audit lives in that doc (verified against code 2026-09-10:
@@ -11,14 +33,9 @@ embeddings with deterministic BM25-only fallback (core tests stay key-free); bud
 **LD1 shipped** (see RESULTS.md 2026-09-10 LD1 entry): 15-page PDF cap removed, full-doc
 page-aware extraction (`SourceDocument.pages: {page,start}[]`), TEXT_LIMIT 200k→5M,
 `stripAcademicTail` gated to papers. Suite 97 tests, 95 pass, 0 fail, 2 skip. Committed as
-`199332b` on `opt-v3-harness`. Note: `src/planner.ts` carries pre-existing uncommitted
-changes from an earlier session (require_parameters conditional, content max_tokens
-5000→9000) — deliberately NOT included in the LD1 commit; ask the user before committing.
+`199332b` on `opt-v3-harness`.
 
-**Next bounded task: LD2** — `src/document-map.ts`: heading/TOC detection over page-tagged
-text → section tree (id, title, page range, extractive summary, charCount), sha256-cached
-under `.data/`. Zero model calls. Per the plan's session protocol, re-read the plan's LD2
-section before starting; do not begin LD3 in the same session.
+---
 
 ---
 

@@ -1,3 +1,53 @@
+# 2026-09-10 — LD2–LD7: source intelligence layer (map, BM25+hybrid retrieval, map-driven outline, evidence grounding, budgets)
+
+Implements `docs/SOURCE_INTELLIGENCE_PLAN.md` phases LD2–LD7 in one batched session
+(user approved batching). Commits: LD2+LD3 one commit; LD4+LD5 one commit; LD6+LD7 one
+commit. Suite: `npm test` → 118 tests, 116 pass, 0 fail, 2 skip (live-TTS-cred gated),
+up from 97/95/0/2 after LD1.
+
+**Exact tests:** new `test/document-map.test.js` (heading sections with tiling spans,
+48-section cap, page-window fallback, sha256 cache round-trip), `test/retrieval.test.js`
+(stable `p{page}:c{n}` chunk ids, BM25 topic-vs-filler ranking, document-order fallback),
+`test/hybrid-retrieval.test.js` (RRF fusion retrieves a cosine-only chunk BM25 cannot see —
+the synonym case; BM25-only fallback determinism), `test/embeddings.test.js` (batched
+embedding call, sha256 cache hit with zero provider calls, stale-cache rebuild, fail-soft
+on provider error), `test/map-planning.test.js` (outline sees the DOCUMENT MAP, not raw
+text; chapter evidence scoped to outline-routed sections; small sources keep legacy path),
+`test/budgets.test.js` (each budget scales only with its own input), plus checkEvidence
+unit tests in `test/validators.test.js`.
+
+**What shipped (our implementation):**
+- LD2 `src/document-map.ts`: heading detection over page-tagged text → ordered sections
+  with true page numbers, tiling spans, extractive summaries (zero model calls); 48-section
+  cap with even selection; page-window fallback; sha256-cached under `.data/`; jobs.ts
+  builds/caches it fail-soft after ingest (`source.map-built` ledger event).
+- LD3 `src/retrieval.ts`: paragraph-boundary chunking (stable per-page ids) + zero-dep BM25
+  over objective/keyPoints; evidence assembled in document order within budget; chunk ids
+  returned. Old lexical `retrieveForChapter` removed.
+- LD4 `src/embeddings.ts` + RRF: key-gated OpenAI-compatible embeddings
+  (`EMBEDDINGS_API_KEY/URL/MODEL`, ~$0.02/1M tokens), batched, sha256-cached, fully fail-soft
+  (no key/error → BM25-only, logged `source.embed-mode`); Reciprocal Rank Fusion (k=60) of
+  BM25 + cosine ranks; vectors aligned by stable chunk id; per-chapter query embed.
+- LD5 map-driven planning: sources >60k chars hand the outline call
+  `renderMapForOutline` (section ids/pages/summaries + figure digest) instead of 120k raw
+  text; outline schema requires `sourceSections` per chapter; planner routes chapter
+  evidence to outline-selected sections (unknown ids dropped; chunks must lie fully inside
+  a routed span, logged `source.section-scope-empty`). Small sources keep the legacy path.
+- LD6 grounding: content schema + engine whitelist carry `evidenceIds` (1-4 chunk ids);
+  labeled `source.evidenceChunks` ride into content calls; deterministic `checkEvidence`
+  flags unknown chunk ids and citations with <2 shared content words vs the node's
+  label+keyPoint — thrown into the existing content repair loop.
+- LD7 `src/budgets.ts`: five budget functions (output/retrieval/input/cost/latency); all
+  planner + figure call sites (max_tokens, timeouts, outline clip) now read it. Live-proven
+  1-min values unchanged (content 9000, director 5000, outline min(9000,2000+chapters·250)).
+
+**What this does NOT establish:** no live multi-hundred-page run yet (LD8 pending — needs a
+real textbook PDF + paid keys); embeddings untested against a real provider (mock-fetcher
+only); grounding is word-overlap, not entailment; a straddling chunk at a section boundary
+serves neither section (dropped from both by design).
+
+---
+
 # 2026-09-10 — LD1: full-document page-aware extraction (source-intelligence plan)
 
 Implements LD1 of `docs/SOURCE_INTELLIGENCE_PLAN.md`. Suite: `npm test` → 97 tests,
