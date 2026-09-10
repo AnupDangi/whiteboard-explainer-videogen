@@ -2,6 +2,7 @@ import type {Plan,Scene,Timing,CompiledScene,CompiledNode,CompiledEdge} from './
 import {NODE_KINDS,LAYOUTS} from './vocabulary.js';
 import {renderIcon,hasIcon} from './icons.js';
 import {renderIllustration,hasIllustration} from './illustrations.js';
+import {renderTemplate} from './templates.js';
 import {KIND_ACCENT,STROKE as STROKE_TOKENS,SEMANTIC_COLORS} from './style.js';
 /** Pure, browser-compatible scene compiler. No generated code is evaluated. */
 export const WIDTH = 1280;
@@ -78,6 +79,8 @@ function validateCandidate(input: Plan): Plan {
       if (node.beatId !== undefined && (typeof node.beatId !== 'string' || !(beatIds as Set<string> | null)?.has(node.beatId))) fail(`Node ${node.id} references an unknown beat`);
       if (node.conceptId !== undefined && (typeof node.conceptId !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(node.conceptId))) fail(`Invalid conceptId (node ${node.id})`);
     }
+    // V3-4 domain template (optional): the canonical composition replaces ad-hoc boxes.
+    if (scene.template !== undefined && !['tls_handshake','supply_demand'].includes(scene.template as string)) fail('Unknown scene template');
     if (!Array.isArray(scene.edges) || scene.edges.length > 10) fail('Invalid edges');
     for (const e of scene.edges) if (!nodeIds.has(e.from) || !nodeIds.has(e.to) || e.from === e.to) fail('Dangling or self connector');
     for (const e of scene.edges) if (e.label !== undefined && (typeof e.label !== 'string' || e.label.length > 24)) fail('Invalid edge label');
@@ -86,6 +89,7 @@ function validateCandidate(input: Plan): Plan {
   // Whitelist all data crossing into the renderer; discard unknown provider fields.
   return {version: 1, title: input.title, scenes: input.scenes.map(s => ({
     id: s.id, title: s.title, narration: s.narration, layout: s.layout,
+    ...(s.template?{template:s.template as Scene['template']}:{}),
     nodes: s.nodes.map(n => ({id:n.id,label:n.label,wordIndex:n.wordIndex,...(n.kind&&n.kind!=='generic'?{kind:n.kind}:{}),...(n.emphasis?{emphasis:true}:{}),...(n.shape&&n.shape!=='box'?{shape:n.shape}:{}),...(typeof n.keyPoint==='string'&&n.keyPoint?{keyPoint:n.keyPoint}:{}),...(typeof n.visualIntent==='string'&&n.visualIntent?{visualIntent:n.visualIntent}:{}),...(typeof (n as {beatId?:unknown}).beatId==='string'?{beatId:n.beatId}:{}),...(typeof (n as {conceptId?:unknown}).conceptId==='string'?{conceptId:n.conceptId}:{}),...(n.shape==='annotation'?{attachTo:n.attachTo,position:n.position}:{})})),
     ...(s.beats?{beats:s.beats.map(b=>({id:b.id,narration:b.narration}))}:{}),
     edges:s.edges.map(e=>({from:e.from,to:e.to,...(typeof e.label==='string'&&e.label?{label:e.label}:{})})), note:s.note || ''
@@ -739,6 +743,7 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     if(!pencil&&n.progress<1)pencil=pointOnRectPerimeter(n.x,n.y,n.w,n.h,n.progress);
   }
   for(const l of edgeLabels)svg+=l;
+  svg+=renderTemplate(scene,timeMs);
   if(pencil){
     const localEventEnd=Math.max(...scene.nodes.map(n=>n.startMs+n.drawMs),...scene.edges.map(e=>e.startMs+e.drawMs));
     const pencilFade=progressAt(timeMs,Math.max(0,localEventEnd-400),400);

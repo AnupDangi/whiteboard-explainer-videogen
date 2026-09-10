@@ -1,3 +1,13 @@
+# Current handoff — 2026-09-10, V3-4 domain templates live-proven
+
+V3-4 shipped on `opt-v3-harness` (pivoted: icon coverage is already 55/56 kinds, so Lucide vendoring is a style option, not the gap — the observed poverty was domain misrepresentation). New `src/templates.ts`: `tls_handshake` (two glyph-centered lifelines + labeled message arrows below the node band) and `supply_demand` (axes, opposing curves, dashed P*/Q* guides below the node band) — pure (scene,timeMs)→SVG, reveal rides the anchor nodes' timing. Wiring: `Scene.template` (types/engine whitelist/directorSchema enum), merge passes it through, unknown template values fail loudly (merge + validator tests). Director prompt (`TEMPLATE_GUIDANCE`) teaches when to request one (exactly 2 non-annotation anchors). `templates` fixture added; suite 85 tests, 83 pass, 0 fail, 2 skip. Export proof `output/videos/templates-proof.mp4` + `.scenes/`, frames `output/review-pump-v32/tpl-tls2.png`, `tpl-supply2.png`.
+
+Known limitations: 2 of the planned 5 templates shipped (attention matrix, DNA fork, tectonic section remain); template scenes still render their anchor boxes in the top band (by design — nodes are the labels); arrow labels come from edge labels (unlabeled edges fall back to canonical step names).
+
+Next: V3-5 critic progression sheets + lints, or the 3 remaining templates.
+
+---
+
 # Current handoff — 2026-09-10, V3-3 sketch + safe connectors live-proven
 
 V3-3 shipped on `opt-v3-harness`, zero new dependencies (hand-rolled, seeded PRNG — Rough.js idea without the dep): (1) `EXPLAIN_SKETCH=1` env flag → containers render as wobbly double-stroke closed polylines + hachure hatch fill + label backdrop; deterministic per node id (hash-seeded mulberry32); browser and export share the same `renderSVG` bytes. (2) `routeEdge` exported: connector control point flips direction / grows bow (×1/2/3.2) until the sampled bezier clears every intermediate node rect — kills the TLS arrow-through-server-bug class. (3) Icon endpoints anchor to the glyph circle edge, not the invisible layout rect — kills arrows-floating-in-space. H09 test contract updated (icon boundary = glyph circle). Suite 82 tests, 80 pass, 0 fail, 2 skip. Sketch export of pump job `77518dab`: `output/videos/Explain-how-a-bicycle-pump-works-1min-sketch.mp4` + `.scenes/`, frame `output/review-pump-v32/sketch20b.png`.
