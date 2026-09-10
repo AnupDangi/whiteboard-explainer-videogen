@@ -1,6 +1,7 @@
 import {log,logContext} from './logger.js';
 import type {GenerationOptions,Usage,SourceDocument,Plan,JobSnapshot,InternalJob,Providers,Timing} from './types.js';
 import {ingestSource} from './sources.js';
+import {buildDocumentMap,readCachedMap,writeCachedMap} from './document-map.js';
 import {detectFigures,describeFigures} from './figures.js';
 import {generateChapters,validateDuration} from './planner.js';
 import {randomUUID} from 'node:crypto';
@@ -103,6 +104,16 @@ export class JobStore {
         log('source.started',{kind:options.source?.kind||'prompt'});
         sourceDocument=await ingestSource(options.source||{kind:'prompt',text:options.prompt},signal);
         log('source.ready',{kind:sourceDocument.kind,characters:sourceDocument.text.length});
+        // LD2: build (or sha256-cache) the hierarchical document map so the outline can
+        // plan over a section tree instead of raw text (LD5). Fail-soft: a map problem
+        // must never fail the job — the planner still works off raw text.
+        try{
+          const cached=await readCachedMap(this.root,sourceDocument.sha256);
+          const map=cached??buildDocumentMap(sourceDocument);
+          if(!cached)await writeCachedMap(this.root,sourceDocument.sha256,map);
+          sourceDocument.map=map;
+          log('source.map-built',{sections:map.sections.length,kind:map.kind,cached:!!cached});
+        }catch(mapError){log('source.map-failed',{error:mapError instanceof Error?mapError.message:String(mapError)},'warn');}
         // Pre-extracted figures ride in via options (enriched text sources lose the
         // original bytes; the caller detects+describes before handing off).
         if(options.figures?.length)sourceDocument.figures=options.figures;

@@ -19,7 +19,11 @@ export interface JobSpans { outlineMs?:number; chapters?:Record<string,{contentM
 export interface SourceInput { kind:'prompt'|'text'|'url'|'pdf'|'docx'|'pptx'|'markdown'|'json'; text?:string; url?:string; base64?:string; name?:string }
 // pages: LD1 page-aware extraction — 1-based PDF page number plus the char offset in
 // `text` where that page's text begins. Blank pages are omitted. PDF sources only.
-export interface SourceDocument { kind:string; label:string; text:string; sha256:string; figures?:SourceFigure[]; pages?:Array<{page:number;start:number}> }
+// map: LD2 hierarchical document map — section tree built once per source (sha256-cached),
+// consumed by the outline call (LD5) instead of raw text.
+export interface SourceDocument { kind:string; label:string; text:string; sha256:string; figures?:SourceFigure[]; pages?:Array<{page:number;start:number}>; map?:DocumentMap }
+export interface MapSection { id:string; title:string; page:number; start:number; end:number; charCount:number; summary:string }
+export interface DocumentMap { kind:'book'|'paper'|'unknown'; sections:MapSection[] }
 /** P2: one detected+described figure/table from a PDF source — planning input only. */
 export interface SourceFigure { page:number; kind:'figure'|'table'; caption:string; dataHint:string; keyNumbers:string[] }
 export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; figures?:SourceFigure[]; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'elevenlabs'|'kokoro'; voiceId?:string; visualCritic?:boolean; cachePrompts?:boolean }

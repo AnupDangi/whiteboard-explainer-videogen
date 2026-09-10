@@ -2,6 +2,7 @@ import {log,loggedFetch} from './logger.js';
 import {outlineSchema,contentSchema,directorSchema} from './schema.js';
 import {validatePlan,compileScene,preflightScene,renderSVG} from './engine.js';
 import {semaphore} from './concurrency.js';
+import {retrieveChapterEvidence} from './retrieval.js';
 import {NODE_KINDS,LAYOUTS} from './vocabulary.js';
 import {hasIllustration} from './illustrations.js';
 import {hasIcon} from './icons.js';
@@ -40,26 +41,10 @@ const VOICE_CONTRACT=`Narrator voice contract — byte-identical in every chapte
 const CONTINUITY_GUIDANCE=`Continuity: the other chapters are being written at this moment by the same narrator and cannot be read, so continuity comes from discipline, not from looking. The outline's chapter titles and key points are the canonical glossary for the whole video: whenever you name a concept that appears anywhere in that glossary, copy that exact wording instead of a synonym, and never rename something you or another chapter has already named. Do not re-teach another chapter's material; refer back in at most one short clause, using the same words that chapter used. Never open with a recap of the video so far and never close by announcing what is coming next. Within this chapter, scene 2 continues scene 1 without a reset: if a node names something scene 1 already drew, reuse its label text character-for-character and say so in its visualIntent (e.g. "same buffer as scene 1, now filling") so the Visual Director keeps the identical glyph; if it is genuinely a new concept, give it a label that cannot be mistaken for anything in scene 1.`;
 // The outline call sees far more of the source than any single chapter needs.
 const OUTLINE_CONTEXT_LIMIT=120000;
-/** Splits already-clipped source text into one chunk per chapter on paragraph boundaries.
- *  Falls back to giving every chapter the full text when there isn't enough structure to split
- *  (short prompts, single-paragraph sources, or fewer paragraphs than chapters). */
-/** P4 per-chapter retrieval (harness §8): the paragraphs most relevant to a chapter's
- *  objective, in original order — not the ordinal chunk that happens to occupy the
- *  same position. Lexical scoring only; bounded to a per-chapter character budget. */
-const CHAPTER_SOURCE_LIMIT=8000;
-export function retrieveForChapter(text:string,objective:string,keyPoints:string[]):string {
-  const paragraphs=text.split(/\n{2,}/).map(p=>p.trim()).filter(Boolean);
-  if(paragraphs.length<=3)return text;
-  const terms=new Set(contentWords(`${objective} ${keyPoints.join(' ')}`));
-  const scored=paragraphs.map((p,i)=>{const words=contentWords(p);let hit=0;for(const w of words)if(terms.has(w))hit++;return{p,i,score:hit/Math.max(8,words.length)};});
-  const keep=new Set<number>();let total=0;
-  for(const s of [...scored].sort((a,b)=>b.score-a.score)){
-    if(total+s.p.length>CHAPTER_SOURCE_LIMIT)continue;
-    if(s.score<=0&&keep.size>0)break;
-    keep.add(s.i);total+=s.p.length;
-  }
-  return scored.filter((_,i)=>keep.has(i)).map(s=>s.p).join('\n\n');
-}
+/** P4/LD3: per-chapter evidence now lives in src/retrieval.ts (structural chunks +
+ *  BM25, tiny-source pass-through preserved). The old lexical scorer is gone; the
+ *  call site below passes the full SourceDocument so page attribution and chunk ids
+ *  survive into the content calls (ids become LD6 evidenceIds). */
 // Phase 1 deterministic teaching validators (V2 §32: check deterministically before any
 // AI critique). All return failure messages; empty means pass. Thrown into the existing
 // content/director repair loops, so no new agent stages are needed (V2 §6/§30).
@@ -302,7 +287,10 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
       // translates it per provider and strips it where unsupported). session_id pins provider
       // routing per job so concurrent chapters and repair retries re-read warm cache.
       const systemContent=cachePrompts===false?system:[{type:'text',text:system,cache_control:{type:'ephemeral'}}];
-      const response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(90000)]):AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${env.OPENROUTER_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:callModel||model,temperature:0.3,max_tokens:maxTokens,reasoning:{effort:'low'},response_format:{type:'json_schema',json_schema:{name:'explanation',strict:true,schema}},provider:{require_parameters:true},...(sessionId?{session_id:sessionId}:{}),messages:[{role:'system',content:systemContent},{role:'user',content:prompt}]})});
+      // require_parameters pins strict schema support; some cheaper tiers (qwen via
+      // Alibaba) have no endpoint that accepts it, so only enforce it on models that
+      // need it — the json_schema response_format itself still rides on every call.
+      const response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(90000)]):AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${env.OPENROUTER_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:callModel||model,temperature:0.3,max_tokens:maxTokens,reasoning:{effort:'low'},response_format:{type:'json_schema',json_schema:{name:'explanation',strict:true,schema}},...(callModel?{}:{provider:{require_parameters:true}}),...(sessionId?{session_id:sessionId}:{}),messages:[{role:'system',content:systemContent},{role:'user',content:prompt}]})});
       if(!response.ok){settle(0);log('planner.call-failed',{label,status:response.status},response.status===429?'warn':'error');throw new Error(`OpenRouter HTTP ${response.status}; check key, quota or model access`);}
       const data=await response.json();usage.calls++;await onResponse?.(data,usage.calls);
       usage.promptTokens+=data.usage?.prompt_tokens||0;usage.completionTokens+=data.usage?.completion_tokens||0;
@@ -423,7 +411,8 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
       const figureContext=source.figures?.length
         ?`\n\nFIGURES AND TABLES DETECTED IN THE SOURCE (redraw on the whiteboard when this chapter needs them):\n${source.figures.map(f=>`[page ${f.page} ${f.kind}] ${f.caption} — structure: ${f.dataHint}${f.keyNumbers.length?` — key numbers: ${f.keyNumbers.join(', ')}`:''}`).join('\n')}`
         :'';
-      const chapterSource={...source,text:retrieveForChapter(source.text,chapterObjective,outline.chapters[chapter].keyPoints)+(source.figures?.length?figureContext:'')};
+      const evidence=retrieveChapterEvidence(source,chapterObjective,outline.chapters[chapter].keyPoints);
+      const chapterSource={...source,text:evidence.text+(source.figures?.length?figureContext:'')};
       const chapSpan=spans.chapters[String(chapter+1)]??={contentMs:0,directorMs:0};
       const teacherTone=typeof outline.chapters[chapter].teacherTone==='string'&&outline.chapters[chapter].teacherTone.trim()?outline.chapters[chapter].teacherTone.trim():'';
   // Cacheability: the system prompt stays character-identical for every chapter of the
@@ -445,7 +434,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
         const chapterFrame={durationMinutes,chapter:chapter+1,chapterRole:chapter===0?'hook the viewer with what this is and why it matters':chapter===durationMinutes-1?'payoff and recap':chapter%2===1?'build the mechanism':'concrete example',depth:durationMinutes<=1?'essentials only, one core idea per scene':durationMinutes<=5?'the core mechanism plus one concrete numbered example':'the full mechanism with concrete numbered examples and edge cases',previousChapterTitle:chapter>0?outlineChapterTitles[chapter-1]:null,chapterObjective:outline.chapters[chapter].objective,chapterKeyPoints:outline.chapters[chapter].keyPoints,teacherTone,glossary:chapterGlossary,otherChapterTitles:outlineChapterTitles};
         for(let attempt=0;attempt<CONTENT_ATTEMPTS;attempt++){
           try{
-            if(attempt===0){const t=performance.now();try{contentRaw=await call(contentSystem,JSON.stringify({source:chapterSource,outlineChapterTitles,understanding,chapterFrame}),5000,contentSchema,'content',CONTENT_MODEL);}finally{chapSpan.contentMs+=Math.round(performance.now()-t);}}
+            if(attempt===0){const t=performance.now();try{contentRaw=await call(contentSystem,JSON.stringify({source:chapterSource,outlineChapterTitles,understanding,chapterFrame}),9000,contentSchema,'content',CONTENT_MODEL);}finally{chapSpan.contentMs+=Math.round(performance.now()-t);}}
             const candidate=resolveAnchors(contentRaw);
             if(candidate.scenes.length!==2)throw new Error('Expected two scenes per chapter');
             const words=candidate.scenes.reduce((n,s)=>n+s.narration.trim().split(/\s+/).length,0);
@@ -459,7 +448,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
           }catch(error){
             log('planner.content-invalid',{chapter:chapter+1,attempt:attempt+1,willRetry:attempt<CONTENT_ATTEMPTS-1,error},'warn');
             if(attempt===CONTENT_ATTEMPTS-1)throw error;
-            {const t=performance.now();try{contentRaw=await call(contentSystem,JSON.stringify({repairError:error instanceof Error?error.message:String(error),invalidPlan:contentRaw,source:chapterSource,chapterFrame}),5000,contentSchema,'content-repair',CONTENT_MODEL);}finally{chapSpan.contentMs+=Math.round(performance.now()-t);}}
+            {const t=performance.now();try{contentRaw=await call(contentSystem,JSON.stringify({repairError:error instanceof Error?error.message:String(error),invalidPlan:contentRaw,source:chapterSource,chapterFrame}),9000,contentSchema,'content-repair',CONTENT_MODEL);}finally{chapSpan.contentMs+=Math.round(performance.now()-t);}}
           }
         }
         throw new Error('Chapter content generation failed');
@@ -477,7 +466,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
         let directorRaw:unknown;
         for(let attempt=0;attempt<DIRECTOR_ATTEMPTS;attempt++){
           try{
-            if(attempt===0){const t=performance.now();try{directorRaw=await call(directorSystem,directorPrompt,3000,directorSchema(content.scenes.length),'director',DIRECTOR_MODEL);}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
+            if(attempt===0){const t=performance.now();try{directorRaw=await call(directorSystem,directorPrompt,5000,directorSchema(content.scenes.length),'director',DIRECTOR_MODEL);}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
             const directed=mergeDirectorOutput(content,directorRaw);
             const upgraded:Plan={...directed,scenes:upgradeShapes(directed.scenes,Object.fromEntries(content.scenes.map(s=>[s.id,arc||''])))};
             const shapeDiagnostic=checkShapeMix(upgraded.scenes);
@@ -489,7 +478,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
           }catch(error){
             log('planner.direction-invalid',{chapter:chapter+1,attempt:attempt+1,willRetry:attempt<DIRECTOR_ATTEMPTS-1,error},'warn');
             if(attempt===DIRECTOR_ATTEMPTS-1)break;
-            {const t=performance.now();try{directorRaw=await call(directorSystem,JSON.stringify({repairError:error instanceof Error?error.message:String(error),invalidDirection:directorRaw,...JSON.parse(directorPrompt)}),3000,directorSchema(content.scenes.length),'director-repair',DIRECTOR_MODEL);}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
+            {const t=performance.now();try{directorRaw=await call(directorSystem,JSON.stringify({repairError:error instanceof Error?error.message:String(error),invalidDirection:directorRaw,...JSON.parse(directorPrompt)}),5000,directorSchema(content.scenes.length),'director-repair',DIRECTOR_MODEL);}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
           }
         }
         log('planner.direction-fallback',{chapter:chapter+1},'warn');
