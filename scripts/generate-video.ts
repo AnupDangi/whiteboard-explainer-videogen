@@ -13,11 +13,12 @@
  *  ELEVENLABS_VOICE_ID). */
 import {JobStore} from '../src/jobs.js';
 import {ingestSource} from '../src/sources.js';
+import {detectFigures,describeFigures} from '../src/figures.js';
 import {buildRichBrief,briefStats} from '../src/prompt-builder.js';
 import {resolve,join} from 'node:path';
 import {mkdir,readFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
-import type {GenerationOptions,SourceInput} from '../src/types.js';
+import type {GenerationOptions,SourceInput,SourceFigure} from '../src/types.js';
 
 const args = process.argv.slice(2);
 const arg = (name: string, fallback: string | null) => { const i = args.indexOf(name); return i < 0 ? fallback : args[i + 1]; };
@@ -76,10 +77,22 @@ for (const {input, label: sourceLabel} of rawSources) {
   // optimized rich brief. The job itself receives finished text, so provenance
   // travels in `name` and no re-download happens inside the worker.
   let jobSource: SourceInput = input;
+  let figures: SourceFigure[] | undefined;
   if (enrich) {
     console.log(`\n=== enriching source: ${sourceLabel.slice(0, 80)} ===`);
     const ingested = await ingestSource(input);
-    const brief = buildRichBrief(ingested, {minutes: Math.max(...minutesList)});
+    // Enriched jobs hand the planner a text brief, so the original bytes never reach
+    // the worker's PDF figure branch — detect+describe here and pass figures along.
+    if (input.kind === 'pdf' && process.env.OPENROUTER_API_KEY) {
+      const bytes = Buffer.from(input.base64!, 'base64');
+      const candidates = await detectFigures(bytes);
+      console.log(`figures detected: ${candidates.length}`);
+      if (candidates.length) {
+        figures = await describeFigures(bytes, candidates, {env: process.env});
+        console.log(`figures described: ${figures.length}`);
+      }
+    }
+    const brief = buildRichBrief({...ingested, figures}, {minutes: Math.max(...minutesList)});
     console.log('brief:', JSON.stringify(briefStats(ingested, brief, {minutes: Math.max(...minutesList)})));
     jobSource = {kind: 'text', text: brief, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)};
   }
@@ -96,7 +109,7 @@ for (const {input, label: sourceLabel} of rawSources) {
       console.log(`\n=== ${label}: planning (attempt ${attempt}/${jobRetries}) ===`);
       try {
         const options: GenerationOptions = {
-          mode: 'model', source: {...jobSource}, durationMinutes: minutes,
+          mode: 'model', source: {...jobSource}, ...(figures?.length ? {figures} : {}), durationMinutes: minutes,
           maxCostUsd: Math.min(10, Math.max(0.2, budgetPerMinute * minutes)),
           delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'kokoro', visualCritic, cachePrompts,
           ...(voiceId ? {voiceId} : {}),

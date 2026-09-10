@@ -103,6 +103,9 @@ export class JobStore {
         log('source.started',{kind:options.source?.kind||'prompt'});
         sourceDocument=await ingestSource(options.source||{kind:'prompt',text:options.prompt},signal);
         log('source.ready',{kind:sourceDocument.kind,characters:sourceDocument.text.length});
+        // Pre-extracted figures ride in via options (enriched text sources lose the
+        // original bytes; the caller detects+describes before handing off).
+        if(options.figures?.length)sourceDocument.figures=options.figures;
         // P2: PDF sources get their figures/tables detected (deterministic poppler) and
         // described (one bounded vision call each, ≤4). Costs a few cents at most; the
         // descriptions are what lets the planner "see" the paper's figures.
