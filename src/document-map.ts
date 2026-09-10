@@ -110,6 +110,16 @@ export function buildDocumentMap(source:SourceDocument):DocumentMap {
   return {kind:kindFor(starts.length),sections:sections.length?sections:mapped};
 }
 
+/** LD5: the text the outline call sees for large sources — bounded section list with
+ *  ids the model must route chapters to via sourceSections. Replaces clipped raw text. */
+export function renderMapForOutline(map:DocumentMap):string {
+  return [
+    'DOCUMENT MAP — the full source is large, so plan from this section map.',
+    'Every chapter MUST set sourceSections to the section ids (from this list) it teaches from.',
+    ...map.sections.map(s=>`${s.id} | page ${s.page} | ${s.title} — ${s.summary}`),
+  ].join('\n');
+}
+
 export function mapCachePath(root:string,sha256:string):string {return join(root,`map-${sha256}.json`);}
 export async function readCachedMap(root:string,sha256:string):Promise<DocumentMap|null> {
   try {
