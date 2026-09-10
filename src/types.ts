@@ -17,7 +17,7 @@ export interface CompiledEdge extends PlanEdge { x1:number; y1:number; x2:number
 export interface CompiledScene extends Scene { nodes:CompiledNode[]; edges:CompiledEdge[]; timing:Timing; audioUrl?:string; durationMs:number }
 export interface JobSnapshot {
  id:string;status:string;revision:number;createdAt:number;mode:string;targetMinutes:number;plannerBudgetUsd:number;ttsCharacters:number;timingMode:string;simulatedDelayMs:number;scenes:CompiledScene[];availableMs:number;events:{sequence:number;type:string;atMs:number;availableMs:number}[];
- title?:string;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;actualMinutes?:number;error?:string;usage?:Usage;source?:Omit<SourceDocument,'text'>&{characters:number};spans?:JobSpans;
+  title?:string;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;actualMinutes?:number;error?:string;usage?:Usage;source?:Omit<SourceDocument,'text'>&{characters:number};spans?:JobSpans;manifestVersion?:string;
 }
 export interface InternalJob extends JobSnapshot {controller?:AbortController;task?:Promise<void>}
 export interface ProviderOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;voiceId?:string}

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {checkQuantities,checkKeyPoints,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget} from '../dist/src/planner.js';
+import {directorSchema} from '../dist/src/schema.js';
 
 test('quantity manifest: narrated number+noun must be drawn or labeled',()=>{
   const ok=[{id:'s',narration:'The cluster runs on 8 GPUs.',nodes:[{id:'a',label:'GPU cluster (8 units)'}],note:''}];
@@ -41,6 +42,18 @@ test('kind collision: one glyph per concept; identical labels pass',()=>{
   const generic=[{id:'s',narration:'x',nodes:[{id:'a',label:'Foo'},{id:'b',label:'Bar'}]}];
   assert.deepEqual(checkKindCollision(generic),[]);
 });
+test('kind collision (A4): repeated instances of one concept pass; different concepts still fail',()=>{
+  const tokens=[{id:'s',narration:'x',nodes:[
+    {id:'t1',label:'Token 1',kind:'token'},{id:'t2',label:'Token 2',kind:'token'},{id:'t3',label:'Token 3',kind:'token'},
+  ]}];
+  assert.deepEqual(checkKindCollision(tokens),[]);
+  const keys=[{id:'s',narration:'x',nodes:[{id:'k1',label:'Key A',kind:'key'},{id:'k2',label:'Key B',kind:'key'}]}];
+  assert.deepEqual(checkKindCollision(keys),[]);
+  const bases=[{id:'s',narration:'x',nodes:[{id:'b1',label:'Base pair',kind:'molecule'},{id:'b2',label:'Base pair',kind:'molecule'}]}];
+  assert.deepEqual(checkKindCollision(bases),[]);
+  const clash=[{id:'s',narration:'x',nodes:[{id:'a',label:'Attraction',kind:'energy'},{id:'b',label:'Repulsion',kind:'energy'}]}];
+  assert.match(checkKindCollision(clash).join('|'),/share kind "energy"/);
+});
 test('upgradeShapes: quantities, recaps, round entities, documents',()=>{
   const scenes=[
     {id:'s1',nodes:[{id:'a',label:'8 GPUs',shape:'icon',kind:'server'},{id:'b',label:'Long quantity label with many words here',shape:'box',kind:'server'},{id:'c',label:'Plain step',shape:'box',kind:'process'}]},
@@ -78,4 +91,12 @@ test('concept budget: split crowded scenes past 5 distinct kinds, generic never 
   // Repeated kinds and generic don't count toward the budget.
   const repeatsAndGeneric=[{id:'s',narration:'x',nodes:[{id:'a',kind:'database'},{id:'b',kind:'database'},{id:'c'},{id:'d'},{id:'e'},{id:'f'}]}];
   assert.deepEqual(checkConceptBudget(repeatsAndGeneric),[]);
+});
+test('A5: directorSchema is parameterized by scene count, matching outlineSchema\'s existing convention',()=>{
+  const one=directorSchema(1);
+  assert.equal(one.properties.scenes.minItems,1);
+  assert.equal(one.properties.scenes.maxItems,1);
+  const two=directorSchema(2);
+  assert.equal(two.properties.scenes.minItems,2);
+  assert.equal(two.properties.scenes.maxItems,2);
 });

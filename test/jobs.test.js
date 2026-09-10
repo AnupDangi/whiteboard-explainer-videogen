@@ -59,3 +59,11 @@ test('Quota errors remain visible failures instead of successful silent jobs',as
   const j=await store.create({...options,delayMs:0,narration:true});await store.jobs.get(j.id).task;
   const job=await store.get(j.id);assert.equal(job.status,'error');assert.equal(job.scenes.length,0);assert.match(job.error,/402/);
 });
+test('A6: job snapshot is stamped with the generation manifest version',async t=>{
+  const {store}=await setup(t);
+  const job=await store.create(options);
+  assert.equal(typeof job.manifestVersion,'string');
+  assert(job.manifestVersion.length>0);
+  const fetched=await store.get(job.id);
+  assert.equal(fetched.manifestVersion,job.manifestVersion,'the stamped version survives a save/reload round trip');
+});

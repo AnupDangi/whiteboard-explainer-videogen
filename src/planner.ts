@@ -136,23 +136,25 @@ export function checkEdgeLabels(scenes:LooseScene[]):string[] {
   }
   return failures;
 }
-/** Antonym-kind collision: one glyph must not stand for two different concepts. */
+const INSTANCE_SUFFIX=/\s*(?:[0-9]+|[a-z]|first|second|third|fourth|fifth|sixth)\s*$/i;
+const labelStem=(label:string)=>label.toLowerCase().replace(/[^\p{L}\p{N} ]/gu,' ').replace(INSTANCE_SUFFIX,'').replace(/\s+/g,' ').trim();
 export function checkKindCollision(scenes:LooseScene[]):string[] {
   const failures:string[]=[];
   for(const scene of scenes){
-    const byKind=new Map<string,string[]>();
+    const byKind=new Map<string,{id:string;label:string;stem:string}[]>();
     for(const node of scene.nodes){
-      // Annotations explain rather than symbolize: their kind never collides.
       if(node.shape==='annotation')continue;
       const kind=typeof node.kind==='string'?node.kind:'generic';
       if(kind==='generic')continue;
-      const label=(node.label||'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+      const label=node.label||'';
       if(!byKind.has(kind))byKind.set(kind,[]);
-      byKind.get(kind)!.push(`${node.id||'node'}:"${node.label||''}"(${label})`);
+      byKind.get(kind)!.push({id:node.id||'node',label,stem:labelStem(label)});
     }
     for(const [kind,members] of byKind){
-      const labels=new Set(members.map(m=>m.slice(m.indexOf('('))));
-      if(labels.size>1)failures.push(`${scene.id||'scene'}: ${members.join(' vs ')} share kind "${kind}" for different concepts; pick distinct kinds`);
+      if(members.length<2)continue;
+      const stems=new Set(members.map(m=>m.stem));
+      if(stems.size<=1)continue;
+      failures.push(`${scene.id||'scene'}: ${members.map(m=>`${m.id}:"${m.label}"`).join(' vs ')} share kind "${kind}" for different concepts; pick distinct kinds`);
     }
   }
   return failures;
@@ -278,7 +280,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
     try {
       const scenesPrompt={scenes:[{id:scene.id,narration:scene.narration,nodes:scene.nodes.map(n=>({id:n.id,label:n.label,keyPoint:n.keyPoint||'',visualIntent:n.visualIntent||''})),edges:scene.edges}]};
       const currentDirection={scenes:[{id:scene.id,layout:scene.layout,nodes:scene.nodes.map(n=>({id:n.id,kind:n.kind||'generic',emphasis:!!n.emphasis,shape:n.shape||'box'}))}]};
-      const repaired=await call(directorSystem,JSON.stringify({repairError:'Visual critic flagged: '+issues.join('; '),invalidDirection:currentDirection,...scenesPrompt}),2000,directorSchema);
+      const repaired=await call(directorSystem,JSON.stringify({repairError:'Visual critic flagged: '+issues.join('; '),invalidDirection:currentDirection,...scenesPrompt}),2000,directorSchema(1));
       const remerged=mergeDirectorOutput({...plan,scenes:[scene]},repaired).scenes[0];
       preflightScene(compileScene(remerged));
       plan.scenes[sceneIndex]=remerged;
@@ -358,18 +360,19 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
         let directorRaw:unknown;
         for(let attempt=0;attempt<DIRECTOR_ATTEMPTS;attempt++){
           try{
-            if(attempt===0){const t=performance.now();try{directorRaw=await call(directorSystem,directorPrompt,3000,directorSchema,'director');}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
+            if(attempt===0){const t=performance.now();try{directorRaw=await call(directorSystem,directorPrompt,3000,directorSchema(content.scenes.length),'director');}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
             const directed=mergeDirectorOutput(content,directorRaw);
             const upgraded:Plan={...directed,scenes:upgradeShapes(directed.scenes,Object.fromEntries(content.scenes.map(s=>[s.id,arc||''])))};
-            // Phase 1 deterministic visual gates: shape variety and one-glyph-per-concept.
-            const visualFailures=[...checkShapeMix(upgraded.scenes),...checkKindCollision(upgraded.scenes)];
+            const shapeDiagnostic=checkShapeMix(upgraded.scenes);
+            if(shapeDiagnostic.length)log('planner.shape-diagnostic',{chapter:chapter+1,findings:shapeDiagnostic});
+            const visualFailures=[...checkKindCollision(upgraded.scenes)];
             if(visualFailures.length)throw new Error('Visual checks — '+visualFailures.join(' | '));
             upgraded.scenes.forEach(scene=>preflightScene(compileScene(scene)));
             return upgraded;
           }catch(error){
             log('planner.direction-invalid',{chapter:chapter+1,attempt:attempt+1,willRetry:attempt<DIRECTOR_ATTEMPTS-1,error},'warn');
             if(attempt===DIRECTOR_ATTEMPTS-1)break;
-            {const t=performance.now();try{directorRaw=await call(directorSystem,JSON.stringify({repairError:error instanceof Error?error.message:String(error),invalidDirection:directorRaw,...JSON.parse(directorPrompt)}),3000,directorSchema,'director-repair');}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
+            {const t=performance.now();try{directorRaw=await call(directorSystem,JSON.stringify({repairError:error instanceof Error?error.message:String(error),invalidDirection:directorRaw,...JSON.parse(directorPrompt)}),3000,directorSchema(content.scenes.length),'director-repair');}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
           }
         }
         log('planner.direction-fallback',{chapter:chapter+1},'warn');

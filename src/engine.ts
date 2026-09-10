@@ -116,7 +116,22 @@ export function measureText(text:string, fontSize:number):number {
   return total * fontSize;
 }
 export function wrapText(text:string, maxWidth:number, fontSize:number, measure = measureText) {
-  const words = text.split(/\s+/); const lines=[]; let line='';
+  // Over-wide words split at hyphens first (hyphen kept at line end); raw
+  // character-splitting applies only to a segment that alone still exceeds
+  // maxWidth — so "one-million-token" breaks at hyphens, never "tok|en".
+  const splitLongWord=(word:string):string[]=>{
+    const chunks=word.match(/[^-\s]+-?/g)??[word];
+    const out:string[]=[];let cur='';
+    const pushChars=(s:string)=>{let part='';for(const c of s){if(measure(part+c,fontSize)>maxWidth&&part){out.push(part);part='';}part+=c;}if(part)out.push(part);};
+    for(const ch of chunks){
+      if(measure(ch,fontSize)>maxWidth){if(cur){out.push(cur);cur='';}pushChars(ch);continue;}
+      if(cur&&measure(cur+ch,fontSize)>maxWidth){out.push(cur);cur='';}
+      cur+=ch;
+    }
+    if(cur)out.push(cur);
+    return out;
+  };
+  const words = text.split(/\s+/).flatMap(w=>measure(w,fontSize)>maxWidth?splitLongWord(w):[w]); const lines=[]; let line='';
   for (const word of words) {
     if (measure(word,fontSize) > maxWidth) {
       if (line) {lines.push(line); line='';}
@@ -506,6 +521,10 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
   // Pencil follows whichever single node or edge is actively mid-stroke (0<progress<1); a
   // scene at rest (everything settled at 0 or 1) shows no pencil at all.
   let pencil:{x:number;y:number;angle:number}|null=null;
+  // Edge labels collected here, painted after all nodes: node boxes are opaque,
+  // so a label emitted inline in the edge loop ends up underneath any node box
+  // it overlaps (live-verified "deploys"→"eploys" clip on a tight connector).
+  const edgeLabels:string[]=[];
   for(const e of s.edges) {
     if(e.progress<=0)continue;
     // Phase 11: gentle quadratic-bezier routing instead of a dead-straight line (V2 §19
@@ -542,7 +561,7 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     else if(!pencil)pencil={x:tip.x,y:tip.y,angle};
     // Named relationships read near the curve's own midpoint, nudged further outward along
     // the same bow direction so the label clears both the curve and the endpoint shapes.
-    if(e.label&&e.progress>.7){const mid=bezierPoint(0.5);svg+=`<g opacity="${Math.min(1,(e.progress-.7)/.3)}"><text x="${mid.x+px*14}" y="${mid.y+py*14}" text-anchor="middle" font-size="14" paint-order="stroke" stroke="#fffef9" stroke-width="3">${esc(e.label)}</text></g>`;}
+    if(e.label&&e.progress>.7){const mid=bezierPoint(0.5);edgeLabels.push(`<g opacity="${Math.min(1,(e.progress-.7)/.3)}"><text x="${mid.x+px*14}" y="${mid.y+py*14}" text-anchor="middle" font-size="14" paint-order="stroke" stroke="#fffef9" stroke-width="3">${esc(e.label)}</text></g>`);}
   }
   for(const n of s.nodes) {
     if(n.progress<=0)continue;
@@ -618,6 +637,7 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     if(n.progress>.45)svg+=`<g opacity="${(n.progress-.45)/.55}">${texts(n.lines,n.x+n.w/2,n.y+n.h/2-(n.lines.length-1)*n.fontSize*.59+n.fontSize*.35,n.fontSize)}</g>`;
     if(!pencil&&n.progress<1)pencil=pointOnRectPerimeter(n.x,n.y,n.w,n.h,n.progress);
   }
+  for(const l of edgeLabels)svg+=l;
   if(pencil){
     const localEventEnd=Math.max(...scene.nodes.map(n=>n.startMs+n.drawMs),...scene.edges.map(e=>e.startMs+e.drawMs));
     const pencilFade=progressAt(timeMs,Math.max(0,localEventEnd-400),400);

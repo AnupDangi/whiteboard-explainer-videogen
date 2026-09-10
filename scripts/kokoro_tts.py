@@ -117,27 +117,57 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
         pred = np.array(mx.clip(mx.round(duration), 0, None).astype(mx.int32).squeeze(0))
         if len(pred) != length:
             fail('Duration length %d does not match input length %d' % (len(pred), length))
+        # A1: pred[0] is the BOS token's predicted duration frames — real synthesized audio the
+        # model plays before the first phoneme. The word-timing math below previously started
+        # counting from pred[1] with no offset, so every word was timestamped as if the chunk's
+        # audio began right where phoneme 1 starts — ignoring this real lead-in.
+        bos_ms = float(pred[0]) / FRAMES_PER_SECOND * 1000
 
         # Aggregate sub-word tokens back to the input's whitespace words. Each
         # phoneme char consumes one pred_dur entry (+1 BOS offset). A word that
         # cannot be reconstructed exactly is a loud failure, never a guess.
-        offset, leaf = 0, 0
+        # A1 fix round 2 (discovered writing the round-1 multi-chunk regression test): the
+        # phonemizer's own phoneme string (which `pred` is indexed against) inserts a real,
+        # separately-predicted separator character (' ', vocab id present) between every word;
+        # misaki's per-word `leaf.phonemes` never carries that separator. Walking `offset` by
+        # summing leaf-phoneme lengths alone therefore silently drops one separator's predicted
+        # duration at every word boundary -- invisible between adjacent words (both share the
+        # same understated offset, so no gap appears between them) but compounding across a
+        # chunk (measured: 3-5s of drift over ~60-word chunks on real narration) and landing
+        # entirely on whichever word the deficit is finally measured against -- previously the
+        # last word of the whole utterance, now also every chunk's last word via the round-1 fix
+        # below. Fix: locate each word's true position directly in the vocab-filtered phoneme
+        # stream instead of accumulating position from leaves, so separators are never skipped.
+        filtered_phonemes = ''.join(c for c in phonemes if c in vocab)
+        leaf, cursor = 0, 0
         for word in chunk_text.split():
-            start = offset
-            acc = ''
+            acc, phon = '', ''
             while leaf < len(leaves) and acc != word:
                 piece = leaves[leaf].text or ''
                 if len(acc) + len(piece) > len(word) or not word.startswith(acc + piece):
                     fail('Cannot map narration word %r (G2P gave %r); refusing silent misalignment'
                          % (word, piece))
                 acc += piece
-                offset += len(leaves[leaf].phonemes or '')
+                phon += leaves[leaf].phonemes or ''
                 leaf += 1
             if acc != word:
                 fail('Cannot map narration word %r; refusing silent misalignment' % word)
-            start_ms = elapsed_ms + float(pred[1:1 + start].sum()) / FRAMES_PER_SECOND * 1000
-            end_ms = elapsed_ms + float(pred[1:1 + offset].sum()) / FRAMES_PER_SECOND * 1000
+            start = filtered_phonemes.find(phon, cursor)
+            if start < 0:
+                fail('Cannot locate phonemes for narration word %r in the synthesized phoneme stream' % word)
+            offset = start + len(phon)
+            cursor = offset
+            start_ms = elapsed_ms + bos_ms + float(pred[1:1 + start].sum()) / FRAMES_PER_SECOND * 1000
+            end_ms = elapsed_ms + bos_ms + float(pred[1:1 + offset].sum()) / FRAMES_PER_SECOND * 1000
             words.append(dict(word=word, startMs=start_ms, endMs=end_ms))
+        # A1 fix round 1: pred[-1] is THIS chunk's own EOS predicted duration — real audio
+        # that plays after this chunk's last phoneme. Attribute it to this chunk's last word
+        # (same principle as the BOS lead-in above, applied per-chunk instead of only at the
+        # very end of the utterance) so internal chunk boundaries don't reproduce the same
+        # unaccounted-trailing-audio bug the original fix only closed for the final chunk.
+        if words:
+            eos_ms = float(pred[-1]) / FRAMES_PER_SECOND * 1000
+            words[-1]['endMs'] += eos_ms
         elapsed_ms += float(pred.sum()) / FRAMES_PER_SECOND * 1000
         audio_parts.append(part)
 
@@ -152,9 +182,16 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
         out.setparams((1, 2, SAMPLE_RATE, 0, 'NONE', 'not compressed'))
         out.writeframes(pcm16.tobytes())
     duration_ms = len(samples) / SAMPLE_RATE * 1000
-    # A1: Diagnose trailing audio after last word timestamp.
-    # The total WAV duration (duration_ms) may exceed the last word's endMs;
-    # this gap contains the trailing non-silent signal identified in the video review.
+    # A1 fix: the final chunk's EOS token and any trailing coarticulation frames are real
+    # synthesized audio that belongs to the last spoken word (nothing else happens after it),
+    # so attribute them there instead of leaving them as an unaccounted tail. This is not a
+    # truncation (no audio removed) and not a global stretch (only the last word's end moves,
+    # by exactly the amount of audio that follows it).
+    if words:
+        words[-1]['endMs'] = duration_ms
+    # A1: Diagnose trailing audio after last word timestamp (now expected to be ~0 after the
+    # fix above; kept as a regression sentinel — a future change that reintroduces a gap here
+    # will show up in gapMs/trailingNonSilent instead of silently regressing).
     last_word_end = words[-1]['endMs'] if words else 0
     gap_ms = duration_ms - last_word_end
     trailing_non_silent = False

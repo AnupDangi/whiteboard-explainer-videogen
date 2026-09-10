@@ -5,6 +5,7 @@ import {cpus} from 'node:os';
 import {resolve,dirname,join} from 'node:path';
 import {fixtures} from '../src/fixtures.js';
 import {compileScene,validatePlan,renderSVG,locateScene,durationOf} from '../src/engine.js';
+import {writeSceneArtifacts} from '../src/scene-output.js';
 
 const argv=process.argv.slice(2);const option=(name:string,fallback:string|null)=>{const i=argv.indexOf(name);return i<0?fallback:argv[i+1];};
 const output=resolve(option('--out','output/attention.mp4')!);const input=option('--input',null);
@@ -24,6 +25,12 @@ const scenes=plan.scenes.map((s,i)=>{
   }
   return compileScene(s,timing);
 });
+// Every committed scene saved scene-by-scene in output/ (harness §§45/57/64;
+// AGENTS.md #8: exports live in output/, job data stays in .data/).
+const scenesDir=output.replace(/\.mp4$/,'')+'.scenes';
+const artifacts=await writeSceneArtifacts(scenes,{title:plan.title,
+  manifestVersion:typeof source.manifestVersion==='string'?source.manifestVersion:undefined,
+  timingMode:typeof source.timingMode==='string'?source.timingMode:undefined},scenesDir);
 await mkdir(dirname(output),{recursive:true});const temporary=output+'.rendering.mp4';
 const encoder=spawn('ffmpeg',['-y','-v','error','-f','image2pipe','-framerate',String(fps),'-i','pipe:0','-an','-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-movflags','+faststart',temporary],{stdio:['pipe','inherit','inherit']});
 let encoderError;encoder.on('error',e=>{encoderError=e;});encoder.stdin.on('error',e=>{encoderError=e;});
@@ -58,5 +65,5 @@ try{
     await new Promise<void>((res,rej)=>{mux.on('error',rej);mux.on('exit',c=>c===0?res():rej(new Error('Audio mux failed')));});await rm(temporary);
     muxMs=Math.round(performance.now()-muxStarted);
   }else await rename(temporary,output);
-  console.log(JSON.stringify({output,frames,fps,width,durationMs:duration,renderMs,muxMs,exportJobs:batchSize,narrated:hasAudio},null,2));
+  console.log(JSON.stringify({output,frames,fps,width,durationMs:duration,renderMs,muxMs,exportJobs:batchSize,narrated:hasAudio,scenesDir:artifacts.dir,sceneFiles:artifacts.files},null,2));
 }catch(error){encoder.kill();await rm(temporary,{force:true});throw error;}

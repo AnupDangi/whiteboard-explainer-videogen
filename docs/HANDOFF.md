@@ -1,3 +1,64 @@
+# Current handoff — 2026-09-10, DeepSeek-V4 paper run + two render fixes
+
+End-to-end proof on user-supplied paper `https://arxiv.org/pdf/2606.19348` (DeepSeek-V4, 8pp): 1-min video, first attempt, job `7860802b`, 2 scenes, 64s timeline, gemini-3.8-flash ($0.0423, 5 calls), Kokoro TTS (982 chars), MP4 muxed (h264+aac) + per-scene SVGs in `output/videos/tmp-papers-2606-19348-pdf-1min.scenes/`. Audio sync automated PASS: kokoro-aligned, gapMs 0, trailingNonSilent false, first words at 325/350ms, scene durations exceed audio by exactly the designed 650ms tail.
+
+Frame review of that video found two real render bugs, both fixed in `src/engine.ts` with tests: (1) `wrapText` char-split `one-million-token` into `tok|en` — now splits over-wide words at hyphens first, char-splits only a still-too-wide segment; (2) edge labels painted before (under) opaque node boxes (`deploys`→`eploys`) — labels now collected and appended after all nodes. Re-exported same job; `output/review-deepseek-v4/f33-fixed.png` confirms both. Full suite: `npm test` → 73 passed, 0 failed, 2 skipped.
+
+Speed profile (no code change, truthfully): 34.75s total dominated by planning (outline 3.7s + content 16.9s + director 7.9s); render 4.5s for 768 frames. No bounded render win available — faster planning model is the lever, not renderer tweaks.
+
+Known limitations: model wrote `FLOPs (T)` truncated label (data defect, validator gap — quantity coverage check is future work); f05 shows title-only canvas for first seconds (beat-density/static-interval work = harness §48, not started); human listening/viewing of full 64s not done — user playback review pending.
+
+Next: user playback verdict on the MP4; then Phase B or §48 static-interval metric.
+
+---
+
+# Current handoff — 2026-09-10, harness adoption + scene-by-scene output
+
+Harness `EXPLAIN_CANVAS_AGENT_HARNESS_V3.md` adopted as reference architecture (not one-shot rewrite: its §80 Tasks 1–12 / §67 Phases 0–7 remain multi-session program; V1 pipeline untouched). Bounded slice shipped: every export now saves each committed scene scene-by-scene in `output/` — final-frame SVG per scene plus `manifest.json` (ids, durations, node/edge counts, timing kind, audio ref) in `<name>.scenes/` next to MP4. Provenance: deterministic `renderSVG` bytes; fixture timing labeled `estimated`, never aligned.
+
+What changed: new `src/scene-output.ts` (`writeSceneArtifacts`), wired into `scripts/export.ts`, covered by `test/scene-output.test.js`. Full suite: `npm test` → 71 passed, 0 failed, 2 skipped. Live proof: `npm run export -- --fixture attention --fps 1 --width 640 --out output/scenes-check/attention.mp4` → 4 SVGs + manifest in `output/scenes-check/attention.scenes/` (ignored, kept as evidence).
+
+Known limitations: per-scene artifact = final frame only (no §45 start/25/50/75/end progression sheets yet); full V2 types/registry/storyboard not started. No paid calls, no commits.
+
+Next bounded task: progression contact sheets per scene (§§45/64), or Phase B fixtures per prior handoff.
+
+---
+
+# Current handoff — 2026-09-10, Phase A baseline correctness closed
+
+Implemented `docs/OPTIMIZATION_PLAN.md`'s Phase A (A1, A4, A5, A6 — A2/A3 had already landed in
+commit 5cf8c32) per `docs/superpowers/plans/2026-09-10-phase-a-correctness-fixes.md`. Full suite:
+`npm test` → 70 passed, 0 failed, 2 skipped.
+
+What changed: A1's Kokoro BOS/EOS word-timing root cause fixed (predictor frames were being
+dropped from every word's timing math — verified via a live `TEST_KOKORO_TTS=1` contract test,
+not just a mock). A4's forced "every scene needs 2+ shapes" gate replaced with an identity-aware
+kind-collision check (token rows, multiple keys, repeated bases no longer wrongly rejected; two
+genuinely different concepts sharing a kind still fail); the exhausted-director-fallback path
+intentionally stays strict. A5 found and fixed a real silent bug: the single-scene critic-repair
+call was validated against the always-2-scene `directorSchema`, so every critic-requested repair
+has likely been silently failing and keeping the unrepaired scene — `directorSchema` is now
+`directorSchema(count)`, and a new end-to-end test proves a repair actually applies. A6 adds a
+`manifestVersion` stamp to every job snapshot and a fixed named review corpus
+(`docs/REVIEW_CORPUS.md`).
+
+Known limitations, stated explicitly rather than left implicit: A1's fix is code/predictor-level
+and live-contract-tested, but the full A1 acceptance criterion (human listening checks across all
+32 originally-reviewed WAV scenes) was not performed — no human ears were available in this pass.
+A6's manifest is a version string, not the full per-request schema/model/font/compiler hash
+`GenerationManifest` contract `docs/OPTIMIZATION_PLAN.md` §4 describes — that remains future work.
+
+Next bounded task: Phase B ("Prove expressive visuals without a model" — `src/types.ts`/`src/
+schema.ts` V2 unions, `src/assets/registry.ts`, three authored mechanism fixtures: DNA fork, pump
+cylinder, attention tokens) per `docs/OPTIMIZATION_PLAN.md` §5 Phase B. Do not start Phase B
+inside this same session without deliberately re-reading that section first — it is a large,
+separate effort per the plan's own dependency note ("Dependencies: A3/A4").
+
+Verification: `npm test` (build + full suite) at each task boundary; no paid provider calls; no
+commits beyond what was explicitly authorized for this run.
+
+---
+
 # Current handoff — 2026-09-09, multi-video architecture review
 
 The user requested a broader video review and a complete implementation plan, not code changes. Read [VIDEO_QUALITY_REVIEW.md](VIDEO_QUALITY_REVIEW.md), then [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md). The roadmap supersedes the older priority ordering below; historical completed phases do not establish current quality parity.

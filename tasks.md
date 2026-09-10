@@ -5,7 +5,12 @@
 Status tracking lives here; detailed contracts/tasks/gates live in [docs/OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md). Evidence: [docs/VIDEO_QUALITY_REVIEW.md](docs/VIDEO_QUALITY_REVIEW.md). Older phases and standing decisions below are historical; new findings supersede their quality assumptions, and the robot/local default notes are obsolete (current default is Kokoro).
 
 - [x] Review five additional full video timelines through samples, scripts and WAV analysis; create evidence-backed roadmap. No continuous listening claim.
-- [ ] A — Alignment diagnosis and baseline correctness (A1–A6); begin with A1–A5.
+- [x] A1 — Kokoro word-timing BOS/EOS root-cause fix (predictor-frame attribution, not a truncation/stretch). Listening verification across all 32 originally-audited WAV scenes is still outstanding — code-level fix and live contract test only.
+- [x] A2 — Caption gap/tail state fixed (landed in commit 5cf8c32, prior to this plan).
+- [x] A3 — Numeric fill opacity now honored as a value, not a boolean (landed in commit 5cf8c32, prior to this plan).
+- [x] A4 — Forced shape-diversity gate replaced with identity-aware kind collision; the director's exhausted-fallback guard is intentionally left strict.
+- [x] A5 — directorSchema parameterized by scene count; the single-scene critic-repair schema mismatch (repair calls were silently no-op'ing) is fixed.
+- [x] A6 — Job snapshots stamped with a generation manifest version; `docs/REVIEW_CORPUS.md` added. Full content-hash `GenerationManifest` remains a future, larger task.
 - [ ] B — Versioned rich mechanism fixtures and asset contracts.
 - [ ] C — Measured geometry, paths, drawing events and preflight.
 - [ ] D — Semantic storyboards, director capability and continuity.

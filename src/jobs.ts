@@ -12,6 +12,13 @@ import {generateKokoroSpeech} from './kokoro-speech.js';
 import {generateSpeech} from './providers.js';
 import {semaphore} from './concurrency.js';
 
+/** A6: bump this whenever a change to schema.ts's shapes/kinds or engine.ts's compiler/
+ *  renderer could make an old saved job.json render differently under the current code —
+ *  lets a report distinguish "replayed under its original code" from "replayed under updated
+ *  code" without re-deriving history from git log (docs/OPTIMIZATION_PLAN.md §4 GenerationManifest,
+ *  bounded to a version string for this pass — see docs/REVIEW_CORPUS.md). */
+export const GENERATION_MANIFEST_VERSION='v1-2026-09-10';
+
 /** Local single-process worker. Durable snapshots, not a distributed queue. */
 export class JobStore {
   root:string; jobs:Map<string,InternalJob>; providers:Providers;
@@ -32,7 +39,7 @@ export class JobStore {
     if(active.length>=2)throw new Error('Two jobs already active; wait or cancel one.');
     const job:InternalJob={id:randomUUID(),status:'queued',revision:0,createdAt:Date.now(),mode:options.mode,
       targetMinutes:options.durationMinutes??1,plannerBudgetUsd:options.maxCostUsd??1,ttsCharacters:0,
-      timingMode:options.narration?(options.ttsProvider==='elevenlabs'?'provider-aligned':'kokoro-aligned'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[]};
+      timingMode:options.narration?(options.ttsProvider==='elevenlabs'?'provider-aligned':'kokoro-aligned'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[],manifestVersion:GENERATION_MANIFEST_VERSION};
     this.jobs.set(job.id,job);await mkdir(join(this.root,job.id),{recursive:true});
     await this.save(job,'queued');
     const controller=new AbortController();job.controller=controller;

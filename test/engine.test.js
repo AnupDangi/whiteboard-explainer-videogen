@@ -36,6 +36,18 @@ test('Phase 11: edges route as a curve, not a straight line, and the label clear
   const distFromStraightMid=Math.hypot(Number(lx)-straightMidX,Number(ly)-straightMidY);
   assert(distFromStraightMid>5,'label sits off the straight connector line, not on top of it');
 });
+test('wrapText breaks hyphenated words at hyphens, never mid-word',()=>{
+  const lines=wrapText('one-million-token x',150,20);
+  assert(lines[0].endsWith('-'),'first line ends at a hyphen, not inside "token"');
+  assert.equal(lines.join(' ').replace(/- /g,'-'),'one-million-token x');
+  assert(wrapText('ABCDEFGHIJKLMNOPQRSTUVWXYZ',60,20).length>1);
+});
+test('edge labels paint above node boxes, never underneath',()=>{
+  const p=copy();p.scenes[0].edges[0]={...p.scenes[0].edges[0],label:'deploys'};
+  const done=renderSVG(compileScene(p.scenes[0]),90000);
+  assert(done.includes('deploys'),'edge label drawn');
+  assert(done.indexOf('deploys')>done.lastIndexOf('rx="10"'),'label markup sits after the last node box');
+});
 test('H05/H13/H17 frame is deterministic after arbitrary seeking; prior geometry stable',()=>{
   const scene=compileScene(copy().scenes[0]);const before=renderSVG(scene,7000);
   for(const t of [0,90000,2500,1,300])renderSVG(scene,t);

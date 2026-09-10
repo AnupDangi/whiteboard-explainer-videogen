@@ -1,3 +1,52 @@
+# 2026-09-10 — DeepSeek-V4 paper run + two render fixes
+
+- Full suite: `npm test` → 73 passed, 0 failed, 2 skipped (up from 71/0/2 — hyphen-wrap + label-order tests).
+- Live paper run (`/tmp/papers/2606.19348.pdf`, 1 min, enriched, kokoro): job `7860802b`, complete first attempt in 34.75s, 2 scenes / 64s, $0.0423 (gemini-3.8-flash, 54k prompt / 1.9k completion tokens). MP4: 1280×720 h264 + aac, 64.0s. Artifacts: `output/videos/tmp-papers-2606-19348-pdf-1min.{mp4,scenes/}`.
+- Audio sync (automated): both scenes kokoro-aligned, gapMs 0, trailingNonSilent false, audio 33900/28800ms vs scene 34550/29450ms (delta = designed 650ms tail), first-word starts 350/325ms. PASS.
+- Frame QA (f05/f33/f55 + f33-fixed in `output/review-deepseek-v4/`): content grounded (1M context, 27% FLOPs, V3.2 baseline). Found + fixed: hyphen mid-word split, edge-label under-node clip. Not fixed: model-truncated `FLOPs (T)` label; sparse first seconds.
+- Speed: planning-bound (28.5s of 34.75s); render 4.5s/768 frames. No renderer win available.
+
+# 2026-09-10 — Harness adoption + scene-by-scene output
+
+- Full suite: `npm test` → 71 passed, 0 failed, 2 skipped (up from 70/0/2 — 1 new `scene-output` test).
+- Harness analysis: all 82 sections read. Current code = V1 Plan + deterministic compiler + pure `renderSVG`; harness demands V2 storyboard/registry/asset/compiler program (§80 Tasks 1–12). Adopted as north-star reference; shipped bounded slice only: per-scene persistence (harness §§45/57/64, Phase 0 baseline capture).
+- Export proof (silent fixture, estimated timing — not TTS/model performance): attention MP4 (79 frames, 1fps, 640w, 78740ms) + `output/scenes-check/attention.scenes/` holding `scene-01-context.svg` … `scene-04-combine.svg` + `manifest.json` (4 scenes, durations 17616/20513/19685/20926ms, `timingKind: estimated`, audio null).
+- Limitation: final-frame SVGs only; no progression sheets, no V2 types yet.
+
+# 2026-09-10 — Phase A baseline correctness (A1, A4, A5, A6)
+
+- Full suite: `npm test` → 70 passed, 0 failed, 2 skipped (up from 65/0/1 before this pass — 6
+  new tests: 1 live-gated Kokoro timing assertion extension, 1 kind-collision unit test, 1 A4
+  end-to-end generation test, 1 A5 schema test, 1 A5 end-to-end generation test, 1 A6 job-snapshot
+  test — plus 1 live-gated multi-chunk boundary test from A1 review round 1; both live tests skip
+  without `TEST_KOKORO_TTS=1`). Live: `TEST_KOKORO_TTS=1 npm test` → 72 passed, 0 failed.
+- A1 (`scripts/kokoro_tts.py`): traced the trailing-audio defect to the duration predictor's
+  BOS/EOS frame entries (`pred[0]`/`pred[-1]` per chunk) being excluded from every word's
+  start/end sum despite being real synthesized audio. Fixed by attributing BOS lead-in to every
+  word's start and clamping the last word's `endMs` to the true total audio duration. Verified
+  live: `TEST_KOKORO_TTS=1 npm test` — first word now starts after a nonzero BOS offset; trailing
+  gap after the last word is under 1ms (was previously 1.55-5.125s per the 2026-09-09 review's 32
+  audited scenes). Human listening verification across those 32 scenes remains outstanding.
+- A4 (`src/planner.ts`): `checkKindCollision` now allows same-kind nodes whose labels reduce to
+  one stem after stripping a trailing instance marker (number/letter/ordinal) — token rows and
+  multiple lettered keys pass; two different concepts sharing a kind still fail. The hard
+  `checkShapeMix` gate was removed from `directScene`'s normal per-attempt path (now a
+  `planner.shape-diagnostic` log line only) but deliberately left in place on the
+  exhausted-director-fallback path, per the existing `'Exhausted director retries fail loudly...'`
+  regression test it protects.
+- A5 (`src/schema.ts`, `src/planner.ts`): found that the single-scene critic-repair call was
+  validated against the fixed 2-scene `directorSchema` — a real, previously-silent bug meaning
+  critic-requested repairs have likely never actually applied (the failure was swallowed by
+  `repairFromCritique`'s own `catch`). `directorSchema` is now `directorSchema(count)`; a new
+  end-to-end test with `visualCritic:true` proves a repair's changed `kind` now reaches the
+  committed scene.
+- A6 (`src/types.ts`, `src/jobs.ts`, `docs/REVIEW_CORPUS.md`): every new `JobSnapshot` carries
+  `manifestVersion` (`GENERATION_MANIFEST_VERSION` in `src/jobs.ts`); added a named, stable
+  review corpus table so future reports cite the same evidence set by name.
+- No paid provider calls in this pass; no commits beyond what was explicitly authorized.
+
+---
+
 # Latest observed results — 2026-09-09, multi-video review
 
 Evidence and method: [VIDEO_QUALITY_REVIEW.md](VIDEO_QUALITY_REVIEW.md). Proposed next work: [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md). Earlier entries below are historical and can contain superseded provider behavior, test counts and unverified claims; do not use them as current acceptance evidence.

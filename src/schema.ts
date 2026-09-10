@@ -17,4 +17,8 @@ export const contentSchema=obj({version:{type:'integer',const:1},title:str(90),s
 // attachTo/position ride on every node (strict schemas require all fields) but are only
 // meaningful with shape 'annotation': relative placement the compiler resolves (V2 §24) —
 // never absolute coordinates. Sentinels for non-annotations: attachTo '' + position 'none'.
-export const directorSchema=obj({scenes:array(obj({id:str(40),layout:{type:'string',enum:[...LAYOUTS]},nodes:array(obj({id:str(40),kind:{type:'string',enum:[...NODE_KINDS]},emphasis:{type:'boolean'},shape:{type:'string',enum:['box','illustration','icon','circle','square','bullet','number','annotation']},attachTo:{type:'string',maxLength:40},position:{type:'string',enum:['below','above','left','right','none']}}),2,6)}),2,2)});
+// A5: parameterized by scene count, matching outlineSchema's existing convention — the old
+// fixed array(...,2,2) silently mismatched the critic-repair call, which sends exactly ONE
+// scene per repair (see planner.ts's repairFromCritique); a strict-mode schema mismatch there
+// meant repair calls never actually validated, so critic repairs have likely never applied.
+export const directorSchema=(count:number)=>obj({scenes:array(obj({id:str(40),layout:{type:'string',enum:[...LAYOUTS]},nodes:array(obj({id:str(40),kind:{type:'string',enum:[...NODE_KINDS]},emphasis:{type:'boolean'},shape:{type:'string',enum:['box','illustration','icon','circle','square','bullet','number','annotation']},attachTo:{type:'string',maxLength:40},position:{type:'string',enum:['below','above','left','right','none']}}),2,6)}),count,count)});
