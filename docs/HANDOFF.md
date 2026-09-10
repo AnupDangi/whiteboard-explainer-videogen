@@ -1,3 +1,39 @@
+# Current handoff — 2026-09-10, reviewer-optimization round 1 (O1-O3)
+
+External review diagnosed three gaps; all three fixed on `opt-v3-harness`
+(commit `fe518bb`). Suite 93 tests, 91 pass, 0 fail, 2 skip.
+
+- **Figure context leak (O1):** figure digest rode only into the outline call;
+  chapter content calls lost it. Now every content call's chapter source
+  appends the figure inventory (`planner.ts` chapter task).
+- **Static-interval debt (O2, three layers):** (a) `compileScene` now
+  deterministically stretches each draw into the following narrated slack —
+  pencil keeps stroking while narration continues (residual silence 2.6s,
+  stretch cap +7s nodes / +5.4s edges, never into the next anchor, never past
+  the last word); (b) new `checkAnchorSpread` validator rejects clustered
+  anchors (consecutive gap >50% of narration for 3+ nodes, >80% for 2-node
+  scenes; last anchor before 45%) and the existing repair loop regenerates;
+  (c) `staticIntervalMs` samples thirds of every draw so a long continuous
+  stroke is measured honestly. Evidence: mock bench over-3500 lints 102→0;
+  live 1-min run static intervals 15775/8500ms → 3095/5180ms.
+- **Vision parse failure (O3):** `repairFigureJson` conservatively repairs
+  truncated model JSON (string-state walk, safe-boundary cut, comma-strip
+  fallback); one bounded parse retry per figure with a conciseness nudge;
+  schema caps 4 key numbers. Unit-proven on the exact live failure payload.
+- **O4 (orthogonal grid router) deferred:** current bezier router + crossing
+  detector + 6-candidate fallback already bound crossings to a residual the
+  lint reports; a grid A* rewrites the router for marginal gain and risks
+  sketch-mode + determinism invariants. Revisit only if crossings recur in
+  more live runs (this run had 1 hit in scene 2).
+
+Next bounded tasks: (1) live scene-1 residual 5180ms — one more anchor-spread
+tune or per-scene pull of the last anchor into the closing third; (2) run
+`run-visual-bench --live` + Level-C judge end-to-end; (3) figure-aware
+visualIntent (content prompt currently gets figure text but no explicit
+redraw instruction per node).
+
+---
+
 # Current handoff — 2026-09-10, source-intake program (P1-P6) complete
 
 All six harness source-intake phases shipped on `opt-v3-harness` (latest commit

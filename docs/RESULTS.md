@@ -1,3 +1,28 @@
+# 2026-09-10 — Reviewer-optimization round 1 (O1-O3)
+
+Commit `fe518bb` on `opt-v3-harness`. Suite 93 tests, 91 pass, 0 fail, 2 skip.
+
+**Exact tests:** full `npm test` after each change; repairFigureJson exercised
+against the exact truncated payload from the live DeepSeek run plus
+mid-array/mid-string/no-JSON/nested-quote cases; mock `run-visual-bench` for
+the pacing layers; one live 1-min DeepSeek run per pacing change.
+
+**Measured (our implementation):**
+- Figure context: content calls now receive the figure inventory (was
+  outline-only). Live run: 4 detected / 3 described, no retry storm.
+- Pacing: mock bench over-3500ms lints 102→0. Live: 15775/8500ms →
+  3095/5180ms static intervals. Mechanism: engine-side deterministic draw
+  stretch + anchor-spread validator (0 spread repairs needed on the live run —
+  the prompt+validator pressure alone changed anchor placement).
+- Vision robustness: repairFigureJson + single retry; schema capped at 4 key
+  numbers, ≤280-char fields.
+
+**What this does NOT establish:** the 5180ms scene-1 residual shows the pacing
+fix is incomplete for wide anchor gaps; connector crossing (1 hit) is a known
+residual; grid-router alternative deferred with rationale in HANDOFF.
+
+---
+
 # 2026-09-10 — Source-intake program (P1-P6, harness source-intake spec)
 
 Branch `opt-v3-harness`, commits `cf68ac4`→`357706e` (pushed). Suite: 93 tests,
