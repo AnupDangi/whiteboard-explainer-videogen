@@ -7,7 +7,7 @@ export interface PlanEdge { from: string; to: string; label?: string }
 export interface Beat { id: string; narration: string; meaning?: string }
 /** V3-4 domain template: when a scene teaches a known domain composition the director
  *  may request its canonical sketch (harness §33) — geometry stays deterministic code. */
-export type SceneTemplate='tls_handshake'|'supply_demand';
+export type SceneTemplate='tls_handshake'|'supply_demand'|'attention_matrix'|'dna_fork'|'tectonic_section';
 export interface Scene { id: string; title: string; narration: string; layout: LayoutName; nodes: PlanNode[]; edges: PlanEdge[]; note?: string; beats?: Beat[]; template?: SceneTemplate }
 export interface Plan { version: 1; title: string; scenes: Scene[] }
 export interface Timing { kind: string; words: {word:string;startMs:number;endMs:number}[]; durationMs:number; gapMs?:number; trailingNonSilent?:boolean }

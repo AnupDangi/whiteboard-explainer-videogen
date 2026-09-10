@@ -26,6 +26,16 @@ test('V3-4 templates: supply/demand draws axes, two curves and the P*/Q* crossin
   assert(done.includes('Demand curve')&&done.includes('Supply curve'),'curve labels from nodes');
   assert.equal(renderSVG(scene,scene.durationMs),renderSVG(scene,scene.durationMs),'deterministic');
 });
+test('V3-4 templates: attention matrix, DNA fork and tectonic section render deterministically',()=>{
+  for(const [index,marker] of [[2,'weights'],[3,'unzips here'],[4,'hot material rises']]){
+    const scene=compile('templates',index);
+    const done=renderSVG(scene,scene.durationMs);
+    assert(done.includes(marker),`scene ${index} renders its template (${marker})`);
+    assert.equal(renderSVG(scene,scene.durationMs),renderSVG(scene,scene.durationMs),'deterministic');
+    const early=renderSVG(scene,scene.nodes[1].startMs);
+    assert(early.length<done.length,'template reveals progressively');
+  }
+});
 test('V3-4 templates: unknown template values fail validation and merge',async()=>{
   const bad={version:1,title:'t',scenes:[{...structuredClone(fixtures.templates.scenes[0]),template:'freeform'}]};
   assert.throws(()=>validatePlan(bad),/Unknown scene template/);

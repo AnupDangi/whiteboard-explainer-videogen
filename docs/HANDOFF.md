@@ -1,3 +1,11 @@
+# Current handoff — 2026-09-10, V3 program complete through V3-6
+
+All six V3 items checked on `opt-v3-harness` (latest: matrix/fork/tectonic templates + `scripts/compare-v1-v2.ts` → `output/compare/{v1,v2}/` lint report: 17/20 scenes over the 3500ms static-interval limit — the measurable density debt; 2 residual connector crossings in `icons/lookup` and `shapes/primitives`). Suite 89 tests, 87 pass, 0 fail, 2 skip. RESULTS.md has the full V3 entry.
+
+Next bounded tasks, in value order: (1) kill the 17 static-interval violations — mostly late-anchored tails; the beat model supports it, the planner prompt needs "spread reveals across the whole narration, not just the opening" plus a validator bump; (2) fix the 2 residual connector crossings (grow routeEdge candidate set or shrink obstacle band); (3) human pairwise judgment on `output/compare/` artifacts; (4) browser-side style toggle for EXPLAIN_SKETCH; (5) full harness V2 (scene-graph/actions) — large, separate.
+
+---
+
 # Current handoff — 2026-09-10, V3-5 progression critic + deterministic lints
 
 V3-5 shipped on `opt-v3-harness`: new `src/progression.ts` — `progressionFrames` (5 deterministic frames at 0/25/50/75/100%), `staticIntervalMs` (longest narrated span with no visual change, 3500ms limit per harness §48), `connectorThroughNode` (re-derives `routeEdge` candidates; flags routes whose fallback still clips). Critic upgraded: reviews a 5-frame horizontal contact strip instead of one end-state thumbnail; deterministic findings are prepended to the critic prompt as pre-flagged issues and appended to repair issues even when the model ignores them; when sharp is unavailable, deterministic findings alone still drive one bounded repair. Suite 88 tests, 86 pass, 0 fail, 2 skip. Notable honest finding: the attention fixture itself fails `staticIntervalMs` (9.6s narrated dead tail) — the lint is already telling the truth about the density problem V3-6 must show.

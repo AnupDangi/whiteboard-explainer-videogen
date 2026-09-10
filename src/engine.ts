@@ -80,7 +80,7 @@ function validateCandidate(input: Plan): Plan {
       if (node.conceptId !== undefined && (typeof node.conceptId !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(node.conceptId))) fail(`Invalid conceptId (node ${node.id})`);
     }
     // V3-4 domain template (optional): the canonical composition replaces ad-hoc boxes.
-    if (scene.template !== undefined && !['tls_handshake','supply_demand'].includes(scene.template as string)) fail('Unknown scene template');
+    if (scene.template !== undefined && !['tls_handshake','supply_demand','attention_matrix','dna_fork','tectonic_section'].includes(scene.template as string)) fail('Unknown scene template');
     if (!Array.isArray(scene.edges) || scene.edges.length > 10) fail('Invalid edges');
     for (const e of scene.edges) if (!nodeIds.has(e.from) || !nodeIds.has(e.to) || e.from === e.to) fail('Dangling or self connector');
     for (const e of scene.edges) if (e.label !== undefined && (typeof e.label !== 'string' || e.label.length > 24)) fail('Invalid edge label');
@@ -609,21 +609,11 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
   // Pencil follows whichever single node or edge is actively mid-stroke (0<progress<1); a
   // scene at rest (everything settled at 0 or 1) shows no pencil at all.
   let pencil:{x:number;y:number;angle:number}|null=null;
-  // Edge labels collected here, painted after all nodes: node boxes are opaque,
-  // so a label emitted inline in the edge loop ends up underneath any node box
-  // it overlaps (live-verified "deploys"→"eploys" clip on a tight connector).
+
   const edgeLabels:string[]=[];
   for(const e of s.edges) {
     if(e.progress<=0)continue;
-    // Phase 11: gentle quadratic-bezier routing instead of a dead-straight line (V2 §19
-    // "support curved routing"). The control point bows perpendicular to the straight
-    // connector, always toward -y ("up" on screen) for a consistent, deterministic hand-
-    // drawn arc rather than a random wobble. This also fixes a live-verified bug: on a
-    // short connector between close nodes, the label used to sit at the raw straight-line
-    // midpoint and could render clipped behind the destination shape — the curve's bow
-    // (plus a further outward nudge below) pushes the label clear of both endpoints.
-    // V3-3: routing (bow + obstacle avoidance) computed by routeEdge; the sampled-curve
-    // never drills through an intermediate node, flipping/increasing the bow until clear.
+
     const obstacles=s.nodes.filter(n=>n.id!==e.from&&n.id!==e.to).map(n=>({x:n.x,y:n.y,w:n.w,h:n.h}));
     const {cx,cy,px,py}=routeEdge(e,obstacles);
     const bezierPoint=(t:number)=>{
@@ -644,8 +634,7 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     const tip=bezierPoint(e.progress),angle=bezierTangentAngle(e.progress);
     if(e.progress===1) {const x=tip.x,y=tip.y;svg+=`<path d="M ${x-14*Math.cos(angle-.4)} ${y-14*Math.sin(angle-.4)} L ${x} ${y} L ${x-14*Math.cos(angle+.4)} ${y-14*Math.sin(angle+.4)}" fill="none" stroke="#3a5a52" stroke-width="3.2" stroke-linecap="round"/>`;}
     else if(!pencil)pencil={x:tip.x,y:tip.y,angle};
-    // Named relationships read near the curve's own midpoint, nudged further outward along
-    // the same bow direction so the label clears both the curve and the endpoint shapes.
+
     if(e.label&&e.progress>.7){const mid=bezierPoint(0.5);edgeLabels.push(`<g opacity="${Math.min(1,(e.progress-.7)/.3)}"><text x="${mid.x+px*14}" y="${mid.y+py*14}" text-anchor="middle" font-size="14" paint-order="stroke" stroke="#fffef9" stroke-width="3">${esc(e.label)}</text></g>`);}
   }
   for(const n of s.nodes) {

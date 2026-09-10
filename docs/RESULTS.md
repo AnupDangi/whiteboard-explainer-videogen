@@ -1,3 +1,16 @@
+# 2026-09-10 — OPT-V3 program (teacher rebuild) on branch `opt-v3-harness`
+
+All on `opt-v3-harness` (5 commits, pushed); `main` untouched. Contract: `EXPLAIN_CANVAS_AGENT_HARNESS_V3.md`.
+
+- **V3-1 teacher contract** (`b0f25e1`): `checkBoardText` (key points on canvas ≥50% label overlap) + `checkFirstVisual` (anchor ≤30 words) wired into the content repair loop; teacher-contract prompt sentences. Live GPS run job `6a99f295` first attempt $0.0059 — opens on a 0.07s worked example, key points verbatim on board. Frames `output/review-gps-v31/`.
+- **V3-2 beat model** (`8ba46ff`): `beats[]` exact narration partition + `beatId`/`conceptId`; beat-local anchor resolution (repeated words can't mismatch across beats); `checkConceptContinuity`; reveal lead −180ms. Live pump run job `77518dab` first attempt $0.0166, beats 3+2, `target_tire` identical across scenes. Frames `output/review-pump-v32/`.
+- **V3-3 sketch + safe connectors** (`7df6886`): `EXPLAIN_SKETCH=1` wobbly double-stroke + hachure (seeded PRNG, zero deps, deterministic); `routeEdge` flips/grows bow until the bezier clears intermediate nodes; icon endpoints anchor to glyph edge. Sketch pump export + frame proof.
+- **V3-4 domain templates** (`b5088c1`, then matrix/fork/tectonic): 5 deterministic compositions (TLS ladder, supply/demand, attention matrix, DNA fork, tectonic section) requested by the director via schema, revealed on the anchor nodes' own timing; unknown template values fail loudly. Frames `output/review-v36/`.
+- **V3-5 progression critic + lints** (`a80780f`): critic reviews a 5-frame contact strip; `staticIntervalMs` + `connectorThroughNode` deterministic lints pre-flag issues and drive repair even without sharp.
+- **V3-6 benchmark artifacts**: `output/compare/{v1,v2}/` — 20 scenes × 5 frames + `lints.json`. Honest numbers: **17/20 scenes exceed the 3500ms static-interval limit** (the density debt, now measurable — mostly narration tails after last reveal); 2 scenes have residual connector crossings (`icons/lookup`, `shapes/primitives`); template scenes clear the connector lint. Teaching-clarity judgment is human, pending on these artifacts.
+
+Suite progression: 75 → 87 passing across V3 (89 tests, 2 live-skip). No paid generations beyond the two 1-min live proofs ($0.0059 + $0.0166). V2 substitute here = sketch style + templates + beats + gates; full harness V2 (scene-graph, actions) remains future.
+
 # 2026-09-10 — DeepSeek-V4 paper run + two render fixes
 
 - Full suite: `npm test` → 73 passed, 0 failed, 2 skipped (up from 71/0/2 — hyphen-wrap + label-order tests).
