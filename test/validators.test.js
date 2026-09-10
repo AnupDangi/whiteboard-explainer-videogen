@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,retrieveForChapter} from '../dist/src/planner.js';
 import {directorSchema} from '../dist/src/schema.js';
 
 test('quantity manifest: narrated number+noun must be drawn or labeled',()=>{
@@ -136,6 +136,18 @@ test('V3-2 concept continuity: one conceptId means one label and kind',()=>{
   assert.match(checkConceptContinuity(rekinded).join('|'),/changes identity/);
   const distinct=[{id:'s1',nodes:[{id:'a',label:'Bank token',kind:'token',conceptId:'bank'}]},{id:'s2',nodes:[{id:'b',label:'Bank token',kind:'token',conceptId:'vault'}]}];
   assert.deepEqual(checkConceptContinuity(distinct),[]);
+});
+test('P4 retrieval: chapter evidence matches the objective, not the ordinal position',()=>{
+  const doc=['Filler paragraph about administrative policy and budgeting procedures with no relation.',
+    'The attention mechanism computes compatibility between a query and every key in the context.',
+    'Completely unrelated paragraph about office furniture logistics.',
+    'The softmax function normalizes the compatibility scores into weights that sum to one.'].join('\n\n');
+  const retrieved=retrieveForChapter(doc,'How attention compares query against keys and normalizes into softmax weights',['Compatibility scores']);
+  assert(retrieved.includes('attention mechanism'),'attention paragraph retrieved');
+  assert(retrieved.includes('softmax'),'softmax paragraph retrieved');
+  assert(!retrieved.includes('office furniture'),'unrelated paragraph dropped');
+  const small=retrieveForChapter('short doc','anything',[]);
+  assert.equal(small,'short doc','tiny sources pass through whole');
 });
 test('A5: directorSchema is parameterized by scene count, matching outlineSchema\'s existing convention',()=>{
   const one=directorSchema(1);
