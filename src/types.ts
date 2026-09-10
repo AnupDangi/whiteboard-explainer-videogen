@@ -1,7 +1,11 @@
 import type {NodeKind,LayoutName} from './vocabulary.js';
-export interface PlanNode { id: string; label: string; wordIndex: number; kind?: NodeKind; emphasis?: boolean; shape?: 'box'|'illustration'|'icon'|'circle'|'square'|'bullet'|'number'|'annotation'; keyPoint?: string; visualIntent?: string; attachTo?: string; position?: 'below'|'above'|'left'|'right' }
+export interface PlanNode { id: string; label: string; wordIndex: number; kind?: NodeKind; emphasis?: boolean; shape?: 'box'|'illustration'|'icon'|'circle'|'square'|'bullet'|'number'|'annotation'; keyPoint?: string; visualIntent?: string; attachTo?: string; position?: 'below'|'above'|'left'|'right'; beatId?: string; conceptId?: string }
 export interface PlanEdge { from: string; to: string; label?: string }
-export interface Scene { id: string; title: string; narration: string; layout: LayoutName; nodes: PlanNode[]; edges: PlanEdge[]; note?: string }
+/** V3-2 semantic beat: one idea = one narration segment. Beats partition the scene
+ *  narration (exact substrings, in order); node anchors resolve inside their own
+ *  beat so repeated words across beats cannot mismatch (harness §§11-12,24). */
+export interface Beat { id: string; narration: string; meaning?: string }
+export interface Scene { id: string; title: string; narration: string; layout: LayoutName; nodes: PlanNode[]; edges: PlanEdge[]; note?: string; beats?: Beat[] }
 export interface Plan { version: 1; title: string; scenes: Scene[] }
 export interface Timing { kind: string; words: {word:string;startMs:number;endMs:number}[]; durationMs:number; gapMs?:number; trailingNonSilent?:boolean }
 export interface Usage { model:string; promptTokens:number; completionTokens:number; cachedTokens:number; costUsd:number; calls:number; spans?: PlannerSpans }

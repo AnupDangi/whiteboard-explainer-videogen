@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors} from '../dist/src/planner.js';
 import {directorSchema} from '../dist/src/schema.js';
 
 test('quantity manifest: narrated number+noun must be drawn or labeled',()=>{
@@ -107,6 +107,35 @@ test('V3-1 first visual: some node anchors in the opening 30 words',()=>{
   assert.match(checkFirstVisual(late).join('|'),/opening 30 words/);
   const unanchored=[{id:'s',nodes:[{id:'a'}]}];
   assert.match(checkFirstVisual(unanchored).join('|'),/opening 30 words/);
+});
+test('V3-2 beats: anchors resolve inside their own beat, never a repeated word elsewhere',()=>{
+  const plan={version:1,title:'Beats',scenes:[{id:'s',title:'T',narration:'cat sat cat mat',layout:'flow',
+    beats:[{id:'b1',narration:'cat sat'},{id:'b2',narration:'cat mat'}],
+    nodes:[{id:'a',label:'First cat',anchor:'cat',beatId:'b1'},{id:'b',label:'Second cat',anchor:'cat',beatId:'b2'}],edges:[],note:''}]};
+  const resolved=resolveAnchors(structuredClone(plan));
+  assert.equal(resolved.scenes[0].nodes[0].wordIndex,0);
+  assert.equal(resolved.scenes[0].nodes[1].wordIndex,2,'second-beat cat resolves to word 2, not word 0');
+  assert.deepEqual(resolved.scenes[0].beats.map(b=>b.id),['b1','b2']);
+  const outsideBeat=structuredClone(plan);outsideBeat.scenes[0].nodes[1].anchor='mat';outsideBeat.scenes[0].nodes[1].beatId='b1';
+  assert.throws(()=>resolveAnchors(outsideBeat),/inside its beat/);
+  const badPartition=structuredClone(plan);badPartition.scenes[0].beats[1].narration='cat';
+  assert.throws(()=>resolveAnchors(badPartition),/partition/);
+  const unknownBeat=structuredClone(plan);unknownBeat.scenes[0].nodes[0].beatId='nope';
+  assert.throws(()=>resolveAnchors(unknownBeat),/not a beat/);
+  // No beats at all: legacy global resolution still works.
+  const legacy={version:1,title:'Legacy',scenes:[{id:'s',title:'T',narration:'cat sat mat',layout:'flow',nodes:[{id:'a',label:'Cat',anchor:'cat'},{id:'b',label:'Mat',anchor:'mat'}],edges:[],note:''}]};
+  const leg=resolveAnchors(legacy);
+  assert.equal(leg.scenes[0].nodes[1].wordIndex,2);
+});
+test('V3-2 concept continuity: one conceptId means one label and kind',()=>{
+  const stable=[{id:'s1',nodes:[{id:'a',label:'Bank token',kind:'token',conceptId:'bank'}]},{id:'s2',nodes:[{id:'b',label:'Bank token',kind:'token',conceptId:'bank'}]}];
+  assert.deepEqual(checkConceptContinuity(stable),[]);
+  const renamed=[{id:'s1',nodes:[{id:'a',label:'Bank token',kind:'token',conceptId:'bank'}]},{id:'s2',nodes:[{id:'b',label:'Bank store',kind:'token',conceptId:'bank'}]}];
+  assert.match(checkConceptContinuity(renamed).join('|'),/changes identity/);
+  const rekinded=[{id:'s1',nodes:[{id:'a',label:'Bank token',kind:'token',conceptId:'bank'}]},{id:'s2',nodes:[{id:'b',label:'Bank token',kind:'database',conceptId:'bank'}]}];
+  assert.match(checkConceptContinuity(rekinded).join('|'),/changes identity/);
+  const distinct=[{id:'s1',nodes:[{id:'a',label:'Bank token',kind:'token',conceptId:'bank'}]},{id:'s2',nodes:[{id:'b',label:'Bank token',kind:'token',conceptId:'vault'}]}];
+  assert.deepEqual(checkConceptContinuity(distinct),[]);
 });
 test('A5: directorSchema is parameterized by scene count, matching outlineSchema\'s existing convention',()=>{
   const one=directorSchema(1);

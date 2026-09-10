@@ -31,6 +31,20 @@ function validateCandidate(input: Plan): Plan {
     ids.add(scene.id);
     string(scene.title, 70, 'scene title'); string(scene.narration, 1800, 'narration');
     if (!(LAYOUTS as readonly string[]).includes(scene.layout)) fail('Unknown layout');
+    // V3-2 beats (optional): exact ordered partition of the narration. Old plans
+    // without beats still validate — anchor resolution falls back to global search.
+    const normSpace=(t:string)=>t.replace(/\s+/g,' ').trim();
+    let beatIds:Set<string>|null=null;
+    if (scene.beats !== undefined) {
+      if (!Array.isArray(scene.beats) || scene.beats.length < 2 || scene.beats.length > 4) fail('Expected 2–4 beats');
+      beatIds = new Set();
+      for (const b of scene.beats) {
+        if (!b || typeof b.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(b.id) || beatIds.has(b.id)) fail('Invalid or duplicate beat id');
+        beatIds.add(b.id);
+        string(b.narration, 600, 'beat narration');
+      }
+      if (scene.beats.map(b=>normSpace(b.narration)).join(' ') !== normSpace(scene.narration)) fail('Beats must partition the scene narration exactly, in order');
+    }
     if (!Array.isArray(scene.nodes) || scene.nodes.length < 2 || scene.nodes.length > 6) fail('Expected 2–6 nodes');
     const nodeIds = new Set();
     const words = scene.narration.trim().split(/\s+/);
@@ -59,6 +73,10 @@ function validateCandidate(input: Plan): Plan {
       // show, shared upstream of both narration and the Visual Director's kind/shape choice.
       // Planning metadata like keyPoint — validated, preserved, never rendered directly.
       if (node.visualIntent !== undefined && (typeof node.visualIntent !== 'string' || !node.visualIntent.trim() || node.visualIntent.length > 80)) fail(`Invalid visualIntent (node ${node.id}): 1-80 chars`);
+      // beatId pins the node to one beat (anchors resolve inside it); conceptId is
+      // the cross-scene identity (same conceptId = same thing, every scene).
+      if (node.beatId !== undefined && (typeof node.beatId !== 'string' || !(beatIds as Set<string> | null)?.has(node.beatId))) fail(`Node ${node.id} references an unknown beat`);
+      if (node.conceptId !== undefined && (typeof node.conceptId !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(node.conceptId))) fail(`Invalid conceptId (node ${node.id})`);
     }
     if (!Array.isArray(scene.edges) || scene.edges.length > 10) fail('Invalid edges');
     for (const e of scene.edges) if (!nodeIds.has(e.from) || !nodeIds.has(e.to) || e.from === e.to) fail('Dangling or self connector');
@@ -68,7 +86,8 @@ function validateCandidate(input: Plan): Plan {
   // Whitelist all data crossing into the renderer; discard unknown provider fields.
   return {version: 1, title: input.title, scenes: input.scenes.map(s => ({
     id: s.id, title: s.title, narration: s.narration, layout: s.layout,
-    nodes: s.nodes.map(n => ({id:n.id,label:n.label,wordIndex:n.wordIndex,...(n.kind&&n.kind!=='generic'?{kind:n.kind}:{}),...(n.emphasis?{emphasis:true}:{}),...(n.shape&&n.shape!=='box'?{shape:n.shape}:{}),...(typeof n.keyPoint==='string'&&n.keyPoint?{keyPoint:n.keyPoint}:{}),...(typeof n.visualIntent==='string'&&n.visualIntent?{visualIntent:n.visualIntent}:{}),...(n.shape==='annotation'?{attachTo:n.attachTo,position:n.position}:{})})),
+    nodes: s.nodes.map(n => ({id:n.id,label:n.label,wordIndex:n.wordIndex,...(n.kind&&n.kind!=='generic'?{kind:n.kind}:{}),...(n.emphasis?{emphasis:true}:{}),...(n.shape&&n.shape!=='box'?{shape:n.shape}:{}),...(typeof n.keyPoint==='string'&&n.keyPoint?{keyPoint:n.keyPoint}:{}),...(typeof n.visualIntent==='string'&&n.visualIntent?{visualIntent:n.visualIntent}:{}),...(typeof (n as {beatId?:unknown}).beatId==='string'?{beatId:n.beatId}:{}),...(typeof (n as {conceptId?:unknown}).conceptId==='string'?{conceptId:n.conceptId}:{}),...(n.shape==='annotation'?{attachTo:n.attachTo,position:n.position}:{})})),
+    ...(s.beats?{beats:s.beats.map(b=>({id:b.id,narration:b.narration}))}:{}),
     edges:s.edges.map(e=>({from:e.from,to:e.to,...(typeof e.label==='string'&&e.label?{label:e.label}:{})})), note:s.note || ''
   }))};
 }
@@ -364,7 +383,7 @@ export function compileScene(scene: Scene, timing: Timing = estimateTiming(scene
     if(lines.length*fontSize*1.18>labelBudget) fail(`Label overflows ${node.id}`);
     const anchor=timing.words[node.wordIndex];
     if(!anchor) fail(`Missing speech anchor ${node.wordIndex}`);
-    const semanticColor=node.kind?SEMANTIC_COLORS[node.kind]:undefined; const baseColor=semanticColor||COLORS[i%COLORS.length]; const fillOpacity=node.shape==='icon'||node.shape==='annotation'?0:0.25; return {...node,x,y,w,h,fontSize,lines,color:baseColor,fillOpacity,startMs:Math.max(0,anchor.startMs-80),drawMs:isIllustration?1700:900};
+    const semanticColor=node.kind?SEMANTIC_COLORS[node.kind]:undefined; const baseColor=semanticColor||COLORS[i%COLORS.length]; const fillOpacity=node.shape==='icon'||node.shape==='annotation'?0:0.25; return {...node,x,y,w,h,fontSize,lines,color:baseColor,fillOpacity,startMs:Math.max(0,anchor.startMs-180),drawMs:isIllustration?1700:900};
   });
   const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
   const edges=scene.edges.map(e=>{

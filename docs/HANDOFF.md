@@ -1,3 +1,11 @@
+# Current handoff — 2026-09-10, V3-2 beat model live-proven
+
+V3-2 shipped on `opt-v3-harness`: optional `beats[]` (exact ordered partition, 2-4/scene) + `beatId`/`conceptId` on nodes across types/schema/validator; beat-local anchor resolution in `resolveAnchors` (repeated words across beats can no longer mismatch; legacy global path kept for beat-less plans); `checkConceptContinuity` in repair loop; node reveal lead -80ms → -180ms (harness 100-300ms). Suite 77/0/2. Live pump run job `77518dab`: first attempt, $0.0166, beats 3+2, `target_tire` identical across scenes, frames `output/review-pump-v32/` show beat reveal + example + annotation. Residual: canvas still sparse per frame (density = V3-3/V3-4 style + templates, not beats).
+
+Next: V3-3 Rough sketch flag + obstacle-avoiding connectors + endpoint rules.
+
+---
+
 # Current handoff — 2026-09-10, V3-1 teacher contract live-proven
 
 V3-1 shipped on `opt-v3-harness`: `checkBoardText` (key points on canvas, ≥50% label overlap) + `checkFirstVisual` (anchor ≤30 words) wired into content repair loop; teacher-contract sentences in content + outline prompts; 5 mock sites updated to new contract. Suite 75/0/2. Live GPS run job `6a99f295`: first attempt, $0.0059, opens mid-thought on 0.07s worked example, quantities in labels, frames `output/review-gps-v31/`. Residual honest gap: scene-2 empty ~5s despite passing word gate — wall-clock lateness needs V3-2 persistent objects/beat timing, not a tighter word bound.

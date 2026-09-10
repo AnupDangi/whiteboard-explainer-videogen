@@ -5,7 +5,7 @@
 Contract: `EXPLAIN_CANVAS_AGENT_HARNESS_V3.md`. Evidence: competitor frames vs ours (attention/supply/TLS/robot). Tick `[ ]`→`[x]` only on passing run + recorded evidence.
 
 - [x] V3-1 — Teacher contract in prompts + validators (hook scene, persistent example, one-idea/scene, board key points, quantity-visuals, first-visual ≤3.5s lint). Proof: suite 75/0/2; GPS live run job `6a99f295` first attempt $0.0059, opens on 0.07s example, key points verbatim on board. Residual: scene-2 canvas empty ~5s (anchors pass word-30 gate but wall-clock late) → V3-2 fuel.
-- [ ] V3-2 — Beat model (nested beats, beat-local anchors, leadMs, persistent conceptId).
+- [x] V3-2 — Beat model (nested beats, beat-local anchors, leadMs, persistent conceptId). Proof: suite 77/0/2; pump live run job `77518dab` first attempt $0.0166, 3+2 beats emitted, `target_tire` concept identical label across scenes, node lead -180ms. Frames `output/review-pump-v32/`.
 - [ ] V3-3 — Rough sketch style flag + obstacle-avoiding connectors + endpoint rules.
 - [ ] V3-4 — Lucide registry + 5 domain templates (attention matrix, DNA fork, tectonic section, supply/demand curves, TLS ladder).
 - [ ] V3-5 — Critic progression sheets + new lints (through-object, too-little-change, ID mismatch).
