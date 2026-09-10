@@ -1,3 +1,51 @@
+# 2026-09-10 — Source-intake program (P1-P6, harness source-intake spec)
+
+Branch `opt-v3-harness`, commits `cf68ac4`→`357706e` (pushed). Suite: 93 tests,
+91 pass, 0 fail, 2 skip (live-TTS-cred gated).
+
+**Exact tests:** `npm test` after each phase; new files `test/figures.test.js`
+(real sips-generated PDF through detect+crop; mock-fetcher describeFigures
+schema/cap/one-call-per-figure) + retrieval test in `test/validators.test.js`
+(objective-matched paragraphs retrieved, unrelated dropped, tiny source
+pass-through).
+
+**What each phase established (our implementation only):**
+- P1 extraction: docx/pptx (unzip+XML), md/json/text ingestion; sha256 ledger.
+- P2 figures: poppler `<image>` detection is deterministic and whole-document
+  (real figures on pages 32-57 of a 59-page paper beat page-2 decorations via
+  area sort); crops are coordinate-true at 150dpi (pdftohtml XML coords are
+  150dpi pixels — verified visually, output/review-v36/figure-crop-test.png);
+  VLM description is ≤4 bounded calls, strict-schema, fail-soft per figure.
+- P3 understanding: rides the outline call (no extra model call — budget stays
+  1 outline + 1 registry/chapter); validation REQUIRES the fields; a DeepSeek
+  paper run produced correct paperTitle + workedExample ("DeepSeek-V4-Pro")
+  and the hook chapter opens with what the paper is.
+- P4 retrieval: objective-keyed lexical scoring replaced ordinal chunking;
+  unit-proven on a synthetic doc (attention/softmax paragraphs retrieved,
+  furniture filler dropped).
+- P5 logging: per-job JSONL ledger (`.data/<id>/log.jsonl`), errorKind
+  taxonomy, `dist/scripts/journal.js` (43 events, 4 calls, 0 errors on live
+  run — call table with tokens+cost).
+- P6 eval: 6-seed visual bench (cases JSON schema), runner with Level A
+  deterministic lints + semantic coverage → `output/evaluations/visual-bench/
+  report.json`; Level-C judge scores 6-dimension rubric strips (live-only).
+
+**Live run (real cost, not fixture):** DeepSeek-V4 PDF, 1 min, gemini-3.8-flash:
+$0.0492, 4 calls, 1 content repair, complete; figures detected 4/described 3
+(1 truncated-JSON parse failure kept undescribed — fail-soft, logged
+`source.figure-describe-failed`).
+
+**What this does NOT establish:** fixture throughput is not model/TTS speed;
+local bench results say nothing about Lamina Labs' actual pipeline; the VLM
+judge is a rubric scorer, not a ground truth; mock-mode semantic coverage is
+structurally 0/23.
+
+**Limitations / next bounded:** static-interval density debt persists in live
+scenes (9025/7825ms vs 3500 limit); figure-describe parse retry; figure-aware
+content prompt; judge unexercised live.
+
+---
+
 # 2026-09-10 — OPT-V3 program (teacher rebuild) on branch `opt-v3-harness`
 
 All on `opt-v3-harness` (5 commits, pushed); `main` untouched. Contract: `EXPLAIN_CANVAS_AGENT_HARNESS_V3.md`.

@@ -1,3 +1,54 @@
+# Current handoff — 2026-09-10, source-intake program (P1-P6) complete
+
+All six harness source-intake phases shipped on `opt-v3-harness` (latest commit
+`357706e`). Suite 93 tests, 91 pass, 0 fail, 2 skip. Full ledger: commits
+`cf68ac4` (P2 figures), `85fa768` (P3 understanding), `70c71ce` (P4 retrieval),
+`0c0ed37` (P6 eval bench), `357706e` (figures through enriched flow). P5 (JSONL
+ledger + errorKind + journal script) and P1 (extraction: docx/pptx/md/json)
+landed earlier in the session.
+
+**What shipped this stretch:**
+- `src/figures.ts`: deterministic figure/table detection from `pdftohtml -xml`
+  (`<image>` tags, whole-document scan, area-sorted top-4 — real figures beat
+  page decorations), coordinate-true 150dpi crops (`cropFigure`), and
+  fail-soft per-figure VLM description (`describeFigures`, ≤4 calls, strict
+  schema). One real parse-failure on the DeepSeek paper kept 3/4 figures —
+  fail-soft works as designed, no retry yet (bounded follow-up).
+- Understanding rides the outline call (harness §77 budget kept): outline
+  schema now requires `paperTitle`, `centralQuestion`, `workedExample`,
+  `visualInventory`; hook chapter teaches what the source IS first; content
+  calls receive the understanding block. Ledger event `source.understood`.
+- `retrieveForChapter` (planner.ts): objective+keyPoint lexical scoring over
+  paragraphs, original order, 8k char budget — ordinal chapter chunks gone.
+- `eval/visual-bench/` (6 seed cases) + `scripts/run-visual-bench.ts`
+  (live/mock; Level A lints + semantic coverage → report.json) +
+  `scripts/judge.ts` (Level-C rubric vision scoring; live-only).
+- Figures flow: enriched `generate-video` detects+describes before handoff and
+  passes `GenerationOptions.figures` (worker never sees original bytes).
+
+**Live proof (real paid runs, OpenRouter gemini-3.8-flash):** DeepSeek-V4
+paper, 1-min: complete, $0.049, 4 model calls, 1 content repair; outline
+produced paperTitle "DeepSeek-V4: Towards Highly Efficient Million-Token
+Context Intelligence", workedExample "DeepSeek-V4-Pro", 3 visuals; scenes
+carry verbatim-anchored facts (1.6T/49B, 27% FLOPs, 10% KV cache, 57.9%
+SimpleQA).
+
+**Known residual debt:** live 1-min scenes still measure staticInterval
+9025/7825ms over the 3500ms limit (density debt already flagged in V3;
+connectorHits=0) — the V3-6 beat-spread fix list still applies to live
+outputs. Figure-describe: 1 truncated-JSON parse failure per ~4 figures
+(fail-soft; a single bounded retry is the cheap fix). Mock-mode visual-bench
+semantic coverage is 0/23 by construction (fixtures don't narrate per case) —
+only `--live` produces meaningful semantic numbers.
+
+**Next bounded task for a future agent:** (1) one parse-retry inside
+`describeFigures`; (2) apply the static-interval spread fix to live planner
+prompt (V3 handoff item 1); (3) run `run-visual-bench --live` once and the
+judge on the saved scenes; (4) figure-aware content prompt (currently figures
+reach outline+brief only).
+
+---
+
 # Current handoff — 2026-09-10, V3 program complete through V3-6
 
 All six V3 items checked on `opt-v3-harness` (latest: matrix/fork/tectonic templates + `scripts/compare-v1-v2.ts` → `output/compare/{v1,v2}/` lint report: 17/20 scenes over the 3500ms static-interval limit — the measurable density debt; 2 residual connector crossings in `icons/lookup` and `shapes/primitives`). Suite 89 tests, 87 pass, 0 fail, 2 skip. RESULTS.md has the full V3 entry.
