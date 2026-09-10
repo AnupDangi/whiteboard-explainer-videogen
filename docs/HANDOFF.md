@@ -10,8 +10,10 @@ embeddings with deterministic BM25-only fallback (core tests stay key-free); bud
 
 **LD1 shipped** (see RESULTS.md 2026-09-10 LD1 entry): 15-page PDF cap removed, full-doc
 page-aware extraction (`SourceDocument.pages: {page,start}[]`), TEXT_LIMIT 200k→5M,
-`stripAcademicTail` gated to papers. Suite 97 tests, 95 pass, 0 fail, 2 skip. Not committed
-yet at time of writing — commit on `opt-v3-harness` as one LD1 commit.
+`stripAcademicTail` gated to papers. Suite 97 tests, 95 pass, 0 fail, 2 skip. Committed as
+`199332b` on `opt-v3-harness`. Note: `src/planner.ts` carries pre-existing uncommitted
+changes from an earlier session (require_parameters conditional, content max_tokens
+5000→9000) — deliberately NOT included in the LD1 commit; ask the user before committing.
 
 **Next bounded task: LD2** — `src/document-map.ts`: heading/TOC detection over page-tagged
 text → section tree (id, title, page range, extractive summary, charCount), sha256-cached
