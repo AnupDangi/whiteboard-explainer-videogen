@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "eval-audit": {
+      "source": "hamelsmu/evals-skills",
+      "sourceType": "github",
+      "skillPath": "skills/eval-audit/SKILL.md",
+      "computedHash": "996ef52f90673647106ac795600c6d32f82ac0e1a51564b3ea47d130c0145a45"
+    },
+    "llm-evaluation": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/llm-application-dev/skills/llm-evaluation/SKILL.md",
+      "computedHash": "af89a6013eacc5db7afe102b4a2af95ad8dcad4721e35700cba24b1ebd35c94f"
+    },
+    "pdf-extraction": {
+      "source": "claude-office-skills/skills",
+      "sourceType": "github",
+      "skillPath": "pdf-extraction/SKILL.md",
+      "computedHash": "b747452a0366e63d69743af86c0abf3da7e3f84a65f57bad2c61a1c0a44c0e14"
+    }
+  }
+}
