@@ -2,7 +2,10 @@ import {NODE_KINDS,LAYOUTS} from './vocabulary.js';
 const str=(maxLength:number)=>({type:'string',minLength:1,maxLength});
 const obj=(properties:Record<string,unknown>,required=Object.keys(properties))=>({type:'object',additionalProperties:false,properties,required});
 const array=(items:unknown,minItems:number,maxItems:number)=>({type:'array',items,minItems,maxItems});
-export const outlineSchema=(count:number)=>obj({title:str(90),chapters:array(obj({title:str(70),objective:str(300),arc:{type:'string',enum:['hook','build','example','payoff','recap']},keyPoints:array(str(60),1,5),teacherTone:{type:'string',maxLength:200}},['title','objective','arc','keyPoints']),count,count)});
+// P3 understanding fields ride in the outline call (harness §77 budget: 1 outline +
+// 1 registry) — the model returns its read of the source before planning chapters.
+const understanding={paperTitle:str(120),centralQuestion:str(200),workedExample:obj({entity:str(80),numbers:array(str(24),0,6)},['entity','numbers']),visualInventory:array(obj({title:str(70),kind:{type:'string',enum:['concept_map','process_flow','comparison','timeline','data_chart','structural_diagram','mechanism']},detail:str(160)},['title','kind','detail']),0,6)};
+export const outlineSchema=(count:number)=>obj({title:str(90),...understanding,chapters:array(obj({title:str(70),objective:str(300),arc:{type:'string',enum:['hook','build','example','payoff','recap']},keyPoints:array(str(60),1,5),teacherTone:{type:'string',maxLength:200}},['title','objective','arc','keyPoints']),count,count)});
 // Stage 1 — Teaching Planner: content only. No layout/kind/emphasis — those are the Visual
 // Director's job (stage 2), kept in a separate schema/call so content quality and visual
 // quality can be validated, repaired and reasoned about independently.

@@ -46,7 +46,7 @@ test('V3-4 templates: unknown template values fail validation and merge',async()
   const fetcher=async(url,options)=>{
     if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
     const body=JSON.parse(options.body);const content=JSON.parse(body.messages[1].content);
-    if(content.chapterCount)return reply({title:'O',chapters:[{title:'T',objective:'E',arc:'build',keyPoints:['Point one','Point two']}]});
+    if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'O',chapters:[{title:'T',objective:'E',arc:'build',keyPoints:['Point one','Point two']}]});
     if(content.scenes)return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'flow',template:'rainbow',nodes:s.nodes.map(n=>({id:n.id,kind:'generic',emphasis:false}))}))});
     const words='Point one Point two '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
     return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`A${i}`,narration:words,nodes:[{id:'a',label:'Point one',anchor:'term_0',keyPoint:'Point one'},{id:'b',label:'Point two',anchor:'term_10',keyPoint:'Point two'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});

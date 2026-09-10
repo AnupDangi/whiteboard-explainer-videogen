@@ -12,7 +12,7 @@ function adapter({failure=false,bad=false}={}) {
   const content=JSON.parse(body.messages[1].content);let result;
    if(content.chapterCount){
     // Stage 0 — outline v2: arc role + 2 canvas key points per chapter.
-    result={title:'Dynamic outline',chapters:Array.from({length:content.chapterCount},(_,i)=>({title:`Topic ${i}`,objective:`Explain aspect ${i}`,arc:i===0?'hook':(i===content.chapterCount-1?'recap':'build'),keyPoints:[`Alpha aspect fact`,`Beta aspect fact`]}))};
+    result={paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Dynamic outline',chapters:Array.from({length:content.chapterCount},(_,i)=>({title:`Topic ${i}`,objective:`Explain aspect ${i}`,arc:i===0?'hook':(i===content.chapterCount-1?'recap':'build'),keyPoints:[`Alpha aspect fact`,`Beta aspect fact`]}))};
    } else if(content.scenes){
     // Stage 2 — Visual Director: alternate icon/box so the shape-mix gate passes,
     // distinct kinds so the collision gate passes (generic nodes carry no shape).
@@ -60,7 +60,7 @@ test('A transient failure on the very first content/director call retries in pla
   if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
   const body=JSON.parse(options.body);requests.push(body);
   const content=JSON.parse(body.messages[1].content);
-   if(content.chapterCount)return reply({title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
+   if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
    if(content.scenes){
     directorCalls++;
     if(directorCalls===1)return new Response('',{status:429});
@@ -89,7 +89,7 @@ test('Exhausted director retries fail loudly instead of shipping all-generic box
     if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
     const body=JSON.parse(options.body);requests.push(body);
     const content=JSON.parse(body.messages[1].content);
-    if(content.chapterCount)return reply({title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
+    if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
     if(content.scenes)return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'nope-not-a-layout',nodes:s.nodes.map(n=>({id:n.id,kind:'generic',emphasis:false}))}))});
     const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
     return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_10',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
@@ -146,7 +146,7 @@ test('A4: a real director result using one shape throughout (a legitimate token 
     if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
     const body=JSON.parse(options.body);
     const content=JSON.parse(body.messages[1].content);
-    if(content.chapterCount)return reply({title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Token instance','Ordered token']}]});
+    if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Token instance','Ordered token']}]});
     if(content.scenes){
       directorCalls++;
       // Same shape ('box', via no shape field) and same kind ('token') on every node, with
@@ -181,7 +181,7 @@ test('A5: a single-scene critic repair validates and actually applies (was previ
       return reply({issues:['scene reads as cluttered'],needsRepair:true});
     }
     const content=JSON.parse(userContent);
-    if(content.chapterCount)return reply({title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
+    if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
     if(content.repairError&&Array.isArray(content.scenes)&&content.scenes.length===1){
       // The A5 repair call: exactly one scene in the prompt. Flip the kind so the test can
       // observe the repair actually landing (before the A5 fix, this call silently failed
