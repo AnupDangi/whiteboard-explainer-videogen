@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget} from '../dist/src/planner.js';
 import {directorSchema} from '../dist/src/schema.js';
 
 test('quantity manifest: narrated number+noun must be drawn or labeled',()=>{
@@ -91,6 +91,22 @@ test('concept budget: split crowded scenes past 5 distinct kinds, generic never 
   // Repeated kinds and generic don't count toward the budget.
   const repeatsAndGeneric=[{id:'s',narration:'x',nodes:[{id:'a',kind:'database'},{id:'b',kind:'database'},{id:'c'},{id:'d'},{id:'e'},{id:'f'}]}];
   assert.deepEqual(checkConceptBudget(repeatsAndGeneric),[]);
+});
+test('V3-1 board text: key points must be written on the canvas, not just claimed',()=>{
+  const kps=['Parallel training speedup','Softmax weight blending'];
+  const board=[{id:'s',narration:'x',nodes:[{id:'a',label:'Parallel training speedup',keyPoint:kps[0]},{id:'b',label:'Softmax blending weights',keyPoint:kps[1]}]}];
+  assert.deepEqual(checkBoardText(board,kps),[]);
+  const metaOnly=[{id:'s',narration:'x',nodes:[{id:'a',label:'Cluster',keyPoint:kps[0]},{id:'b',label:'Blending',keyPoint:kps[1]}]}];
+  const failures=checkBoardText(metaOnly,kps);
+  assert.equal(failures.length,2);assert.match(failures.join('|'),/never written on the board/);
+});
+test('V3-1 first visual: some node anchors in the opening 30 words',()=>{
+  const early=[{id:'s',nodes:[{id:'a',wordIndex:5},{id:'b',wordIndex:40}]}];
+  assert.deepEqual(checkFirstVisual(early),[]);
+  const late=[{id:'s',nodes:[{id:'a',wordIndex:45},{id:'b',wordIndex:60}]}];
+  assert.match(checkFirstVisual(late).join('|'),/opening 30 words/);
+  const unanchored=[{id:'s',nodes:[{id:'a'}]}];
+  assert.match(checkFirstVisual(unanchored).join('|'),/opening 30 words/);
 });
 test('A5: directorSchema is parameterized by scene count, matching outlineSchema\'s existing convention',()=>{
   const one=directorSchema(1);

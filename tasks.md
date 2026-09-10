@@ -1,6 +1,17 @@
 # Whiteboard Teacher Program — phased task tracker
 
-## Current program — multi-video review, 2026-09-09
+## Current program — OPT-V3 teacher rebuild, 2026-09-10 (branch `opt-v3-harness`)
+
+Contract: `EXPLAIN_CANVAS_AGENT_HARNESS_V3.md`. Evidence: competitor frames vs ours (attention/supply/TLS/robot). Tick `[ ]`→`[x]` only on passing run + recorded evidence.
+
+- [x] V3-1 — Teacher contract in prompts + validators (hook scene, persistent example, one-idea/scene, board key points, quantity-visuals, first-visual ≤3.5s lint). Proof: suite 75/0/2; GPS live run job `6a99f295` first attempt $0.0059, opens on 0.07s example, key points verbatim on board. Residual: scene-2 canvas empty ~5s (anchors pass word-30 gate but wall-clock late) → V3-2 fuel.
+- [ ] V3-2 — Beat model (nested beats, beat-local anchors, leadMs, persistent conceptId).
+- [ ] V3-3 — Rough sketch style flag + obstacle-avoiding connectors + endpoint rules.
+- [ ] V3-4 — Lucide registry + 5 domain templates (attention matrix, DNA fork, tectonic section, supply/demand curves, TLS ladder).
+- [ ] V3-5 — Critic progression sheets + new lints (through-object, too-little-change, ID mismatch).
+- [ ] V3-6 — V1-vs-V2 benchmark on attention/supply/TLS/DeepSeek contact sheets; ship on teaching-clarity win.
+
+## Prior program — multi-video review, 2026-09-09
 
 Status tracking lives here; detailed contracts/tasks/gates live in [docs/OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md). Evidence: [docs/VIDEO_QUALITY_REVIEW.md](docs/VIDEO_QUALITY_REVIEW.md). Older phases and standing decisions below are historical; new findings supersede their quality assumptions, and the robot/local default notes are obsolete (current default is Kokoro).
 

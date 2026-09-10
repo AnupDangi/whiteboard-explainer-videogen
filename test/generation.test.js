@@ -23,7 +23,7 @@ function adapter({failure=false,bad=false}={}) {
     const kps=Array.isArray(content.keyPoints)&&content.keyPoints.length?content.keyPoints:['Cause point one','Effect point two'];
     const tag=(content.chapter!==undefined?content.chapter:JSON.stringify(content.objective||'x')).toString().replace(/\W+/g,'_').slice(0,20);
     const words=(kps.join(' ')+' '+Array.from({length:60},(_,i)=>`term${tag}_${i}`).join(' '));
-    result={version:1,title:'Dynamic explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${tag}-${i}`,narration:words,nodes:[{id:'a',label:'Cause',anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0]},{id:'b',label:'Effect',anchor:bad?'absent phrase':`term${tag}_10`,keyPoint:kps[1]||kps[0]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
+    result={version:1,title:'Dynamic explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${tag}-${i}`,narration:words,nodes:[{id:'a',label:'Alpha aspect',anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0]},{id:'b',label:'Beta aspect',anchor:bad?'absent phrase':`term${tag}_10`,keyPoint:kps[1]||kps[0]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
    }
   return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:100,completion_tokens:100,cost:0.00005}});
  }};
@@ -70,13 +70,13 @@ test('A transient failure on the very first content/director call retries in pla
    contentCalls++;
    if(contentCalls===1)return new Response('',{status:429});
    const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
-   const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Cause',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Effect',anchor:'term_10',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
-   return reply(result);
- };
- const scenes=[];
- for await(const p of generateChapters(source,{env,fetcher,durationMinutes:1}))scenes.push(...p.scenes);
- assert.equal(scenes.length,2);
- assert.equal(contentCalls,2,'content retried once in place after its first-call failure');
+    const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_10',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
+    return reply(result);
+  };
+  const scenes=[];
+  for await(const p of generateChapters(source,{env,fetcher,durationMinutes:1}))scenes.push(...p.scenes);
+  assert.equal(scenes.length,2);
+  assert.equal(contentCalls,2,'content retried once in place after its first-call failure');
  assert.equal(directorCalls,2,'director retried once in place after its first-call failure');
  // 1 outline + 2 content attempts + 2 director attempts — not the doubled request count a
  // full chapter regeneration (re-running outline-independent work from scratch) would cause.
@@ -92,7 +92,7 @@ test('Exhausted director retries fail loudly instead of shipping all-generic box
     if(content.chapterCount)return reply({title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
     if(content.scenes)return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'nope-not-a-layout',nodes:s.nodes.map(n=>({id:n.id,kind:'generic',emphasis:false}))}))});
     const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
-    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Cause',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Effect',anchor:'term_10',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
+    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_10',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env,fetcher,durationMinutes:1})){ }},/fallback exhausted/);
   // 1 outline + [1 content + 3 failed director attempts] × 2 chapter regenerations;
@@ -127,7 +127,7 @@ test('A4: a real director result using one shape throughout (a legitimate token 
     if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
     const body=JSON.parse(options.body);
     const content=JSON.parse(body.messages[1].content);
-    if(content.chapterCount)return reply({title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
+    if(content.chapterCount)return reply({title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Token instance','Ordered token']}]});
     if(content.scenes){
       directorCalls++;
       // Same shape ('box', via no shape field) and same kind ('token') on every node, with
@@ -135,9 +135,9 @@ test('A4: a real director result using one shape throughout (a legitimate token 
       // token row. Before A4 this tripped the hard shape-mix gate and forced a repair/fallback.
       return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'flow',nodes:s.nodes.map((n,j)=>({id:n.id,kind:'token',emphasis:false}))}))});
     }
-    const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
+    const words='Token instance Ordered token '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
     const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,
-      nodes:[{id:'a',label:'Token 1',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Token 2',anchor:'term_10',keyPoint:'Working example point'}],
+      nodes:[{id:'a',label:'Token 1',anchor:'term_0',keyPoint:'Token instance'},{id:'b',label:'Token 2',anchor:'term_10',keyPoint:'Ordered token'}],
       edges:[{from:'a',to:'b',label:'precedes'}],note:''}))};
     return reply(result);
   };
@@ -177,7 +177,7 @@ test('A5: a single-scene critic repair validates and actually applies (was previ
     }
     const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
     return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,
-      nodes:[{id:'a',label:'Cause',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Effect',anchor:'term_10',keyPoint:'Working example point'}],
+      nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_10',keyPoint:'Working example point'}],
       edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   const scenes=[];

@@ -1,3 +1,11 @@
+# Current handoff — 2026-09-10, V3-1 teacher contract live-proven
+
+V3-1 shipped on `opt-v3-harness`: `checkBoardText` (key points on canvas, ≥50% label overlap) + `checkFirstVisual` (anchor ≤30 words) wired into content repair loop; teacher-contract sentences in content + outline prompts; 5 mock sites updated to new contract. Suite 75/0/2. Live GPS run job `6a99f295`: first attempt, $0.0059, opens mid-thought on 0.07s worked example, quantities in labels, frames `output/review-gps-v31/`. Residual honest gap: scene-2 empty ~5s despite passing word gate — wall-clock lateness needs V3-2 persistent objects/beat timing, not a tighter word bound.
+
+Next: V3-2 beat model (nested beats, beat-local anchors, leadMs, conceptId continuity).
+
+---
+
 # Current handoff — 2026-09-10, DeepSeek-V4 paper run + two render fixes
 
 End-to-end proof on user-supplied paper `https://arxiv.org/pdf/2606.19348` (DeepSeek-V4, 8pp): 1-min video, first attempt, job `7860802b`, 2 scenes, 64s timeline, gemini-3.8-flash ($0.0423, 5 calls), Kokoro TTS (982 chars), MP4 muxed (h264+aac) + per-scene SVGs in `output/videos/tmp-papers-2606-19348-pdf-1min.scenes/`. Audio sync automated PASS: kokoro-aligned, gapMs 0, trailingNonSilent false, first words at 325/350ms, scene durations exceed audio by exactly the designed 650ms tail.
