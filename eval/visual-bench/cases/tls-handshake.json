@@ -1,0 +1,14 @@
+{
+  "id": "tls-handshake",
+  "prompt": "Explain how the TLS handshake works.",
+  "category": "everyday mechanism",
+  "mustExplain": [
+    "client hello opens",
+    "server proves identity with a certificate",
+    "key exchange establishes the secret",
+    "both sides finish"
+  ],
+  "preferredTemplates": ["tls_handshake"],
+  "forbiddenPatterns": ["generic_box_flow"],
+  "expectedKinds": ["browser", "server", "lock"]
+}

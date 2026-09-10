@@ -1,0 +1,13 @@
+{
+  "id": "gps-trilateration",
+  "prompt": "Explain how GPS trilateration works.",
+  "category": "spatial",
+  "mustExplain": [
+    "signal delay becomes distance",
+    "one satellite gives a sphere",
+    "several spheres intersect at the position",
+    "four satellites remove the clock bias"
+  ],
+  "forbiddenPatterns": ["generic_box_flow"],
+  "expectedKinds": ["server", "cycle", "result"]
+}

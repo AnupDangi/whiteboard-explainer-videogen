@@ -1,0 +1,14 @@
+{
+  "id": "attention-basics",
+  "prompt": "Explain how attention works in transformers.",
+  "category": "abstract ML",
+  "mustExplain": [
+    "query seeks information",
+    "keys measure compatibility",
+    "values are blended by weights",
+    "weights sum to one"
+  ],
+  "preferredTemplates": ["attention_matrix"],
+  "forbiddenPatterns": ["generic_box_flow"],
+  "expectedKinds": ["token", "question", "key", "container"]
+}

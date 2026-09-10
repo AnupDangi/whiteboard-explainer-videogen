@@ -1,0 +1,14 @@
+{
+  "id": "dna-replication",
+  "prompt": "Explain how DNA replication works.",
+  "category": "transformation",
+  "mustExplain": [
+    "strands unzip at the fork",
+    "each strand becomes a template",
+    "new complementary strands form",
+    "two identical molecules result"
+  ],
+  "preferredTemplates": ["dna_fork"],
+  "forbiddenPatterns": ["generic_box_flow"],
+  "expectedKinds": ["molecule", "process"]
+}
