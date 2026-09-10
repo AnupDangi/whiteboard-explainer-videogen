@@ -1,3 +1,11 @@
+# Current handoff — 2026-09-10, V3-5 progression critic + deterministic lints
+
+V3-5 shipped on `opt-v3-harness`: new `src/progression.ts` — `progressionFrames` (5 deterministic frames at 0/25/50/75/100%), `staticIntervalMs` (longest narrated span with no visual change, 3500ms limit per harness §48), `connectorThroughNode` (re-derives `routeEdge` candidates; flags routes whose fallback still clips). Critic upgraded: reviews a 5-frame horizontal contact strip instead of one end-state thumbnail; deterministic findings are prepended to the critic prompt as pre-flagged issues and appended to repair issues even when the model ignores them; when sharp is unavailable, deterministic findings alone still drive one bounded repair. Suite 88 tests, 86 pass, 0 fail, 2 skip. Notable honest finding: the attention fixture itself fails `staticIntervalMs` (9.6s narrated dead tail) — the lint is already telling the truth about the density problem V3-6 must show.
+
+Next: V3-6 V1-vs-V2 benchmark on attention/supply/TLS contact sheets, or the 3 remaining templates.
+
+---
+
 # Current handoff — 2026-09-10, V3-4 domain templates live-proven
 
 V3-4 shipped on `opt-v3-harness` (pivoted: icon coverage is already 55/56 kinds, so Lucide vendoring is a style option, not the gap — the observed poverty was domain misrepresentation). New `src/templates.ts`: `tls_handshake` (two glyph-centered lifelines + labeled message arrows below the node band) and `supply_demand` (axes, opposing curves, dashed P*/Q* guides below the node band) — pure (scene,timeMs)→SVG, reveal rides the anchor nodes' timing. Wiring: `Scene.template` (types/engine whitelist/directorSchema enum), merge passes it through, unknown template values fail loudly (merge + validator tests). Director prompt (`TEMPLATE_GUIDANCE`) teaches when to request one (exactly 2 non-annotation anchors). `templates` fixture added; suite 85 tests, 83 pass, 0 fail, 2 skip. Export proof `output/videos/templates-proof.mp4` + `.scenes/`, frames `output/review-pump-v32/tpl-tls2.png`, `tpl-supply2.png`.

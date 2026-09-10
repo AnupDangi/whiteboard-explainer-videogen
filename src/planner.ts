@@ -5,6 +5,7 @@ import {semaphore} from './concurrency.js';
 import {NODE_KINDS,LAYOUTS} from './vocabulary.js';
 import {hasIllustration} from './illustrations.js';
 import {hasIcon} from './icons.js';
+import {progressionFrames,staticIntervalMs,connectorThroughNode} from './progression.js';
 import type {Plan,Scene,SourceDocument,Usage} from './types.js';
 export const DURATIONS=[1,5,10,30] as const;
 export function validateDuration(value:number):number {if(!DURATIONS.includes(value as any))throw new Error('Duration must be 1, 5, 10 or 30 minutes');return value;}
@@ -278,17 +279,20 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
   // pricing): the critic stage below silently no-ops for every chapter in this case, which
   // previously left no trace anywhere of why a requested critic review never ran.
   if(visualCritic&&!criticPricing)log('planner.critic-unavailable',{criticModel:CRITIC_MODEL},'warn');
-  /** Renders a scene's end state (fully drawn, estimated timing) to a small PNG thumbnail for
-   *  the critic. Returns null (never throws) if sharp isn't installed or rendering fails —
+  /** Renders a scene as a 5-frame progression contact sheet (0/25/50/75/100%, harness
+   *  §§45/64) — the critic reviews how the scene TEACHES over time, not just its end
+   *  state. Returns null (never throws) if sharp isn't installed or rendering fails —
    *  the critic is best-effort and must never block the core pipeline. */
-  async function renderThumbnail(scene:Scene):Promise<string|null> {
+  async function renderContactSheet(scene:Scene):Promise<string|null> {
     try {
       const sharpModule=await import('sharp');
       const sharp=sharpModule.default;
       const compiled=compileScene(scene);
-      const svg=renderSVG(compiled,compiled.durationMs);
-      const png=await sharp(Buffer.from(svg)).resize(640,360).png().toBuffer();
-      return png.toString('base64');
+      const frames=progressionFrames(compiled);
+      const pngs=await Promise.all(frames.map(f=>sharp(Buffer.from(f.svg)).resize(320,180).png().toBuffer()));
+      const strip=await sharp({create:{width:320*pngs.length,height:180,channels:3,background:'#fffef9'}})
+        .composite(pngs.map((input,i)=>({input,left:i*320,top:0}))).png().toBuffer();
+      return strip.toString('base64');
     } catch { return null; }
   }
   /** Fail-soft vision call: any error, missing pricing, or budget shortfall returns null
@@ -456,14 +460,30 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
         for(let i=0;i<plan.scenes.length;i++){
           signal?.throwIfAborted();
           const scene=plan.scenes[i];
-          const thumbnail=await renderThumbnail(scene);
-          if(!thumbnail)continue;
+          const compiled=compileScene(scene);
+          // Deterministic lints first (harness §47): the model is not paid to detect what
+          // code can detect. Findings ride into the critic prompt as pre-flagged issues.
+          const deterministic:string[]=[];
+          const staticMs=staticIntervalMs(compiled);
+          if(staticMs>3500)deterministic.push(`no visual change for ${Math.round(staticMs)} ms of narration (over the 3500 ms limit)`);
+          for(const hit of connectorThroughNode(compiled))deterministic.push(`connector ${hit.from}→${hit.to} still crosses node ${hit.through} on every candidate route`);
+          const sheet=await renderContactSheet(scene);
+          if(!sheet&&!deterministic.length)continue;
+          if(!sheet){
+            // No image available (sharp missing): deterministic findings alone still drive
+            // one repair pass instead of silently skipping the review.
+            if(deterministic.length)await repairFromCritique(plan,i,directorSystem,deterministic);
+            continue;
+          }
           const critique=await callCritic(
-            'You are reviewing a whiteboard-style educational diagram thumbnail for visual quality. Return ONLY JSON {"issues":string[],"needsRepair":boolean}. Flag real problems only: overlapping objects, clipped or cut-off text, illegibly tiny text, a confusing or crowded layout, a weak/generic visual metaphor for the concept, or a broken-looking arrow. needsRepair is true only if a problem would genuinely confuse a viewer.',
-            `Scene title: "${scene.title}". Nodes: ${scene.nodes.map(n=>`${n.label} (${n.kind||'generic'})`).join(', ')}. Layout: ${scene.layout}.`,
-            thumbnail,800,
+            'You are reviewing a whiteboard-style educational scene as a 5-frame progression strip (left to right: how the drawing builds over time) for teaching quality. Return ONLY JSON {"issues":string[],"needsRepair":boolean}. Flag real problems only: overlapping objects, clipped or cut-off text, illegibly tiny text, a confusing or crowded layout, a weak/generic visual metaphor for the concept, a broken-looking arrow, or long stretches where the drawing builds nothing while narration continues. needsRepair is true only if a problem would genuinely confuse a viewer.',
+            `Scene title: "${scene.title}". Nodes: ${scene.nodes.map(n=>`${n.label} (${n.kind||'generic'})`).join(', ')}. Layout: ${scene.layout}.${deterministic.length?` Deterministic checks already flagged: ${deterministic.join('; ')}. Confirm and include them in issues if real.`:''}`,
+            sheet,800,
           );
-          if(critique?.needsRepair&&critique.issues?.length)await repairFromCritique(plan,i,directorSystem,critique.issues);
+          const issues=[...(critique?.issues||[])];
+          if(deterministic.length&&!issues.some(iss=>deterministic.some(d=>iss.includes(d.slice(0,40)))))issues.push(...deterministic);
+          if(critique?.needsRepair&&issues.length)await repairFromCritique(plan,i,directorSystem,issues);
+          else if(!critique&&deterministic.length)await repairFromCritique(plan,i,directorSystem,deterministic);
         }
       }
       plan.title=outline.title.slice(0,90);
