@@ -48,6 +48,40 @@ test('edge labels paint above node boxes, never underneath',()=>{
   assert(done.includes('deploys'),'edge label drawn');
   assert(done.indexOf('deploys')>done.lastIndexOf('rx="10"'),'label markup sits after the last node box');
 });
+test('V3-3 routeEdge avoids intermediate nodes, flipping and growing the bow',async()=>{
+  const {routeEdge}=await import('../dist/src/engine.js');
+  const e={x1:100,y1:300,x2:700,y2:300};
+  const obstacle={x:330,y:260,w:160,h:80};
+  // Base upward bow would pass straight through the obstacle.
+  const base={cx:(e.x1+e.x2)/2,cy:300-Math.max(16,Math.min(34,600*0.3))};
+  assert(base.cy>obstacle.y-8&&base.cy<obstacle.y+obstacle.h+8,'sanity: base bow intersects obstacle');
+  const route=routeEdge(e,[obstacle]);
+  for(let k=0;k<=12;k++){const t=k/12,mt=1-t;
+    const x=mt*mt*e.x1+2*mt*t*route.cx+t*t*e.x2,y=mt*mt*e.y1+2*mt*t*route.cy+t*t*e.y2;
+    assert(!(x>obstacle.x-8&&x<obstacle.x+obstacle.w+8&&y>obstacle.y-8&&y<obstacle.y+obstacle.h+8),`sample ${k} at ${x},${y} inside obstacle`);
+  }
+  const noObstacle=routeEdge(e,[]);
+  assert.equal(noObstacle.cy,base.cy,'unobstructed edge keeps the plain upward bow');
+});
+test('V3-3 icon endpoints anchor to the glyph, not the invisible rect',()=>{
+  const scene=compileScene(fixtures.icons.scenes[0]);
+  const e=scene.edges[0],a=scene.nodes[0],b=scene.nodes[1];
+  assert.equal(e.x1,a.x+2*Math.min(38,a.h*0.4)*(a.emphasis?1.25:1)+8,'from-endpoint sits at the glyph circle edge, not the layout rect border');
+  assert(e.x2<e.x1||e.x2>b.x,'endpoint ordering sane');
+});
+test('V3-3 EXPLAIN_SKETCH renders wobbly strokes + hachure, deterministic per node',async()=>{
+  const scene=compileScene(copy().scenes[0]);
+  process.env.EXPLAIN_SKETCH='1';
+  try{
+    const done=renderSVG(scene,scene.durationMs);
+    assert(done.includes('stroke-linejoin="round" stroke-dasharray'),'sketch double stroke present');
+    assert((done.match(/stroke-width="1.3"/g)||[]).length>=3,'hachure lines drawn');
+    assert.equal(renderSVG(scene,scene.durationMs),done,'same input+time yields identical sketch bytes');
+    assert(!done.includes('stroke-dasharray="1240"'),'clean rect stroke replaced');
+  }finally{delete process.env.EXPLAIN_SKETCH;}
+  const clean=renderSVG(scene,scene.durationMs);
+  assert(clean.includes('rx="10"'),'without flag the clean style is unchanged');
+});
 test('H05/H13/H17 frame is deterministic after arbitrary seeking; prior geometry stable',()=>{
   const scene=compileScene(copy().scenes[0]);const before=renderSVG(scene,7000);
   for(const t of [0,90000,2500,1,300])renderSVG(scene,t);
@@ -67,7 +101,12 @@ test('H07 supported layouts keep node rectangles disjoint and inside board',()=>
 });
 test('H09 connectors attach to boundaries of referenced nodes',()=>{
   for(const fixture of Object.values(fixtures))for(const source of fixture.scenes){const s=compileScene(source);
-    const onBoundary=(x,y,n)=>(x===n.x||x===n.x+n.w)&&y>=n.y&&y<=n.y+n.h||(y===n.y||y===n.y+n.h)&&x>=n.x&&x<=n.x+n.w;
+    // V3-3: icon nodes are containerless — the boundary is the glyph circle's edge
+    // (center at x+r+8, y+h/2), not the invisible layout rect.
+    const onBoundary=(x,y,n)=>{
+      if(n.shape==='icon'){const r=Math.min(38,n.h*0.4)*(n.emphasis?1.25:1);return Math.abs(Math.hypot(x-(n.x+r+8),y-(n.y+n.h/2))-r)<0.01;}
+      return (x===n.x||x===n.x+n.w)&&y>=n.y&&y<=n.y+n.h||(y===n.y||y===n.y+n.h)&&x>=n.x&&x<=n.x+n.w;
+    };
     for(const e of s.edges){assert(onBoundary(e.x1,e.y1,s.nodes.find(n=>n.id===e.from)));assert(onBoundary(e.x2,e.y2,s.nodes.find(n=>n.id===e.to)));}
   }
 });

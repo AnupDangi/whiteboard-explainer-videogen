@@ -392,6 +392,17 @@ export function compileScene(scene: Scene, timing: Timing = estimateTiming(scene
     if(Math.abs(dx)>Math.abs(dy)) {
       x1=a.x+(dx>0?a.w:0);y1=a.y+a.h/2;x2=b.x+(dx>0?0:b.w);y2=b.y+b.h/2;
     } else {x1=a.x+a.w/2;y1=a.y+(dy>0?a.h:0);x2=b.x+b.w/2;y2=b.y+(dy>0?0:b.h);}
+    // V3-3 container-endpoint rule: icons have no box — anchor the connector to the
+    // glyph circle's edge, not the invisible layout rect, so arrows never float in
+    // empty space beside an icon.
+    const edgeR=(n:typeof a)=>iconRadius(n.h,!!n.emphasis);
+    if(Math.abs(dx)>Math.abs(dy)){
+      if(a.shape==='icon'){const cx=a.x+edgeR(a)+8;x1=dx>0?cx+edgeR(a):cx-edgeR(a);}
+      if(b.shape==='icon'){const cx=b.x+edgeR(b)+8;x2=dx>0?cx-edgeR(b):cx+edgeR(b);}
+    } else {
+      if(a.shape==='icon'){const cy=a.y+a.h/2;y1=dy>0?cy+edgeR(a):cy-edgeR(a);}
+      if(b.shape==='icon'){const cy=b.y+b.h/2;y2=dy>0?cy-edgeR(b):cy+edgeR(b);}
+    }
     return {...e,x1,y1,x2,y2,startMs:Math.max(a.startMs,b.startMs)+700,drawMs:650};
   });
   const eventEnd=Math.max(...nodes.map(n=>n.startMs+n.drawMs),...edges.map(e=>e.startMs+e.drawMs));
@@ -449,6 +460,60 @@ export function advancePlayback(timeMs:number,deltaMs:number,availableMs:number,
 }
 
 const esc=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]||c));
+// V3-3 sketch style (EXPLAIN_SKETCH=1): hand-drawn marker look — wobbly double-stroke
+// containers plus hachure fill — rendered as plain SVG paths so browser and export share
+// the exact same bytes. Seeded per-node PRNG: same node id always yields the same wobble.
+export const sketchMode=()=>process.env.EXPLAIN_SKETCH==='1';
+const hash32=(s:string)=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;};
+const mulberry32=(seed:number)=>()=>{let t=seed+0x6D2B79F5|0;seed=seed+0x9E3779B9|0;t=Math.imul(t^t>>>15,1|t);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+/** Sample points along a rounded-rect perimeter (clockwise from top-left), corners as
+ *  quarter-arc approximations — the input to the jittered sketch stroke. */
+const rectPerimeterPoints=(x:number,y:number,w:number,h:number,r:number):Array<[number,number]>=>{
+  const pts:Array<[number,number]>=[];
+  const corner=(cx:number,cy:number,startAngle:number)=>{for(let k=0;k<=2;k++){const a=startAngle+k*(Math.PI/2)/2;pts.push([cx+r*Math.cos(a),cy+r*Math.sin(a)]);}};
+  const step=(x1:number,y1:number,x2:number,y2:number)=>{const len=Math.hypot(x2-x1,y2-y1),n=Math.max(1,Math.round(len/26));for(let k=0;k<n;k++)pts.push([x1+(x2-x1)*k/n,y1+(y2-y1)*k/n]);};
+  corner(x+r,y+r,Math.PI);step(x+r,y,x+w-r,y);corner(x+w-r,y+r,-Math.PI/2);step(x+w,y+r,x+w,y+h-r);corner(x+w-r,y+h-r,0);step(x+w-r,y+h,x+r,y+h);corner(x+r,y+h-r,Math.PI/2);step(x,y+h-r,x,y+r);
+  return pts;
+};
+/** One wobbly closed polyline through the perimeter points (pass seed varies the wobble). */
+const sketchStrokePath=(pts:Array<[number,number]>,seed:number)=>{
+  const rnd=mulberry32(seed);const norm=(x1:number,y1:number,x2:number,y2:number)=>{const l=Math.hypot(x2-x1,y2-y1)||1;return[(y2-y1)/l,-(x2-x1)/l] as const;};
+  let d='';for(let i=0;i<pts.length;i++){const [x,y]=pts[i];const [px,py]=pts[(i+1)%pts.length];const [nx,ny]=norm(x,y,px,py);const j=(rnd()-0.5)*3.2;const ox=x+nx*j,oy=y+ny*j;d+=(i?'L':'M')+ox.toFixed(1)+' '+oy.toFixed(1)+' ';}
+  return d+'Z';
+};
+/** Hachure (diagonal marker-hatch) fill lines clipped to a rect. 45°, gap 9. */
+const hachureLines=(x:number,y:number,w:number,h:number,seed:number)=>{
+  const rnd=mulberry32(seed);const out:Array<[number,number,number,number]>=[];
+  for(let o=-h;o<=w;o+=9){
+    let s0=Math.max(0,-o),s1=Math.min(h,w-o);
+    if(s1<=s0)continue;
+    const j=()=> (rnd()-0.5)*2;
+    out.push([x+o+s0+j(),y+h-s0+j(),x+o+s1+j(),y+h-s1+j()]);
+  }
+  return out;
+};
+/** V3-3 obstacle-avoiding connector routing: quadratic control point for an edge.
+ *  Tries the default upward bow, then the mirrored bow, then increasing magnitudes,
+ *  and returns the first candidate whose sampled curve clears every obstacle rect
+ *  (endpoints excluded by the caller). Deterministic; falls back to the base bow. */
+export function routeEdge(e:{x1:number;y1:number;x2:number;y2:number},obstacles:Array<{x:number;y:number;w:number;h:number}>):{cx:number;cy:number;px:number;py:number;bow:number}{
+  const dx=e.x2-e.x1,dy=e.y2-e.y1,dist=Math.hypot(dx,dy)||1;
+  const bow=Math.max(16,Math.min(34,dist*0.3));
+  let px=-dy/dist,py=dx/dist; if(py>0){px=-px;py=-py;}
+  const clear=(cx:number,cy:number)=>{
+    for(let k=0;k<=12;k++){const t=k/12,mt=1-t;const x=mt*mt*e.x1+2*mt*t*cx+t*t*e.x2,y=mt*mt*e.y1+2*mt*t*cy+t*t*e.y2;
+      for(const o of obstacles)if(x>o.x-8&&x<o.x+o.w+8&&y>o.y-8&&y<o.y+o.h+8)return false;}
+    return true;
+  };
+  const midX=(e.x1+e.x2)/2,midY=(e.y1+e.y2)/2;
+  for(const mult of [1,2,3.2]){
+    const cx=midX+px*bow*mult,cy=midY+py*bow*mult;
+    if(clear(cx,cy))return {cx,cy,px,py,bow:bow*mult};
+    const mx=midX-px*bow*mult,my=midY-py*bow*mult;
+    if(clear(mx,my))return {cx:mx,cy:my,px:-px,py:-py,bow:bow*mult};
+  }
+  return {cx:midX+px*bow,cy:midY+py*bow,px,py,bow};
+}
 /** SVG is also the offline rasterizer input. No browser wall-clock capture. */
 /** Point + heading at fraction t along a rectangle's perimeter, walking clockwise from the
  *  top-left corner. Ignores corner rounding (the pencil is a small decorative element; exact
@@ -553,13 +618,10 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     // short connector between close nodes, the label used to sit at the raw straight-line
     // midpoint and could render clipped behind the destination shape — the curve's bow
     // (plus a further outward nudge below) pushes the label clear of both endpoints.
-    const dx=e.x2-e.x1,dy=e.y2-e.y1,dist=Math.hypot(dx,dy)||1;
-    // Short connectors between close nodes need proportionally MORE bow, not less, to give
-    // the label any clearance at all — a fixed floor was too flat for the tightest gaps.
-    const bow=Math.max(16,Math.min(34,dist*0.3));
-    let px=-dy/dist,py=dx/dist; if(py>0){px=-px;py=-py;} // pick the "-y" (upward) normal
-    const midX=(e.x1+e.x2)/2,midY=(e.y1+e.y2)/2;
-    const cx=midX+px*bow,cy=midY+py*bow;
+    // V3-3: routing (bow + obstacle avoidance) computed by routeEdge; the sampled-curve
+    // never drills through an intermediate node, flipping/increasing the bow until clear.
+    const obstacles=s.nodes.filter(n=>n.id!==e.from&&n.id!==e.to).map(n=>({x:n.x,y:n.y,w:n.w,h:n.h}));
+    const {cx,cy,px,py}=routeEdge(e,obstacles);
     const bezierPoint=(t:number)=>{
       const mt=1-t;
       return {x:mt*mt*e.x1+2*mt*t*cx+t*t*e.x2,y:mt*mt*e.y1+2*mt*t*cy+t*t*e.y2};
@@ -650,7 +712,27 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
     const perimeter=2*(n.w+n.h);
     const strokeWidth=n.emphasis?STROKE_TOKENS.emphasis:STROKE_TOKENS.border;
     const fillOp=n.fillOpacity??0.25;
-    svg+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" fill="${n.color}" fill-opacity="${fillOp}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
+    if(sketchMode()){
+      // V3-3 sketch container: flat fill + hachure hatch + wobbly double stroke that
+      // reveals with the same dash-offset grammar as the clean style.
+      svg+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" fill="${n.color}" fill-opacity="${fillOp}"/>`;
+      const seed=hash32(n.id+n.label);
+      for(const [hx1,hy1,hx2,hy2] of hachureLines(n.x+4,n.y+4,n.w-8,n.h-8,seed))svg+=`<line x1="${hx1.toFixed(1)}" y1="${hy1.toFixed(1)}" x2="${hx2.toFixed(1)}" y2="${hy2.toFixed(1)}" stroke="${stroke}" stroke-width="1.3" stroke-linecap="round" opacity="0.45"/>`;
+      const pts=rectPerimeterPoints(n.x,n.y,n.w,n.h,10);
+      let passLen=0;for(let i=0;i<pts.length;i++){const [ax,ay]=pts[i];const [bx,by]=pts[(i+1)%pts.length];passLen+=Math.hypot(bx-ax,by-ay);}
+      for(let pass=0;pass<2;pass++){
+        const len=passLen*1.06;
+        svg+=`<path d="${sketchStrokePath(pts,seed+pass*7919)}" fill="none" stroke="${stroke}" stroke-width="${pass?strokeWidth*0.7:strokeWidth}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${len}" stroke-dashoffset="${len*(1-n.progress)}"/>`;
+      }
+      // Hachure runs under the label — give the text a board-colored backdrop so it
+      // stays legible over the hatch (clean style has flat fills and needs none).
+      if(n.progress>.45){
+        const tw=Math.max(...n.lines.map(l=>measureText(l,n.fontSize)))+20,th=n.lines.length*n.fontSize*1.18+10;
+        svg+=`<rect x="${(n.x+n.w/2-tw/2).toFixed(1)}" y="${(n.y+n.h/2-(n.lines.length-1)*n.fontSize*.59+n.fontSize*.35-th+n.fontSize*0.7).toFixed(1)}" width="${tw.toFixed(1)}" height="${th.toFixed(1)}" rx="6" fill="#fffef9" opacity="0.88"/>`;
+      }
+    } else {
+      svg+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" fill="${n.color}" fill-opacity="${fillOp}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${perimeter}" stroke-dashoffset="${perimeter*(1-n.progress)}"/>`;
+    }
     if(n.emphasis&&n.progress>.55)svg+=renderHighlightRect(n.x+10,n.y+n.h*0.3,n.w-20,n.h*0.4,8,0.4*Math.min(1,(n.progress-.55)/.45));
     if(n.progress>.4)svg+=`<g opacity="${Math.min(1,(n.progress-.4)/.3)}">${renderIcon(n.kind,n.x+22,n.y+22,15,stroke)}</g>`;
     if(n.progress>.45)svg+=`<g opacity="${(n.progress-.45)/.55}">${texts(n.lines,n.x+n.w/2,n.y+n.h/2-(n.lines.length-1)*n.fontSize*.59+n.fontSize*.35,n.fontSize)}</g>`;

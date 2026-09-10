@@ -1,3 +1,13 @@
+# Current handoff — 2026-09-10, V3-3 sketch + safe connectors live-proven
+
+V3-3 shipped on `opt-v3-harness`, zero new dependencies (hand-rolled, seeded PRNG — Rough.js idea without the dep): (1) `EXPLAIN_SKETCH=1` env flag → containers render as wobbly double-stroke closed polylines + hachure hatch fill + label backdrop; deterministic per node id (hash-seeded mulberry32); browser and export share the same `renderSVG` bytes. (2) `routeEdge` exported: connector control point flips direction / grows bow (×1/2/3.2) until the sampled bezier clears every intermediate node rect — kills the TLS arrow-through-server-bug class. (3) Icon endpoints anchor to the glyph circle edge, not the invisible layout rect — kills arrows-floating-in-space. H09 test contract updated (icon boundary = glyph circle). Suite 82 tests, 80 pass, 0 fail, 2 skip. Sketch export of pump job `77518dab`: `output/videos/Explain-how-a-bicycle-pump-works-1min-sketch.mp4` + `.scenes/`, frame `output/review-pump-v32/sketch20b.png`.
+
+Known limitations: sketch covers box containers only (circle/square/number/illustration stay clean — deliberate bounded slice); flag is export-side until the browser UI gets a style toggle; hachure under mid-reveal labels is faint by reveal opacity, legible at completion.
+
+Next: V3-4 Lucide registry + 5 domain templates (attention matrix, DNA fork, tectonic section, supply/demand curves, TLS ladder).
+
+---
+
 # Current handoff — 2026-09-10, V3-2 beat model live-proven
 
 V3-2 shipped on `opt-v3-harness`: optional `beats[]` (exact ordered partition, 2-4/scene) + `beatId`/`conceptId` on nodes across types/schema/validator; beat-local anchor resolution in `resolveAnchors` (repeated words across beats can no longer mismatch; legacy global path kept for beat-less plans); `checkConceptContinuity` in repair loop; node reveal lead -80ms → -180ms (harness 100-300ms). Suite 77/0/2. Live pump run job `77518dab`: first attempt, $0.0166, beats 3+2, `target_tire` identical across scenes, frames `output/review-pump-v32/` show beat reveal + example + annotation. Residual: canvas still sparse per frame (density = V3-3/V3-4 style + templates, not beats).

@@ -6,7 +6,7 @@ Contract: `EXPLAIN_CANVAS_AGENT_HARNESS_V3.md`. Evidence: competitor frames vs o
 
 - [x] V3-1 — Teacher contract in prompts + validators (hook scene, persistent example, one-idea/scene, board key points, quantity-visuals, first-visual ≤3.5s lint). Proof: suite 75/0/2; GPS live run job `6a99f295` first attempt $0.0059, opens on 0.07s example, key points verbatim on board. Residual: scene-2 canvas empty ~5s (anchors pass word-30 gate but wall-clock late) → V3-2 fuel.
 - [x] V3-2 — Beat model (nested beats, beat-local anchors, leadMs, persistent conceptId). Proof: suite 77/0/2; pump live run job `77518dab` first attempt $0.0166, 3+2 beats emitted, `target_tire` concept identical label across scenes, node lead -180ms. Frames `output/review-pump-v32/`.
-- [ ] V3-3 — Rough sketch style flag + obstacle-avoiding connectors + endpoint rules.
+- [x] V3-3 — Rough sketch style flag + obstacle-avoiding connectors + endpoint rules. Proof: suite 80/0/2; `routeEdge` flips/grows bow around obstacles; icon endpoints anchor to glyph edge; `EXPLAIN_SKETCH=1` sketch export of pump video (`output/videos/Explain-how-a-bicycle-pump-works-1min-sketch.mp4`, frame `output/review-pump-v32/sketch20b.png`).
 - [ ] V3-4 — Lucide registry + 5 domain templates (attention matrix, DNA fork, tectonic section, supply/demand curves, TLS ladder).
 - [ ] V3-5 — Critic progression sheets + new lints (through-object, too-little-change, ID mismatch).
 - [ ] V3-6 — V1-vs-V2 benchmark on attention/supply/TLS/DeepSeek contact sheets; ship on teaching-clarity win.
