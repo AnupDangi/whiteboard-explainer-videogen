@@ -1,7 +1,7 @@
 import {lookup} from 'node:dns/promises';
 import {request} from 'node:https';
 import {createHash} from 'node:crypto';
-import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFile} from 'node:child_process';
@@ -33,7 +33,36 @@ export async function fetchSource(url:string,signal?:AbortSignal,redirects=0):Pr
 export async function extractPdf(bytes:Buffer,signal?:AbortSignal):Promise<string>{
   if(bytes.length>BINARY_LIMIT||bytes.subarray(0,5).toString()!=='%PDF-')throw new Error('Invalid PDF or file exceeds 50 MB');
   const dir=await mkdtemp(join(tmpdir(),'explain-pdf-'));
-  try {const path=join(dir,'source.pdf');await writeFile(path,bytes);const {stdout}=await promisify(execFile)('pdftotext',['-layout','-f','1','-l',String(PAGE_LIMIT),path,'-'],{timeout:30000,maxBuffer:2*1024*1024,signal});return stdout;}finally{await rm(dir,{recursive:true,force:true});}
+  try {
+    const path=join(dir,'source.pdf');await writeFile(path,bytes);
+    // P1: raw mode (no -layout) preserves the paper's reading order across columns —
+    // -layout keeps the two-column x-positions and interleaves unrelated lines with
+    // runs of spaces. Whitespace repair below re-flows the paragraphs.
+    const {stdout}=await promisify(execFile)('pdftotext',['-raw','-f','1','-l',String(PAGE_LIMIT),path,'-'],{timeout:30000,maxBuffer:2*1024*1024,signal});
+    return stripAcademicTail(stdout);
+  }finally{await rm(dir,{recursive:true,force:true});}
+}
+/** P1: cut the paper's tail that teaches nothing — References/Appendix/footnote blocks
+ *  dominate prompt tokens otherwise (the DeepSeek-V4 run burned ~54k prompt tokens,
+ *  largely extraction debris). Cut on the first marker heading; deterministic. */
+function stripAcademicTail(text:string):string {
+  const markers=/\n(?:\d+\.?\s+)?(References|Bibliography|REFERENCES|Acknowledg|Appendix|APPENDIX)\b/;
+  const match=text.match(markers);
+  return match&&match.index&&match.index>text.length*0.3?text.slice(0,match.index):text;
+}
+/** docx/pptx are ZIP+XML: stream the main text part(s) to stdout with `unzip -p` and
+ *  strip XML tags deterministically. No new runtime dependencies, no path parsing. */
+async function extractOfficeXml(bytes:Buffer,pattern:string):Promise<string> {
+  if(bytes.length>BINARY_LIMIT)throw new Error('Invalid document or file exceeds 50 MB');
+  const dir=await mkdtemp(join(tmpdir(),'explain-doc-'));
+  try {
+    const path=join(dir,'source.bin');await writeFile(path,bytes);
+    const {stdout}=await promisify(execFile)('unzip',['-p',path,pattern],{timeout:20000,maxBuffer:4*1024*1024});
+    if(!stdout.trim())throw new Error('Document is missing its main text part');
+    const joined=load(stdout)('w\\:t, a\\:t').text().replace(/\s+/g,' ').trim();
+    if(joined.length<20)throw new Error('Document has too little extractable text');
+    return joined;
+  }finally{await rm(dir,{recursive:true,force:true});}
 }
 function clip(text:string):string {
   // Collapse horizontal whitespace and excess blank lines, but keep paragraph breaks (\n\n) —
@@ -58,12 +87,19 @@ async function ingestUrl(url:string,signal?:AbortSignal):Promise<{text:string;la
   }
 }
 export async function ingestSource(input:SourceInput,signal?:AbortSignal):Promise<SourceDocument>{
-  if(!input||!['prompt','text','url','pdf'].includes(input.kind))throw new Error('Choose prompt, text, URL or PDF');
+  // P1: Lamina accepts PDF, Word, PowerPoint, Markdown, plain text and JSON — match that
+  // surface. docx/pptx extract deterministically via unzip+XML tag-stripping.
+  if(!input||!['prompt','text','url','pdf','docx','pptx','markdown','json'].includes(input.kind))throw new Error('Choose prompt, text, URL, PDF, docx, pptx, markdown or json');
   let text='',label=input.name||input.kind;
   if(input.kind==='url'){
     if(!input.url)throw new Error('A public HTTPS URL is required');
     const ingested=await ingestUrl(input.url,signal);text=ingested.text;label=ingested.label;
   }else if(input.kind==='pdf')text=await extractPdf(Buffer.from(input.base64||'','base64'),signal);
+  else if(input.kind==='docx')text=await extractOfficeXml(Buffer.from(input.base64||'','base64'),'word/document.xml');
+  else if(input.kind==='pptx')text=await extractOfficeXml(Buffer.from(input.base64||'','base64'),'ppt/slides/slide*.xml');
+  else if(input.kind==='json'){
+    try{const parsed=JSON.parse(input.text||'');text=typeof parsed==='string'?parsed:JSON.stringify(parsed,null,1);}catch{throw new Error('Invalid JSON source');}
+  }
   else text=input.text||'';
   text=clip(text);
   if(text.length<20)throw new Error('Source needs at least 20 readable characters. Scanned PDFs need OCR; inaccessible pages need pasted text.');

@@ -1,5 +1,7 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID} from 'node:crypto';
+import {appendFileSync,mkdirSync} from 'node:fs';
+import {join} from 'node:path';
 
 export const logContext=new AsyncLocalStorage<Record<string,unknown>>();
 
@@ -22,6 +24,12 @@ export function sanitizeLog(value:unknown):unknown {
 export function log(event:string,fields:Record<string,unknown>={},level:'info'|'warn'|'error'='info') {
   const line=JSON.stringify(sanitizeLog({at:new Date().toISOString(),level,event,...logContext.getStore(),...fields}));
   if(level==='error')console.error(line);else if(level==='warn')console.warn(line);else console.log(line);
+  // P5 eval ledger: every line also lands in the job's log.jsonl (best-effort; the
+  // console stream stays primary). Journal/eval scripts read this file back.
+  const jobId=logContext.getStore()?.jobId;
+  if(typeof jobId==='string'&&/^[a-f0-9-]{36}$/.test(jobId)){
+    try{appendFileSync(join('.data',jobId,'log.jsonl'),line+'\n');}catch{/* ledger must never break the pipeline */}
+  }
 }
 
 /** Never logs provider headers, request bodies, query strings, or response bodies. */

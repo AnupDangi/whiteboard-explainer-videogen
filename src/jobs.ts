@@ -11,6 +11,18 @@ import {validatePlan,compileScene,durationOf} from './engine.js';
 import {generateKokoroSpeech} from './kokoro-speech.js';
 import {generateSpeech} from './providers.js';
 import {semaphore} from './concurrency.js';
+import {staticIntervalMs,connectorThroughNode} from './progression.js';
+
+/** P5 failure taxonomy: one coarse kind per job failure so later evaluation can group
+ *  and count them without regex archaeology over error messages. */
+function classifyError(message:string):string {
+  if(/Source|PDF|HTTPS|redirect|Link must|readable|OCR/i.test(message))return 'source';
+  if(/Anchor|outline|Expected two scenes|Chapter contains|Teaching checks|Visual checks|fallback exhausted|budget/i.test(message))return 'plan';
+  if(/schema|OpenRouter|HTTP \d/i.test(message))return 'provider';
+  if(/Speech|Kokoro|TTS|ElevenLabs/i.test(message))return 'speech';
+  if(/ffmpeg|sharp|export/i.test(message))return 'media';
+  return 'unknown';
+}
 
 /** A6: bump this whenever a change to schema.ts's shapes/kinds or engine.ts's compiler/
  *  renderer could make an old saved job.json render differently under the current code —
@@ -155,8 +167,19 @@ export class JobStore {
         }
       }
       job.actualMinutes=job.availableMs/60000;
-      job.status='complete';job.completedMs=Date.now()-job.createdAt;persistSpans();await queueSave('complete');
-    }catch(error){log('job.failure',{error},signal.aborted?'warn':'error');job.status=signal.aborted?'cancelled':'error';job.error=signal.aborted?'Cancelled by user':(error instanceof Error?error.message:String(error));persistSpans();await queueSave(job.status);}
+      job.status='complete';job.completedMs=Date.now()-job.createdAt;persistSpans();
+      // P5 eval ledger: deterministic quality measurements on every completed job.
+      log('job.lints',{jobId:job.id,scenes:job.scenes.map(s=>({id:s.id,staticIntervalMs:Math.round(staticIntervalMs(s)),connectorHits:connectorThroughNode(s).length}))});
+      await queueSave('complete');
+    }catch(error){
+      log('job.failure',{error},signal.aborted?'warn':'error');
+      job.status=signal.aborted?'cancelled':'error';
+      job.error=signal.aborted?'Cancelled by user':(error instanceof Error?error.message:String(error));
+      // P5 failure taxonomy: classify so later eval can group failures without NLP.
+      job.errorKind=signal.aborted?'cancel':classifyError(job.error);
+      log('job.failure-classified',{jobId:job.id,errorKind:job.errorKind},signal.aborted?'warn':'error');
+      persistSpans();await queueSave(job.status);
+    }
   }
   async get(id:string):Promise<JobSnapshot|null> {
     if(!/^[a-f0-9-]{36}$/.test(id))return null;

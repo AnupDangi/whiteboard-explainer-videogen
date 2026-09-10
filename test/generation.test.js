@@ -105,6 +105,25 @@ test('Source text is preserved and fingerprint changes with content',async()=>{
  const a=await ingestSource({kind:'text',text:source.text}),b=await ingestSource({kind:'text',text:source.text.replace('739','831')});assert.equal(a.text,source.text);assert.notEqual(a.sha256,b.sha256);
   await assert.rejects(ingestSource({kind:'text',text:''}),/readable/);const clipped=await ingestSource({kind:'text',text:('word '.repeat(45000))});assert(clipped.text.length<=200000);
 });
+test('P1 sources: markdown, json and docx ingest deterministically',async()=>{
+  const md=await ingestSource({kind:'markdown',text:'# Heading\n\nMarkdown body with plenty of readable characters for the gate.'});
+  assert.equal(md.kind,'markdown');assert(md.text.includes('Markdown body'));
+  const json=await ingestSource({kind:'json',text:'{"topic":"braking","trials":4}',name:'j'});
+  assert(json.text.includes('braking'));
+  await assert.rejects(ingestSource({kind:'json',text:'{not json'}),/Invalid JSON/);
+  const {execFile}=await import('node:child_process');
+  const {promisify}=await import('node:util');
+  const {mkdtemp,writeFile,rm,mkdir,readFile}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os');
+  const dir=await mkdtemp(`${tmpdir()}/docx-test-`);await mkdir(`${dir}/word`,{recursive:true});
+  await writeFile(`${dir}/word/document.xml`,'<w:document xmlns:w="w"><w:body><w:p><w:t>Word body with enough readable text</w:t></w:p></w:body></w:document>');
+  await promisify(execFile)('zip',['-q','-r',`${dir}/t.docx`,'.'],{cwd:dir});
+  const docxBytes=await readFile(`${dir}/t.docx`);await rm(dir,{recursive:true,force:true});
+  const doc=await ingestSource({kind:'docx',base64:docxBytes.toString('base64'),name:'t.docx'});
+  assert.equal(doc.text,'Word body with enough readable text');
+  await assert.rejects(ingestSource({kind:'docx',base64:Buffer.from('not a zip').toString('base64')}),/missing its main text|central-directory|Invalid document/);
+  await assert.rejects(ingestSource({kind:'bogus'}),/Choose prompt/);
+});
 test('Source fetching rejects private, mapped and reserved addresses',async()=>{
  for(const ip of ['127.0.0.1','10.0.0.1','169.254.169.254','::1','::ffff:127.0.0.1','fc00::1','192.168.1.1','0.0.0.0'])assert.equal(publicAddress(ip),false,ip);
  assert.equal(publicAddress('8.8.8.8'),true);await assert.rejects(ingestSource({kind:'url',url:'file:///etc/passwd'}),/HTTPS/);await assert.rejects(extractPdf(Buffer.from('not a PDF')),/Invalid PDF/);

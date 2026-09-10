@@ -260,11 +260,12 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
       // routing per job so concurrent chapters and repair retries re-read warm cache.
       const systemContent=cachePrompts===false?system:[{type:'text',text:system,cache_control:{type:'ephemeral'}}];
       const response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(90000)]):AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${env.OPENROUTER_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model,temperature:0.3,max_tokens:maxTokens,reasoning:{effort:'low'},response_format:{type:'json_schema',json_schema:{name:'explanation',strict:true,schema}},provider:{require_parameters:true},...(sessionId?{session_id:sessionId}:{}),messages:[{role:'system',content:systemContent},{role:'user',content:prompt}]})});
-      if(!response.ok){settle(0);throw new Error(`OpenRouter HTTP ${response.status}; check key, quota or model access`);}
+      if(!response.ok){settle(0);log('planner.call-failed',{label,status:response.status},response.status===429?'warn':'error');throw new Error(`OpenRouter HTTP ${response.status}; check key, quota or model access`);}
       const data=await response.json();usage.calls++;await onResponse?.(data,usage.calls);
       usage.promptTokens+=data.usage?.prompt_tokens||0;usage.completionTokens+=data.usage?.completion_tokens||0;
       const cached=cachedOf(data.usage);usage.cachedTokens+=cached;
-      log('planner.call',{label,elapsedMs:Math.round(performance.now()-callStarted),cachedTokens:cached});
+      // P5 call ledger: one line per model call with everything evaluation needs later.
+      log('planner.call',{label,attempt:label.endsWith('-repair')||label==='content-repair'||label==='director-repair'?'repair':'first',finishReason:data.choices?.[0]?.finish_reason,promptTokens:data.usage?.prompt_tokens,completionTokens:data.usage?.completion_tokens,cachedTokens:cached,costUsd:data.usage?.cost,model,elapsedMs:Math.round(performance.now()-callStarted)});
       settle(Number.isFinite(data.usage?.cost)?data.usage.cost:reservation);onUsage?.({...usage});
       if(data.choices?.[0]?.finish_reason!=='stop')throw new Error('OpenRouter output incomplete or refused');
       return JSON.parse(data.choices[0].message.content);

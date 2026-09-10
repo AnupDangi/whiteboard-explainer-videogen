@@ -16,7 +16,7 @@ export interface Usage { model:string; promptTokens:number; completionTokens:num
 export interface PlannerSpans { outlineMs:number; chapters:Record<string,{contentMs:number;directorMs:number}> }
 /** Persisted per-job spans: planner stages plus per-scene TTS wall ms. */
 export interface JobSpans { outlineMs?:number; chapters?:Record<string,{contentMs:number;directorMs:number}>; ttsMsByScene?:Record<string,number> }
-export interface SourceInput { kind:'prompt'|'text'|'url'|'pdf'; text?:string; url?:string; base64?:string; name?:string }
+export interface SourceInput { kind:'prompt'|'text'|'url'|'pdf'|'docx'|'pptx'|'markdown'|'json'; text?:string; url?:string; base64?:string; name?:string }
 export interface SourceDocument { kind:string; label:string; text:string; sha256:string }
 export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'elevenlabs'|'kokoro'; voiceId?:string; visualCritic?:boolean; cachePrompts?:boolean }
 export interface CompiledNode extends PlanNode { x:number; y:number; w:number; h:number; fontSize:number; lines:string[]; color:string; fillOpacity?:number; startMs:number; drawMs:number }
@@ -24,7 +24,7 @@ export interface CompiledEdge extends PlanEdge { x1:number; y1:number; x2:number
 export interface CompiledScene extends Scene { nodes:CompiledNode[]; edges:CompiledEdge[]; timing:Timing; audioUrl?:string; durationMs:number }
 export interface JobSnapshot {
  id:string;status:string;revision:number;createdAt:number;mode:string;targetMinutes:number;plannerBudgetUsd:number;ttsCharacters:number;timingMode:string;simulatedDelayMs:number;scenes:CompiledScene[];availableMs:number;events:{sequence:number;type:string;atMs:number;availableMs:number}[];
-  title?:string;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;actualMinutes?:number;error?:string;usage?:Usage;source?:Omit<SourceDocument,'text'>&{characters:number};spans?:JobSpans;manifestVersion?:string;
+  title?:string;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;actualMinutes?:number;error?:string;errorKind?:string;usage?:Usage;source?:Omit<SourceDocument,'text'>&{characters:number};spans?:JobSpans;manifestVersion?:string;
 }
 export interface InternalJob extends JobSnapshot {controller?:AbortController;task?:Promise<void>}
 export interface ProviderOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;voiceId?:string}
