@@ -49,3 +49,18 @@ test('P2 figures: describeFigures uses one vision call per figure with strict sc
   assert(figures.every(f=>f.kind==='figure'&&f.caption));
   assert.equal(described.length,4,'one call per described figure');
 });
+
+test('Optimization: describeFigures runs bounded-parallel and preserves page order',async t=>{
+  let inFlight=0,maxInFlight=0;
+  const cropFn=async()=>Buffer.alloc(600,7);
+  const fetcher=async()=>{
+    inFlight++;maxInFlight=Math.max(maxInFlight,inFlight);
+    await new Promise(r=>setTimeout(r,20));
+    inFlight--;
+    return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({caption:'a chart',kind:'figure',dataHint:'',keyNumbers:[]})}}]});
+  };
+  const figures=await describeFigures(Buffer.from('%PDF-x'),[1,2,3,4].map(page=>({page,left:0,top:0,width:10,height:10})),{env:{OPENROUTER_API_KEY:'k',OPENROUTER_MODEL:'m'},fetcher,cropFn});
+  assert.equal(figures.length,4);
+  assert.deepEqual(figures.map(f=>f.page),[1,2,3,4],'order restored');
+  assert(maxInFlight>1&&maxInFlight<=3,`bounded concurrency observed (max ${maxInFlight})`);
+});

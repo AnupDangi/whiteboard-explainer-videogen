@@ -1,8 +1,9 @@
 import {log,logContext} from './logger.js';
-import type {GenerationOptions,Usage,SourceDocument,Plan,JobSnapshot,InternalJob,Providers,Timing} from './types.js';
+import type {GenerationOptions,Usage,SourceDocument,SourceInput,Plan,JobSnapshot,InternalJob,Providers,Timing} from './types.js';
 import {ingestSource} from './sources.js';
-import {buildDocumentMap,readCachedMap,writeCachedMap} from './document-map.js';
 import {detectFigures,describeFigures} from './figures.js';
+import type {FigureCandidate} from './figures.js';
+import {buildDocumentMap,readCachedMap,writeCachedMap} from './document-map.js';
 import {generateChapters,validateDuration} from './planner.js';
 import {randomUUID} from 'node:crypto';
 import {mkdir,writeFile,rename,readFile} from 'node:fs/promises';
@@ -32,6 +33,10 @@ function classifyError(message:string):string {
  *  code" without re-deriving history from git log (docs/OPTIMIZATION_PLAN.md §4 GenerationManifest,
  *  bounded to a version string for this pass — see docs/REVIEW_CORPUS.md). */
 export const GENERATION_MANIFEST_VERSION='v1-2026-09-10';
+
+/** Uploaded-PDF sources can start figure detection before extraction finishes; URL
+ *  sources can't (their PDF-ness is only known after ingest, and ingest discards bytes). */
+function sourceIsPdf(source?:SourceInput):boolean {return source?.kind==='pdf';}
 
 /** Local single-process worker. Durable snapshots, not a distributed queue. */
 export class JobStore {
@@ -102,7 +107,14 @@ export class JobStore {
       let sourceDocument!:SourceDocument;
       if(options.mode==='model'&&!this.providers.plan){
         log('source.started',{kind:options.source?.kind||'prompt'});
-        sourceDocument=await ingestSource(options.source||{kind:'prompt',text:options.prompt},signal);
+        // Parallel parsing: pdftotext extraction and pdftohtml figure detection are
+        // independent poppler processes over the same bytes — run them concurrently
+        // instead of serially. Figure description stays fail-soft and bounded.
+        const base64=options.source?.base64;
+        const canDetect=sourceIsPdf(options.source)&&base64&&!this.providers.plan&&process.env.OPENROUTER_API_KEY;
+        const ingestPromise=ingestSource(options.source||{kind:'prompt',text:options.prompt},signal);
+        const detectPromise=canDetect?detectFigures(Buffer.from(base64,'base64')).catch((e:unknown)=>{log('source.figures-detected-failed',{error:e instanceof Error?e.message:String(e)},'warn');return [] as FigureCandidate[];}):null;
+        sourceDocument=await ingestPromise;
         log('source.ready',{kind:sourceDocument.kind,characters:sourceDocument.text.length});
         // LD2: build (or sha256-cache) the hierarchical document map so the outline can
         // plan over a section tree instead of raw text (LD5). Fail-soft: a map problem
@@ -115,17 +127,15 @@ export class JobStore {
           log('source.map-built',{sections:map.sections.length,kind:map.kind,cached:!!cached});
         }catch(mapError){log('source.map-failed',{error:mapError instanceof Error?mapError.message:String(mapError)},'warn');}
         // Pre-extracted figures ride in via options (enriched text sources lose the
-        // original bytes; the caller detects+describes before handing off).
+        // original bytes; the caller detects+describes before handing off). When they
+        // exist, skip the in-worker pipeline entirely — describing twice doubles cost
+        // and latency for zero new information.
         if(options.figures?.length)sourceDocument.figures=options.figures;
-        // P2: PDF sources get their figures/tables detected (deterministic poppler) and
-        // described (one bounded vision call each, ≤4). Costs a few cents at most; the
-        // descriptions are what lets the planner "see" the paper's figures.
-        if(sourceDocument.kind==='pdf'&&options.source?.base64&&!this.providers.plan&&process.env.OPENROUTER_API_KEY){
-          const bytes=Buffer.from(options.source.base64,'base64');
-          const candidates=await detectFigures(bytes);
+        else if(detectPromise){
+          const candidates=await detectPromise;
           log('source.figures-detected',{count:candidates.length});
           if(candidates.length){
-            sourceDocument.figures=await describeFigures(bytes,candidates,{env:process.env});
+            sourceDocument.figures=await describeFigures(Buffer.from(base64!,'base64'),candidates,{env:process.env});
             log('source.figures-described',{count:sourceDocument.figures.length,kinds:sourceDocument.figures.map(f=>f.kind)});
           }
         }

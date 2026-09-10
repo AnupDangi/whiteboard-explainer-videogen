@@ -16,9 +16,9 @@ function docWithPages(pageTexts){
 
 test('LD2 map: numbered headings become ordered sections with pages and tiling spans',()=>{
   const pages=[
-    'Chapter 1 Alpha\nAlpha body text about transformers and attention mechanisms. Key number: 4 units.',
-    'Chapter 2 Bravo\nBravo body continues the mechanism. Another number: 9 items.',
-    'Chapter 3 Charlie\nCharlie body closes the loop. Final number: 2 cases.',
+    '1. Chapter Alpha\nAlpha body text about transformers and attention mechanisms. Key number: 4 units.',
+    '2. Chapter Bravo\nBravo body continues the mechanism. Another number: 9 items.',
+    '3. Chapter Charlie\nCharlie body closes the loop. Final number: 2 cases.',
   ];
   const source=docWithPages(pages);
   const map=buildDocumentMap(source);
@@ -34,11 +34,11 @@ test('LD2 map: numbered headings become ordered sections with pages and tiling s
 });
 
 test('LD2 map: heading cap keeps spans tiling and first/last preserved',()=>{
-  const pages=Array.from({length:60},(_,i)=>`Heading ${String.fromCharCode(65+(i%26))}${i}\nBody paragraph ${i} with filler content to separate headings.`);
+  const pages=Array.from({length:60},(_,i)=>`${i+1}. Heading Section\nBody paragraph ${i} with filler content to separate headings.`);
   const source=docWithPages(pages);
   const map=buildDocumentMap(source);
   assert(map.sections.length<=48);
-  assert.equal(map.sections[0].title,'Heading A0');
+  assert.equal(map.sections[0].title,'1. Heading Section');
   for(let i=0;i<map.sections.length-1;i++)assert.equal(map.sections[i].end,map.sections[i+1].start);
 });
 
@@ -61,14 +61,35 @@ test('LD2 map: flat text without pages gets one section',()=>{
   assert.equal(map.sections[0].charCount,73);
 });
 
+test('LD2 map junk filter: figure labels and legend rows never become sections',()=>{
+  // Real numbered sections + junk: a 30-char figure label and a repeated-token legend row.
+  const pages=[
+    '1. Architecture\nThe architecture body explains the mechanism in detail with enough text volume to qualify as real section content for the map.',
+    '2. Pre-Training\nThe pre-training body continues with more substantial explanatory content so the section spans remain meaningful for retrieval routing.',
+    'Shared Expert\nfig',
+    'RMSNorm RMSNorm\nbar',
+    '3. Post-Training\nThe post-training body closes the document with the summary paragraphs and final remarks of the technical report here.',
+  ];
+  const source=docWithPages(pages);
+  const map=buildDocumentMap(source);
+  const titles=map.sections.map(s=>s.title);
+  assert(!titles.some(t=>t.startsWith('Shared Expert')),'tiny figure label dropped');
+  assert(!titles.some(t=>t.startsWith('RMSNorm RMSNorm')),'repeated-token legend row dropped');
+  // The dropped heading's text is absorbed — sections still tile the whole document.
+  for(let i=0;i<map.sections.length-1;i++)assert.equal(map.sections[i].end,map.sections[i+1].start);
+  assert.equal(map.sections[map.sections.length-1].end,source.text.length);
+  assert(map.sections.some(s=>s.title.includes('Post-Training')),'numbered junk is kept, real numbered sections survive');
+});
+
 test('LD2 cache: sha256-keyed map file round-trips',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'map-cache-'));
   try{
-    const source=docWithPages(['Chapter 1 Alpha\nBody one. 4 units.','Chapter 2 Bravo\nBody two. 9 items.','Chapter 3 Charlie\nBody three. 2 cases.']);
+    const source=docWithPages(['1. Chapter Alpha\nBody one. 4 units.','2. Chapter Bravo\nBody two. 9 items.','3. Chapter Charlie\nBody three. 2 cases.']);
     const map=buildDocumentMap(source);
     assert.equal(await readCachedMap(dir,'abc'),null);
     await writeCachedMap(dir,'abc',map);
-    assert.equal(mapCachePath(dir,'abc'),join(dir,'map-abc.json'));
+    // Versioned cache: heuristic changes must invalidate stale maps, not serve them.
+    assert.equal(mapCachePath(dir,'abc'),join(dir,'map-v2-abc.json'));
     const back=await readCachedMap(dir,'abc');
     assert.deepEqual(back,map);
   }finally{await rm(dir,{recursive:true,force:true});}

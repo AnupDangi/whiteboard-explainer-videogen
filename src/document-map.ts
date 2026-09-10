@@ -13,20 +13,65 @@ const HEADING_MAX_CHARS=72;
 const SUMMARY_CHARS=400;
 const PAPER_MAX_PAGES=40;
 
-/** Same class of heuristic prompt-builder uses: short standalone line, optionally
- *  numbered ("3.2 Methods"), no trailing sentence punctuation, mostly letters. */
+/** Same class of heuristic prompt-builder uses, hardened against live-run junk
+ *  (DeepSeek-V3 map picked up table rows and TOC lines as sections). Rules:
+ *  numbered lines ("1. Introduction", "2 Architecture") always qualify; unnumbered
+ *  lines must look like real headings — title-case multi-word, ALL-CAPS multi-word,
+ *  or a known section word — never parentheticals ("(Pass@1)"), math glyphs
+ *  ("Accuracy / Percentile (%)"), stray digits ("Architecture 6"), or lone acronyms
+ *  ("MMLU-Pro"). */
+const KNOWN_SECTIONS=/^(abstract|introduction|conclusion|summary|overview|background|related work|discussion|evaluation|results|methods?|limitations?|acknowledg\w*|references?|appendix|contributions?|preliminar\w*|experiments?|conclusion)$/i;
 function looksLikeHeading(line:string):boolean {
   const t=line.trim();
   if(t.length<3||t.length>HEADING_MAX_CHARS)return false;
   if(/[.,;:!?]$/.test(t))return false;
   if(/^(figure|table|fig\.|algorithm|equation|appendix|references|acknowledg)/i.test(t)&&t.length>30)return false;
-  if(!/^(\d+(\.\d+)*\.?\s+)?[A-Z0-9(]/.test(t))return false;
-  if(!/[a-zA-Z]/.test(t))return false;
-  const letters=(t.match(/[a-zA-Z]/g)||[]).length;
-  return letters/t.length>=0.5;
+  if(/^[(@]/.test(t)||/[%/=]/.test(t))return false;
+  const numbered=t.match(/^(\d+(\.\d+)*\.?\s+)/);
+  const body=(numbered?t.slice(numbered[0].length):t).trim();
+  if(!body)return false;
+  if(!/[a-zA-Z]/.test(body))return false;
+  const letters=(body.match(/[a-zA-Z]/g)||[]).length;
+  if(letters/body.length<0.5)return false;
+  if(numbered){
+    // TOC lines ("2 Architecture 6") keep their leading number but carry a trailing
+    // page number — a body with digits after the numbering is not a heading.
+    if(/\d/.test(body))return false;
+    return true;
+  }
+  if(/\d/.test(body))return false;
+  const words=body.split(/\s+/).filter(Boolean);
+  if(KNOWN_SECTIONS.test(body))return true;
+  if(words.length===1){
+    // A single capitalized word qualifies only when it is ALL-CAPS without hyphens
+    // ("ARCHITECTURE") or Title-case in the known list — acronyms like "MMLU-Pro" die.
+    if(body===body.toUpperCase()&&body.length>=5&&!/-/.test(body))return true;
+    if(KNOWN_SECTIONS.test(body))return true;
+    return false;
+  }
+  // Multi-word: title-case ("Post-Training Objectives") or ALL-CAPS ("SYSTEM OVERVIEW").
+  const titleCase=body.split(/\s+/).every(w=>/^[A-Z][a-zA-Z-]*$/.test(w)||KNOWN_SECTIONS.test(w)||w.length<=2);
+  const allCaps=body===body.toUpperCase()&&/[A-Z]/.test(body);
+  return titleCase||allCaps;
 }
 
-interface HeadingHit { start:number; page:number; title:string }
+interface HeadingHit { start:number; page:number; title:string; numbered:boolean }
+
+/** Junk-section filters (live-run root cause: table headers, figure labels and legend
+ *  rows pass the title-case test and pollute the map — the outline then routes chapters
+ *  to them, the evidence set fills with fragments, and grounding fails deterministically).
+ *  (a) an unnumbered heading whose body is tiny (<800 chars) is a figure label, not a
+ *  section — drop it and let its text absorb into the previous section;
+ *  (b) repeated tokens ("RMSNorm RMSNorm", "Architecture MoE MoE Dense Dense") are
+ *  chart/legend rows, never headings. */
+function junkHeading(hit:HeadingHit,sectionChars:number):boolean {
+  if(hit.numbered)return false;
+  if(sectionChars<800)return true;
+  const tokens=hit.title.toLowerCase().split(/\s+/).filter(Boolean);
+  const counts=new Map<string,number>();
+  for(const t of tokens)counts.set(t,(counts.get(t)||0)+1);
+  return [...counts.values()].some(c=>c>=2);
+}
 
 function scanHeadings(source:SourceDocument):HeadingHit[] {
   const pageSpans=source.pages;
@@ -43,7 +88,7 @@ function scanHeadings(source:SourceDocument):HeadingHit[] {
         const title=line.trim();
         const last=hits[hits.length-1];
         // Consecutive duplicate heading lines (TOC entry + body header) collapse to one.
-        if(!last||last.title!==title||offset-last.start>200)hits.push({start:offset,page:span.page,title});
+        if(!last||last.title!==title||offset-last.start>200)hits.push({start:offset,page:span.page,title,numbered:/^\d/.test(title)});
       }
       offset+=line.length+1;
     }
@@ -68,12 +113,9 @@ function summarize(body:string):string {
 export function buildDocumentMap(source:SourceDocument):DocumentMap {
   const totalPages=source.pages?.length||1;
   const kindFor=(headingCount:number)=>headingCount>=3?(totalPages<=PAPER_MAX_PAGES?'paper':'book'):'unknown';
-  const hits=scanHeadings(source);
-  if(hits.length<3){
-    // Fallback: fixed page windows so a structureless long document still gets bounded,
-    // tiling sections the outline can route over.
+  const windows=()=>{
     if(!source.pages?.length){
-      return {kind:'unknown',sections:[{id:'s1',title:source.label.slice(0,80),page:1,start:0,end:source.text.length,charCount:source.text.length,summary:summarize(source.text)}]};
+      return {kind:'unknown' as const,sections:[{id:'s1',title:source.label.slice(0,80),page:1,start:0,end:source.text.length,charCount:source.text.length,summary:summarize(source.text)}]};
     }
     const windowCount=Math.min(MAX_WINDOW_SECTIONS,Math.max(2,Math.ceil(totalPages/12)));
     const groupSize=Math.ceil(totalPages/windowCount);
@@ -85,7 +127,13 @@ export function buildDocumentMap(source:SourceDocument):DocumentMap {
       if(end<=from.start)continue;
       sections.push({id:`s${sections.length+1}`,title:`Pages ${from.page}–${source.pages[toEnd-1].page}`,page:from.page,start:from.start,end,charCount:end-from.start,summary:summarize(source.text.slice(from.start,end))});
     }
-    return {kind:totalPages>PAPER_MAX_PAGES?'book':'unknown',sections};
+    return {kind:(totalPages>PAPER_MAX_PAGES?'book':'unknown') as DocumentMap['kind'],sections};
+  };
+  const hits=scanHeadings(source);
+  if(hits.length<3){
+    // Fallback: fixed page windows so a structureless long document still gets bounded,
+    // tiling sections the outline can route over.
+    return windows();
   }
   // Cap: evenly-spaced selection keeps first/last headings and tiles the whole text —
   // unselected headings' content stays inside their section's span.
@@ -100,9 +148,26 @@ export function buildDocumentMap(source:SourceDocument):DocumentMap {
     if(starts[starts.length-1].start>picked[picked.length-1].start)picked.push(starts[starts.length-1]);
     starts=picked;
   }
+  // Junk filter pass: compute provisional spans, drop figure-label/legend headings
+  // (tiny unnumbered bodies, repeated tokens), then rebuild so the dropped heading's
+  // text absorbs into the surviving neighbours. One pass is enough — surviving
+  // sections only GROW when a neighbour is removed.
+  const provisional=starts.map((h,i)=>{
+    const end=i+1<starts.length?starts[i+1].start:source.text.length;
+    return {hit:h,end,charCount:Math.max(0,end-h.start)};
+  });
+  const junk=new Set(provisional.filter(p=>junkHeading(p.hit,p.charCount)).map(p=>p.hit));
+  if(junk.size)starts=starts.filter(h=>!junk.has(h));
+  if(starts.length<3){
+    // Everything filtered out → the document is effectively structureless after all.
+    return windows();
+  }
   const mapped:MapSection[]=starts.map((h,i)=>{
     const end=i+1<starts.length?starts[i+1].start:source.text.length;
-    return {id:`s${i+1}`,title:h.title.slice(0,80),page:h.page,start:h.start,end,charCount:Math.max(0,end-h.start),summary:summarize(source.text.slice(h.start,end))};
+    const raw=source.text.slice(h.start,end);
+    // The heading line is the title, not body — summarize only what follows it.
+    const body=raw.slice(raw.indexOf('\n')+1);
+    return {id:`s${i+1}`,title:h.title.slice(0,80),page:h.page,start:h.start,end,charCount:Math.max(0,end-h.start),summary:summarize(body)};
   });
   // A heading at the very end of the document yields an empty body — drop it unless it
   // is the only section.
@@ -120,7 +185,10 @@ export function renderMapForOutline(map:DocumentMap):string {
   ].join('\n');
 }
 
-export function mapCachePath(root:string,sha256:string):string {return join(root,`map-${sha256}.json`);}
+// Map heuristic version: bump whenever the heading/junk heuristics change so cached
+// maps rebuild instead of serving a stale structure.
+const MAP_CACHE_VERSION='v2';
+export function mapCachePath(root:string,sha256:string):string {return join(root,`map-${MAP_CACHE_VERSION}-${sha256}.json`);}
 export async function readCachedMap(root:string,sha256:string):Promise<DocumentMap|null> {
   try {
     const parsed=JSON.parse(await readFile(mapCachePath(root,sha256),'utf8'));

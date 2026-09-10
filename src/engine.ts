@@ -73,7 +73,7 @@ function validateCandidate(input: Plan): Plan {
       // visualIntent is the Semantic Storyboard link (V2 §8): what this node should visually
       // show, shared upstream of both narration and the Visual Director's kind/shape choice.
       // Planning metadata like keyPoint — validated, preserved, never rendered directly.
-      if (node.visualIntent !== undefined && (typeof node.visualIntent !== 'string' || !node.visualIntent.trim() || node.visualIntent.length > 80)) fail(`Invalid visualIntent (node ${node.id}): 1-80 chars`);
+      if (node.visualIntent !== undefined && (typeof node.visualIntent !== 'string' || !node.visualIntent.trim() || node.visualIntent.length > 120)) fail(`Invalid visualIntent (node ${node.id}): 1-120 chars`);
       // beatId pins the node to one beat (anchors resolve inside it); conceptId is
       // the cross-scene identity (same conceptId = same thing, every scene).
       if (node.beatId !== undefined && (typeof node.beatId !== 'string' || !(beatIds as Set<string> | null)?.has(node.beatId))) fail(`Node ${node.id} references an unknown beat`);

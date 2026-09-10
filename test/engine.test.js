@@ -13,7 +13,7 @@ test('H04/H22 rejects invalid references, anchors, IDs and primitive layouts',()
 test('Phase 7: visualIntent is validated and preserved as planning metadata',()=>{
   const withIntent=copy();withIntent.scenes[0].nodes[0].visualIntent='arrow from query to each key, comparison';
   assert.equal(validatePlan(withIntent).scenes[0].nodes[0].visualIntent,'arrow from query to each key, comparison');
-  const tooLong=copy();tooLong.scenes[0].nodes[0].visualIntent='x'.repeat(81);
+  const tooLong=copy();tooLong.scenes[0].nodes[0].visualIntent='x'.repeat(121);
   assert.throws(()=>validatePlan(tooLong),/visualIntent/);
   const empty=copy();empty.scenes[0].nodes[0].visualIntent='   ';
   assert.throws(()=>validatePlan(empty),/visualIntent/);

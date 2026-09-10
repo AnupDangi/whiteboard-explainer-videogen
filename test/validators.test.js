@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats} from '../dist/src/planner.js';
 import {retrieveChapterEvidence} from '../dist/src/retrieval.js';
 import {directorSchema} from '../dist/src/schema.js';
 
@@ -150,6 +150,24 @@ test('LD3 retrieval: chapter evidence matches the objective, not the ordinal pos
   assert(!retrieved.text.includes('office furniture'),'unrelated paragraph dropped');
   const small=retrieveChapterEvidence({...source,text:'short doc'},'anything',[]);
   assert.equal(small.text,'short doc','tiny sources pass through whole');
+});
+test('Perf: deriveBeats partitions narration exactly and deterministically',()=>{
+  const narration='Transformers changed everything. Attention replaced recurrence entirely. The model reads the whole sequence at once.';
+  const beats=deriveBeats(narration);
+  assert(beats.length>=2&&beats.length<=4,'2-4 beats');
+  assert.equal(beats.map(b=>b.narration).join(' ').replace(/\s+/g,' ').trim(),narration.replace(/\s+/g,' ').trim(),'exact partition');
+  assert.deepEqual(deriveBeats(narration),beats,'deterministic');
+  // Single-sentence narration still yields two beats (engine requires 2-4).
+  const single=deriveBeats('Just one long sentence with many words that must split on a boundary.');
+  assert(single.length>=2);
+});
+test('Perf: resolveAnchors derives beats and assigns beatId without model output',()=>{
+  const raw={version:1,title:'t',scenes:[{id:'s1',title:'S',narration:'Alpha starts here and continues. Beta finishes the thought cleanly.',layout:'flow',nodes:[{id:'a',label:'Alpha',anchor:'Alpha starts',keyPoint:'A'},{id:'b',label:'Beta',anchor:'Beta finishes',keyPoint:'B'}],edges:[],note:''}]};
+  const plan=resolveAnchors(raw);
+  const scene=plan.scenes[0];
+  assert(Array.isArray(scene.beats)&&scene.beats.length>=2,'beats derived');
+  assert(scene.nodes.every(n=>typeof n.beatId==='string'),'every node got a beatId');
+  assert.equal(scene.nodes[0].beatId,'b1');
 });
 test('LD6 grounding: evidenceIds must exist and actually support the node',()=>{
   const scene={id:'s1',nodes:[

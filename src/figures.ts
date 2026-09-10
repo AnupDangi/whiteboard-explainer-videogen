@@ -143,34 +143,40 @@ function safeParse(s:string):Record<string,unknown>|null {
   try{const v=JSON.parse(s);return v&&typeof v==='object'&&!Array.isArray(v)?v:null;}catch{return null;}
 }
 
+import {semaphore} from './concurrency.js';
+
 /** One bounded vision call per figure (≤4 per source). Failure keeps the figure
- *  undescribed rather than failing the job — extraction quality, never a blocker. */
+ *  undescribed rather than failing the job — extraction quality, never a blocker.
+ *  Figures are independent and fail-soft: bounded concurrency 3, order restored. */
 export async function describeFigures(bytes:Buffer,candidates:FigureCandidate[],{env,fetcher=fetch,maxFigures=4,cropFn=cropFigure}: {env:NodeJS.ProcessEnv;fetcher?:typeof fetch;maxFigures?:number;cropFn?:(bytes:Buffer,c:FigureCandidate)=>Promise<Buffer|null>}):Promise<SourceFigure[]> {
-  const described:SourceFigure[]=[];
-  for(const c of candidates.slice(0,maxFigures)){
-    const crop=await cropFn(bytes,c);
-    if(!crop)continue;
-    let describedFigure:SourceFigure|null=null;
-    // O3: one parse retry — truncation is often a one-off token-budget miss, and the
-    // repaired payload covers most of the rest. Two attempts total, still bounded.
-    for(let attempt=0;attempt<2&&!describedFigure;attempt++){
-      try {
-        const response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(getLatencyBudget('figure')),headers:{Authorization:`Bearer ${env.OPENROUTER_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:env.OPENROUTER_VISION_MODEL||env.OPENROUTER_MODEL||'google/gemini-3.8-flash',temperature:0.2,max_tokens:getOutputBudget('figure'),response_format:{type:'json_schema',json_schema:{name:'figure',strict:true,schema:figureSchema}},messages:[{role:'system',content:'You describe one figure or table from a research paper so a whiteboard explainer can later redraw it. Return ONLY JSON {caption:string, kind:"figure"|"table", dataHint:string, keyNumbers:string[]}. caption: what it shows in one sentence. dataHint: the axes/rows/series structure a redraw would need. keyNumbers: values worth putting on a whiteboard (at most 4).'+(attempt?' Your previous reply was cut off mid-JSON — be strictly concise, one short sentence per field.':'')},{role:'user',content:[{type:'text',text:'Describe this figure or table from the source document.'},{type:'image_url',image_url:{url:`data:image/png;base64,${crop.toString('base64')}`}}]}]})});
-        if(!response.ok)throw new Error(`figure HTTP ${response.status}`);
-        const data=await response.json();
-        const raw=data.choices[0].message.content as string;
-        const repaired=repairFigureJson(raw);
-        let parsed:null|{caption:string;kind:'figure'|'table';dataHint:string;keyNumbers:string[]}=null;
-        try{parsed=JSON.parse(raw);}catch{/* truncated — try repair */}
-        if(!parsed)parsed=repaired as null|{caption:string;kind:'figure'|'table';dataHint:string;keyNumbers:string[]};
-        if(!parsed||typeof parsed.caption!=='string'||!parsed.caption.trim())throw new Error('figure missing caption');
-        describedFigure={page:c.page,caption:parsed.caption.slice(0,280),kind:parsed.kind==='table'?'table':'figure',dataHint:typeof parsed.dataHint==='string'?parsed.dataHint.slice(0,280):'',keyNumbers:Array.isArray(parsed.keyNumbers)?parsed.keyNumbers.filter(k=>typeof k==='string').slice(0,4):[]};
-        log('source.figure-described',{page:c.page,kind:describedFigure.kind,repair:parsed===repaired&&repaired!==null?'repaired':'clean',caption:describedFigure.caption.slice(0,60)});
-      }catch(error){
-        log(attempt===0?'source.figure-describe-retry':'source.figure-describe-failed',{page:c.page,attempt,error:error instanceof Error?error.message:String(error)},'warn');
+  const sem=semaphore(3);
+  const tasks=candidates.slice(0,maxFigures).map(c=>sem.acquire().then(async()=>{
+    try{
+      const crop=await cropFn(bytes,c);
+      if(!crop)return null;
+      let describedFigure:SourceFigure|null=null;
+      // O3: one parse retry — truncation is often a one-off token-budget miss, and the
+      // repaired payload covers most of the rest. Two attempts total, still bounded.
+      for(let attempt=0;attempt<2&&!describedFigure;attempt++){
+        try {
+          const response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(getLatencyBudget('figure')),headers:{Authorization:`Bearer ${env.OPENROUTER_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:env.OPENROUTER_VISION_MODEL||env.OPENROUTER_MODEL||'google/gemini-3.8-flash',temperature:0.2,max_tokens:getOutputBudget('figure'),response_format:{type:'json_schema',json_schema:{name:'figure',strict:true,schema:figureSchema}},messages:[{role:'system',content:'You describe one figure or table from a research paper so a whiteboard explainer can later redraw it. Return ONLY JSON {caption:string, kind:"figure"|"table", dataHint:string, keyNumbers:string[]}. caption: what it shows in one sentence. dataHint: the axes/rows/series structure a redraw would need. keyNumbers: values worth putting on a whiteboard (at most 4).'+(attempt?' Your previous reply was cut off mid-JSON — be strictly concise, one short sentence per field.':'')},{role:'user',content:[{type:'text',text:'Describe this figure or table from the source document.'},{type:'image_url',image_url:{url:`data:image/png;base64,${crop.toString('base64')}`}}]}]})});
+          if(!response.ok)throw new Error(`figure HTTP ${response.status}`);
+          const data=await response.json();
+          const raw=data.choices[0].message.content as string;
+          const repaired=repairFigureJson(raw);
+          let parsed:null|{caption:string;kind:'figure'|'table';dataHint:string;keyNumbers:string[]}=null;
+          try{parsed=JSON.parse(raw);}catch{/* truncated — try repair */}
+          if(!parsed)parsed=repaired as null|{caption:string;kind:'figure'|'table';dataHint:string;keyNumbers:string[]};
+          if(!parsed||typeof parsed.caption!=='string'||!parsed.caption.trim())throw new Error('figure missing caption');
+          describedFigure={page:c.page,caption:parsed.caption.slice(0,280),kind:parsed.kind==='table'?'table':'figure',dataHint:typeof parsed.dataHint==='string'?parsed.dataHint.slice(0,280):'',keyNumbers:Array.isArray(parsed.keyNumbers)?parsed.keyNumbers.filter(k=>typeof k==='string').slice(0,4):[]};
+          log('source.figure-described',{page:c.page,kind:describedFigure.kind,repair:parsed===repaired&&repaired!==null?'repaired':'clean',caption:describedFigure.caption.slice(0,60)});
+        }catch(error){
+          log(attempt===0?'source.figure-describe-retry':'source.figure-describe-failed',{page:c.page,attempt,error:error instanceof Error?error.message:String(error)},'warn');
+        }
       }
-    }
-    if(describedFigure)described.push(describedFigure);
-  }
-  return described;
+      return describedFigure;
+    }finally{sem.release();}
+  }).catch(()=>null));
+  const settled=await Promise.allSettled(tasks);
+  return settled.flatMap(s=>s.status==='fulfilled'&&s.value?[s.value]:[]);
 }
