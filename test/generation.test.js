@@ -20,8 +20,8 @@ function adapter({failure=false,bad=false}={}) {
    } else {
     // Stage 1 — Teaching Planner content: narration leads with the chapter key points
     // (passed in the payload) so key-point coverage holds; filler keeps word budget.
-    const kps=Array.isArray(content.keyPoints)&&content.keyPoints.length?content.keyPoints:['Cause point one','Effect point two'];
-    const tag=(content.chapter!==undefined?content.chapter:JSON.stringify(content.objective||'x')).toString().replace(/\W+/g,'_').slice(0,20);
+    const kps=content.chapterFrame&&Array.isArray(content.chapterFrame.chapterKeyPoints)&&content.chapterFrame.chapterKeyPoints.length?content.chapterFrame.chapterKeyPoints:['Cause point one','Effect point two'];
+    const tag=(content.chapterFrame&&content.chapterFrame.chapter!==undefined?content.chapterFrame.chapter:JSON.stringify(content.objective||'x')).toString().replace(/\W+/g,'_').slice(0,20);
     const words=(kps.join(' ')+' '+Array.from({length:60},(_,i)=>`term${tag}_${i}`).join(' '));
     result={version:1,title:'Dynamic explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${tag}-${i}`,narration:words,nodes:[{id:'a',label:'Alpha aspect',anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0]},{id:'b',label:'Beta aspect',anchor:bad?'absent phrase':`term${tag}_45`,keyPoint:kps[1]||kps[0]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
    }
@@ -35,7 +35,7 @@ for(const minutes of [1,5,10,30])test(`Duration ${minutes}: distinct chapter req
  assert.equal(scenes.length,minutes*2);assert.equal(new Set(scenes.map(s=>s.id)).size,scenes.length);
  // 1 outline call + (1 content + 1 director) per chapter in the happy path.
  assert.equal(mock.requests.length,1+minutes*2);assert.equal(updates,1+minutes*2);
-  const contentRequests=mock.requests.filter(r=>{const c=JSON.parse(r.messages[1].content);return typeof c.chapter==='number';});
+  const contentRequests=mock.requests.filter(r=>{const c=JSON.parse(r.messages[1].content);return c.chapterFrame&&typeof c.chapterFrame.chapter==='number';});
  assert.equal(contentRequests.length,minutes);
  assert(contentRequests.every(r=>r.messages[1].content.includes(source.text)));
  assert.equal(mock.requests[1].response_format.type,'json_schema');

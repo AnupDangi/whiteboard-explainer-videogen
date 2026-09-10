@@ -97,6 +97,12 @@ $('message').textContent='Downloading MP4...';const mpxLink=document.createEleme
 request('/api/config').then(function(c){
   $('tts-provider').querySelector('[value=elevenlabs]').disabled=!c.elevenlabs;
   if(!c.kokoroSpeech)$('voice-message').textContent='Kokoro local speech currently requires macOS — run scripts/setup-kokoro.sh once first.';
+  if(c.tiers){
+    const pipeline=$('pipeline');pipeline.hidden=false;
+    const fill=(id:string,value?:string)=>{const el=$(id);if(el)el.querySelector('b').textContent=' '+(value||'default').split('/').pop();};
+    fill('tier-outline',c.tiers.outline);fill('tier-content',c.tiers.content);fill('tier-director',c.tiers.director);fill('tier-vision',c.tiers.vision);
+    const speech=$('speech-badge');if(!c.kokoroSpeech){speech.classList.add('pill-off');speech.title='Kokoro unavailable on this platform';}
+  }
   if(!c.model)$('message').textContent='Configure OPENROUTER_API_KEY in .env to generate an explanation.';
   else if(c.openRouter===false)$('message').textContent='Using legacy Anthropic planner; set OPENROUTER_API_KEY for OpenRouter.';
 }).catch(function(e){$('message').textContent=e instanceof Error?e.message:String(e);});

@@ -156,14 +156,28 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
                 fail('Cannot map narration word %r; refusing silent misalignment' % word)
             start = filtered_phonemes.find(phon, cursor)
             if start < 0:
-                # Fallback (V-JEPA run: "ViT-g"): the phonemizer's stream can diverge from
-                # misaki's leaf phonemes on tokens with hyphens/acronyms. Fallback: locate
-                # each consumed leaf's phonemes independently, in order, from the cursor,
-                # allowing gaps BETWEEN pieces. Every piece is still matched exactly, so the
-                # word span is composed of exact matches, not a guess.
+                # Layer 2b: separator-aware match. The stream inserts a real separator
+                # (' ') between units that leaf phonemes never carry; on hyphenated or
+                # acronym tokens ('ViT-g') separators can appear even INSIDE the word's
+                # phoneme run. Strip separators on both sides, substring-match, and map
+                # back to original positions so the timing math stays exact.
+                orig_positions = [i for i, c in enumerate(filtered_phonemes) if c != ' ']
+                nospace = ''.join(c for c in filtered_phonemes if c != ' ')
+                nospace_phon = phon.replace(' ', '')
+                ns_start = nospace.find(nospace_phon)
+                if ns_start >= 0:
+                    s2 = orig_positions[ns_start]
+                    e2 = orig_positions[ns_start + len(nospace_phon) - 1] + 1
+                    if s2 >= cursor - 40:
+                        start, offset = s2, e2
+                        cursor = offset
+                        logging.getLogger('kokoro_tts').warning('separator-aware fallback timing for word %r', word)
+            if start < 0:
+                # Layer 2c: piece-wise. The stream can diverge from misaki's leaf phonemes
+                # on hyphen/acronym tokens; locate each consumed leaf's phonemes
+                # independently, in order, from the cursor, allowing gaps BETWEEN pieces.
                 p_cursor = cursor
                 first_pos, last_pos = None, None
-                fallback_ok = True
                 for li in range(word_leaf_start, leaf):
                     p_phon = leaves[li].phonemes or ''
                     if not p_phon:
