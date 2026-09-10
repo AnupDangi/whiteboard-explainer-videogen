@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence} from '../dist/src/planner.js';
 import {retrieveChapterEvidence} from '../dist/src/retrieval.js';
 import {directorSchema} from '../dist/src/schema.js';
 
@@ -150,6 +150,21 @@ test('LD3 retrieval: chapter evidence matches the objective, not the ordinal pos
   assert(!retrieved.text.includes('office furniture'),'unrelated paragraph dropped');
   const small=retrieveChapterEvidence({...source,text:'short doc'},'anything',[]);
   assert.equal(small.text,'short doc','tiny sources pass through whole');
+});
+test('LD6 grounding: evidenceIds must exist and actually support the node',()=>{
+  const scene={id:'s1',nodes:[
+    {id:'a',label:'Attention mechanism',keyPoint:'Attention fact',evidenceIds:['p1:c1']},
+    {id:'b',label:'Furniture logistics',keyPoint:'Furniture fact',evidenceIds:['p9:c9']},
+    {id:'c',label:'Softmax weights',keyPoint:'Softmax fact',evidenceIds:['p1:c2']},
+    {id:'d',label:'Random claim',keyPoint:'Nothing fact',evidenceIds:['p1:c1']},
+  ]};
+  const chunks=[{id:'p1:c1',text:'The attention mechanism computes compatibility between queries and keys.'},{id:'p1:c2',text:'The softmax function turns scores into weights that sum to one.'}];
+  const failures=checkEvidence([scene],chunks);
+  assert(failures.some(f=>f.includes('b: evidenceIds cites unknown chunk "p9:c9"')),'nonexistent chunk flagged');
+  assert(failures.some(f=>f.includes('d: cited chunk "p1:c1" does not support')),'unsupported claim flagged');
+  assert(!failures.some(f=>f.startsWith('s1/a')),'supported node passes');
+  assert(!failures.some(f=>f.startsWith('s1/c')),'second supported node passes');
+  assert.deepEqual(checkEvidence([{id:'s1',nodes:[{id:'a',label:'x'}]}],undefined),[],'no evidence chunks -> check disabled');
 });
 test('A5: directorSchema is parameterized by scene count, matching outlineSchema\'s existing convention',()=>{
   const one=directorSchema(1);

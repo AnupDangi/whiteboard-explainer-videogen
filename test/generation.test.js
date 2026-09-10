@@ -3,16 +3,18 @@ import assert from 'node:assert/strict';
 import {generateChapters,validateDuration} from '../dist/src/planner.js';
 import {ingestSource,publicAddress,extractPdf} from '../dist/src/sources.js';
 import {compileScene,renderSVG,validatePlan} from '../dist/src/engine.js';
-const source={kind:'text',label:'unseen source',text:'A newly supplied source with an arbitrary experimental value of 739 liters.',sha256:'test'};
+const source={kind:'text',label:'unseen source',text:'A newly supplied source explains the core idea through a working example with an arbitrary experimental value of 739 liters.',sha256:'test'};
 function adapter({failure=false,bad=false}={}) {
  const requests=[];
  return {requests,fetcher:async(url,options)=>{
   if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
   const body=JSON.parse(options.body);requests.push(body);if(failure)return new Response('',{status:429});
   const content=JSON.parse(body.messages[1].content);let result;
-   if(content.chapterCount){
-    // Stage 0 — outline v2: arc role + 2 canvas key points per chapter.
-    result={paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Dynamic outline',chapters:Array.from({length:content.chapterCount},(_,i)=>({title:`Topic ${i}`,objective:`Explain aspect ${i}`,arc:i===0?'hook':(i===content.chapterCount-1?'recap':'build'),keyPoints:[`Alpha aspect fact`,`Beta aspect fact`]}))};
+    if(content.chapterCount){
+    // Stage 0 — outline v2: arc role + 2 canvas key points per chapter. Key points are
+    // derived from the source text so LD6 grounding (evidenceIds) can pass honestly.
+    const kps=sourceKeyPoints(content.source);
+    result={paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Dynamic outline',chapters:Array.from({length:content.chapterCount},(_,i)=>({title:`Topic ${i}`,objective:`Explain aspect ${i}`,arc:i===0?'hook':(i===content.chapterCount-1?'recap':'build'),keyPoints:kps}))};
    } else if(content.scenes){
     // Stage 2 — Visual Director: alternate icon/box so the shape-mix gate passes,
     // distinct kinds so the collision gate passes (generic nodes carry no shape).
@@ -23,12 +25,19 @@ function adapter({failure=false,bad=false}={}) {
     const kps=content.chapterFrame&&Array.isArray(content.chapterFrame.chapterKeyPoints)&&content.chapterFrame.chapterKeyPoints.length?content.chapterFrame.chapterKeyPoints:['Cause point one','Effect point two'];
     const tag=(content.chapterFrame&&content.chapterFrame.chapter!==undefined?content.chapterFrame.chapter:JSON.stringify(content.objective||'x')).toString().replace(/\W+/g,'_').slice(0,20);
     const words=(kps.join(' ')+' '+Array.from({length:60},(_,i)=>`term${tag}_${i}`).join(' '));
-    result={version:1,title:'Dynamic explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${tag}-${i}`,narration:words,nodes:[{id:'a',label:'Alpha aspect',anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0]},{id:'b',label:'Beta aspect',anchor:bad?'absent phrase':`term${tag}_45`,keyPoint:kps[1]||kps[0]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
+    const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
+    result={version:1,title:'Dynamic explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${tag}-${i}`,narration:words,nodes:[{id:'a',label:kps[0],anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0],evidenceIds:[evId]},{id:'b',label:kps[1]||kps[0],anchor:bad?'absent phrase':`term${tag}_45`,keyPoint:kps[1]||kps[0],evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
    }
   return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:100,completion_tokens:100,cost:0.00005}});
  }};
 }
 const env={OPENROUTER_API_KEY:'test-only',OPENROUTER_MODEL:'test/model'};
+// LD6 grounding: mock key points must be derivable from the source text so nodes can
+// cite evidence chunks that genuinely support them (≥2 shared content words).
+function sourceKeyPoints(src){
+  const words=String(src&&src.text||'').split(/\s+/).filter(w=>/^[A-Za-z-]{2,}$/.test(w)&&!/^(a|an|the|with|of|and|or|is|through|into)$/i.test(w));
+  return [words.slice(0,3).join(' ')||'core idea explanation',words.slice(3,6).join(' ')||'working example detail'];
+}
 for(const minutes of [1,5,10,30])test(`Duration ${minutes}: distinct chapter requests and progressive scene count (mock provider)`,async()=>{
  const mock=adapter();let scenes=[];let updates=0;
  for await(const p of generateChapters(source,{env,fetcher:mock.fetcher,durationMinutes:minutes,onUsage:()=>updates++})){assert.equal(p.scenes.length,2);scenes.push(...p.scenes);}
@@ -70,7 +79,8 @@ test('A transient failure on the very first content/director call retries in pla
    contentCalls++;
    if(contentCalls===1)return new Response('',{status:429});
    const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
-    const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
+   const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
+    const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point',evidenceIds:[evId]},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point',evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
     return reply(result);
   };
   const scenes=[];
@@ -92,7 +102,8 @@ test('Exhausted director retries fail loudly instead of shipping all-generic box
     if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
     if(content.scenes)return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'nope-not-a-layout',nodes:s.nodes.map(n=>({id:n.id,kind:'generic',emphasis:false}))}))});
     const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
-    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
+    const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
+    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point',evidenceIds:[evId]},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point',evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env,fetcher,durationMinutes:1})){ }},/fallback exhausted/);
   // 1 outline + [1 content + 3 failed director attempts] × 2 chapter regenerations;
@@ -142,6 +153,8 @@ test('Phase 3 caching: breakpoint + session pinning by default, plain string wit
 test('A4: a real director result using one shape throughout (a legitimate token row) is accepted without repair',async()=>{
   const reply=(result)=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:10,completion_tokens:10,cost:0.00001}});
   let directorCalls=0;
+  // LD6: the token-row key points must exist in the source so nodes can cite honest evidence.
+  const tokenSource={kind:'text',label:'tokens',text:'A token instance ordering matters because an ordered token row repeats the same visual kind.',sha256:'tok'};
   const fetcher=async(url,options)=>{
     if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
     const body=JSON.parse(options.body);
@@ -155,13 +168,14 @@ test('A4: a real director result using one shape throughout (a legitimate token 
       return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'flow',nodes:s.nodes.map((n,j)=>({id:n.id,kind:'token',emphasis:false}))}))});
     }
     const words='Token instance Ordered token '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
+    const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
     const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,
-      nodes:[{id:'a',label:'Token 1',anchor:'term_0',keyPoint:'Token instance'},{id:'b',label:'Token 2',anchor:'term_45',keyPoint:'Ordered token'}],
+      nodes:[{id:'a',label:'Token 1',anchor:'term_0',keyPoint:'Token instance',evidenceIds:[evId]},{id:'b',label:'Token 2',anchor:'term_45',keyPoint:'Ordered token',evidenceIds:[evId]}],
       edges:[{from:'a',to:'b',label:'precedes'}],note:''}))};
     return reply(result);
   };
   const scenes=[];
-  for await(const p of generateChapters(source,{env,fetcher,durationMinutes:1}))scenes.push(...p.scenes);
+  for await(const p of generateChapters(tokenSource,{env,fetcher,durationMinutes:1}))scenes.push(...p.scenes);
   assert.equal(scenes.length,2,'both scenes committed — no chapter regeneration was needed');
   assert.equal(directorCalls,1,'the director succeeded on its first attempt — no repair/fallback was triggered by shape uniformity');
   for(const scene of scenes)assert(scene.nodes.every(n=>(n.shape||'box')==='box'),'the single-shape token row survived unchanged, as intended by A4');
@@ -195,8 +209,9 @@ test('A5: a single-scene critic repair validates and actually applies (was previ
       return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'flow',nodes:s.nodes.map((n,j)=>({id:n.id,kind:j%2?'generic':'database',emphasis:false,...(j%2?{}:{shape:'icon'})}))}))});
     }
     const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
+    const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
     return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,
-      nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point'}],
+      nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point',evidenceIds:[evId]},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point',evidenceIds:[evId]}],
       edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   const scenes=[];

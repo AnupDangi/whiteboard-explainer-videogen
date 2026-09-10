@@ -78,6 +78,8 @@ function validateCandidate(input: Plan): Plan {
       // the cross-scene identity (same conceptId = same thing, every scene).
       if (node.beatId !== undefined && (typeof node.beatId !== 'string' || !(beatIds as Set<string> | null)?.has(node.beatId))) fail(`Node ${node.id} references an unknown beat`);
       if (node.conceptId !== undefined && (typeof node.conceptId !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(node.conceptId))) fail(`Invalid conceptId (node ${node.id})`);
+      // LD6: provenance ids ride on the node for grounding evaluation (1-4 chunk refs).
+      if (node.evidenceIds !== undefined && (!Array.isArray(node.evidenceIds) || node.evidenceIds.length < 1 || node.evidenceIds.length > 4 || !node.evidenceIds.every(id => typeof id === 'string' && /^p\d+:c\d+$/.test(id)))) fail(`Invalid evidenceIds (node ${node.id}): expected 1-4 chunk ids like "p3:c2"`);
     }
     // V3-4 domain template (optional): the canonical composition replaces ad-hoc boxes.
     if (scene.template !== undefined && !['tls_handshake','supply_demand','attention_matrix','dna_fork','tectonic_section'].includes(scene.template as string)) fail('Unknown scene template');
@@ -90,7 +92,7 @@ function validateCandidate(input: Plan): Plan {
   return {version: 1, title: input.title, scenes: input.scenes.map(s => ({
     id: s.id, title: s.title, narration: s.narration, layout: s.layout,
     ...(s.template?{template:s.template as Scene['template']}:{}),
-    nodes: s.nodes.map(n => ({id:n.id,label:n.label,wordIndex:n.wordIndex,...(n.kind&&n.kind!=='generic'?{kind:n.kind}:{}),...(n.emphasis?{emphasis:true}:{}),...(n.shape&&n.shape!=='box'?{shape:n.shape}:{}),...(typeof n.keyPoint==='string'&&n.keyPoint?{keyPoint:n.keyPoint}:{}),...(typeof n.visualIntent==='string'&&n.visualIntent?{visualIntent:n.visualIntent}:{}),...(typeof (n as {beatId?:unknown}).beatId==='string'?{beatId:n.beatId}:{}),...(typeof (n as {conceptId?:unknown}).conceptId==='string'?{conceptId:n.conceptId}:{}),...(n.shape==='annotation'?{attachTo:n.attachTo,position:n.position}:{})})),
+    nodes: s.nodes.map(n => ({id:n.id,label:n.label,wordIndex:n.wordIndex,...(n.kind&&n.kind!=='generic'?{kind:n.kind}:{}),...(n.emphasis?{emphasis:true}:{}),...(n.shape&&n.shape!=='box'?{shape:n.shape}:{}),...(typeof n.keyPoint==='string'&&n.keyPoint?{keyPoint:n.keyPoint}:{}),...(typeof n.visualIntent==='string'&&n.visualIntent?{visualIntent:n.visualIntent}:{}),...(typeof (n as {beatId?:unknown}).beatId==='string'?{beatId:n.beatId}:{}),...(typeof (n as {conceptId?:unknown}).conceptId==='string'?{conceptId:n.conceptId}:{}),...(Array.isArray((n as {evidenceIds?:unknown}).evidenceIds)?{evidenceIds:(n as {evidenceIds:string[]}).evidenceIds}:{}),...(n.shape==='annotation'?{attachTo:n.attachTo,position:n.position}:{})})),
     ...(s.beats?{beats:s.beats.map(b=>({id:b.id,narration:b.narration}))}:{}),
     edges:s.edges.map(e=>({from:e.from,to:e.to,...(typeof e.label==='string'&&e.label?{label:e.label}:{})})), note:s.note || ''
   }))};

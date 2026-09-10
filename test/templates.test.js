@@ -41,7 +41,7 @@ test('V3-4 templates: unknown template values fail validation and merge',async()
   assert.throws(()=>validatePlan(bad),/Unknown scene template/);
   const {generateChapters}=await import('../dist/src/planner.js');
   const env={OPENROUTER_API_KEY:'test-only',OPENROUTER_MODEL:'test/model'};
-  const source={kind:'text',label:'x',text:'some source text',sha256:'t'};
+  const source={kind:'text',label:'x',text:'Point one matters here because point one anchors the explanation and point two resolves it.',sha256:'t'};
   const reply=(result)=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:10,completion_tokens:10,cost:0.00001}});
   const fetcher=async(url,options)=>{
     if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
@@ -49,7 +49,8 @@ test('V3-4 templates: unknown template values fail validation and merge',async()
     if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'O',chapters:[{title:'T',objective:'E',arc:'build',keyPoints:['Point one','Point two']}]});
     if(content.scenes)return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'flow',template:'rainbow',nodes:s.nodes.map(n=>({id:n.id,kind:'generic',emphasis:false}))}))});
     const words='Point one Point two '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
-    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`A${i}`,narration:words,nodes:[{id:'a',label:'Point one',anchor:'term_0',keyPoint:'Point one'},{id:'b',label:'Point two',anchor:'term_45',keyPoint:'Point two'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
+    const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
+    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`A${i}`,narration:words,nodes:[{id:'a',label:'Point one',anchor:'term_0',keyPoint:'Point one',evidenceIds:[evId]},{id:'b',label:'Point two',anchor:'term_45',keyPoint:'Point two',evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   // The unknown template fails every director attempt at merge; after the retry budget the
   // chapter ends in the loud fallback failure — never a silently template-less commit.

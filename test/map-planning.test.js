@@ -12,8 +12,10 @@ function adapter(mapSections){
     const body=JSON.parse(options.body);requests.push(body);
     const content=JSON.parse(body.messages[1].content);
     if(content.chapterCount){
-      // Outline reply routes chapters to map sections (large-source branch).
-      const result={paperTitle:'Large Book',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Mapped outline',chapters:Array.from({length:content.chapterCount},(_,i)=>({title:`Topic ${i}`,objective:`Explain ${i%2===0?'alpha material':'beta material'}`,arc:i===0?'hook':(i===content.chapterCount-1?'recap':'build'),keyPoints:['Alpha aspect fact','Beta aspect fact'],sourceSections:[mapSections[i%mapSections.length].id]}))};
+      // Outline reply routes chapters to map sections (large-source branch). Key points
+      // derive from what each chapter actually retrieves so LD6 grounding passes honestly.
+      const isMap=String(content.source.text).includes('DOCUMENT MAP');
+      const result={paperTitle:'Large Book',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Mapped outline',chapters:Array.from({length:content.chapterCount},(_,i)=>({title:`Topic ${i}`,objective:`Explain ${isMap?(i%2===0?'alpha material':'beta material'):'the core idea'}`,arc:i===0?'hook':(i===content.chapterCount-1?'recap':'build'),keyPoints:isMap?(i%2===0?['alpha mechanism','markerA components']:['beta pipeline','markerB components']):['core idea explanation','working example detail'],sourceSections:[mapSections[i%mapSections.length].id]}))};
       return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:100,completion_tokens:100,cost:0.00005}});
     }
     if(content.scenes){
@@ -23,7 +25,8 @@ function adapter(mapSections){
     const kps=content.chapterFrame.chapterKeyPoints;
     const tag=content.chapterFrame.chapter;
     const words=(kps.join(' ')+' '+Array.from({length:60},(_,i)=>`term${tag}_${i}`).join(' '));
-    const result={version:1,title:'Mapped explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Alpha aspect',anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0]},{id:'b',label:'Beta aspect',anchor:`term${tag}_45`,keyPoint:kps[1]||kps[0]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
+    const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
+    const result={version:1,title:'Mapped explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:kps[0],anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0],evidenceIds:[evId]},{id:'b',label:kps[1]||kps[0],anchor:`term${tag}_45`,keyPoint:kps[1]||kps[0],evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
     return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:100,completion_tokens:100,cost:0.00005}});
   }};
 }
@@ -61,12 +64,12 @@ test('LD5: large mapped source routes the outline over the map and scopes chapte
 });
 
 test('LD5: small sources keep the legacy whole-text outline (no map, no routing)',async()=>{
-  const source={kind:'text',label:'t',text:'A short source with an arbitrary experimental value of 739 liters.',sha256:'small'};
+  const source={kind:'text',label:'t',text:'A short source explains the core idea through a working example with numbers.',sha256:'small'};
   const mock=adapter([{id:'s1',title:'T',page:1,summary:'S',start:0,end:source.text.length,charCount:source.text.length}]);
   for await(const _ of generateChapters(source,{env,fetcher:mock.fetcher,durationMinutes:1})){}
   const outlinePayload=JSON.parse(mock.requests[0].messages[1].content);
   assert(!outlinePayload.source.text.includes('DOCUMENT MAP'),'small source does not use the map');
-  assert(outlinePayload.source.text.includes('739 liters'));
+  assert(outlinePayload.source.text.includes('core idea'));
 });
 
 test('LD5 renderMapForOutline: bounded ids and routing instruction',()=>{

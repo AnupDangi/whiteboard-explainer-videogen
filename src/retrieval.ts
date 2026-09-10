@@ -6,7 +6,7 @@ import type {SourceDocument} from './types.js';
  *  to whole-text pass-through (the old retrieveForChapter behavior). Pure, deterministic. */
 
 export interface SourceChunk { id:string; page:number; start:number; text:string }
-export interface EvidenceSet { text:string; ids:string[] }
+export interface EvidenceSet { text:string; ids:string[]; texts:Record<string,string> }
 
 const STOPWORDS=new Set(['a','an','the','in','on','of','to','for','and','or','is','are','was','were','be','been','being','with','as','at','by','it','its','this','that','these','those','from','into','can','could','would','should','do','does','did','not','no','nor','but','if','then','than','so','such','their','there','when','which','who','whom','how','what','why','where','also','more','most','other','some','any','each','per','via','using','use','used','may','might','must','shall','will','have','has','had','we','you','they','he','she','his','her','our','your']);
 const K1=1.2;
@@ -75,7 +75,8 @@ export function chunkSource(source:SourceDocument,{maxChars=1600}:{maxChars?:num
  *  for tiny/structureless sources, and to BM25-only when no vectors are supplied. */
 export function retrieveChapterEvidence(source:SourceDocument,objective:string,keyPoints:string[],budget=8000,opts:{maxChars?:number;vectors?:number[][];queryVector?:number[];sectionSpans?:Array<{start:number;end:number}>}={}):EvidenceSet {
   const allChunks=chunkSource(source,opts);
-  if(allChunks.length<=3)return {text:source.text,ids:[]};
+  const index=Object.fromEntries(allChunks.map(c=>[c.id,c.text]));
+  if(allChunks.length<=3)return {text:source.text,ids:allChunks.map(c=>c.id),texts:index};
   // LD5: when the outline routed this chapter to sections, only chunks FULLY inside
   // those spans compete — a chunk straddling a section boundary serves neither section
   // and is dropped from both. Empty routing outcome falls back to whole-document (logged).
@@ -131,7 +132,7 @@ export function retrieveChapterEvidence(source:SourceDocument,objective:string,k
     keep.push(s.chunk);
     total+=s.chunk.text.length;
   }
-  return assemble(keep,budget);
+  return assemble(keep,budget,index);
 }
 
 function cosine(a:number[],b:number[]):number {
@@ -153,23 +154,23 @@ function orderedRank(scores:number[],i:number):number {
 }
 
 function sequentialFallback(chunks:SourceChunk[],budget:number):EvidenceSet {
-  return assemble([...chunks].sort((a,b)=>a.start-b.start),budget);
+  const index=Object.fromEntries(chunks.map(c=>[c.id,c.text]));
+  return assemble([...chunks].sort((a,b)=>a.start-b.start),budget,index);
 }
 
 /** Join chunks in document order up to the budget; every included chunk stays whole. */
-function assemble(kept:SourceChunk[],budget:number):EvidenceSet {
+function assemble(kept:SourceChunk[],budget:number,index:Record<string,string>):EvidenceSet {
   const ordered=[...kept].sort((a,b)=>a.start-b.start);
-  if(!ordered.length)return {text:'',ids:[]};
-  const parts:string[]=[];const ids:string[]=[];
+  if(!ordered.length)return {text:'',ids:[],texts:{}};
+  const parts:string[]=[];const ids:string[]=[];const texts:Record<string,string>={};
   let total=0;
   for(const c of ordered){
     const sep=parts.length?'\n\n':'';
     if(parts.length&&total+sep.length+c.text.length>budget)break;
     parts.push(sep+c.text);
     ids.push(c.id);
+    texts[c.id]=c.text;
     total+=sep.length+c.text.length;
   }
-  // Kept list is never empty in practice; if it somehow is, nothing is returned and
-  // the caller's pass-through branches already handled tiny sources.
-  return {text:parts.join(''),ids};
+  return {text:parts.join(''),ids,texts};
 }

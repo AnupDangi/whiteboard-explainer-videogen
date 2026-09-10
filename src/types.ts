@@ -1,5 +1,5 @@
 import type {NodeKind,LayoutName} from './vocabulary.js';
-export interface PlanNode { id: string; label: string; wordIndex: number; kind?: NodeKind; emphasis?: boolean; shape?: 'box'|'illustration'|'icon'|'circle'|'square'|'bullet'|'number'|'annotation'; keyPoint?: string; visualIntent?: string; attachTo?: string; position?: 'below'|'above'|'left'|'right'; beatId?: string; conceptId?: string }
+export interface PlanNode { id: string; label: string; wordIndex: number; kind?: NodeKind; emphasis?: boolean; shape?: 'box'|'illustration'|'icon'|'circle'|'square'|'bullet'|'number'|'annotation'; keyPoint?: string; visualIntent?: string; attachTo?: string; position?: 'below'|'above'|'left'|'right'; beatId?: string; conceptId?: string; evidenceIds?: string[] }
 export interface PlanEdge { from: string; to: string; label?: string }
 /** V3-2 semantic beat: one idea = one narration segment. Beats partition the scene
  *  narration (exact substrings, in order); node anchors resolve inside their own
