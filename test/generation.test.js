@@ -23,7 +23,7 @@ function adapter({failure=false,bad=false}={}) {
     const kps=Array.isArray(content.keyPoints)&&content.keyPoints.length?content.keyPoints:['Cause point one','Effect point two'];
     const tag=(content.chapter!==undefined?content.chapter:JSON.stringify(content.objective||'x')).toString().replace(/\W+/g,'_').slice(0,20);
     const words=(kps.join(' ')+' '+Array.from({length:60},(_,i)=>`term${tag}_${i}`).join(' '));
-    result={version:1,title:'Dynamic explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${tag}-${i}`,narration:words,nodes:[{id:'a',label:'Alpha aspect',anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0]},{id:'b',label:'Beta aspect',anchor:bad?'absent phrase':`term${tag}_10`,keyPoint:kps[1]||kps[0]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
+    result={version:1,title:'Dynamic explanation',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${tag}-${i}`,narration:words,nodes:[{id:'a',label:'Alpha aspect',anchor:words.split(/\s+/).slice(0,3).join(' '),keyPoint:kps[0]},{id:'b',label:'Beta aspect',anchor:bad?'absent phrase':`term${tag}_45`,keyPoint:kps[1]||kps[0]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
    }
   return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:100,completion_tokens:100,cost:0.00005}});
  }};
@@ -70,7 +70,7 @@ test('A transient failure on the very first content/director call retries in pla
    contentCalls++;
    if(contentCalls===1)return new Response('',{status:429});
    const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
-    const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_10',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
+    const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))};
     return reply(result);
   };
   const scenes=[];
@@ -92,7 +92,7 @@ test('Exhausted director retries fail loudly instead of shipping all-generic box
     if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'Outline',chapters:[{title:'Topic',objective:'Explain it',arc:'build',keyPoints:['Core idea point','Working example point']}]});
     if(content.scenes)return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'nope-not-a-layout',nodes:s.nodes.map(n=>({id:n.id,kind:'generic',emphasis:false}))}))});
     const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
-    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_10',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
+    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point'}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env,fetcher,durationMinutes:1})){ }},/fallback exhausted/);
   // 1 outline + [1 content + 3 failed director attempts] × 2 chapter regenerations;
@@ -156,7 +156,7 @@ test('A4: a real director result using one shape throughout (a legitimate token 
     }
     const words='Token instance Ordered token '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
     const result={version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,
-      nodes:[{id:'a',label:'Token 1',anchor:'term_0',keyPoint:'Token instance'},{id:'b',label:'Token 2',anchor:'term_10',keyPoint:'Ordered token'}],
+      nodes:[{id:'a',label:'Token 1',anchor:'term_0',keyPoint:'Token instance'},{id:'b',label:'Token 2',anchor:'term_45',keyPoint:'Ordered token'}],
       edges:[{from:'a',to:'b',label:'precedes'}],note:''}))};
     return reply(result);
   };
@@ -196,7 +196,7 @@ test('A5: a single-scene critic repair validates and actually applies (was previ
     }
     const words='Core idea point Working example point '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
     return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,
-      nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_10',keyPoint:'Working example point'}],
+      nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point'},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point'}],
       edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   const scenes=[];

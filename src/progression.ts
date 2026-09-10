@@ -13,9 +13,10 @@ export function progressionFrames(scene:CompiledScene):Array<{timeMs:number;svg:
 }
 
 /** Longest narrated span (word-timed) during which nothing appears, moves or finishes.
- *  Reveals and edge draws count as change; pure text captions do not. */
+ *  Reveals, edge draws and their mid-draw milestones count as change (a stretched stroke
+ *  is visible motion, sampled at its 50% mark); pure text captions do not. */
 export function staticIntervalMs(scene:CompiledScene):number {
-  const events=[...scene.nodes.map(n=>n.startMs),...scene.nodes.map(n=>n.startMs+n.drawMs),...scene.edges.map(e=>e.startMs),...scene.edges.map(e=>e.startMs+e.drawMs)]
+  const events=[...scene.nodes.flatMap(n=>[0,1/3,2/3,1].map(f=>n.startMs+n.drawMs*f)),...scene.edges.flatMap(e=>[0,1/3,2/3,1].map(f=>e.startMs+e.drawMs*f))]
     .sort((a,b)=>a-b);
   const firstWord=scene.timing.words[0]?.startMs??0;
   const lastWordEnd=scene.timing.words.at(-1)?.endMs??scene.durationMs;

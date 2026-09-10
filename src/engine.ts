@@ -409,6 +409,28 @@ export function compileScene(scene: Scene, timing: Timing = estimateTiming(scene
     }
     return {...e,x1,y1,x2,y2,startMs:Math.max(a.startMs,b.startMs)+700,drawMs:650};
   });
+  // O2 deterministic micro-beat pacing: LLM anchors cluster early, leaving multi-second
+  // narrated silences with no canvas activity. Instead of asking the model for micro-
+  // timing, the engine stretches each draw into the following slack (up to a bounded
+  // cap, never into the next anchor, never past the last word) — the pencil keeps
+  // stroking while narration continues, which is what a real whiteboard artist does.
+  // Deterministic: pure function of the compiled timings.
+  const lastWordEnd=timing.words.at(-1)?.endMs??timing.durationMs;
+  const anchors=[...nodes.map(n=>n.startMs)].sort((a,b)=>a-b);
+  for(let i=0;i<nodes.length;i++){
+    const nextAnchor=anchors.find(t=>t>nodes[i].startMs+nodes[i].drawMs)??lastWordEnd;
+    const slack=nextAnchor-(nodes[i].startMs+nodes[i].drawMs);
+    // leave only ~2.6s of true silence; cap the stretch at +7s so a stroke never
+    // outlives plausibility (the content validator bounds anchor gaps at ~45%).
+    if(slack>2600)nodes[i].drawMs=Math.min(nodes[i].drawMs+slack-2600,nodes[i].drawMs+7000);
+  }
+  for(const e of edges){
+    const a=byId[e.from],b=byId[e.to];
+    const end=Math.max(a.startMs+a.drawMs,b.startMs+b.drawMs)+700;
+    const nextAnchor=anchors.find(t=>t>end+e.drawMs)??lastWordEnd;
+    const slack=nextAnchor-(end+e.drawMs);
+    if(slack>2600)e.drawMs=Math.min(e.drawMs+slack-2600,e.drawMs+5400);
+  }
   const eventEnd=Math.max(...nodes.map(n=>n.startMs+n.drawMs),...edges.map(e=>e.startMs+e.drawMs));
   return {...scene,nodes,edges,timing,audioUrl:undefined as string|undefined,durationMs:Math.ceil(Math.max(timing.durationMs,eventEnd)+650)};
 }
