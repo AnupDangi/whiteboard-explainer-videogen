@@ -1,6 +1,7 @@
 import {log,logContext} from './logger.js';
 import type {GenerationOptions,Usage,SourceDocument,Plan,JobSnapshot,InternalJob,Providers,Timing} from './types.js';
 import {ingestSource} from './sources.js';
+import {detectFigures,describeFigures} from './figures.js';
 import {generateChapters,validateDuration} from './planner.js';
 import {randomUUID} from 'node:crypto';
 import {mkdir,writeFile,rename,readFile} from 'node:fs/promises';
@@ -102,6 +103,18 @@ export class JobStore {
         log('source.started',{kind:options.source?.kind||'prompt'});
         sourceDocument=await ingestSource(options.source||{kind:'prompt',text:options.prompt},signal);
         log('source.ready',{kind:sourceDocument.kind,characters:sourceDocument.text.length});
+        // P2: PDF sources get their figures/tables detected (deterministic poppler) and
+        // described (one bounded vision call each, ≤4). Costs a few cents at most; the
+        // descriptions are what lets the planner "see" the paper's figures.
+        if(sourceDocument.kind==='pdf'&&options.source?.base64&&!this.providers.plan&&process.env.OPENROUTER_API_KEY){
+          const bytes=Buffer.from(options.source.base64,'base64');
+          const candidates=await detectFigures(bytes);
+          log('source.figures-detected',{count:candidates.length});
+          if(candidates.length){
+            sourceDocument.figures=await describeFigures(bytes,candidates,{env:process.env});
+            log('source.figures-described',{count:sourceDocument.figures.length,kinds:sourceDocument.figures.map(f=>f.kind)});
+          }
+        }
         job.source={kind:sourceDocument.kind,label:sourceDocument.label,sha256:sourceDocument.sha256,characters:sourceDocument.text.length};
         await writeFile(join(this.root,job.id,'source.json'),JSON.stringify(sourceDocument));
       }

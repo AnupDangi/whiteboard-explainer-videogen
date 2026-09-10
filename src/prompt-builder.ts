@@ -121,6 +121,12 @@ export function buildRichBrief(source: SourceDocument, options: BriefOptions = {
     lines.push('Concrete facts from the source (anchor narration labels on short verbatim spans like these):');
     for (const fact of facts) lines.push(`- ${fact}`);
   }
+  // P2: figure/table inventory — the brief names exactly what the paper draws so the
+  // chapters can request redraws instead of inventing abstract boxes.
+  if (source.figures?.length) {
+    lines.push('Figures and tables detected in the source (redraw on the whiteboard where a chapter needs them):');
+    for (const f of source.figures) lines.push(`- [p${f.page} ${f.kind}] ${f.caption} — ${f.dataHint}${f.keyNumbers.length ? ` — numbers: ${f.keyNumbers.join(', ')}` : ''}`);
+  }
   lines.push(
     'Misconception guard: correct the most likely wrong takeaway explicitly; never present an assumption as a measured result.',
     'Scope: teach only what the source supports; flag gaps; invent no facts, citations, or numbers.',
