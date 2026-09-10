@@ -11,6 +11,7 @@ the narration words and the mapped tokens is a loud failure, never silent.
 import base64
 import io
 import json
+import logging
 import sys
 import wave
 
@@ -141,6 +142,7 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
         filtered_phonemes = ''.join(c for c in phonemes if c in vocab)
         leaf, cursor = 0, 0
         for word in chunk_text.split():
+            word_leaf_start = leaf
             acc, phon = '', ''
             while leaf < len(leaves) and acc != word:
                 piece = leaves[leaf].text or ''
@@ -154,9 +156,33 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
                 fail('Cannot map narration word %r; refusing silent misalignment' % word)
             start = filtered_phonemes.find(phon, cursor)
             if start < 0:
-                fail('Cannot locate phonemes for narration word %r in the synthesized phoneme stream' % word)
-            offset = start + len(phon)
-            cursor = offset
+                # Fallback (V-JEPA run: "ViT-g"): the phonemizer's stream can diverge from
+                # misaki's leaf phonemes on tokens with hyphens/acronyms. Fallback: locate
+                # each consumed leaf's phonemes independently, in order, from the cursor,
+                # allowing gaps BETWEEN pieces. Every piece is still matched exactly, so the
+                # word span is composed of exact matches, not a guess.
+                p_cursor = cursor
+                first_pos, last_pos = None, None
+                fallback_ok = True
+                for li in range(word_leaf_start, leaf):
+                    p_phon = leaves[li].phonemes or ''
+                    if not p_phon:
+                        continue
+                    p_start = filtered_phonemes.find(p_phon, p_cursor)
+                    if p_start < 0:
+                        fail('Cannot locate phonemes for narration word %r (piece %r) in the synthesized phoneme stream' % (word, leaves[li].text))
+                    p_cursor = p_start + len(p_phon)
+                    if first_pos is None:
+                        first_pos = p_start
+                    last_pos = p_cursor
+                if first_pos is None or last_pos is None:
+                    fail('Cannot locate phonemes for narration word %r in the synthesized phoneme stream' % word)
+                logging.getLogger('kokoro_tts').warning('fallback piece-wise timing for word %r', word)
+                start, offset = first_pos, last_pos
+                cursor = offset
+            else:
+                offset = start + len(phon)
+                cursor = offset
             start_ms = elapsed_ms + bos_ms + float(pred[1:1 + start].sum()) / FRAMES_PER_SECOND * 1000
             end_ms = elapsed_ms + bos_ms + float(pred[1:1 + offset].sum()) / FRAMES_PER_SECOND * 1000
             words.append(dict(word=word, startMs=start_ms, endMs=end_ms))
