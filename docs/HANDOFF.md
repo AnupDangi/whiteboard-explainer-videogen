@@ -1,3 +1,25 @@
+# Current handoff — 2026-09-10, source-intelligence program: LD1 complete
+
+User approved the next program: **large-document support** (`docs/SOURCE_INTELLIGENCE_PLAN.md`,
+LD1–LD8). Grounded limitation audit lives in that doc (verified against code 2026-09-10:
+`PAGE_LIMIT=15` sources.ts:14, 200k/60k/120k clip stack, lexical-only retrieval planner.ts:50-62,
+no evidence IDs, hardcoded 9000/5000 max_tokens). Decisions: hybrid BM25 + key-gated
+embeddings with deterministic BM25-only fallback (core tests stay key-free); budget
+~$0.15-0.40 per live validation. Do NOT re-implement what that doc lists as already-true
+(chapter/scene concurrency, speculative Kokoro TTS, deterministic fast renderer).
+
+**LD1 shipped** (see RESULTS.md 2026-09-10 LD1 entry): 15-page PDF cap removed, full-doc
+page-aware extraction (`SourceDocument.pages: {page,start}[]`), TEXT_LIMIT 200k→5M,
+`stripAcademicTail` gated to papers. Suite 97 tests, 95 pass, 0 fail, 2 skip. Not committed
+yet at time of writing — commit on `opt-v3-harness` as one LD1 commit.
+
+**Next bounded task: LD2** — `src/document-map.ts`: heading/TOC detection over page-tagged
+text → section tree (id, title, page range, extractive summary, charCount), sha256-cached
+under `.data/`. Zero model calls. Per the plan's session protocol, re-read the plan's LD2
+section before starting; do not begin LD3 in the same session.
+
+---
+
 # Current handoff — 2026-09-10, reviewer-optimization round 1 (O1-O3)
 
 External review diagnosed three gaps; all three fixed on `opt-v3-harness`

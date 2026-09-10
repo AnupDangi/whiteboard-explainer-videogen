@@ -17,7 +17,9 @@ export interface PlannerSpans { outlineMs:number; chapters:Record<string,{conten
 /** Persisted per-job spans: planner stages plus per-scene TTS wall ms. */
 export interface JobSpans { outlineMs?:number; chapters?:Record<string,{contentMs:number;directorMs:number}>; ttsMsByScene?:Record<string,number> }
 export interface SourceInput { kind:'prompt'|'text'|'url'|'pdf'|'docx'|'pptx'|'markdown'|'json'; text?:string; url?:string; base64?:string; name?:string }
-export interface SourceDocument { kind:string; label:string; text:string; sha256:string; figures?:SourceFigure[] }
+// pages: LD1 page-aware extraction — 1-based PDF page number plus the char offset in
+// `text` where that page's text begins. Blank pages are omitted. PDF sources only.
+export interface SourceDocument { kind:string; label:string; text:string; sha256:string; figures?:SourceFigure[]; pages?:Array<{page:number;start:number}> }
 /** P2: one detected+described figure/table from a PDF source — planning input only. */
 export interface SourceFigure { page:number; kind:'figure'|'table'; caption:string; dataHint:string; keyNumbers:string[] }
 export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; figures?:SourceFigure[]; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'elevenlabs'|'kokoro'; voiceId?:string; visualCritic?:boolean; cachePrompts?:boolean }

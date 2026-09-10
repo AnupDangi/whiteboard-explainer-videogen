@@ -103,7 +103,7 @@ test('Provider and schema errors stay errors; no fixture fallback',async()=>{ fo
 });
 test('Source text is preserved and fingerprint changes with content',async()=>{
  const a=await ingestSource({kind:'text',text:source.text}),b=await ingestSource({kind:'text',text:source.text.replace('739','831')});assert.equal(a.text,source.text);assert.notEqual(a.sha256,b.sha256);
-  await assert.rejects(ingestSource({kind:'text',text:''}),/readable/);const clipped=await ingestSource({kind:'text',text:('word '.repeat(45000))});assert(clipped.text.length<=200000);
+  await assert.rejects(ingestSource({kind:'text',text:''}),/readable/);const clipped=await ingestSource({kind:'text',text:('word '.repeat(1100000))});assert(clipped.text.length<=5000000);assert.equal(clipped.pages,undefined);
 });
 test('P1 sources: markdown, json and docx ingest deterministically',async()=>{
   const md=await ingestSource({kind:'markdown',text:'# Heading\n\nMarkdown body with plenty of readable characters for the gate.'});

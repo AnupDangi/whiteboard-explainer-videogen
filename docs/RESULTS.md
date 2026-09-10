@@ -1,3 +1,34 @@
+# 2026-09-10 — LD1: full-document page-aware extraction (source-intelligence plan)
+
+Implements LD1 of `docs/SOURCE_INTELLIGENCE_PLAN.md`. Suite: `npm test` → 97 tests,
+95 pass, 0 fail, 2 skip (live-TTS-cred gated) — up from 93/91/0/2.
+
+**Exact tests:** new `test/page-extraction.test.js` — (a) buildPageText pure unit tests
+(page offsets, blank-page skip, tailCut word-boundary cut, determinism); (b) end-to-end:
+a hand-rolled **20-page PDF** (Helvetica base-14, one text line per page, built in-test —
+zero new deps) through real poppler `pdftotext` → all 20 pages extracted with correct
+1-based page offsets (old `PAGE_LIMIT=15` truncated at page 15). Existing ingestion tests
+updated for the raised cap.
+
+**Code changes:**
+- `src/sources.ts`: `PAGE_LIMIT=15` removed (full-document `pdftotext -raw`, maxBuffer
+  2MB→16MB, timeout 30s→60s); `TEXT_LIMIT` 200k→5M chars (book scale); new exported
+  `buildPageText(raw, tailCut)` — form-feed page split, per-page compaction, joined with
+  `\n\n`, returns `pages: {page, start}[]` with true 1-based page numbers; blank pages
+  skipped; pdftotext's trailing `\f` handled.
+- `stripAcademicTail` now gated to paper-like docs (≤150k chars AND marker in back 40%)
+  so a book's References/Appendix sections survive. NOTE: gate tightened from the old
+  `index>0.3` rule — papers with References before ~60% of body now keep their tail.
+- `SourceDocument.pages?: Array<{page:number;start:number}>` (`src/types.ts`); PDF and
+  arxiv-fallback URL paths populate it; text/markdown/json/docx/pptx stay flat.
+
+**What this does NOT establish:** the outline call still clips at 120k chars and the
+prompt-builder brief at 60k (L2 layers 2-3) — large docs still lose their tail before
+planning until LD2 (document map) + LD5 (map-driven outline). Retrieval is still
+lexical-only. No paid run in this phase.
+
+---
+
 # 2026-09-10 — Reviewer-optimization round 1 (O1-O3)
 
 Commit `fe518bb` on `opt-v3-harness`. Suite 93 tests, 91 pass, 0 fail, 2 skip.
