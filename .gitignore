@@ -16,3 +16,4 @@ dist/
 app.server.out
 *.scenes/
 .agents/
+.claude/
