@@ -84,7 +84,7 @@ test('A transient failure on the very first content/director call retries in pla
     return reply(result);
   };
   const scenes=[];
-  for await(const p of generateChapters(source,{env,fetcher,durationMinutes:1}))scenes.push(...p.scenes);
+  for await(const p of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1}))scenes.push(...p.scenes);
   assert.equal(scenes.length,2);
   assert.equal(contentCalls,2,'content retried once in place after its first-call failure');
  assert.equal(directorCalls,2,'director retried once in place after its first-call failure');
@@ -105,11 +105,30 @@ test('Exhausted director retries fail loudly instead of shipping all-generic box
     const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
     return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point',evidenceIds:[evId]},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point',evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
-  await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env,fetcher,durationMinutes:1})){ }},/fallback exhausted/);
+  await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1})){ }},/fallback exhausted/);
   // 1 outline + [1 content + 3 failed director attempts] × 2 chapter regenerations;
   // no silent fallback commit on either pass.
   assert.equal(requests.length,9);
 });
+test('Auto-director: mappable labels skip the director LLM call entirely',async()=>{
+  const autoSource={kind:'text',label:'t',text:'The user request goes to the database storage. A token model reads the file quickly.',sha256:'auto'};
+  const requests=[];
+  const fetcher=async(url,options)=>{
+    if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
+    const body=JSON.parse(options.body);requests.push(body);
+    const content=JSON.parse(body.messages[1].content);
+    const reply=(result)=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:10,completion_tokens:10,cost:0.00001}});
+    if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'O',chapters:[{title:'T',objective:'Explain it',arc:'build',keyPoints:['User request','Database storage']}]});
+    if(content.scenes)return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'flow',nodes:s.nodes.map(n=>({id:n.id,kind:'generic',emphasis:false}))}))});
+    const evId=content.source.evidenceChunks[0].id;
+    const words='User request Database storage '+Array.from({length:60},(_,i)=>`term_${i}`).join(' ');
+    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`A${i}`,narration:words,nodes:[{id:'a',label:'User request',anchor:'User request',keyPoint:'User request',evidenceIds:[evId]},{id:'b',label:'Database storage',anchor:'term_45',keyPoint:'Database storage',evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'sends'}],note:''}))});
+  };
+  for await(const p of generateChapters(autoSource,{env,fetcher,durationMinutes:1})){}
+  const directorCalls=requests.filter(r=>{const c=JSON.parse(r.messages[1].content);return Array.isArray(c.scenes)&&!c.repairError&&!c.chapterFrame;});
+  assert.equal(directorCalls.length,0,'no LLM director call — compiler composed both scenes');
+});
+
 test('Provider and schema errors stay errors; no fixture fallback',async()=>{ for(const options of [{failure:true},{bad:true}]){const mock=adapter(options);await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env,fetcher:mock.fetcher})){}},options.failure?/429/:/Anchor/);}
 });
 test('Source text is preserved and fingerprint changes with content',async()=>{
@@ -175,7 +194,7 @@ test('A4: a real director result using one shape throughout (a legitimate token 
     return reply(result);
   };
   const scenes=[];
-  for await(const p of generateChapters(tokenSource,{env,fetcher,durationMinutes:1}))scenes.push(...p.scenes);
+  for await(const p of generateChapters(tokenSource,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1}))scenes.push(...p.scenes);
   assert.equal(scenes.length,2,'both scenes committed — no chapter regeneration was needed');
   assert.equal(directorCalls,1,'the director succeeded on its first attempt — no repair/fallback was triggered by shape uniformity');
   for(const scene of scenes)assert(scene.nodes.every(n=>(n.shape||'box')==='box'),'the single-shape token row survived unchanged, as intended by A4');
@@ -215,7 +234,7 @@ test('A5: a single-scene critic repair validates and actually applies (was previ
       edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   const scenes=[];
-  for await(const p of generateChapters(source,{env,fetcher,durationMinutes:1,visualCritic:true}))scenes.push(...p.scenes);
+  for await(const p of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1,visualCritic:true}))scenes.push(...p.scenes);
   assert.equal(repairCalls,2,'the critic requested a repair for both scenes and each repair call validated (1-scene schema)');
   assert(scenes.every(s=>s.nodes[0].kind==='success'),'the repaired kind actually reached the committed scene, not just the repair response');
 });

@@ -4,6 +4,7 @@ import {validatePlan,compileScene,preflightScene,renderSVG} from './engine.js';
 import {semaphore} from './concurrency.js';
 import {retrieveChapterEvidence,chunkSource} from './retrieval.js';
 import {getOutputBudget,getRetrievalBudget,getInputBudget,getCostBudget,getLatencyBudget} from './budgets.js';
+import {canAutoDirect,autoDirect} from './auto-director.js';
 import {embedEnabled,getOrBuildChunkVectors,embedTexts} from './embeddings.js';
 import {renderMapForOutline} from './document-map.js';
 import {NODE_KINDS,LAYOUTS} from './vocabulary.js';
@@ -559,6 +560,35 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
       // per scene and a visual metaphor/emphasis per node. Never touches wording. Falls back
       // to plain flow/generic boxes rather than let a visual-direction mistake alone fail the
       // chapter — a genuinely bad content shape (e.g. an unfittable label) still throws here.
+      // Deterministic fast path: scenes whose labels/visualIntents the compiler can dress
+      // confidently skip the ~19s director call entirely (same validators still gate it).
+      const finalize=(directed:Plan,arc:string|undefined):Plan=>{
+        const upgraded:Plan={...directed,scenes:upgradeShapes(directed.scenes,Object.fromEntries(directed.scenes.map(s=>[s.id,arc||''])))};
+        const shapeDiagnostic=checkShapeMix(upgraded.scenes);
+        if(shapeDiagnostic.length)log('planner.shape-diagnostic',{chapter:chapter+1,findings:shapeDiagnostic});
+        const visualFailures=[...checkKindCollision(upgraded.scenes)];
+        if(visualFailures.length)throw new Error('Visual checks — '+visualFailures.join(' | '));
+        upgraded.scenes.forEach(scene=>preflightScene(compileScene(scene)));
+        return upgraded;
+      };
+      const autoOrDirect=async(content:Plan,arc:string|undefined):Promise<Plan>=>{
+        // Env gate: EXPLAIN_AUTO_DIRECT=0 forces the LLM director (ablations, tests that
+        // exercise director retry paths).
+        if(env.EXPLAIN_AUTO_DIRECT!=='0'&&canAutoDirect(content)){
+          const t=performance.now();
+          try{
+            const composed=autoDirect(content,outline.chapters[chapter].keyPoints);
+            const result=finalize(composed,arc);
+            log('planner.auto-directed',{chapter:chapter+1,ms:Math.round(performance.now()-t)});
+            return result;
+          }catch(error){
+            log('planner.auto-direct-failed',{chapter:chapter+1,error},'warn');
+            // fall through to the director call — the deterministic guess is never shipped
+            // when it fails a validator.
+          }
+        }
+        return directScene(content,arc);
+      };
       async function directScene(content:Plan,arc:string|undefined):Promise<Plan> {
         const directorPrompt=JSON.stringify({chapter:{arc:arc||'build',objective:outline.chapters[chapter].objective},scenes:content.scenes.map(s=>({id:s.id,narration:s.narration,nodes:s.nodes.map(n=>({id:n.id,label:n.label,keyPoint:n.keyPoint||'',visualIntent:n.visualIntent||''})),edges:s.edges}))});
         const DIRECTOR_ATTEMPTS=3;
@@ -570,13 +600,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
           try{
             if(attempt===0){const t=performance.now();try{directorRaw=await call(directorSystem,directorPrompt,getOutputBudget('director'),directorSchema(content.scenes.length),'director',DIRECTOR_MODEL);}finally{chapSpan.directorMs+=Math.round(performance.now()-t);}}
             const directed=mergeDirectorOutput(content,directorRaw);
-            const upgraded:Plan={...directed,scenes:upgradeShapes(directed.scenes,Object.fromEntries(content.scenes.map(s=>[s.id,arc||''])))};
-            const shapeDiagnostic=checkShapeMix(upgraded.scenes);
-            if(shapeDiagnostic.length)log('planner.shape-diagnostic',{chapter:chapter+1,findings:shapeDiagnostic});
-            const visualFailures=[...checkKindCollision(upgraded.scenes)];
-            if(visualFailures.length)throw new Error('Visual checks — '+visualFailures.join(' | '));
-            upgraded.scenes.forEach(scene=>preflightScene(compileScene(scene)));
-            return upgraded;
+            return finalize(directed,arc);
           }catch(error){
             log('planner.direction-invalid',{chapter:chapter+1,attempt:attempt+1,willRetry:attempt<DIRECTOR_ATTEMPTS-1,error},'warn');
             if(attempt===DIRECTOR_ATTEMPTS-1)break;
@@ -608,7 +632,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
           // notification (this attempt's content later gets discarded) is harmless — the
           // consumer only trusts a cached result if its narration text still matches.
           onContentReady?.(chapter,content.scenes.map(s=>({id:s.id,narration:s.narration})));
-          plan=await directScene(content,outline.chapters[chapter].arc);
+          plan=await autoOrDirect(content,outline.chapters[chapter].arc);
           break;
         }catch(error){
           log('planner.chapter-regenerate',{chapter:chapter+1,regen:regen+1,willRetry:regen<CHAPTER_REGENERATIONS-1,error},'warn');
