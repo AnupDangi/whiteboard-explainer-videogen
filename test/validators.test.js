@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats,fillBeats} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats,fillBeats,healDanglingEdges} from '../dist/src/planner.js';
 import {retrieveChapterEvidence} from '../dist/src/retrieval.js';
 import {directorSchema} from '../dist/src/schema.js';
 
@@ -168,6 +168,11 @@ test('Perf: resolveAnchors derives beats and assigns beatId without model output
   assert(Array.isArray(scene.beats)&&scene.beats.length>=2,'beats derived');
   assert(scene.nodes.every(n=>typeof n.beatId==='string'),'every node got a beatId');
   assert.equal(scene.nodes[0].beatId,'b1');
+});
+test('Deterministic edge heal: dangling and self edges dropped, real edges kept',()=>{
+  const raw={scenes:[{nodes:[{id:'a'},{id:'b'}],edges:[{from:'a',to:'b'},{from:'a',to:'x'},{from:'a',to:'a'},{from:'b',to:'a'}]}]};
+  assert.equal(healDanglingEdges(raw),2);
+  assert.deepEqual(raw.scenes[0].edges,[{from:'a',to:'b'},{from:'b',to:'a'}]);
 });
 test('Perf: fillBeats synthesizes a node for a visual-less beat from its own words',()=>{
   const narration='Alpha introduces the model. Beta explains the routing mechanism clearly. Gamma closes with the training result.';

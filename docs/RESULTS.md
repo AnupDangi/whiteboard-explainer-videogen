@@ -1,3 +1,34 @@
+# 2026-09-11 — RCA pass 2: static-tail root cause fixed (beat fill); PDF + arXiv URL complete
+
+**Root cause of the multi-second static intervals (the top quality debt):** narration
+teaches in 2-3 beats, but the model anchors every node in beat 1 — later beats then play
+with nothing new on the canvas. Prompt pressure failed across 4 attempts. Fix:
+`fillBeats()` deterministically synthesizes a concept node from an uncovered beat's OWN
+narration (label quotes the beat, anchor at the beat start, evidence from the chapter's
+evidence set, flagged `auto` so it is exempt from the source-support overlap while still
+requiring a valid chunk id). Also this pass: `healDanglingEdges()` (drop unrenderable
+edges — the URL-path blocker), `keypoint-healed` remap/drop, whole-source
+`grounding-autofix`, `conceptId` heal, outline rejects entity-only key points, narration
+floor 80→70, pacing pressure for two attempts then engine stretch.
+
+**Measured (both paths, same 53-page arXiv paper, 1-min):**
+
+| run | wall | timeline | planning $ | calls | static lints | outcome |
+|---|---|---|---|---|---|---|
+| PDF (`--pdf`, job `9886a265`) | **1:28** | 51.9s | **$0.0094** | outline 3.8s + content 27.6s + director 21.2s + director-repair 20.3s | **2600 / 2600 ms** | first attempt, 0 content repairs |
+| arXiv URL (`--url`, job `35dddd0d`) | **1:15** | 43.6s | **$0.0095** | outline 4.7s + content 23.0s + 1 repair 21.9s + director 18.4s | **2600 / 2600 ms** | complete |
+
+Static intervals dropped from 8305/7230ms to **2600/2600ms — under the 3500ms limit on
+both paths**. Total cost per 1-min video ≈ $0.01 planning + ~$0.001 figures (Kokoro voice
+free). Suite 128 tests, 126 pass, 0 fail, 2 skip.
+
+**Honest residuals:** director is still the slowest stage (18-21s, sometimes +20s repair)
+— the auto-director did not fire on these chapters because two of five nodes are
+unclassifiable note/directive labels; director-repair fires on templates/layout
+occasionally; embeddings remain BM25-only live; human playback review pending.
+
+---
+
 # 2026-09-11 — LD8 stability pass: deterministic heal/autofix, 1:50 wall
 
 Job `bbef4e24`: complete, 2 scenes, 43.5s timeline, $0.0097 planning, wall 1:50 (was 10+ min
