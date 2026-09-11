@@ -4,6 +4,19 @@ import {validatePlan,compileScene,estimateTiming,renderSVG,sceneState,locateScen
 import {renderIcon,hasIcon} from '../dist/src/icons.js';
 import {fixtures} from '../dist/src/fixtures.js';
 const copy=()=>structuredClone(fixtures.attention);
+test('Bullet takeaway list reveals items in sequence, not all at once',()=>{
+  const plan={version:1,title:'t',scenes:[{id:'s1',title:'S',narration:'alpha beta gamma delta',layout:'flow',nodes:[
+    {id:'a',label:'Alpha',wordIndex:0},
+    {id:'b',label:'First takeaway. Second takeaway. Third takeaway.',wordIndex:2,shape:'bullet'},
+  ],edges:[],note:''}]};
+  const scene=compileScene(validatePlan(plan).scenes[0]);
+  const bullet=scene.nodes.find(n=>n.shape==='bullet');
+  const early=renderSVG(scene,bullet.startMs+Math.round(0.32*bullet.drawMs));
+  const late=renderSVG(scene,bullet.startMs+bullet.drawMs);
+  assert(late.includes('First takeaway')&&late.includes('Second takeaway')&&late.includes('Third takeaway'),'all items at the end');
+  assert(early.includes('First takeaway'),'first item early');
+  assert(!early.includes('Third takeaway'),'later items reveal later, not all at once');
+});
 test('H04/H22 rejects invalid references, anchors, IDs and primitive layouts',()=>{
   for(const mutate of [p=>p.scenes[0].edges[0].to='missing',p=>p.scenes[0].nodes[0].wordIndex=999,p=>p.scenes[0].nodes[1].id='n0',p=>p.scenes[0].id='../file',p=>p.scenes[0].layout='eval']){
     const p=copy();mutate(p);assert.throws(()=>validatePlan(p));

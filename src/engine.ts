@@ -711,8 +711,16 @@ export function renderSVG(scene:CompiledScene,timeMs:number) {
       continue;
     }
     if(n.shape==='bullet') {
-      // Key-point list, no container: fast fade-in of left-aligned bulleted lines.
-      if(n.progress>.25)svg+=`<g opacity="${Math.min(1,(n.progress-.25)/.5)}">${textsLeft(n.lines,n.x+8,n.y+n.h/2-(n.lines.length-1)*n.fontSize*.59+n.fontSize*.35,n.fontSize)}</g>`;
+      // Key-point list, no container: each list item reveals in sequence across the
+      // node's window, so the canvas writes the takeaways one by one as the narration
+      // speaks them, instead of dumping the whole list at once.
+      const items=n.lines.length;
+      const baseY=n.y+n.h/2-(items-1)*n.fontSize*.59+n.fontSize*.35;
+      for(let i=0;i<items;i++){
+        const start=0.18+(items>1?(i/items)*0.5:0);
+        const op=Math.max(0,Math.min(1,(n.progress-start)/0.28));
+        if(op>0)svg+=`<g opacity="${op}">${textsLeft([n.lines[i]],n.x+8,baseY+i*n.fontSize*1.18,n.fontSize)}</g>`;
+      }
       if(!pencil&&n.progress<1)pencil=pointOnRectPerimeter(n.x,n.y,n.w,n.h,n.progress);
       continue;
     }
