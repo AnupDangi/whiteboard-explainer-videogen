@@ -754,7 +754,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
             // deterministic draw-stretch handles residual silence, because repeated
             // repairs against the same pacing complaint cost ~20s each and often ship
             // the same clustered anchors. Two attempts of pressure, then complete.
-            const pacingFailures=attempt>=2?[]:[...checkAnchorSpread(candidate.scenes),...checkBeatCoverage(candidate.scenes)];
+            const pacingFailures=attempt>=1?[]:[...checkAnchorSpread(candidate.scenes),...checkBeatCoverage(candidate.scenes)];
             if(pacingFailures.length)log('planner.pacing-pressure',{chapter:chapter+1,attempt:attempt+1,findings:pacingFailures.length});
             // Quality-only key-point coverage ("drawn but barely narrated") is deferred
             // after two attempts: the takeaway board still renders the key point on the
@@ -762,7 +762,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
             // while shipping the same wording. Hard gates (unclaimed key point, missing
             // board text) still fail — only the narration-completeness signal softens.
             const keyPointFailures=checkKeyPoints(candidate.scenes,outline.chapters[chapter].keyPoints);
-            const hardKeyPointFailures=attempt>=2?keyPointFailures.filter(f=>!f.includes('barely narrated')):keyPointFailures;
+            const hardKeyPointFailures=attempt>=1?keyPointFailures.filter(f=>!f.includes('barely narrated')):keyPointFailures;
             if(keyPointFailures.length&&!hardKeyPointFailures.length)log('planner.keypoint-soft',{chapter:chapter+1,attempt:attempt+1});
             let teachingFailures=[...checkQuantities(candidate.scenes),...hardKeyPointFailures,...checkBoardText(candidate.scenes,outline.chapters[chapter].keyPoints),...checkFirstVisual(candidate.scenes),...pacingFailures,...checkConceptContinuity(candidate.scenes),...checkEdgeLabels(candidate.scenes),...checkConceptBudget(candidate.scenes)];
             // Grounding autofix (always-on, orthogonal to other failures): a model that

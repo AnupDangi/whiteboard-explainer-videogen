@@ -72,13 +72,15 @@ function inferShape(kind:NodeKind|undefined,label:string):Scene['nodes'][number]
   return 'box';
 }
 
-/** A scene is auto-directable when all but at most one node map to a concrete kind.
- *  The allowance covers a single directive/annotation label ("Show data scale") that
- *  no keyword table can classify — one box among dressed nodes is a fine composition,
- *  and it lets the common 3-node chapter skip the ~20s director call entirely. */
+/** A scene is auto-directable when all but at most one MODEL-authored node map to a
+ *  concrete kind. Structural nodes synthesized by the engine (beat fills, the takeaway
+ *  board) carry `auto:true` and are excluded — they are pacing devices, not concepts,
+ *  and their labels are not expected to match a keyword table. This is what lets the
+ *  common chapter skip the ~20s director call entirely. */
 function sceneAutoDirectable(scene:Scene):boolean {
   if(scene.nodes.length<2||scene.nodes.length>6)return false;
-  const generic=scene.nodes.filter(n=>!inferKind(n.label)).length;
+  const authored=scene.nodes.filter(n=>!n.auto);
+  const generic=authored.filter(n=>!inferKind(n.label)).length;
   return generic<=1;
 }
 
