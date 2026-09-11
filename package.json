@@ -11,13 +11,14 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "start": "npm run build && node --env-file-if-exists=.env dist/src/server.js",
-    "test": "npm run build && node --test test/*.test.js",
+    "test": "npm run build && APP_LOG_PATH=.data/test-app.log node --test test/*.test.js",
     "benchmark": "npm run build && node dist/scripts/benchmark.js",
     "export": "npm run build && node dist/scripts/export.js",
     "test:live": "npm run build && node --env-file-if-exists=.env dist/scripts/live-evaluation.js",
     "generate-video": "npm run build && node --env-file-if-exists=.env dist/scripts/generate-video.js",
     "kokoro:setup": "sh scripts/setup-kokoro.sh",
-    "kokoro-server": "sh -c '${KOKORO_PYTHON:-.kokoro-venv/bin/python} scripts/kokoro_server.py'"
+    "kokoro-server": "sh -c '${KOKORO_PYTHON:-.kokoro-venv/bin/python} scripts/kokoro_server.py'",
+    "router:report": "npm run build && node dist/scripts/router-report.js"
   },
   "optionalDependencies": {
     "sharp": "0.35.4"

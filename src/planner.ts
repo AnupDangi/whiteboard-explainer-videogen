@@ -7,6 +7,7 @@ import {getOutputBudget,getRetrievalBudget,getInputBudget,getCostBudget,getLaten
 import {canAutoDirect,autoDirect,unmappedLabels} from './auto-director.js';
 import {embedEnabled,getOrBuildChunkVectors,embedTexts} from './embeddings.js';
 import {renderMapForOutline} from './document-map.js';
+import {loadModelRouter} from './model-router.js';
 import {NODE_KINDS,LAYOUTS} from './vocabulary.js';
 import {hasIllustration} from './illustrations.js';
 import {hasIcon} from './icons.js';
@@ -18,7 +19,7 @@ interface PlannerOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:A
 // Optional Stage 3 — Visual Critic (openai/gpt-5.6-luna): reviews a rendered scene thumbnail
 // and may request one bounded repair pass. Off by default (extra cost/latency); never fails
 // the chapter itself — any critic-path error is swallowed and the un-repaired scene is kept.
-const CRITIC_MODEL='openai/gpt-5.6-luna';
+const CRITIC_MODEL=process.env.OPENROUTER_CRITIC_MODEL||'openai/gpt-5.6-luna';
 const critiqueSchema={type:'object',additionalProperties:false,properties:{issues:{type:'array',items:{type:'string'},maxItems:6},needsRepair:{type:'boolean'}},required:['issues','needsRepair']};
 // Stage 1 (Teaching Planner) shape: content only. Stage 2 (Visual Director, below) is a
 // separate call/schema so content and visual quality can be reasoned about and repaired
@@ -454,9 +455,11 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
     if(!m)throw new Error(`Configured tier model ${id} is unavailable`);
     return {input:Number(m.pricing?.prompt),output:Number(m.pricing?.completion),request:Number(m.pricing?.request||0)};
   };
-  const OUTLINE_MODEL=env.OPENROUTER_OUTLINE_MODEL||model;
-  const CONTENT_MODEL=env.OPENROUTER_CONTENT_MODEL||model;
-  const DIRECTOR_MODEL=env.OPENROUTER_DIRECTOR_MODEL||model;
+  // Model router: per-task model ids (MODEL_ROUTER JSON > per-task env > base model).
+  const router=loadModelRouter(env,model);
+  const OUTLINE_MODEL=router.outline;
+  const CONTENT_MODEL=router.content;
+  const DIRECTOR_MODEL=router.director;
   const priceFor=(id:string)=>{const p=pricingOf(id);return {inputPrice:p.input,outputPrice:p.output,requestPrice:p.request};};
   if(![inputPrice,outputPrice,requestPrice].every(v=>Number.isFinite(v)&&v>=0))throw new Error('Model pricing unavailable');
   const usage:Usage={model,promptTokens:0,completionTokens:0,cachedTokens:0,costUsd:0,calls:0};
