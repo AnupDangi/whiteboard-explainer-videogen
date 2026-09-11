@@ -1,9 +1,17 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID} from 'node:crypto';
-import {appendFileSync,mkdirSync} from 'node:fs';
+import {appendFileSync,mkdirSync,statSync,renameSync} from 'node:fs';
 import {join} from 'node:path';
 
 export const logContext=new AsyncLocalStorage<Record<string,unknown>>();
+
+/** Durable app log (all events: job lifecycle, provider calls, per-call cost/time,
+ *  completion summaries). Path overridable via APP_LOG_PATH; rotated at 20 MB. */
+export const APP_LOG_PATH=process.env.APP_LOG_PATH||join(process.cwd(),'app.log');
+const APP_LOG_ROTATE_BYTES=20*1024*1024;
+const appLogPath=APP_LOG_PATH;
+let appLogBytes=0;
+try{appLogBytes=statSync(appLogPath).size;}catch{/* new file */}
 
 export function sanitizeLog(value:unknown):unknown {
   if(value instanceof Error)return sanitizeLog({name:value.name,message:value.message,stack:value.stack});
@@ -24,6 +32,14 @@ export function sanitizeLog(value:unknown):unknown {
 export function log(event:string,fields:Record<string,unknown>={},level:'info'|'warn'|'error'='info') {
   const line=JSON.stringify(sanitizeLog({at:new Date().toISOString(),level,event,...logContext.getStore(),...fields}));
   if(level==='error')console.error(line);else if(level==='warn')console.warn(line);else console.log(line);
+  // Durable app.log: every event — job lifecycle, provider calls, per-call cost/time and
+  // completion summaries — appended to one file for later analysis. Best-effort: logging
+  // must never break the pipeline. Rotated once past ~20 MB.
+  try {
+    if(appLogBytes>APP_LOG_ROTATE_BYTES){try{renameSync(appLogPath,appLogPath.replace(/\.log$/,'')+`.${Date.now()}.log`);}catch{}appLogBytes=0;}
+    appendFileSync(appLogPath,line+'\n');
+    appLogBytes+=Buffer.byteLength(line)+1;
+  } catch{/* ledger must never break the pipeline */}
   // P5 eval ledger: every line also lands in the job's log.jsonl (best-effort; the
   // console stream stays primary). Journal/eval scripts read this file back.
   const jobId=logContext.getStore()?.jobId;

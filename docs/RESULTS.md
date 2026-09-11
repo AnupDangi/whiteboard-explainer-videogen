@@ -1,3 +1,30 @@
+# 2026-09-11 — UI source intake restored + durable app.log + model-tier audit
+
+**UI RCA:** `#prompt-fields` (which holds the Source dropdown with *Public HTTPS link*
+and *PDF document*) was `hidden` and only revealed when mode = "AI planner"; the select
+defaulted to "Offline fixture", so the upload/URL inputs never appeared. Moreover the
+running server (PID 76959) was an old build. Fixes: mode defaults to **AI planner**,
+`#prompt-fields` visible on load, `#fixture-fields` hidden, and the browser-client module
+whitelist in `server.ts` was missing `/src/templates.js` (engine.js imports it) → a 404
+that could break client rendering; added. Removed the one inline style that tripped CSP.
+Verified in-browser: Source = Prompt / Source text / Public HTTPS link / PDF document;
+PDF → file chooser, URL → https textbox; **0 console errors**.
+
+**Durable logging:** every event now appends to `app.log` (repo root, gitignored,
+`APP_LOG_PATH` overridable, 20 MB rotation) in addition to the per-job `log.jsonl`. New
+`job.summary` line on completion/failure records wall ms, first-playable, timeline, scene
+count, cost, calls, prompt/completion/cached tokens and per-stage spans — one record for
+cost/time tracking.
+
+**Model-tier audit (ledger, job `ddf92a9f`):** the env already runs a static per-task
+router — outline `google/gemini-3.8-flash` ($0.0072, 5.5s, **82% of run cost**),
+content/director `qwen/qwen3.7-flash` ($0.0004/$0.00025, ~20-25s each). The expensive
+model is on the task cheapest to replace; the cheap-but-slow model is on the
+latency-critical calls. Concrete router experiment: move the outline to a cheap model
+(largest cost win), test a faster content/director model for wall time.
+
+---
+
 # 2026-09-11 — RCA pass 2: static-tail root cause fixed (beat fill); PDF + arXiv URL complete
 
 **Root cause of the multi-second static intervals (the top quality debt):** narration

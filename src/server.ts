@@ -89,7 +89,7 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
       let path;
       if(media)path=join(dataRoot,media[1],media[2]);
       else if(exported)path=join(root,'output',`${exported[1]}.mp4`);
-      else if(['/src/engine.js','/src/fixtures.js','/src/vocabulary.js','/src/icons.js','/src/illustrations.js','/src/style.js'].includes(url.pathname))path=join(root,'dist',url.pathname);
+      else if(['/src/engine.js','/src/fixtures.js','/src/vocabulary.js','/src/icons.js','/src/illustrations.js','/src/style.js','/src/templates.js'].includes(url.pathname))path=join(root,'dist',url.pathname);
       else {
         const requested=url.pathname==='/'?'index.html':url.pathname.slice(1);
         path=resolve(root,'public',requested);

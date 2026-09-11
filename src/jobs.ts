@@ -205,6 +205,14 @@ export class JobStore {
       }
       job.actualMinutes=job.availableMs/60000;
       job.status='complete';job.completedMs=Date.now()-job.createdAt;persistSpans();
+      // One-line completion summary: wall time, cost, tokens and per-stage ms for the
+      // whole job — the record a cost/latency tracker reads without joining many events.
+      log('job.summary',{
+        status:'complete',wallMs:job.completedMs,firstPlayableMs:job.firstPlayableMs,timelineMs:Math.round(job.availableMs),scenes:job.scenes.length,
+        costUsd:Number((job.usage?.costUsd||0).toFixed(6)),calls:job.usage?.calls||0,
+        promptTokens:job.usage?.promptTokens||0,completionTokens:job.usage?.completionTokens||0,cachedTokens:job.usage?.cachedTokens||0,
+        outlineMs:job.usage?.spans?.outlineMs||0,chapters:job.usage?.spans?.chapters||{},ttsCharacters:job.ttsCharacters,
+      });
       // P5 eval ledger: deterministic quality measurements on every completed job.
       log('job.lints',{jobId:job.id,scenes:job.scenes.map(s=>({id:s.id,staticIntervalMs:Math.round(staticIntervalMs(s)),connectorHits:connectorThroughNode(s).length}))});
       await queueSave('complete');
@@ -215,6 +223,7 @@ export class JobStore {
       // P5 failure taxonomy: classify so later eval can group failures without NLP.
       job.errorKind=signal.aborted?'cancel':classifyError(job.error);
       log('job.failure-classified',{jobId:job.id,errorKind:job.errorKind},signal.aborted?'warn':'error');
+      log('job.summary',{status:job.status,wallMs:Date.now()-job.createdAt,costUsd:Number((job.usage?.costUsd||0).toFixed(6)),calls:job.usage?.calls||0,errorKind:job.errorKind,error:job.error,spans:job.usage?.spans||{}},signal.aborted?'warn':'error');
       persistSpans();await queueSave(job.status);
     }
   }
