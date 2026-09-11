@@ -181,12 +181,14 @@ export function buildDocumentMap(source:SourceDocument):DocumentMap {
 }
 
 /** LD5: the text the outline call sees for large sources — bounded section list with
- *  ids the model must route chapters to via sourceSections. Replaces clipped raw text. */
+ *  ids the model must route chapters to via sourceSections. Replaces clipped raw text.
+ *  Cost RCA: this payload was 89% of a 1-min run's model cost (9.4k input tokens at
+ *  flash pricing), so summaries are capped hard — enough to route, not to re-teach. */
 export function renderMapForOutline(map:DocumentMap):string {
   return [
     'DOCUMENT MAP — the full source is large, so plan from this section map.',
     'Every chapter MUST set sourceSections to the section ids (from this list) it teaches from.',
-    ...map.sections.map(s=>`${s.id} | page ${s.page} | ${s.title} — ${s.summary}`),
+    ...map.sections.map(s=>`${s.id} | p${s.page} | ${s.title} — ${s.summary.slice(0,180)}`),
   ].join('\n');
 }
 

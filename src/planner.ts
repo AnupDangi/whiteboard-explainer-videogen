@@ -309,6 +309,39 @@ export function fillBeats(plan:Plan,chunks:Array<{id:string;text:string}>,maxNod
   return added;
 }
 
+/** Deterministic takeaway board: the chapter's key points rendered as ONE bulleted
+ *  list node on the closing scene — the narration speaks the critical facts, so the
+ *  canvas shows them as list items a viewer can read, instead of spreading them across
+ *  unrelated boxes. Quotes the outline key points verbatim (already validated), so it
+ *  adds no ungrounded claim. */
+export function addKeyPointBoard(scenes:Scene[],keyPoints:string[],chunks:Array<{id:string;text:string}>):number {
+  if(!scenes.length||keyPoints.length<2)return 0;
+  const scene=scenes[scenes.length-1];
+  if(!Array.isArray(scene.nodes)||scene.nodes.length>=6)return 0;
+  if(scene.nodes.some(n=>n.shape==='bullet'))return 0;
+  const label=keyPoints.join('. ').slice(0,158);
+  let start=scene.nodes.length?Math.max(...scene.nodes.map(n=>typeof n.wordIndex==='number'?n.wordIndex:0)):0;
+  let beatId=scene.nodes.find(n=>typeof n.beatId==='string')?.beatId;
+  if(Array.isArray(scene.beats)&&scene.beats.length){
+    // Anchor the board in the closing beat — the recap moment of the narration.
+    const last=scene.beats[scene.beats.length-1];
+    const at=typeof scene.narration==='string'&&typeof last.narration==='string'?scene.narration.lastIndexOf(last.narration):-1;
+    if(at>=0)start=scene.narration.slice(0,at).trim().split(/\s+/).filter(Boolean).length;
+    if(typeof last.id==='string')beatId=last.id;
+  }
+  const labelWords=contentWords(label);
+  let bestId=chunks[0]?.id;
+  let bestScore=-1;
+  for(const c of chunks){
+    const cw=contentWords(c.text);
+    const score=labelWords.filter(w=>wordCovered(w,cw)).length;
+    if(score>bestScore){bestScore=score;bestId=c.id;}
+  }
+  const id=`${scene.id}_takeaways`.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40);
+  scene.nodes.push({id,label,wordIndex:Math.max(0,start),...(beatId?{beatId}:{}),evidenceIds:bestId?[bestId]:undefined,visualIntent:'bulleted list of the key takeaways',shape:'bullet',auto:true});
+  return 1;
+}
+
 /** Concept continuity (V3-1 persistent example, enforced V3-2): one conceptId means
  *  one thing — same label and same kind in every scene. A redrawn glyph reads as a
  *  new concept, the worst visual defect a chapter can ship. */
@@ -339,6 +372,28 @@ export function checkEdgeLabels(scenes:LooseScene[]):string[] {
 }
 const INSTANCE_SUFFIX=/\s*(?:[0-9]+|[a-z]|first|second|third|fourth|fifth|sixth)\s*$/i;
 const labelStem=(label:string)=>label.toLowerCase().replace(/[^\p{L}\p{N} ]/gu,' ').replace(INSTANCE_SUFFIX,'').replace(/\s+/g,' ').trim();
+/** Deterministic kind de-collision (RCA: the director gave two different numeric
+ *  nodes kind "brain", checkKindCollision rejected it, and the chapter burned a ~20s
+ *  repair on a one-enum mistake). Same-kind-same-stem stays legal (token rows); a
+ *  genuine collision demotes the later node to generic, which carries no glyph and
+ *  therefore cannot collide. Used by both the auto-director and the director path. */
+export function deCollideKinds(scenes:Array<{nodes:Array<{id?:string;label?:string;kind?:unknown}>}>):number {
+  let changed=0;
+  for(const scene of scenes){
+    const owners=new Map<string,string>();
+    for(const node of scene.nodes){
+      const kind=typeof node.kind==='string'&&node.kind&&node.kind!=='generic'?node.kind:undefined;
+      if(!kind)continue;
+      const stem=labelStem(node.label||'');
+      const owner=owners.get(kind);
+      if(owner===undefined){owners.set(kind,stem);continue;}
+      if(owner===stem)continue;
+      node.kind='generic';
+      changed++;
+    }
+  }
+  return changed;
+}
 export function checkKindCollision(scenes:LooseScene[]):string[] {
   const failures:string[]=[];
   for(const scene of scenes){
@@ -594,6 +649,8 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
       // LD5: route this chapter's evidence to the sections the outline selected.
       // Unknown ids (model hallucination) are dropped, never trusted; no routing on a
       // small/unmapped source keeps today's whole-document retrieval.
+      // Evidence chunks from the last planContent attempt, for the additive takeaway board.
+      let boardChunks:Array<{id:string;text:string}>=[];
       const routed=mapUsable
         ?((outline.chapters[chapter] as {sourceSections?:string[]}).sourceSections||[]).map(id=>mapById.get(id)).filter((s):s is {start:number;end:number}=>!!s)
         :[];
@@ -630,6 +687,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
           // 8k reasoning tokens per call. Content sees evidence + figures + identity only.
           const {map:contentMap,pages:contentPages,...slimSource}=source;
           chapterSource={...slimSource,text:evidence.text+(source.figures?.length?figureContext:''),evidenceChunks};
+          boardChunks=evidenceChunks;
         };
         await rebuildEvidence(true);
         const chapterFrame={durationMinutes,chapter:chapter+1,chapterRole:chapter===0?'hook the viewer with what this is and why it matters':chapter===durationMinutes-1?'payoff and recap':chapter%2===1?'build the mechanism':'concrete example',depth:durationMinutes<=1?'essentials only, one core idea per scene — but the spoken narration stays at full teacher length (110-160 words across both scenes; essentials refers to scope, never to narration brevity)':durationMinutes<=5?'the core mechanism plus one concrete numbered example':'the full mechanism with concrete numbered examples and edge cases',previousChapterTitle:chapter>0?outlineChapterTitles[chapter-1]:null,chapterObjective:outline.chapters[chapter].objective,chapterKeyPoints:outline.chapters[chapter].keyPoints,teacherTone,glossary:chapterGlossary,otherChapterTitles:outlineChapterTitles};
@@ -698,7 +756,15 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
             // the same clustered anchors. Two attempts of pressure, then complete.
             const pacingFailures=attempt>=2?[]:[...checkAnchorSpread(candidate.scenes),...checkBeatCoverage(candidate.scenes)];
             if(pacingFailures.length)log('planner.pacing-pressure',{chapter:chapter+1,attempt:attempt+1,findings:pacingFailures.length});
-            let teachingFailures=[...checkQuantities(candidate.scenes),...checkKeyPoints(candidate.scenes,outline.chapters[chapter].keyPoints),...checkBoardText(candidate.scenes,outline.chapters[chapter].keyPoints),...checkFirstVisual(candidate.scenes),...pacingFailures,...checkConceptContinuity(candidate.scenes),...checkEdgeLabels(candidate.scenes),...checkConceptBudget(candidate.scenes)];
+            // Quality-only key-point coverage ("drawn but barely narrated") is deferred
+            // after two attempts: the takeaway board still renders the key point on the
+            // canvas, and repeated repairs against the same narration text cost ~22s each
+            // while shipping the same wording. Hard gates (unclaimed key point, missing
+            // board text) still fail — only the narration-completeness signal softens.
+            const keyPointFailures=checkKeyPoints(candidate.scenes,outline.chapters[chapter].keyPoints);
+            const hardKeyPointFailures=attempt>=2?keyPointFailures.filter(f=>!f.includes('barely narrated')):keyPointFailures;
+            if(keyPointFailures.length&&!hardKeyPointFailures.length)log('planner.keypoint-soft',{chapter:chapter+1,attempt:attempt+1});
+            let teachingFailures=[...checkQuantities(candidate.scenes),...hardKeyPointFailures,...checkBoardText(candidate.scenes,outline.chapters[chapter].keyPoints),...checkFirstVisual(candidate.scenes),...pacingFailures,...checkConceptContinuity(candidate.scenes),...checkEdgeLabels(candidate.scenes),...checkConceptBudget(candidate.scenes)];
             // Grounding autofix (always-on, orthogonal to other failures): a model that
             // cites lazily fails support deterministically — but the RIGHT citation usually
             // exists somewhere in the source. Search ALL document chunks; a claim supported
@@ -753,6 +819,13 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
       // Deterministic fast path: scenes whose labels/visualIntents the compiler can dress
       // confidently skip the ~19s director call entirely (same validators still gate it).
       const finalize=(directed:Plan,arc:string|undefined):Plan=>{
+        // Key-point board (additive, after the director/auto stage so composer shapes and
+        // kinds are never disturbed): the closing scene shows the chapter's key points as
+        // one bulleted list — the viewer reads the takeaways the narration just spoke.
+        const boarded=addKeyPointBoard(directed.scenes,outline.chapters[chapter].keyPoints,boardChunks);
+        if(boarded)log('planner.keypoint-board',{chapter:chapter+1,kps:outline.chapters[chapter].keyPoints.length});
+        const kindHealed=deCollideKinds(directed.scenes);
+        if(kindHealed)log('planner.kind-healed',{chapter:chapter+1,nodes:kindHealed});
         const upgraded:Plan={...directed,scenes:upgradeShapes(directed.scenes,Object.fromEntries(directed.scenes.map(s=>[s.id,arc||''])))};
         const shapeDiagnostic=checkShapeMix(upgraded.scenes);
         if(shapeDiagnostic.length)log('planner.shape-diagnostic',{chapter:chapter+1,findings:shapeDiagnostic});

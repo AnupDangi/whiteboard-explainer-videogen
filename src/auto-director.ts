@@ -43,6 +43,8 @@ const KIND_HINTS:Array<[RegExp,NodeKind]>=[
   [/\b(container|payload|value)\b/i,'container'],
   [/\b(request|call)\b/i,'request'],
   [/\b(response|return)\b/i,'response'],
+  // Directive/annotation labels the content model emits for framing notes.
+  [/^(show|shows|visualize|visualise|visualizes|contrast|compare|highlight|indicates?|illustrates?)\b/i,'note'],
 ];
 
 /** Number shape: a quantity the narration names should render as a big badge. */

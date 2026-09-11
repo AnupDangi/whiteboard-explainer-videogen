@@ -197,7 +197,7 @@ test('A4: a real director result using one shape throughout (a legitimate token 
   for await(const p of generateChapters(tokenSource,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1}))scenes.push(...p.scenes);
   assert.equal(scenes.length,2,'both scenes committed — no chapter regeneration was needed');
   assert.equal(directorCalls,1,'the director succeeded on its first attempt — no repair/fallback was triggered by shape uniformity');
-  for(const scene of scenes)assert(scene.nodes.every(n=>(n.shape||'box')==='box'),'the single-shape token row survived unchanged, as intended by A4');
+  for(const scene of scenes)assert(scene.nodes.filter(n=>!n.auto).every(n=>(n.shape||'box')==='box'),'the single-shape token row survived unchanged (the additive takeaway board is excluded), as intended by A4');
 });
 test('A5: a single-scene critic repair validates and actually applies (was previously a silent no-op)',async()=>{
   const reply=(result)=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:10,completion_tokens:10,cost:0.00001}});

@@ -50,7 +50,7 @@ test('LD5: large mapped source routes the outline over the map and scopes chapte
   const outlineRequest=mock.requests[0];
   const outlinePayload=JSON.parse(outlineRequest.messages[1].content);
   assert(outlinePayload.source.text.includes('DOCUMENT MAP'),'outline sees the map');
-  assert(outlinePayload.source.text.includes('s1 | page 1'));
+  assert(outlinePayload.source.text.includes('s1 | p1'));
   assert(!outlinePayload.source.text.includes('markerA components and alpha numbers 30'),'raw text does NOT ride into the outline');
   // Content calls are scoped: chapter 1 routed to s1 must see alpha material,
   // not beta paragraphs.
@@ -74,6 +74,6 @@ test('LD5: small sources keep the legacy whole-text outline (no map, no routing)
 
 test('LD5 renderMapForOutline: bounded ids and routing instruction',()=>{
   const text=renderMapForOutline({kind:'book',sections:[{id:'s1',title:'Intro',page:1,start:0,end:10,charCount:10,summary:'First bits.'}]});
-  assert(text.includes('s1 | page 1 | Intro'));
+  assert(text.includes('s1 | p1 | Intro'));
   assert(text.includes('sourceSections'));
 });
