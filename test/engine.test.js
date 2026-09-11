@@ -55,6 +55,14 @@ test('wrapText breaks hyphenated words at hyphens, never mid-word',()=>{
   assert.equal(lines.join(' ').replace(/- /g,'-'),'one-million-token x');
   assert(wrapText('ABCDEFGHIJKLMNOPQRSTUVWXYZ',60,20).length>1);
 });
+test('wrapText breaks at slashes/underscores before cutting mid-word',()=>{
+  const lines=wrapText('recurrence/convolution',120,20);
+  assert(lines.length>1,'long slash-compound wraps');
+  assert(lines[0].endsWith('/'),'first line ends at the slash, not inside "convolution"');
+  assert(!lines.some(l=>l.length>0&&l.length<3&&!/[/_-]/.test(l)),'no orphaned fragment like "olution"');
+  const und=wrapText('feature_extractor',130,20);
+  assert(und[0].endsWith('_'),'underscore is a break point too');
+});
 test('edge labels paint above node boxes, never underneath',()=>{
   const p=copy();p.scenes[0].edges[0]={...p.scenes[0].edges[0],label:'deploys'};
   const done=renderSVG(compileScene(p.scenes[0]),90000);

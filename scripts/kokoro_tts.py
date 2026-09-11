@@ -139,67 +139,85 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
         # last word of the whole utterance, now also every chunk's last word via the round-1 fix
         # below. Fix: locate each word's true position directly in the vocab-filtered phoneme
         # stream instead of accumulating position from leaves, so separators are never skipped.
-        filtered_phonemes = ''.join(c for c in phonemes if c in vocab)
-        leaf, cursor = 0, 0
-        for word in chunk_text.split():
-            word_leaf_start = leaf
-            acc, phon = '', ''
-            while leaf < len(leaves) and acc != word:
-                piece = leaves[leaf].text or ''
-                if len(acc) + len(piece) > len(word) or not word.startswith(acc + piece):
-                    fail('Cannot map narration word %r (G2P gave %r); refusing silent misalignment'
-                         % (word, piece))
-                acc += piece
-                phon += leaves[leaf].phonemes or ''
-                leaf += 1
-            if acc != word:
-                fail('Cannot map narration word %r; refusing silent misalignment' % word)
-            start = filtered_phonemes.find(phon, cursor)
-            if start < 0:
-                # Layer 2b: separator-aware match. The stream inserts a real separator
-                # (' ') between units that leaf phonemes never carry; on hyphenated or
-                # acronym tokens ('ViT-g') separators can appear even INSIDE the word's
-                # phoneme run. Strip separators on both sides, substring-match, and map
-                # back to original positions so the timing math stays exact.
-                orig_positions = [i for i, c in enumerate(filtered_phonemes) if c != ' ']
-                nospace = ''.join(c for c in filtered_phonemes if c != ' ')
-                nospace_phon = phon.replace(' ', '')
-                ns_start = nospace.find(nospace_phon)
-                if ns_start >= 0:
-                    s2 = orig_positions[ns_start]
-                    e2 = orig_positions[ns_start + len(nospace_phon) - 1] + 1
-                    if s2 >= cursor - 40:
-                        start, offset = s2, e2
-                        cursor = offset
-                        logging.getLogger('kokoro_tts').warning('separator-aware fallback timing for word %r', word)
-            if start < 0:
-                # Layer 2c: piece-wise. The stream can diverge from misaki's leaf phonemes
-                # on hyphen/acronym tokens; locate each consumed leaf's phonemes
-                # independently, in order, from the cursor, allowing gaps BETWEEN pieces.
-                p_cursor = cursor
-                first_pos, last_pos = None, None
-                for li in range(word_leaf_start, leaf):
-                    p_phon = leaves[li].phonemes or ''
-                    if not p_phon:
-                        continue
-                    p_start = filtered_phonemes.find(p_phon, p_cursor)
-                    if p_start < 0:
-                        fail('Cannot locate phonemes for narration word %r (piece %r) in the synthesized phoneme stream' % (word, leaves[li].text))
-                    p_cursor = p_start + len(p_phon)
-                    if first_pos is None:
-                        first_pos = p_start
-                    last_pos = p_cursor
-                if first_pos is None or last_pos is None:
-                    fail('Cannot locate phonemes for narration word %r in the synthesized phoneme stream' % word)
-                logging.getLogger('kokoro_tts').warning('fallback piece-wise timing for word %r', word)
-                start, offset = first_pos, last_pos
-                cursor = offset
-            else:
-                offset = start + len(phon)
-                cursor = offset
-            start_ms = elapsed_ms + bos_ms + float(pred[1:1 + start].sum()) / FRAMES_PER_SECOND * 1000
-            end_ms = elapsed_ms + bos_ms + float(pred[1:1 + offset].sum()) / FRAMES_PER_SECOND * 1000
-            words.append(dict(word=word, startMs=start_ms, endMs=end_ms))
+        words_len_before = len(words)
+        try:
+            filtered_phonemes = ''.join(c for c in phonemes if c in vocab)
+            leaf, cursor = 0, 0
+            for word in chunk_text.split():
+                word_leaf_start = leaf
+                acc, phon = '', ''
+                while leaf < len(leaves) and acc != word:
+                    piece = leaves[leaf].text or ''
+                    if len(acc) + len(piece) > len(word) or not word.startswith(acc + piece):
+                        fail('Cannot map narration word %r (G2P gave %r); refusing silent misalignment'
+                             % (word, piece))
+                    acc += piece
+                    phon += leaves[leaf].phonemes or ''
+                    leaf += 1
+                if acc != word:
+                    fail('Cannot map narration word %r; refusing silent misalignment' % word)
+                start = filtered_phonemes.find(phon, cursor)
+                if start < 0:
+                    # Layer 2b: separator-aware match. The stream inserts a real separator
+                    # (' ') between units that leaf phonemes never carry; on hyphenated or
+                    # acronym tokens ('ViT-g') separators can appear even INSIDE the word's
+                    # phoneme run. Strip separators on both sides, substring-match, and map
+                    # back to original positions so the timing math stays exact.
+                    orig_positions = [i for i, c in enumerate(filtered_phonemes) if c != ' ']
+                    nospace = ''.join(c for c in filtered_phonemes if c != ' ')
+                    nospace_phon = phon.replace(' ', '')
+                    ns_start = nospace.find(nospace_phon)
+                    if ns_start >= 0:
+                        s2 = orig_positions[ns_start]
+                        e2 = orig_positions[ns_start + len(nospace_phon) - 1] + 1
+                        if s2 >= cursor - 40:
+                            start, offset = s2, e2
+                            cursor = offset
+                            logging.getLogger('kokoro_tts').warning('separator-aware fallback timing for word %r', word)
+                if start < 0:
+                    # Layer 2c: piece-wise. The stream can diverge from misaki's leaf phonemes
+                    # on hyphen/acronym tokens; locate each consumed leaf's phonemes
+                    # independently, in order, from the cursor, allowing gaps BETWEEN pieces.
+                    p_cursor = cursor
+                    first_pos, last_pos = None, None
+                    for li in range(word_leaf_start, leaf):
+                        p_phon = leaves[li].phonemes or ''
+                        if not p_phon:
+                            continue
+                        p_start = filtered_phonemes.find(p_phon, p_cursor)
+                        if p_start < 0:
+                            fail('Cannot locate phonemes for narration word %r (piece %r) in the synthesized phoneme stream' % (word, leaves[li].text))
+                        p_cursor = p_start + len(p_phon)
+                        if first_pos is None:
+                            first_pos = p_start
+                        last_pos = p_cursor
+                    if first_pos is None or last_pos is None:
+                        fail('Cannot locate phonemes for narration word %r in the synthesized phoneme stream' % word)
+                    logging.getLogger('kokoro_tts').warning('fallback piece-wise timing for word %r', word)
+                    start, offset = first_pos, last_pos
+                    cursor = offset
+                else:
+                    offset = start + len(phon)
+                    cursor = offset
+                start_ms = elapsed_ms + bos_ms + float(pred[1:1 + start].sum()) / FRAMES_PER_SECOND * 1000
+                end_ms = elapsed_ms + bos_ms + float(pred[1:1 + offset].sum()) / FRAMES_PER_SECOND * 1000
+                words.append(dict(word=word, startMs=start_ms, endMs=end_ms))
+        except RuntimeError as map_error:
+            # Never fail a synthesized chunk on a timing-alignment mismatch (live failures:
+            # 'O(1).' and 'RuBisCO' diverged from the G2P phoneme stream, killing a fully
+            # planned, fully synthesized job). The audio is real; fall back to proportional
+            # word timings by character length and keep the job alive.
+            del words[words_len_before:]
+            chunk_words = chunk_text.split()
+            total_ms = float(pred.sum()) / FRAMES_PER_SECOND * 1000
+            weights = [max(1, len(w)) for w in chunk_words]
+            wsum = float(sum(weights)) or 1.0
+            acc = elapsed_ms
+            for w, wt in zip(chunk_words, weights):
+                share = total_ms * (wt / wsum)
+                words.append(dict(word=w, startMs=acc, endMs=acc + share))
+                acc += share
+            logging.getLogger('kokoro_tts').warning('proportional word timings for %d-word chunk after: %s', len(chunk_words), map_error)
         # A1 fix round 1: pred[-1] is THIS chunk's own EOS predicted duration — real audio
         # that plays after this chunk's last phoneme. Attribute it to this chunk's last word
         # (same principle as the BOS lead-in above, applied per-chunk instead of only at the

@@ -34,5 +34,5 @@ test('LD7 cost + latency budgets: bounded validation and per-stage ceilings',()=
   assert.throws(()=>getCostBudget(NaN));
   assert.equal(getLatencyBudget('catalog'),20000);
   assert.equal(getLatencyBudget('critic'),60000);
-  assert.equal(getLatencyBudget('model'),90000);
+  assert.equal(getLatencyBudget('model'),150000);
 });

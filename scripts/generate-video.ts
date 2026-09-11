@@ -101,7 +101,9 @@ for (const {input, label: sourceLabel} of rawSources) {
     jobSource = input.kind === 'pdf'
       ? {kind: 'pdf', base64: input.base64, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)}
       : input.kind === 'url' ? {kind: 'url', url: input.url, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)}
-      : {kind: 'text', text: brief, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)};
+      // Preserve the prompt kind so the planner knows there is NO document to ground
+      // against (prompt-only lessons may use general knowledge — grounding is skipped).
+      : {kind: input.kind === 'prompt' ? 'prompt' : 'text', text: brief, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)};
   }
   for (const minutes of minutesList) {
     const label = `${slug(sourceLabel)}-${minutes}min`;

@@ -145,7 +145,9 @@ export function wrapText(text:string, maxWidth:number, fontSize:number, measure 
   // character-splitting applies only to a segment that alone still exceeds
   // maxWidth — so "one-million-token" breaks at hyphens, never "tok|en".
   const splitLongWord=(word:string):string[]=>{
-    const chunks=word.match(/[^-\s]+-?/g)??[word];
+    // Break at natural separators (hyphen, slash, underscore) before ever cutting a
+    // word mid-token — live SVGs showed "recurrence/conv|olution" and "parameter|s".
+    const chunks=word.match(/[^-\s/_]+[-/_]?/g)??[word];
     const out:string[]=[];let cur='';
     const pushChars=(s:string)=>{let part='';for(const c of s){if(measure(part+c,fontSize)>maxWidth&&part){out.push(part);part='';}part+=c;}if(part)out.push(part);};
     for(const ch of chunks){

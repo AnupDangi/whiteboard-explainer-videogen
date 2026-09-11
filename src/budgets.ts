@@ -48,6 +48,6 @@ export function getLatencyBudget(task:BudgetTask):number {
     case 'critic':return 60000;
     case 'figure':return 60000;
     case 'embed':return 120000;
-    default:return 90000;
+    default:return 150000; // model calls: heavy multi-chapter load can exceed 90s per call
   }
 }
