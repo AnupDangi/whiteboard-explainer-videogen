@@ -26,7 +26,9 @@ function looksLikeHeading(line:string):boolean {
   if(t.length<3||t.length>HEADING_MAX_CHARS)return false;
   if(/[.,;:!?]$/.test(t))return false;
   if(/^(figure|table|fig\.|algorithm|equation|appendix|references|acknowledg)/i.test(t)&&t.length>30)return false;
-  if(/^[(@]/.test(t)||/[%/=]/.test(t))return false;
+  // Live-run junk: dot-leader fragments ('. For'), axis glyphs ('Time ➔'), math markers.
+  if(!/^[A-Za-z0-9]/.test(t))return false;
+  if(/[^\p{L}\p{N}\s\-.,:'’()]/u.test(t))return false;
   const numbered=t.match(/^(\d+(\.\d+)*\.?\s+)/);
   const body=(numbered?t.slice(numbered[0].length):t).trim();
   if(!body)return false;
@@ -52,6 +54,9 @@ function looksLikeHeading(line:string):boolean {
   // Multi-word: title-case ("Post-Training Objectives") or ALL-CAPS ("SYSTEM OVERVIEW").
   const titleCase=body.split(/\s+/).every(w=>/^[A-Z][a-zA-Z-]*$/.test(w)||KNOWN_SECTIONS.test(w)||w.length<=2);
   const allCaps=body===body.toUpperCase()&&/[A-Z]/.test(body);
+  // A run of ≥4 all-title-case words is a table-header row of column names, not a
+  // section heading ("Training Costs Pre-Training Context Extension Post-Training").
+  if(titleCase&&words.length>=4&&!allCaps)return false;
   return titleCase||allCaps;
 }
 
@@ -187,7 +192,7 @@ export function renderMapForOutline(map:DocumentMap):string {
 
 // Map heuristic version: bump whenever the heading/junk heuristics change so cached
 // maps rebuild instead of serving a stale structure.
-const MAP_CACHE_VERSION='v2';
+const MAP_CACHE_VERSION='v3';
 export function mapCachePath(root:string,sha256:string):string {return join(root,`map-${MAP_CACHE_VERSION}-${sha256}.json`);}
 export async function readCachedMap(root:string,sha256:string):Promise<DocumentMap|null> {
   try {

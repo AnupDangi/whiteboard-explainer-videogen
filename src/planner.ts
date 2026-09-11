@@ -104,11 +104,14 @@ export function checkKeyPoints(scenes:LooseScene[],keyPoints:string[]):string[] 
   const overlap=wordsOverlap;
   // Exact claims plus harmless rewordings (≥70% word overlap); unrelated claims fail.
   const claimedBy=(kp:string)=>scenes.some(s=>s.nodes.some(n=>typeof n.keyPoint==='string'&&(n.keyPoint===kp||overlap(norm(n.keyPoint),norm(kp))>=0.7)));
-  const spoken=new Set(scenes.flatMap(s=>typeof s.narration==='string'?contentWords(s.narration):[]));
+  const spoken=scenes.flatMap(s=>typeof s.narration==='string'?contentWords(s.narration):[]);
   for(const kp of keyPoints){
     const words=contentWords(kp);
     if(!claimedBy(kp)){failures.push(`key point "${kp}" is never drawn (no node claims it)`);continue;}
-    const hit=words.filter(w=>spoken.has(w)).length;
+    // Prefix-tolerant coverage: narration writes word FORMS the key point abbreviates
+    // ("37B active" → narration "37B activated") — exact-token membership alone counted
+    // real coverage as a miss and churned the repair loop.
+    const hit=words.filter(w=>spoken.some(s=>s===w||(w.length>=4&&s.length>=4&&(s.startsWith(w)||w.startsWith(s))))).length;
     if(words.length&&hit/words.length<0.6)failures.push(`key point "${kp}" is drawn but barely narrated`);
   }
   for(const scene of scenes)for(const node of scene.nodes){

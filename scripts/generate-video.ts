@@ -94,7 +94,14 @@ for (const {input, label: sourceLabel} of rawSources) {
     }
     const brief = buildRichBrief({...ingested, figures}, {minutes: Math.max(...minutesList)});
     console.log('brief:', JSON.stringify(briefStats(ingested, brief, {minutes: Math.max(...minutesList)})));
-    jobSource = {kind: 'text', text: brief, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)};
+    // LD8 live-run fix: for pageable sources the job must receive the ORIGINAL source —
+    // replacing text with the brief destroyed page boundaries and made the LD2 map
+    // build from brief text (pages lost, routing quality down). Bare prompts keep the
+    // brief (they have no structure to preserve).
+    jobSource = input.kind === 'pdf'
+      ? {kind: 'pdf', base64: input.base64, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)}
+      : input.kind === 'url' ? {kind: 'url', url: input.url, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)}
+      : {kind: 'text', text: brief, name: `${ingested.kind}:${ingested.label}`.slice(0, 200)};
   }
   for (const minutes of minutesList) {
     const label = `${slug(sourceLabel)}-${minutes}min`;

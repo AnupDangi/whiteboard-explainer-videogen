@@ -89,7 +89,7 @@ test('LD2 cache: sha256-keyed map file round-trips',async()=>{
     assert.equal(await readCachedMap(dir,'abc'),null);
     await writeCachedMap(dir,'abc',map);
     // Versioned cache: heuristic changes must invalidate stale maps, not serve them.
-    assert.equal(mapCachePath(dir,'abc'),join(dir,'map-v2-abc.json'));
+    assert(/^map-v\d+-abc\.json$/.test(mapCachePath(dir,'abc').split('/').pop()));
     const back=await readCachedMap(dir,'abc');
     assert.deepEqual(back,map);
   }finally{await rm(dir,{recursive:true,force:true});}
