@@ -1,7 +1,7 @@
 import type {JobSnapshot,CompiledScene} from '../src/types.js';
 import {compileScene,renderSVG,sceneState,locateScene,durationOf,advancePlayback} from '../src/engine.js';
 const $=(id:string)=>document.getElementById(id) as any;
-const terminal=['complete','error','cancelled','interrupted'];
+const terminal=['complete','partial','error','cancelled','interrupted'];
 let scenes:CompiledScene[]=[],job:JobSnapshot|null=null,time=0,playing=false,last=0,poll:ReturnType<typeof setTimeout>|undefined=undefined,stalls=0,buffering=false,audioScene:string|null=null,audioTail=false,audioPending=false;
 const audio=$('audio');const format=(t:number)=>`${Math.floor(t/60000)}:${String(Math.floor(t/1000)%60).padStart(2,'0')}`;let lastDraw=0,transcriptScene:CompiledScene|null=null,activeWord=-1;
 function reportPlayback(type:string){
@@ -17,7 +17,7 @@ function draw(){
   if(transcriptScene!==scene){transcriptScene=scene;activeWord=-1;const spans=scene.timing.words.map((w,i)=>{const span=document.createElement('span');span.textContent=w.word+' ';if(i===state.activeWord)span.className='spoken';return span;});$('transcript').replaceChildren(...spans);}
   if(activeWord!==state.activeWord){$('transcript').children[activeWord]?.classList.remove('spoken');$('transcript').children[state.activeWord]?.classList.add('spoken');activeWord=state.activeWord;}
   $('seek').max=Math.max(1,durationOf(scenes));$('seek').value=time;$('clock').textContent=format(time)+' / '+format(durationOf(scenes));
-  $('timing').textContent=scene.audioUrl?(scene.timing.kind==='local-segment-aligned'?'Measured word segments · Python robot voice':'Provider alignment · narrated'):'Estimated timing · silent preview';
+  $('timing').textContent=scene.audioUrl?'Provider alignment · narrated':'Estimated timing · silent preview';
   $('play').textContent=playing?'Ⅱ Pause':'▶ Play';$('buffer-metric').textContent=stalls;
 }
 let audioGeneration=0;
@@ -70,7 +70,8 @@ async function request(path:string,options:RequestInit={}){
   return data;
 }
 function showJob(data:JobSnapshot){
-  job=data;scenes=data.scenes;$('title').textContent=data.title||(terminal.includes(data.status)?'Explanation unavailable':'Preparing your explanation…');$('status').textContent=data.status;
+  job=data;scenes=data.scenes;$('title').textContent=data.title||(terminal.includes(data.status)?'Explanation unavailable':'Preparing your explanation…');
+  const degraded=data.fallbackCount||0;$('status').textContent=degraded?`${data.status} · ${degraded} scene${degraded>1?'s':''} silent (Kokoro unavailable)`:data.status;
   $('ready-metric').textContent=`${scenes.length} / ${data.totalScenes||'?'}`;
   $('events').replaceChildren(...data.events.slice(-10).map(e=>{const li=document.createElement('li');li.textContent=(`${(e.atMs/1000).toFixed(1)}s  ${e.type}  · ${format(e.availableMs)} ready`);return li;}));
   const ended=terminal.includes(data.status);$('first-metric').textContent=data.firstPlayableMs===undefined?'—':(data.firstPlayableMs/1000).toFixed(1)+' s';$('cancel').disabled=ended;$('create').disabled=!ended;
@@ -90,7 +91,7 @@ $('generate').onsubmit=async (e:SubmitEvent)=>{
     const data=await request('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:$('mode').value,fixture:$('fixture').value,prompt:$('prompt').value,source,durationMinutes:Number($('duration').value),maxCostUsd:Number($('budget').value),delayMs:0,narration:$('narration').checked,ttsProvider:provider,voiceId,visualCritic:$('visual-critic').checked})});showJob(data);refresh(data.id);}catch(error){$('message').textContent=error instanceof Error?error.message:String(error);$('create').disabled=false;$('status').textContent='Error';$('title').textContent='Explanation could not be prepared';$('voice-message').textContent='';}
 };
 $('cancel').onclick=async()=>{if(job){await request('/api/jobs/'+job.id+'/cancel',{method:'POST'});clearTimeout(poll);await refresh(job.id);}};
-$('download').onclick=async()=>{if(!job||!['complete'].includes(job.status)){$('message').textContent='Job must be complete to export video';return;}$('message').textContent='Exporting MP4...';const resp=await fetch(`/api/export?job=${job.id}`,{method:'GET'});const result=await resp.json();if(!resp.ok||result.status!=='complete'){$('message').textContent=result.error||'Export failed';return;}// `result.output` is a server route (/output/<jobId>.mp4), not a filesystem path — a browser
+$('download').onclick=async()=>{if(!job||!['complete','partial'].includes(job.status)){$('message').textContent='Job must be complete to export video';return;}$('message').textContent='Exporting MP4...';const resp=await fetch(`/api/export?job=${job.id}`,{method:'GET'});const result=await resp.json();if(!resp.ok||result.status!=='complete'){$('message').textContent=result.error||'Export failed';return;}// `result.output` is a server route (/output/<jobId>.mp4), not a filesystem path — a browser
 // can only fetch the former, so anything else here is a broken link rather than a download.
 if(typeof result.output!=='string'||!result.output.startsWith('/')){$('message').textContent='Export returned an unfetchable path';return;}
 $('message').textContent='Downloading MP4...';const mpxLink=document.createElement('a');mpxLink.href=result.output;mpxLink.download=`${job.title||'explanation'}-${job.id?.slice(0,8)}.mp4`;document.body.appendChild(mpxLink);mpxLink.click();mpxLink.remove();$('message').textContent='MP4 exported and downloaded.';setTimeout(()=>{$('message').textContent='';},2000);};

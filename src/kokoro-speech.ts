@@ -15,16 +15,17 @@ const PERSISTENT_VENV_PYTHON = fileURLToPath(new URL('../../.kokoro-venv/bin/pyt
  *  guarded so concurrent callers share the same startup) and poll /health until it is.
  *  Falls back to KOKORO_PYTHON / plain python3 if the persistent venv isn't set up
  *  (run scripts/setup-kokoro.sh) — never silently substitutes a different voice. */
-let serverStarting: Promise<void> | null = null;
-function ensureServer(serverUrl: string, env: NodeJS.ProcessEnv, fetcher: typeof fetch): Promise<void> {
+let serverStarting: Map<string,Promise<void>> = new Map();
+export function ensureKokoroServer(serverUrl: string, env: NodeJS.ProcessEnv, fetcher: typeof fetch): Promise<void> {
   const health = () => fetcher(`${serverUrl}/health`, {signal: AbortSignal.timeout(1500)}).then(r => r.ok, () => false);
   return health().then(ok => {
     if (ok) return;
-    if (serverStarting) return serverStarting;
+    const pending = serverStarting.get(serverUrl);
+    if (pending) return pending;
     log('speech.server-starting', {provider: 'kokoro', serverUrl}, 'warn');
     const port = new URL(serverUrl).port || '8765';
     const python = existsSync(PERSISTENT_VENV_PYTHON) ? PERSISTENT_VENV_PYTHON : (env.KOKORO_PYTHON || 'python3');
-    serverStarting = new Promise((resolve, reject) => {
+    const started = new Promise<void>((resolve, reject) => {
       const child = spawn(python, [fileURLToPath(new URL('../../scripts/kokoro_server.py', import.meta.url)), '--port', port], {
         env, detached: true, stdio: 'ignore',
       });
@@ -39,8 +40,9 @@ function ensureServer(serverUrl: string, env: NodeJS.ProcessEnv, fetcher: typeof
         });
       };
       poll();
-    });
-    return serverStarting;
+    }).finally(() => serverStarting.delete(serverUrl));
+    serverStarting.set(serverUrl, started);
+    return started;
   });
 }
 
@@ -55,26 +57,35 @@ function classifyGap(timing:Timing):{gapClassification:string;activeAfterLastWor
   if(timing.trailingNonSilent)return{gapClassification:'non-silent-signal',activeAfterLastWordMs:gapMs};
   return{gapClassification:'silent-tail',activeAfterLastWordMs:gapMs};
 }
+export interface KokoroServerResult {audio:Buffer;timing:Timing;format:'wav';gapClassification:string;activeAfterLastWordMs:number}
+
+/** POST one synthesis to a specific worker URL and classify its trailing gap. Shared by
+ *  the single-server adapter and the bounded worker pool (src/tts-pool.ts); the deadline
+ *  is supplied by the caller so the pool can exclude queue-wait from service time. */
+export async function synthesizeAtServer(serverUrl:string,text:string,voiceId:string|undefined,signal:AbortSignal,fetcher:typeof fetch=fetch):Promise<KokoroServerResult> {
+  const started=performance.now();
+  const response=await fetcher(`${serverUrl}/synthesize`,{method:'POST',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({text,voice:voiceId||'af_heart'})});
+  const result=await response.json() as {audio_base64?:string;timing?:Timing;error?:string};
+  if(!response.ok||!result.audio_base64||!result.timing?.words?.length)throw new Error(result.error||`Kokoro server HTTP ${response.status}`);
+  const timing=result.timing as Timing;
+  const gapClassification=classifyGap(timing);
+  log('speech.alignment',{provider:'kokoro',gapMs:timing.durationMs-timing.words[timing.words.length-1].endMs,gapClassification:gapClassification.gapClassification,words:timing.words.length,trailingNonSilent:timing.trailingNonSilent});
+  log('speech.transport',{provider:'kokoro',via:'server',elapsedMs:Math.round(performance.now()-started)});
+  return {audio:Buffer.from(result.audio_base64,'base64'),timing,format:'wav' as const,gapClassification:gapClassification.gapClassification,activeAfterLastWordMs:gapClassification.activeAfterLastWordMs};
+}
+
 export function generateKokoroSpeech(text: string, {signal, env = process.env, voiceId, fetcher = fetch}: ProviderOptions & {fetcher?: typeof fetch} = {}) {
   const voice = voiceId || 'af_heart';
   log('speech.request', {provider: 'kokoro', voice, characters: text.length});
-  const started = performance.now();
   if (voiceId && !(KOKORO_VOICES as readonly string[]).includes(voiceId)) {
     return Promise.reject(new Error(`Unknown Kokoro voice ${voiceId}; use one of ${KOKORO_VOICES.join(', ')}`));
   }
   const serverUrl = (env.KOKORO_SERVER_URL || DEFAULT_SERVER_URL).replace(/\/+$/, '');
-  return ensureServer(serverUrl, env, fetcher).then(() => {
+  return ensureKokoroServer(serverUrl, env, fetcher).then(() => {
     const timeout = signal ? AbortSignal.any([signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000);
-    return fetcher(`${serverUrl}/synthesize`, {method: 'POST', signal: timeout, headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text, voice})}).then(
-      async response => {
-        const result = await response.json() as {audio_base64?: string; timing?: Timing; error?: string};
-        if (!response.ok || !result.audio_base64 || !result.timing?.words?.length) throw new Error(result.error || `Kokoro server HTTP ${response.status}`);
-        const timing=result.timing as Timing;
-        const gapClassification=classifyGap(timing);
-        log('speech.alignment', {provider: 'kokoro', gapMs:timing.durationMs-timing.words[timing.words.length-1].endMs, gapClassification:gapClassification.gapClassification, words:timing.words.length, trailingNonSilent:timing.trailingNonSilent});
-        log('speech.transport', {provider: 'kokoro', via: 'server', elapsedMs: Math.round(performance.now() - started)});
-        return {audio: Buffer.from(result.audio_base64, 'base64'), timing, format: 'wav' as const, _gapClassification:gapClassification.gapClassification, _activeAfterLastWordMs:gapClassification.activeAfterLastWordMs};
-      },
-    );
+    return synthesizeAtServer(serverUrl, text, voice, timeout, fetcher).then(r => ({
+      audio: r.audio, timing: r.timing, format: r.format,
+      _gapClassification: r.gapClassification, _activeAfterLastWordMs: r.activeAfterLastWordMs,
+    }));
   });
 }

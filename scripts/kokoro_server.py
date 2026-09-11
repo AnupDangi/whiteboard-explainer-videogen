@@ -12,14 +12,20 @@ Usage:
 
 Threaded: concurrent scene requests serialize on kokoro-mlx's internal lock,
 which is still far cheaper than one model load per scene.
+
+Reliability: the Metal buffer pool is capped/released per request (KOKORO_CACHE_LIMIT_MB,
+KOKORO_CLEAR_CACHE) and the worker self-recycles after KOKORO_RECYCLE_AFTER requests so
+residual growth can never accumulate into the swap-thrash that stalled multi-chapter jobs.
 """
 import json
 import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kokoro_tts import ALLOWED_VOICES, get_tts, synthesize  # noqa: E402
+from kokoro_tts import ALLOWED_VOICES, cache_stats, get_tts, release_cache, synthesize  # noqa: E402
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -38,7 +44,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/health':
-            self._json(200, {'ok': True, 'model': 'kokoro-82M-mlx', 'voices': list(ALLOWED_VOICES)})
+            stats = cache_stats()
+            self._json(200, {'ok': True, 'model': 'kokoro-82M-mlx', 'voices': list(ALLOWED_VOICES),
+                             'requests_served': self.server.requests, 'uptime_s': int(time.monotonic() - self.server.started),
+                             **stats})
         else:
             self._json(404, {'error': 'unknown endpoint'})
 
@@ -53,9 +62,17 @@ class Handler(BaseHTTPRequestHandler):
             request = json.loads(self.rfile.read(length) or b'{}')
             result = synthesize(request['text'], request.get('voice') or 'af_heart',
                                 float(request.get('speed') or 1.0), tts=self.server.tts)
+            self.server.requests += 1
             self._json(200, result)
         except Exception as error:
             self._json(500, {'error': 'Kokoro TTS failed: %s' % error})
+        finally:
+            release_cache()
+            recycle_after = int(os.environ.get('KOKORO_RECYCLE_AFTER', '0'))
+            if recycle_after > 0 and self.server.requests >= recycle_after:
+                # Exit after sending the response; the supervisor (scripts/kokoro_pool.sh)
+                # restarts this port with a clean process and a fresh buffer pool.
+                Thread(target=self.server.shutdown, daemon=True).start()
 
 
 def main():
@@ -68,8 +85,13 @@ def main():
     print('Voices: %s' % (', '.join(sorted(tts.list_voices()))[:200]), flush=True)
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     server.tts = tts
+    server.requests = 0
+    server.started = time.monotonic()
     print('Kokoro server on http://127.0.0.1:%d' % port, flush=True)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        release_cache(force=True)
 
 
 if __name__ == '__main__':

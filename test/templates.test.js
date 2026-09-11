@@ -53,6 +53,10 @@ test('V3-4 templates: unknown template values fail validation and merge',async()
     return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`A${i}`,narration:words,nodes:[{id:'a',label:'Point one',anchor:'term_0',keyPoint:'Point one',evidenceIds:[evId]},{id:'b',label:'Point two',anchor:'term_45',keyPoint:'Point two',evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
   // The unknown template fails every director attempt at merge; after the retry budget the
-  // chapter ends in the loud fallback failure — never a silently template-less commit.
-  await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env,fetcher,durationMinutes:1})){ }},/fallback exhausted|unknown template/);
+  // chapter degrades to the deterministic fallback — and the invalid value is never committed
+  // as that template.
+  const plans=[];
+  for await(const p of generateChapters(source,{env,fetcher,durationMinutes:1}))plans.push(p);
+  assert.equal(plans.length,1,'chapter commits via the deterministic fallback');
+  assert(plans[0].scenes.every(s=>s.template===undefined),'the rejected template value is not silently committed');
 });

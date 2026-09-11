@@ -11,7 +11,7 @@ export type SceneTemplate='tls_handshake'|'supply_demand'|'attention_matrix'|'dn
 export interface Scene { id: string; title: string; narration: string; layout: LayoutName; nodes: PlanNode[]; edges: PlanEdge[]; note?: string; beats?: Beat[]; template?: SceneTemplate }
 export interface Plan { version: 1; title: string; scenes: Scene[] }
 export interface Timing { kind: string; words: {word:string;startMs:number;endMs:number}[]; durationMs:number; gapMs?:number; trailingNonSilent?:boolean }
-export interface Usage { model:string; promptTokens:number; completionTokens:number; cachedTokens:number; costUsd:number; calls:number; spans?: PlannerSpans }
+export interface Usage { model:string; promptTokens:number; completionTokens:number; cachedTokens:number; costUsd:number; calls:number; repairs?:number; spans?: PlannerSpans }
 /** Phase 0 timing spans: wall ms per planner stage, accumulated across attempts. */
 export interface PlannerSpans { outlineMs:number; chapters:Record<string,{contentMs:number;directorMs:number}> }
 /** Persisted per-job spans: planner stages plus per-scene TTS wall ms. */
@@ -33,6 +33,9 @@ export interface CompiledScene extends Scene { nodes:CompiledNode[]; edges:Compi
 export interface JobSnapshot {
  id:string;status:string;revision:number;createdAt:number;mode:string;targetMinutes:number;plannerBudgetUsd:number;ttsCharacters:number;timingMode:string;simulatedDelayMs:number;scenes:CompiledScene[];availableMs:number;events:{sequence:number;type:string;atMs:number;availableMs:number}[];
   title?:string;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;actualMinutes?:number;error?:string;errorKind?:string;usage?:Usage;source?:Omit<SourceDocument,'text'>&{characters:number};spans?:JobSpans;manifestVersion?:string;
+  /** TTS reliability: scenes that fell back to estimated (silent) timing, with reasons.
+   *  Their CompiledScene.timing.kind is 'estimated' and the UI labels them explicitly. */
+  degradedScenes?:Array<{id:string;reason:string}>; fallbackCount?:number; repairCount?:number;
 }
 export interface InternalJob extends JobSnapshot {controller?:AbortController;task?:Promise<void>}
 export interface ProviderOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;voiceId?:string}

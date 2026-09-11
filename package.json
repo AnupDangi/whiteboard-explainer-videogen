@@ -18,6 +18,8 @@
     "generate-video": "npm run build && node --env-file-if-exists=.env dist/scripts/generate-video.js",
     "kokoro:setup": "sh scripts/setup-kokoro.sh",
     "kokoro-server": "sh -c '${KOKORO_PYTHON:-.kokoro-venv/bin/python} scripts/kokoro_server.py'",
+    "kokoro-pool": "sh scripts/kokoro_pool.sh",
+    "bench:tts": "npm run build && node dist/scripts/bench-tts.js",
     "router:report": "npm run build && node dist/scripts/router-report.js"
   },
   "optionalDependencies": {

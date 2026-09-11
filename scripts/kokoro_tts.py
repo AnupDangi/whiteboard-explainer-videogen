@@ -12,6 +12,7 @@ import base64
 import io
 import json
 import logging
+import os
 import sys
 import wave
 
@@ -28,6 +29,10 @@ def fail(message):
 # model load once; the stdio bridge below passes nothing and keeps per-spawn
 # behavior unchanged.
 _TTS = None
+# G2P is expensive to construct (spacy pipeline) and identical per language variant,
+# but synthesize() used to build a fresh one per request. Cache one per british flag.
+_G2P = {}
+_MEMORY_CONFIGURED = False
 
 
 def get_tts():
@@ -35,7 +40,61 @@ def get_tts():
     if _TTS is None:
         from kokoro_mlx import KokoroTTS
         _TTS = KokoroTTS.from_pretrained()
+        configure_memory()
     return _TTS
+
+
+def get_g2p(voice):
+    british = voice.startswith('bf_') or voice.startswith('bm_')
+    key = 'british' if british else 'american'
+    if key not in _G2P:
+        from misaki import en
+        _G2P[key] = en.G2P(british=british)
+    return _G2P[key]
+
+
+def configure_memory():
+    """Cap MLX's Metal buffer pool once per process. Without a cap the pool grows
+    monotonically in a long-lived server (17 GB observed for an 82M bf16 model),
+    which forces the host into swap and degrades every later synthesis. Config is
+    env-overridable; 0 disables the cap (A/B baseline)."""
+    global _MEMORY_CONFIGURED
+    if _MEMORY_CONFIGURED:
+        return
+    try:
+        import mlx.core as mx
+        limit_mb = int(os.environ.get('KOKORO_CACHE_LIMIT_MB', '1024'))
+        if limit_mb > 0:
+            mx.set_cache_limit(limit_mb * 1024 * 1024)
+    except Exception:
+        pass
+    _MEMORY_CONFIGURED = True
+
+
+def release_cache(force=False):
+    """Return freed Metal buffers to the system. The buffer pool is already bounded by
+    `mx.set_cache_limit` (KOKORO_CACHE_LIMIT_MB) — measured: cap-only holds cache at the
+    limit with the best throughput, while clearing every request only adds re-allocation
+    cost. So per-request clear is OFF by default; keep it as an escape hatch and use
+    force=True at shutdown. `KOKORO_CLEAR_CACHE=1` re-enables per-request clearing."""
+    if os.environ.get('KOKORO_CLEAR_CACHE', '0') == '0' and not force:
+        return
+    try:
+        import mlx.core as mx
+        threshold = int(os.environ.get('KOKORO_CLEAR_THRESHOLD_MB', '256')) * 1024 * 1024
+        if force or mx.get_cache_memory() > threshold:
+            mx.clear_cache()
+    except Exception:
+        pass
+
+
+def cache_stats():
+    try:
+        import mlx.core as mx
+        return dict(cache_mb=round(mx.get_cache_memory() / 1048576, 1),
+                    peak_mb=round(mx.get_peak_memory() / 1048576, 1))
+    except Exception:
+        return dict(cache_mb=None, peak_mb=None)
 
 
 def flatten(tokens):
@@ -57,7 +116,6 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
     import numpy as np
     import mlx.core as mx
     from kokoro_mlx.phonemize import _SENTENCE_BOUNDARY, _MAX_TOKENS
-    from misaki import en
 
     if tts is None:
         tts = get_tts()
@@ -68,7 +126,7 @@ def synthesize(text, voice='af_heart', speed=1.0, tts=None):
     voices = tts._voices
     voice_array = voices.load_voice(voice)
     phonemizer = tts._get_phonemizer('en-us', voice)
-    g2p = en.G2P(british=voice.startswith('bf_') or voice.startswith('bm_'))
+    g2p = get_g2p(voice)
 
     # Mirror phonemize_long chunking exactly: accumulate sentences until the
     # phoneme window would overflow, then flush. Chunk texts drive both the

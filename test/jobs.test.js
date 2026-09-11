@@ -4,7 +4,7 @@ import {mkdtemp,rm,writeFile,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {JobStore} from '../dist/src/jobs.js';
+import {JobStore,classifyError} from '../dist/src/jobs.js';
 import {makeServer} from '../dist/src/server.js';
 const options={mode:'fixture',fixture:'attention',delayMs:30,narration:false};
 async function setup(t,providers={}){const root=await mkdtemp(join(tmpdir(),'canvas-test-'));const store=new JobStore(root,providers);t.after(async()=>{await store.close();await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:50});});return {store,root};}
@@ -19,18 +19,24 @@ test('H22 cancelling during a delay stops future scene commits',async t=>{
   const {store}=await setup(t);const j=await store.create({...options,delayMs:150});await store.cancel(j.id);
   const result=await store.get(j.id);assert.equal(result.status,'cancelled');assert.equal(result.scenes.length,0);
 });
-test('H22 a failing scene stops later commits but preserves earlier ones',async t=>{
-  // Scene tasks now run concurrently (bounded), so a call-count trigger would be order-fragile;
-  // fail deterministically on the 'qkv' scene's own narration instead, regardless of firing order.
+test('H22 a failing TTS scene degrades to estimated timing; later scenes still commit',async t=>{
+  // Scene tasks run concurrently (bounded); fail deterministically on the 'qkv' scene's
+  // own narration. Per harness §56 a TTS failure must not kill the job: the scene is
+  // committed with explicitly-estimated (silent) timing and the failure stays visible.
   const {store}=await setup(t,{speech:async text=>{
     if(text.includes('learned vectors, not literal questions'))throw new Error('Synthetic outage');
     const {estimateTiming}=await import('../dist/src/engine.js');return {audio:Buffer.from('test'),timing:estimateTiming(text)};
   }});
   const j=await store.create({...options,delayMs:0,narration:true});await store.jobs.get(j.id).task;
-  const result=await store.get(j.id);assert.equal(result.status,'error');assert.match(result.error,/Synthetic outage/);
-  const ids=result.scenes.map(s=>s.id);
-  assert.deepEqual(ids,['context'].slice(0,ids.length));
-  assert(!ids.includes('qkv')&&!ids.includes('weights')&&!ids.includes('combine'));
+  const result=await store.get(j.id);
+  assert.equal(result.status,'partial','degraded scene makes the job partial, never a silent success');
+  assert.equal(result.scenes.length,4,'later scenes still commit');
+  assert.equal(result.fallbackCount,1);
+  assert.deepEqual(result.degradedScenes.map(d=>d.id),['qkv']);
+  assert.match(result.degradedScenes[0].reason,/Synthetic outage/);
+  const qkv=result.scenes.find(s=>s.id==='qkv');
+  assert.equal(qkv.timing.kind,'estimated');
+  assert.equal(qkv.audioUrl,undefined);
 });
 test('H22 restart reports interrupted work, preserves committed snapshots',async t=>{
   const {store,root}=await setup(t);const id='11111111-1111-1111-1111-111111111111';await mkdir(join(root,id));
@@ -54,10 +60,15 @@ test('Voice selection reaches speech adapter and preparation events are persiste
   const job=await store.get(j.id);assert.equal(job.status,'complete');assert.deepEqual(calls,['chosen','chosen','chosen','chosen']);assert(job.events.some(e=>e.type==='speech-started'));
   await assert.rejects(store.create({...options,ttsProvider:'invalid'}),/Unknown TTS/);
 });
-test('Quota errors remain visible failures instead of successful silent jobs',async t=>{
+test('Quota errors remain visible: degraded scenes are marked, never a silent success',async t=>{
   const {store}=await setup(t,{speech:async()=>{throw new Error('Speech HTTP 402 quota');}});
   const j=await store.create({...options,delayMs:0,narration:true});await store.jobs.get(j.id).task;
-  const job=await store.get(j.id);assert.equal(job.status,'error');assert.equal(job.scenes.length,0);assert.match(job.error,/402/);
+  const job=await store.get(j.id);
+  assert.equal(job.status,'partial','a provider failure is never reported as a clean complete job');
+  assert.equal(job.scenes.length,4);
+  assert.equal(job.fallbackCount,4);
+  assert.match(job.degradedScenes[0].reason,/402/);
+  assert(job.scenes.every(s=>s.timing.kind==='estimated'&&!s.audioUrl),'every degraded scene is explicitly estimated and silent');
 });
 test('A6: job snapshot is stamped with the generation manifest version',async t=>{
   const {store}=await setup(t);
@@ -66,4 +77,13 @@ test('A6: job snapshot is stamped with the generation manifest version',async t=
   assert(job.manifestVersion.length>0);
   const fetched=await store.get(job.id);
   assert.equal(fetched.manifestVersion,job.manifestVersion,'the stamped version survives a save/reload round trip');
+});
+test('failure taxonomy: timeout, truncation, refusal and model-schema errors are distinguishable',()=>{
+  assert.equal(classifyError('The operation was aborted due to timeout'),'timeout');
+  assert.equal(classifyError('Model output truncated at 3000 tokens'),'provider-truncated');
+  assert.equal(classifyError('Provider returned no completion (finish_reason=length)'),'provider-truncated');
+  assert.equal(classifyError('Provider content filter blocked this request'),'provider-refused');
+  assert.equal(classifyError('Invalid conceptId (node c)'),'plan');
+  assert.equal(classifyError('Speech HTTP 402 quota'),'speech');
+  assert.equal(classifyError('something entirely new'),'unknown');
 });

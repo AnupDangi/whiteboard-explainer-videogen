@@ -15,7 +15,7 @@ let sharp;
 try{sharp=(await import('sharp')).default;}catch{throw new Error('MP4 export requires optional sharp. Run npm install and install FFmpeg.');}
 const source=input?JSON.parse(await readFile(resolve(input),'utf8')):fixtures[option('--fixture','attention')!];
 if(!source)throw new Error('Unknown fixture');
-if(input&&source.status&&source.status!=='complete')throw new Error('Export requires a complete job');
+if(input&&source.status&&!['complete','partial'].includes(source.status))throw new Error('Export requires a complete or partial job');
 const plan=validatePlan({version:1,title:source.title,scenes:source.scenes});
 const scenes=plan.scenes.map((s,i)=>{
   const timing=source.scenes[i].timing;

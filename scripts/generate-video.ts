@@ -127,20 +127,20 @@ for (const {input, label: sourceLabel} of rawSources) {
         console.log(`Job ${created.id} started (target ${minutes} min, narration ${narrate ? 'on' : 'off'})`);
         await store.jobs.get(created.id)!.task;
         const job = await store.get(created.id);
-        if (!job || job.status !== 'complete') {
+        if (!job || (job.status !== 'complete' && job.status !== 'partial')) {
           lastError = job?.error || job?.status || 'unknown error';
           console.error(`✗ ${label} attempt ${attempt}: ${lastError}`);
           continue;
         }
-        console.log(`Job ${job.id} complete: ${job.scenes.length} scenes, ${(job.availableMs / 1000).toFixed(1)}s, $${job.usage?.costUsd.toFixed(4) ?? '0'} planning cost`);
+        console.log(`Job ${job.id} ${job.status}: ${job.scenes.length} scenes, ${(job.availableMs / 1000).toFixed(1)}s, $${job.usage?.costUsd.toFixed(4) ?? '0'} planning cost${job.fallbackCount ? `, ${job.fallbackCount} silent-fallback scene(s)` : ''}`);
         const jobPath = resolve('.data', job.id, 'job.json');
         const outPath = join(outDir, `${label}.mp4`);
         console.log(`=== ${label}: exporting to ${outPath} ===`);
         await runExport(jobPath, outPath);
         results.push({
-          source: sourceLabel, minutes, status: 'complete', jobId: job.id, output: outPath, attempts: attempt,
+          source: sourceLabel, minutes, status: job.status, jobId: job.id, output: outPath, attempts: attempt,
           actualMinutes: job.actualMinutes, sceneCount: job.scenes.length, model: job.usage?.model,
-          enriched: enrich, tts: ttsProvider,
+          enriched: enrich, tts: ttsProvider, fallbackCount: job.fallbackCount ?? 0,
           usage: job.usage, elapsedMs: Date.now() - startedAt,
         });
         console.log(`✓ ${label}: saved ${outPath}`);
@@ -156,4 +156,4 @@ for (const {input, label: sourceLabel} of rawSources) {
 await store.close();
 console.log('\n=== Summary ===');
 console.log(JSON.stringify(results, null, 2));
-if (results.some(r => r.status !== 'complete')) process.exitCode = 1;
+if (results.some(r => !['complete','partial'].includes(r.status as string))) process.exitCode = 1;

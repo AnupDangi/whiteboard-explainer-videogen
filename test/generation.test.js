@@ -92,7 +92,7 @@ test('A transient failure on the very first content/director call retries in pla
  // full chapter regeneration (re-running outline-independent work from scratch) would cause.
  assert.equal(requests.length,5);
 });
-test('Exhausted director retries fail loudly instead of shipping all-generic boxes',async()=>{
+test('Exhausted director retries degrade to a validated deterministic fallback, never a dead job',async()=>{
   const reply=(result)=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:10,completion_tokens:10,cost:0.00001}});
   const requests=[];
   const fetcher=async(url,options)=>{
@@ -105,10 +105,13 @@ test('Exhausted director retries fail loudly instead of shipping all-generic box
     const evId=content.source&&Array.isArray(content.source.evidenceChunks)&&content.source.evidenceChunks.length?content.source.evidenceChunks[0].id:'p1:c1';
     return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`Aspect ${i}`,narration:words,nodes:[{id:'a',label:'Core idea',anchor:'term_0',keyPoint:'Core idea point',evidenceIds:[evId]},{id:'b',label:'Working example',anchor:'term_45',keyPoint:'Working example point',evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
   };
-  await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1})){ }},/fallback exhausted/);
-  // 1 outline + [1 content + 3 failed director attempts] × 2 chapter regenerations;
-  // no silent fallback commit on either pass.
-  assert.equal(requests.length,9);
+  const plans=[];
+  for await(const p of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1}))plans.push(p);
+  assert.equal(plans.length,1,'the chapter commits via the deterministic fallback');
+  assert.equal(plans[0].scenes.length,2);
+  assert(plans[0].scenes.every(s=>s.layout==='flow'),'fallback uses the safe flow topology');
+  // 1 outline + 1 content + 3 director attempts (1 call + 2 repairs) — single pass, no dead job.
+  assert.equal(requests.length,5);
 });
 test('Auto-director: mappable labels skip the director LLM call entirely',async()=>{
   const autoSource={kind:'text',label:'t',text:'The user request goes to the database storage. A token model reads the file quickly.',sha256:'auto'};
@@ -237,4 +240,24 @@ test('A5: a single-scene critic repair validates and actually applies (was previ
   for await(const p of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1,visualCritic:true}))scenes.push(...p.scenes);
   assert.equal(repairCalls,2,'the critic requested a repair for both scenes and each repair call validated (1-scene schema)');
   assert(scenes.every(s=>s.nodes[0].kind==='success'),'the repaired kind actually reached the committed scene, not just the repair response');
+});
+test('Quality-gate exhaustion commits a structurally valid chapter instead of returning 0 scenes',async()=>{
+  // Structure is valid (2 scenes, anchors, edges) but the node claims share no words with the
+  // cited evidence chunk, so grounding fails every attempt. The last-resort path must commit
+  // the chapter with the findings logged, never fail the whole job with nothing playable.
+  const src={kind:'text',label:'g',text:'Alpha beta gamma. Delta epsilon zeta.',sha256:'g'};
+  const reply=(result)=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:10,completion_tokens:10,cost:0.00001}});
+  const fetcher=async(url,options)=>{
+    if(url.endsWith('/models'))return Response.json({data:[{id:'test/model',pricing:{prompt:'0.0000001',completion:'0.0000004'}}]});
+    const body=JSON.parse(options.body);const content=JSON.parse(body.messages[1].content);
+    if(content.chapterCount)return reply({paperTitle:'P',centralQuestion:'Q',workedExample:{entity:'E',numbers:['1']},visualInventory:[],title:'O',chapters:[{title:'T',objective:'E',arc:'hook',keyPoints:['unrelated phrase']}]});
+    if(content.scenes)return reply({scenes:content.scenes.map(s=>({id:s.id,layout:'flow',nodes:s.nodes.map((n,j)=>({id:n.id,kind:j%2?'generic':'database',emphasis:false,...(j%2?{}:{shape:'icon'})}))}))});
+    const words='unrelated phrase disjoint '+Array.from({length:60},(_,i)=>`zz${i}`).join(' ');
+    const evId=content.source.evidenceChunks[0].id;
+    return reply({version:1,title:'D',scenes:[0,1].map(i=>({id:`s${i}`,title:`A${i}`,narration:words,nodes:[{id:'a',label:'unrelated phrase',anchor:'zz0',keyPoint:'unrelated phrase',evidenceIds:[evId]},{id:'b',label:'disjoint',anchor:'zz45',keyPoint:'unrelated phrase',evidenceIds:[evId]}],edges:[{from:'a',to:'b',label:'causes'}],note:''}))});
+  };
+  const plans=[];
+  for await(const p of generateChapters(src,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1}))plans.push(p);
+  assert.equal(plans.length,1,'chapter committed despite the persistent grounding finding');
+  assert.equal(plans[0].scenes.length,2);
 });

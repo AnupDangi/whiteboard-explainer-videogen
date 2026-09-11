@@ -12,17 +12,23 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {fixtures} from './fixtures.js';
 import {validatePlan,compileScene,durationOf} from './engine.js';
 import {generateKokoroSpeech} from './kokoro-speech.js';
+import {createTtsPool,poolUrlsFromEnv} from './tts-pool.js';
 import {generateSpeech} from './providers.js';
 import {semaphore} from './concurrency.js';
 import {staticIntervalMs,connectorThroughNode} from './progression.js';
 
 /** P5 failure taxonomy: one coarse kind per job failure so later evaluation can group
- *  and count them without regex archaeology over error messages. */
-function classifyError(message:string):string {
+ *  and count them without regex archaeology over error messages. Ordered most-specific
+ *  first: a transport timeout is a timeout even though the message says "operation
+ *  was aborted"; a truncated completion is not a content refusal. */
+export function classifyError(message:string):string {
+  if(/aborted due to timeout|TimeoutError/i.test(message))return 'timeout';
+  if(/content filter|provider refused/i.test(message))return 'provider-refused';
+  if(/truncated|incomplete or refused|finish_reason/i.test(message))return 'provider-truncated';
   if(/Source|PDF|HTTPS|redirect|Link must|readable|OCR/i.test(message))return 'source';
-  if(/Anchor|outline|Expected two scenes|Chapter contains|Teaching checks|Visual checks|fallback exhausted|budget/i.test(message))return 'plan';
-  if(/schema|OpenRouter|HTTP \d/i.test(message))return 'provider';
   if(/Speech|Kokoro|TTS|ElevenLabs/i.test(message))return 'speech';
+  if(/Anchor|outline|Expected two scenes|Chapter contains|Teaching checks|Visual checks|fallback exhausted|budget|Invalid (conceptId|evidenceIds|visualIntent|node|kind)/i.test(message))return 'plan';
+  if(/schema|OpenRouter|HTTP \d/i.test(message))return 'provider';
   if(/ffmpeg|sharp|export/i.test(message))return 'media';
   return 'unknown';
 }
@@ -83,23 +89,49 @@ export class JobStore {
     // on completion or failure alongside the planner spans already on job.usage.
     const ttsMsByScene:Record<string,number>={};
     const persistSpans=()=>{job.spans={...job.usage?.spans,ttsMsByScene:{...ttsMsByScene}};};
-    // Phase 12: overlap TTS with the Visual Director call instead of waiting for it. The
-    // director only decides kind/shape/layout — narration text is already final the moment
-    // the Teaching Planner (content stage) validates, so there's no real reason TTS has to
-    // wait ~8s for a call that produces visual metadata TTS never reads. Only wired for
-    // kokoro (free/local): starting a speculative ElevenLabs call before a chapter is fully
-    // committed would burn paid API usage on content a later regeneration might discard.
-    // Correctness: keyed by (sceneId, narration) so a stale speculative result (from an
-    // earlier CHAPTER_REGENERATIONS attempt whose narration differs) is never reused — the
-    // real call below falls back to a fresh synth if the text doesn't match.
-    const speculativeSpeech=new Map<string,{narration:string;promise:Promise<{audio:Buffer;timing:Timing;format?:'wav'|'mp3'}>}>();
-    const onContentReady=(options.narration&&options.ttsProvider!=='elevenlabs')
-      ?(_chapter:number,scenes:Array<{id:string;narration:string}>)=>{
-          for(const s of scenes){
-            const speech=(this.providers.speech||generateKokoroSpeech)(s.narration,{signal,voiceId:options.voiceId});
-            speech.catch(()=>{}); // real consumer (below) reports the failure; this just prevents an unhandled-rejection warning if it's never awaited (stale/discarded)
-            speculativeSpeech.set(s.id,{narration:s.narration,promise:speech});
-          }
+    // TTS reliability: one bounded, priority-ordered Kokoro pool per job. The old fan-out
+    // fired all 20 scenes at one serialized server and the tail tripped a fixed deadline,
+    // killing a fully planned job. This pool caps in-flight work at one request per worker,
+    // dispatches by chapter/scene order so scene 1 is first, and measures queue wait and
+    // service time separately. Character reservation moves to enqueue, so speculative
+    // synthesis can no longer blow TTS_MAX_CHARACTERS_PER_JOB before the cap is checked.
+    const usePool=!!(options.narration&&options.ttsProvider!=='elevenlabs');
+    const pool=usePool?createTtsPool({
+      urls:poolUrlsFromEnv(process.env),
+      env:process.env,
+      ...(this.providers.speech?{synthesize:(_url:string,text:string,voice:string|undefined,signal:AbortSignal)=>this.providers.speech!(text,{signal,voiceId:voice})}:{}),
+      onEvent:(event,data)=>log(event,data),
+    }):null;
+    const reservedByScene=new Map<string,number>();
+    const reserveCharacters=(sceneId:string,chars:number):boolean=>{
+      const prev=reservedByScene.get(sceneId)||0;
+      const next=job.ttsCharacters-prev+chars;
+      const cap=Number(process.env.TTS_MAX_CHARACTERS_PER_JOB||40000);
+      if(!Number.isFinite(cap)||next>cap)return false;
+      job.ttsCharacters=next;reservedByScene.set(sceneId,chars);return true;
+    };
+    const releaseCharacters=(sceneId:string):void=>{
+      const prev=reservedByScene.get(sceneId);if(prev===undefined)return;
+      job.ttsCharacters=Math.max(0,job.ttsCharacters-prev);reservedByScene.delete(sceneId);
+    };
+    // Phase 12: overlap TTS with the Visual Director call. Narration is immutable the moment
+    // content validates. Keyed by (sceneId, narration) so a stale speculative result from a
+    // regenerated chapter is never reused; regenerating cancels the superseded pool entry so
+    // a discarded narration stops holding a worker.
+    const speculativeSpeech=new Map<string,{narration:string;promise:Promise<{audio:Buffer;timing:Timing;format?:'wav'|'mp3'}>;priority:number}>();
+    const onContentReady=usePool&&pool
+      ?(chapter:number,scenes:Array<{id:string;narration:string}>)=>{
+          scenes.forEach((s,i)=>{
+            const priority=chapter*100+i;
+            if(speculativeSpeech.has(s.id))pool.cancel(s.id);
+            if(!reserveCharacters(s.id,s.narration.length)){
+              log('speech.characters-exceeded',{sceneId:s.id,cap:Number(process.env.TTS_MAX_CHARACTERS_PER_JOB||40000)},'warn');
+              return;
+            }
+            const promise=pool.enqueue({key:s.id,priority,text:s.narration,voice:options.voiceId});
+            promise.catch(()=>{}); // the commit path consumes it; prevent an unhandled rejection for discarded results
+            speculativeSpeech.set(s.id,{narration:s.narration,promise,priority});
+          });
         }
       :undefined;
     try {
@@ -159,21 +191,23 @@ export class JobStore {
               const delayMs=options.delayMs??0;
               log('scene.started',{sceneId:source.id,characters:source.narration.length,simulatedDelayMs:delayMs});
               await delay(delayMs,undefined,{signal});
-              let timing,audioUrl;
+              let timing,audioUrl,degradedReason:string|undefined;
               if(options.narration) {
-                // Synchronous check-then-reserve: no await between reading and writing
-                // job.ttsCharacters, so this stays race-free across concurrent scene tasks.
-                const nextCharacters=job.ttsCharacters+source.narration.length;
-                const characterCap=Number(process.env.TTS_MAX_CHARACTERS_PER_JOB||40000);
-                if(!Number.isFinite(characterCap)||nextCharacters>characterCap)throw new Error('Narration character budget exceeded');
-                job.ttsCharacters=nextCharacters;
+                // Reserve synchronously (idempotent per scene — the speculative enqueue
+                // already reserved; this adjusts if narration changed). A breach is fatal.
+                if(!reserveCharacters(source.id,source.narration.length))throw new Error('Narration character budget exceeded');
                 await queueSave('speech-started');
                 try {
                   const speechStarted=performance.now();
-                  const speculative=speculativeSpeech.get(source.id);
-                  const speech=await (speculative&&speculative.narration===source.narration
-                    ? speculative.promise
-                    : (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateKokoroSpeech))(source.narration,{signal,voiceId:options.voiceId}));
+                  let speech:{audio:Buffer;timing:Timing;format?:'wav'|'mp3'};
+                  if(pool){
+                    const speculative=speculativeSpeech.get(source.id);
+                    speech=await ((speculative&&speculative.narration===source.narration)
+                      ? speculative.promise
+                      : pool.enqueue({key:source.id,priority:plan.scenes.indexOf(source),text:source.narration,voice:options.voiceId}));
+                  } else {
+                    speech=await (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateKokoroSpeech))(source.narration,{signal,voiceId:options.voiceId});
+                  }
                   signal.throwIfAborted();timing=speech.timing;
                   ttsMsByScene[source.id]=Math.round(performance.now()-speechStarted);
                   log('speech.ready',{sceneId:source.id,elapsedMs:ttsMsByScene[source.id],bytes:speech.audio.length,format:speech.format||'mp3',words:speech.timing.words.length,timing:speech.timing.kind,durationMs:speech.timing.durationMs});
@@ -181,8 +215,13 @@ export class JobStore {
                   await writeFile(join(this.root,job.id,`${source.id}.${extension}`),speech.audio);
                   audioUrl=`/media/${job.id}/${source.id}.${extension}`;
                 } catch(e){
-                  const msg=e instanceof Error?e.message:String(e);
-                  throw new Error(msg);
+                  // Harness §56: a TTS failure degrades to explicitly-estimated (silent)
+                  // timing and the job continues — never a robot voice, never a dead job.
+                  degradedReason=e instanceof Error?e.message:String(e);
+                  releaseCharacters(source.id);
+                  job.fallbackCount=(job.fallbackCount||0)+1;
+                  (job.degradedScenes??=[]).push({id:source.id,reason:degradedReason});
+                  log('speech.fallback',{sceneId:source.id,reason:degradedReason,timingMode:'estimated'},'warn');
                 }
               }
               const scene=compileScene(source,timing);log('scene.compiled',{sceneId:source.id,nodes:scene.nodes.length,durationMs:scene.durationMs});if(audioUrl)scene.audioUrl=audioUrl;
@@ -204,27 +243,38 @@ export class JobStore {
         }
       }
       job.actualMinutes=job.availableMs/60000;
-      job.status='complete';job.completedMs=Date.now()-job.createdAt;persistSpans();
+      // Any scene that degraded to estimated (silent) timing makes the job 'partial', not
+      // 'complete': the video is playable and exportable, but the provider failure stays
+      // visible at the job level instead of masquerading as a fully narrated success.
+      job.status=(job.fallbackCount||0)>0?'partial':'complete';job.completedMs=Date.now()-job.createdAt;persistSpans();
       // One-line completion summary: wall time, cost, tokens and per-stage ms for the
       // whole job — the record a cost/latency tracker reads without joining many events.
+      job.repairCount=job.usage?.repairs||0;
       log('job.summary',{
-        status:'complete',wallMs:job.completedMs,firstPlayableMs:job.firstPlayableMs,timelineMs:Math.round(job.availableMs),scenes:job.scenes.length,
+        status:job.status,wallMs:job.completedMs,firstPlayableMs:job.firstPlayableMs,timelineMs:Math.round(job.availableMs),scenes:job.scenes.length,
         costUsd:Number((job.usage?.costUsd||0).toFixed(6)),calls:job.usage?.calls||0,
         promptTokens:job.usage?.promptTokens||0,completionTokens:job.usage?.completionTokens||0,cachedTokens:job.usage?.cachedTokens||0,
         outlineMs:job.usage?.spans?.outlineMs||0,chapters:job.usage?.spans?.chapters||{},ttsCharacters:job.ttsCharacters,
+        repairs:job.repairCount,fallbackCount:job.fallbackCount||0,degradedScenes:job.degradedScenes||[],
       });
       // P5 eval ledger: deterministic quality measurements on every completed job.
       log('job.lints',{jobId:job.id,scenes:job.scenes.map(s=>({id:s.id,staticIntervalMs:Math.round(staticIntervalMs(s)),connectorHits:connectorThroughNode(s).length}))});
       await queueSave('complete');
     }catch(error){
+      // Partial commit: scenes already committed stay playable. A planner failure on a later
+      // chapter must not discard work the viewer can already watch (harness §53 per-scene
+      // status). 'error' is reserved for a job with nothing to play.
+      const partial=!signal.aborted&&job.scenes.length>0;
       log('job.failure',{error},signal.aborted?'warn':'error');
-      job.status=signal.aborted?'cancelled':'error';
+      job.status=signal.aborted?'cancelled':(partial?'partial':'error');
       job.error=signal.aborted?'Cancelled by user':(error instanceof Error?error.message:String(error));
       // P5 failure taxonomy: classify so later eval can group failures without NLP.
       job.errorKind=signal.aborted?'cancel':classifyError(job.error);
       log('job.failure-classified',{jobId:job.id,errorKind:job.errorKind},signal.aborted?'warn':'error');
-      log('job.summary',{status:job.status,wallMs:Date.now()-job.createdAt,costUsd:Number((job.usage?.costUsd||0).toFixed(6)),calls:job.usage?.calls||0,errorKind:job.errorKind,error:job.error,spans:job.usage?.spans||{}},signal.aborted?'warn':'error');
+      log('job.summary',{status:job.status,wallMs:Date.now()-job.createdAt,costUsd:Number((job.usage?.costUsd||0).toFixed(6)),calls:job.usage?.calls||0,scenes:job.scenes.length,errorKind:job.errorKind,error:job.error,repairs:job.usage?.repairs||0,fallbackCount:job.fallbackCount||0,degradedScenes:job.degradedScenes||[],spans:job.usage?.spans||{}},signal.aborted?'warn':'error');
       persistSpans();await queueSave(job.status);
+    }finally{
+      pool?.close();
     }
   }
   async get(id:string):Promise<JobSnapshot|null> {

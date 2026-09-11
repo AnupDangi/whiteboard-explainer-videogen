@@ -1,3 +1,177 @@
+# 2026-09-11 — Stale-server incident + last-resort content commit (never 0 scenes)
+
+**Symptom:** a UI job (bare prompt, FHE) ended `error`, **0/2 scenes**, after 163.7 s with board-text
+and grounding findings.
+
+**Root cause: a stale server process.** `pid 88578` had started at 15:31, before this session's
+Phase 1-3 build; `dist/src/planner.js` was rebuilt hours later. Node loads modules at startup, so
+the running server still had the old planner. Proof in the job's own events:
+- `attempt:4` — the current code has `CONTENT_ATTEMPTS=3`.
+- Grounding was applied to a **prompt** source, but current code logs `planner.grounding-skipped`
+  and skips it (`groundingApplies = source.kind !== 'prompt'`).
+- No `schema-healed` / `grounding-autofix` events — all Phase 1-3 heals absent.
+
+**Verification:** after `npm run build` + restarting the server, the **exact same prompt** through
+the real `POST /api/jobs` path is `complete`, **2/2 scenes**, real Kokoro audio, $0.0017. No code
+change was needed for that specific failure — it was purely an un-restarted server.
+
+**Hardening added anyway (defense in depth):** `planContent` now keeps the most recent
+structurally-valid candidate (`resolveAnchors` succeeded: 2 scenes, anchors, edges) and, on the
+final attempt, if only quality gates remain (key-point board, pacing, grounding), **commits that
+candidate** with `planner.gates-deferred` logged instead of failing the chapter. A quality-gate
+exhaustion can no longer return 0 scenes for a structurally valid plan; hard structural failures
+still throw. New regression: `test/generation.test.js` "Quality-gate exhaustion commits a
+structurally valid chapter instead of returning 0 scenes".
+
+Suite: `npm test` → **153 tests, 151 pass, 0 fail, 2 skip**.
+
+**Operational note:** after any build, **restart the server** (`kill <pid>; node
+--env-file-if-exists=.env dist/src/server.js`). A long-lived Node server does not pick up rebuilt
+`dist/`. This is the single most likely cause of "the fix didn't work" reports.
+
+---
+
+# 2026-09-11 — Phase 3 gate consolidation: the 10-min / 20-scene path now COMPLETES
+
+Suite: `npm test` → **152 tests, 150 pass, 0 fail, 2 skip** (up from 150/148).
+
+**Two over-strict gates root-caused and demoted (harness §36 + §56):**
+
+1. **Schema-format fields threw before any heal.** `validatePlan` (`src/engine.ts:76,80,82`) rejects
+   an over-long `visualIntent`, a non-charset `conceptId`, or a malformed `evidenceIds`, and it runs
+   inside `resolveAnchors` *before* every deterministic heal. One stray space in a `conceptId` cost a
+   full 20-50 s model repair. Fix: `healSchemaFields()` (`src/planner.ts`, exported) normalizes these
+   planning-metadata fields before validation — visualIntent/keyPoint trimmed to their limits at a
+   word boundary, `conceptId` charset-normalized + capped at 40, `evidenceIds` filtered to valid
+   `p\d+:c\d+` and capped at 4 (or dropped so grounding can re-cite). Logged `planner.schema-healed`.
+2. **Shape diversity was hard on the director-exhausted fallback** (`src/planner.ts`), so a chapter
+   whose director failed 3× died instead of degrading. Harness §36: "Shape diversity may remain a
+   soft diagnostic." Fix: demote to a `planner.shape-diagnostic{fallback:true}` warning; keep
+   `checkKindCollision` and `preflightScene` hard.
+
+**Measured — same 53-page DeepSeek-V3 report, 10-min, kokoro:**
+
+| run | before this pass | after |
+|---|---|---|
+| `8d27af04` (original) | error, **0/20 scenes** | — |
+| Phase 1 gate | partial, 4/20 | — |
+| Phase 2 gate | partial, 8/20 | — |
+| Phase 3 gate | partial, 10/20 | — |
+| **Phase 3b (`6308827e`)** | — | **complete, 20/20 scenes**, $0.0125, 27 calls, MP4 ✓ |
+
+Also live: 1-min complete, 5-min complete (10/10). Final run health: **0 timeouts, 0 `unknown`
+errorKind, 0 TTS queue timeouts**; `schema-healed` fired 4× (each a previously-fatal repair);
+`direction-fallback` 1/10 chapters (logged, all-box flow for that chapter — visible, not silent);
+outline healthy; Kokoro cache 988.8 MB after 42 requests / 18 min uptime (bounded, no leak growth).
+
+**Tests:** `test/outline-repair.test.js` gains `healSchemaFields` unit + `resolveAnchors`
+integration coverage; the two regressions that asserted the old hard gates
+(`Exhausted director retries…`, `V3-4 templates: unknown template…`) now assert the correct
+invariants — the chapter degrades to a validated fallback, and an invalid template is **never**
+committed as that template.
+
+## Remaining limitations (honest)
+
+- **Latency, not completion, is now the gap.** 10-min `firstPlayableMs` 64 s (harness §5.1 target
+  <8 s); 5-min 66 s. `repairs:11` across 10 chapters at ~20-50 s each; chapter 5 content alone took
+  117 s, chapter 3 director 48 s (3 attempts then fallback). Phase 4 work: ≤2-min fast path, wider
+  auto-director coverage, hedged content.
+- **1/10 chapters degraded to the all-box fallback** — a real quality loss on that chapter, logged
+  as a soft diagnostic. Reducing director-fallback frequency is the auto-director task.
+- Pool N≥3 still degrades on this 24 GB box (default 2). The machine was swap-bound throughout.
+- Estimated-timing fallback for a scene remains silent-with-captions (user-approved policy).
+
+---
+
+# 2026-09-11 — TTS reliability + planner boundary (Phase 1+2): Kokoro leak root-caused and bounded; outline no longer a single point of failure
+
+Suite: `npm test` → **150 tests, 148 pass, 0 fail, 2 skip** (was 133/131/0/2). New:
+`test/tts-pool.test.js` (8), `test/outline-repair.test.js` (8), plus `classifyError` coverage in
+`test/jobs.test.js`.
+
+## Root cause: the "provider timeout under multi-chapter load" was local Kokoro memory exhaustion
+
+Three prior hypotheses were wrong (OpenRouter timeout; a provider lock; a job-level watchdog).
+Evidence: failing job `8d27af04` crashed at `dist/src/jobs.js:218` = the **`await speech`** line, not
+a planner call; its `speech.request` at `11:03:51.583` + the fixed 120 s `AbortSignal.timeout`
+(`src/kokoro-speech.ts:67`) = `11:05:51.583`, and `job.failure` fired at `11:05:51.708` (125 ms
+match). A 10 h 31 m Kokoro server (`pid 29415`) was holding an **18 GB footprint — 17 GB dirty
+`IOAccelerator`** for an 82 M bf16 model (~165 MB), with the host at **23.5 GB swap used / 81 MB
+free**. `mx.clear_cache()` / `set_cache_limit` appeared **nowhere**; the process Metal buffer pool
+grew without bound. Compounding: `kokoro_mlx` is single-flight (`with self._lock:`,
+`kokoro.py:114`) with no batch API, and the job runner fired **all 20 scenes at once**
+(`src/jobs.ts` speculative fan-out bypassed `sceneSem` and the character cap).
+
+## Fixes shipped
+
+**Phase 1 — Kokoro-only parallel, bounded, leak-free, fail-soft**
+- `scripts/kokoro_tts.py`: `mx.set_cache_limit(KOKORO_CACHE_LIMIT_MB)` (default 1024) once per
+  process; `en.G2P` cached per language variant (was rebuilt every request).
+- `scripts/kokoro_server.py`: `/health` now reports `requests_served`, `uptime_s`, `cache_mb`,
+  `peak_mb`; optional self-recycle (`KOKORO_RECYCLE_AFTER`).
+- `scripts/kokoro_pool.sh` (new): start/stop/status N self-restarting workers on
+  `8765..8765+N-1`, memory-gated (`KOKORO_POOL_MIN_FREE_MB`); `npm run kokoro-pool`.
+- `src/tts-pool.ts` (new): bounded priority pool — one in-flight request per worker, priority
+  `chapter*100 + scene` so scene 1 is first, **queue-wait and service-time deadlines separate**,
+  one retry on a different worker, health-gated workers, `cancel(key)`.
+- `src/jobs.ts`: `onContentReady` enqueues instead of firing unbounded calls; character
+  reservation moves to enqueue; a regenerated chapter cancels its superseded pool entry; a TTS
+  failure degrades **one scene** to explicitly-estimated silent timing (`degradedScenes`,
+  `fallbackCount`, `job.status='partial'`) instead of killing the job. `src/kokoro-speech.ts`
+  exposes `ensureKokoroServer` (per-URL) + `synthesizeAtServer`; robot-voice branch removed from
+  `public/app.ts`. `classifyError` now distinguishes `timeout` / `provider-truncated` /
+  `provider-refused` / `speech` (was 18 blind `unknown`).
+
+**Phase 2 — deterministic planner boundary**
+- `src/planner.ts`: outline is now a bounded repair loop (`OUTLINE_ATTEMPTS=3`) that re-asks with
+  the exact clauses instead of throwing once; `validateOutline()` returns **named clauses**;
+  `healOutline()` trims >28 chars, drops entity-only key points (fixes the live `"+ 6O2"`), snaps
+  unknown arcs by position, and synthesises a missing key point from the chapter's own objective.
+- `call()`: `finish_reason==='length'` retries once at **×1.5 budget** with reasoning
+  `1200→400` (was any non-`stop` thrown as "incomplete or refused"); `content_filter` fails
+  loudly and distinctly; `require_parameters:true` is now sent unless the model is a known
+  non-strict tier (`qwen/`, `inclusionai/`, `deepseek/`) — the old guard keyed on `callModel`
+  truthiness, which the router made always-true, so strict-schema pinning was **never** sent.
+- `src/budgets.ts`: outline floor `2000+250·ch` → `2600+400·ch` (1-min: 2250 → 3000).
+
+## Measured
+
+| measurement | before | after |
+|---|---|---|
+| Kokoro Metal cache after 20 scenes | **16 963.8 MB** | **1024.2 MB** (cap), 983 MB after 16 min uptime |
+| per-request clear_cache | — | slower (p50 4.19 s vs 3.73 s) — **not used**; cap-only wins |
+| pool throughput, 20 narrations | — | N=1 14.6–18.6/min · **N=2 17.4–19.1/min** · N=3 15.7/min |
+| live 1-min (prompt) | — | **complete**, 2 scenes, $0.0017, repairs 1, fallback 0, `strictSchema:true` (gemini) / false (qwen) |
+| live 5-min (prompt) | — | **complete**, 10/10 scenes, $0.0043, repairs 4, fallback 0, MP4 ✓ |
+| live 10-min (DeepSeek-V3 PDF) | job `8d27af04`: error, **0 scenes** | **partial**, **8/20 scenes**, $0.0163, fallback 0, MP4 ✓ |
+| saved outline failures `1283a4d2 / 9e5c560f / 09ddb161` | all `Invalid chapter outline` (fatal) | **all heal to valid, 0 repair calls** |
+
+Zero `aborted due to timeout`, zero `errorKind:'unknown'` in the post-fix live logs.
+
+## Honest limitations
+
+- The 10-min run still only **partially completes (8/20 scenes)**: the remaining blocker is the
+  **content gate stack**, not TTS. `errorKind:'plan'`, `"Invalid conceptId (node c)"` after 12
+  repairs — the reject-and-retry gates are Phase 3, out of this round's scope. Partial commit
+  preserves the 8 playable scenes (MP4 exported).
+- Pool size >1 gave at best a modest wall win and **degrades at N≥3** on this 24 GB box under
+  memory pressure; default is 2 but the machine was swap-bound throughout, so the sweep is noisy.
+- `kokoro_tts.synthesize` still reaches into `tts._model/_config/_voices` and does not take the
+  library lock; the pool avoids the hazard by never sending two concurrent requests to one worker.
+- A degraded (estimated) scene is silent with captions — this is the user-approved policy and is
+  labelled in `job.summary`, `degradedScenes`, the UI status, and `scene.timing.kind='estimated'`.
+- Hardware/provider numbers describe only this local implementation. No claim about Lamina Labs.
+
+## Next bounded task
+
+**Phase 3 — gate consolidation** (`docs/PERFORMANCE_ANALYSIS.md` §3.4, `docs/HANDOFF.md`): split the
+~12 `planContent` validators into hard-correctness (stay reject/retry) vs quality-advisory
+(deterministic heal), so the 10-min path reaches 20/20 without 12 repairs. Evidence:
+`docs/RESULTS.md` 2026-09-11 critical-bug pass measured the 53 % content repair rate as the gate
+stack, not the model.
+
+---
+
 # 2026-09-11 — Critical-bug pass: TTS job-killer, mid-word splits, dead code, docs
 
 Fixes (suite 133 tests, 131 pass, 0 fail):

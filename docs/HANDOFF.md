@@ -1,3 +1,85 @@
+# Current handoff — 2026-09-11, TTS reliability + planner boundary + gate consolidation (Phase 1-3)
+
+**Suite:** `npm test` → **153 tests, 151 pass, 0 fail, 2 skip**.
+
+**Run the server on the current build** (a long-lived Node server does NOT pick up rebuilt
+`dist/`): after `npm run build`, `kill <pid>; nohup node --env-file-if-exists=.env
+dist/src/server.js > .data/server.out 2>&1 & echo $! > .data/server.pid`. A stale server was the
+cause of a reported 0/2 failure — the same prompt completes 2/2 on the current build.
+
+**The 10-min / 20-scene path completes** (job `6308827e`, DeepSeek-V3 PDF): complete, 20/20, MP4 ✓.
+A quality-gate exhaustion can no longer return 0 scenes: `planContent` commits the most recent
+structurally-valid candidate with `planner.gates-deferred` logged (hard structural failures still
+throw).
+
+**What fixed completion**
+- TTS: stable + bounded Kokoro pool (Phase 1). 17 GB Metal leak → `set_cache_limit(1024 MB)`.
+- Outline: bounded repair loop + deterministic heals (Phase 2).
+- Gates: `healSchemaFields()` normalizes `visualIntent`/`conceptId`/`evidenceIds` **before**
+  `validatePlan` (they used to throw first and cost a 20-50 s repair each — fired 4× in the final
+  run); shape diversity demoted to a **soft diagnostic** on the director-exhausted fallback
+  (harness §36). `8d27af04`, `1283a4d2`, `9e5c560f`, `09ddb161` are all explained and closed.
+
+**Local operations**
+- `npm run kokoro-pool start 2` / `stop` / `status` — bounded, self-restarting workers.
+  `KOKORO_SERVER_URLS` tells the job runner which workers to use. `/health` shows
+  `cache_mb`/`peak_mb`/`requests_served`. `npm run bench:tts` replays saved narration at $0.
+
+**Remaining (value order)**
+1. **First-playable latency** — 10-min firstPlayable 64 s, 5-min 66 s vs harness <8 s target. The
+   ≤2-min fast path (merge outline into content) + wider auto-director coverage (1/10 chapters still
+   fell back to all-box) is the top lever. This is now the only real gap to Lamina.
+2. **Repair rate** — 11 repairs / 10 chapters at ~20-50 s each. Continue gate consolidation:
+   key-point, quantity and grounding gates still repair rather than heal.
+3. Human playback review of `output/videos/gate-phase3b/arxiv-org-pdf-2412-19437-10min.mp4`.
+4. Pool N≥3 degrades on this 24 GB box; default 2.
+
+Full evidence and limitations: `docs/RESULTS.md` (Phase 3 entry, 2026-09-11).
+
+---
+
+# Current handoff — 2026-09-11, TTS reliability + planner boundary (Phase 1+2)
+
+**Suite:** `npm test` → **150 tests, 148 pass, 0 fail, 2 skip** (up from 133/131).
+
+**Run local Kokoro as a bounded pool, not a single leaking server:**
+`npm run kokoro-pool start 2` (start/stop/status; memory-gated; workers self-restart).
+`KOKORO_SERVER_URLS` (csv, default one URL) tells the job runner which workers to use.
+`npm run bench:tts -- --servers http://127.0.0.1:8765,http://127.0.0.1:8766 --label pool-2`
+replays saved narrations at zero API cost; `/health` reports `cache_mb`/`peak_mb`/`requests_served`.
+
+**Root cause fixed (was mis-diagnosed three times):** the multi-chapter "provider timeout" was
+**local Kokoro memory exhaustion**, not OpenRouter. A long-lived server held 17 GB of dirty Metal
+buffers for an 82 M model (`mx.clear_cache` never called), the host went to 23.5 GB swap / 81 MB
+free, and a 20-scene fan-out tripped a fixed 120 s deadline. Fixed by `mx.set_cache_limit(1024 MB)`
+(cache now bounded at ~1 GB, measured 16 963 → 1 024 MB) + a bounded priority pool + per-scene
+fail-soft to explicitly-estimated silent timing. No robot voice anywhere.
+
+**Also fixed:** outline is now a bounded repair loop with deterministic heals (was a single call
+that failed the whole job — three real saved failures now heal with 0 extra calls, including the
+live `"+ 6O2"` entity-only key point); `finish_reason==='length'` retries at ×1.5 budget with
+reasoning cut (was thrown as "incomplete or refused"); `require_parameters` is actually sent now
+(the router had made the old guard always-false); outline budget 2250 → 3000.
+
+**Measured today:** 1-min prompt **complete** $0.0017; 5-min prompt **complete** 10/10 scenes
+$0.0043; 10-min DeepSeek-V3 PDF **partial 8/20** (was 0 scenes) $0.0163, MP4 exported, fallback 0.
+TTS: 0 timeouts, 0 `unknown` errorKind.
+
+**Remaining (value order):**
+1. **Phase 3 gate consolidation** — the 10-min path still stops at 8/20 with `Invalid conceptId`
+   after 12 repairs. Split the ~12 `planContent` validators into hard-correctness (reject/retry)
+   vs quality-advisory (deterministic heal). This is the top blocker to 20/20.
+2. **First-playable** — 5-min run firstPlayable 66 s vs harness <8 s target; needs the ≤2-min fast
+   path (merge outline into content) + auto-director coverage.
+3. **Human playback review** of the exported MP4s (`output/videos/gate-phase2/`) — last
+   unautomated quality gate.
+4. Multi-chapter outline/allocation cost: outline ~10 s and content sum ~40 s/chapter; hedged
+   content (2 concurrent, first valid) would bound the 20-50 s variance.
+
+Full evidence and limitations: `docs/RESULTS.md` (2026-09-11 Phase 1+2 entry).
+
+---
+
 # Current handoff — 2026-09-11, at Lamina-parity: 43-53s, $0.005, director-free
 
 **Server**: rebuild + `node --env-file-if-exists=.env dist/src/server.js` at

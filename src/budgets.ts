@@ -10,7 +10,7 @@ export type BudgetTask='outline'|'content'|'director'|'critic'|'figure'|'embed'|
  *  content/director output is constant because every chapter is a bounded one-minute slice. */
 export function getOutputBudget(task:BudgetTask,chapters=1):number {
   switch(task){
-    case 'outline':return Math.min(9000,2000+chapters*250);
+    case 'outline':return Math.min(9000,2600+chapters*400);
     case 'content':return 9000;
     case 'director':return 5000;
     case 'critic':return 800;

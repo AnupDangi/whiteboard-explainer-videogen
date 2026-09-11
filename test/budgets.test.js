@@ -5,7 +5,7 @@ import {getOutputBudget,getRetrievalBudget,getInputBudget,getCostBudget,getLaten
 test('LD7 output budgets: scale with chapters, never with source size',()=>{
   assert.equal(getOutputBudget('content'),9000,'1-min live-proven content budget unchanged');
   assert.equal(getOutputBudget('director'),5000);
-  assert.equal(getOutputBudget('outline',1),2250);
+  assert.equal(getOutputBudget('outline',1),3000,'outline floor raised: verbose models truncated at 2250 (observed completionTokens=2250, finish_reason=length)');
   assert(getOutputBudget('outline',30)>getOutputBudget('outline',1),'outline output grows with chapter count');
   assert.equal(getOutputBudget('outline',100),9000,'capped');
   // No source-size parameter exists: source size CANNOT raise an output budget.
