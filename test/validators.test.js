@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats,fillBeats} from '../dist/src/planner.js';
 import {retrieveChapterEvidence} from '../dist/src/retrieval.js';
 import {directorSchema} from '../dist/src/schema.js';
 
@@ -168,6 +168,22 @@ test('Perf: resolveAnchors derives beats and assigns beatId without model output
   assert(Array.isArray(scene.beats)&&scene.beats.length>=2,'beats derived');
   assert(scene.nodes.every(n=>typeof n.beatId==='string'),'every node got a beatId');
   assert.equal(scene.nodes[0].beatId,'b1');
+});
+test('Perf: fillBeats synthesizes a node for a visual-less beat from its own words',()=>{
+  const narration='Alpha introduces the model. Beta explains the routing mechanism clearly. Gamma closes with the training result.';
+  const scene={id:'s1',title:'t',narration,layout:'flow',beats:[{id:'b1',narration:'Alpha introduces the model.'},{id:'b2',narration:'Beta explains the routing mechanism clearly.'},{id:'b3',narration:'Gamma closes with the training result.'}],nodes:[{id:'a',label:'Alpha model',wordIndex:0,beatId:'b1',evidenceIds:['p1:c1']}],edges:[],note:''};
+  const plan={version:1,title:'t',scenes:[scene]};
+  const chunks=[{id:'p1:c1',text:'Alpha introduces the model.'},{id:'p1:c2',text:'Beta explains the routing mechanism clearly with experts.'},{id:'p1:c3',text:'Gamma closes with the training result and scale.'}];
+  const added=fillBeats(plan,chunks);
+  assert.equal(added,2);
+  assert.equal(plan.scenes[0].nodes.length,3);
+  const b2=plan.scenes[0].nodes.find(n=>n.beatId==='b2');
+  assert(b2&&b2.wordIndex>=4&&b2.wordIndex<10,'filled node lands inside its beat');
+  assert(b2.label.toLowerCase().includes('beta')||b2.label.toLowerCase().includes('routing'),'label quotes the beat');
+  assert(b2.evidenceIds&&b2.evidenceIds.length===1,'evidence assigned');
+  // A fully covered scene is untouched.
+  const full={version:1,title:'t',scenes:[{...scene,nodes:[{id:'a',label:'A',wordIndex:0,beatId:'b1'},{id:'b',label:'B',wordIndex:5,beatId:'b2'},{id:'c',label:'C',wordIndex:11,beatId:'b3'}]}]};
+  assert.equal(fillBeats(full,chunks),0);
 });
 test('LD6 grounding: evidenceIds must exist and actually support the node',()=>{
   const scene={id:'s1',nodes:[

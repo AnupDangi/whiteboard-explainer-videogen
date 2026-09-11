@@ -40,7 +40,7 @@ function sourceKeyPoints(src){
 }
 for(const minutes of [1,5,10,30])test(`Duration ${minutes}: distinct chapter requests and progressive scene count (mock provider)`,async()=>{
  const mock=adapter();let scenes=[];let updates=0;
- for await(const p of generateChapters(source,{env,fetcher:mock.fetcher,durationMinutes:minutes,onUsage:()=>updates++})){assert.equal(p.scenes.length,2);scenes.push(...p.scenes);}
+ for await(const p of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher:mock.fetcher,durationMinutes:minutes,onUsage:()=>updates++})){assert.equal(p.scenes.length,2);scenes.push(...p.scenes);}
  assert.equal(scenes.length,minutes*2);assert.equal(new Set(scenes.map(s=>s.id)).size,scenes.length);
  // 1 outline call + (1 content + 1 director) per chapter in the happy path.
  assert.equal(mock.requests.length,1+minutes*2);assert.equal(updates,1+minutes*2);

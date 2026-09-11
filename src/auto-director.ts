@@ -70,11 +70,14 @@ function inferShape(kind:NodeKind|undefined,label:string):Scene['nodes'][number]
   return 'box';
 }
 
-/** A scene is auto-directable when every node maps to a concrete (non-generic) kind —
- *  generic-heavy scenes need the director's contextual metaphor choices. */
+/** A scene is auto-directable when all but at most one node map to a concrete kind.
+ *  The allowance covers a single directive/annotation label ("Show data scale") that
+ *  no keyword table can classify — one box among dressed nodes is a fine composition,
+ *  and it lets the common 3-node chapter skip the ~20s director call entirely. */
 function sceneAutoDirectable(scene:Scene):boolean {
   if(scene.nodes.length<2||scene.nodes.length>6)return false;
-  return scene.nodes.every(n=>!!inferKind(n.label));
+  const generic=scene.nodes.filter(n=>!inferKind(n.label)).length;
+  return generic<=1;
 }
 
 /** Compose a chapter without the director call. Chapter-level: BOTH scenes must be

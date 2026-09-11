@@ -214,6 +214,77 @@ export function checkAnchorSpread(scenes:Array<{id?:string;narration?:string;nod
   }
   return failures;
 }
+/** Beat coverage (RCA of multi-second static tails): narration teaches in beats, but
+ *  the model tends to anchor every node in beat 1 — later beats then play with nothing
+ *  new on the canvas (live run: 8.3s dead tail on a 3-beat, 2-node scene). Every beat
+ *  with enough words must own at least one node, so the canvas grows with the lesson. */
+export function checkBeatCoverage(scenes:Array<{id?:string;narration?:string;beats?:Array<{id?:string;narration?:string}>;nodes:Array<{id?:string;wordIndex?:unknown}>}>):string[] {
+  const failures:string[]=[];
+  for(const scene of scenes){
+    if(!Array.isArray(scene.beats)||scene.beats.length<2||typeof scene.narration!=='string')continue;
+    let cursor=0;
+    const ranges:Array<{id:string;start:number;end:number;words:number}>=[];
+    for(const b of scene.beats){
+      if(typeof b?.narration!=='string'||typeof b.id!=='string')continue;
+      const at=scene.narration.indexOf(b.narration,cursor);
+      if(at<cursor)continue;
+      const start=scene.narration.slice(0,at).trim().split(/\s+/).filter(Boolean).length;
+      const words=b.narration.trim().split(/\s+/).filter(Boolean).length;
+      ranges.push({id:b.id,start,end:start+words,words});
+      cursor=at+b.narration.length;
+    }
+    const indices=scene.nodes.map(n=>typeof n.wordIndex==='number'?n.wordIndex:NaN).filter(Number.isFinite);
+    for(const r of ranges){
+      if(r.words<5)continue;
+      if(!indices.some(i=>i>=r.start&&i<r.end))failures.push(`${scene.id||'scene'}: beat "${r.id}" teaches with no visual — add a node whose anchor is spoken inside that beat (words ${r.start}–${r.end-1})`);
+    }
+  }
+  return failures;
+}
+/** Deterministic beat fill (RCA fix for static tails): when a teaching beat has no
+ *  visual, synthesize a concept node from that beat's OWN narration — label = its key
+ *  phrase, anchor/wordIndex = its opening words, evidence = the best-matching source
+ *  chunk. This guarantees the canvas grows with the lesson even when the model ignores
+ *  beat-coverage guidance, without inventing facts (the label quotes the beat). */
+export function fillBeats(plan:Plan,chunks:Array<{id:string;text:string}>,maxNodes=6):number {
+  let added=0;
+  for(const scene of plan.scenes){
+    if(!Array.isArray(scene.beats)||scene.beats.length<2||typeof scene.narration!=='string')continue;
+    if(!Array.isArray(scene.nodes))continue;
+    // Beat ranges from the exact narration partitions.
+    let cursor=0;
+    const ranges:Array<{id:string;start:number;end:number;words:number;text:string}>=[];
+    for(const b of scene.beats){
+      if(typeof b?.narration!=='string'||typeof b.id!=='string')continue;
+      const at=scene.narration.indexOf(b.narration,cursor);
+      if(at<cursor)continue;
+      const start=scene.narration.slice(0,at).trim().split(/\s+/).filter(Boolean).length;
+      const words=b.narration.trim().split(/\s+/).filter(Boolean).length;
+      ranges.push({id:b.id,start,end:start+words,words,text:b.narration});
+      cursor=at+b.narration.length;
+    }
+    const covered=(r:{start:number;end:number})=>scene.nodes.some(n=>typeof n.wordIndex==='number'&&n.wordIndex>=r.start&&n.wordIndex<r.end);
+    for(const r of ranges){
+      if(r.words<5||covered(r))continue;
+      if(scene.nodes.length>=maxNodes)break;
+      const phrase=(contentWords(r.text).slice(0,4).join(' ')||r.text.split(/\s+/).slice(0,3).join(' ')).slice(0,48);
+      if(!phrase)continue;
+      // Best evidence chunk for the synthesized label+beat text (deterministic).
+      let best:{id:string;score:number}={id:chunks[0]?.id||'',score:0};
+      for(const c of chunks){
+        const cw=contentWords(c.text);
+        const score=contentWords(`${phrase} ${r.text}`).filter(w=>wordCovered(w,cw)).length;
+        if(score>best.score)best={id:c.id,score};
+      }
+      const id=`${scene.id}_${r.id}_auto`.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40);
+      scene.nodes.push({id,label:phrase,wordIndex:r.start,beatId:r.id,evidenceIds:best.id?[best.id]:undefined,visualIntent:`reveal the ${r.id} idea`});
+      added++;
+      log('planner.beat-filled',{scene:scene.id,beat:r.id,label:phrase.slice(0,32)});
+    }
+  }
+  return added;
+}
+
 /** Concept continuity (V3-1 persistent example, enforced V3-2): one conceptId means
  *  one thing — same label and same kind in every scene. A redrawn glyph reads as a
  *  new concept, the worst visual defect a chapter can ship. */
@@ -545,6 +616,26 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
             if(candidate.scenes.length!==2)throw new Error('Expected two scenes per chapter');
             const words=candidate.scenes.reduce((n,s)=>n+s.narration.trim().split(/\s+/).length,0);
             if(words<80||words>175)throw new Error(`Chapter contains ${words} words; rewrite to roughly 110-160 total across both scenes. Keep all anchors verbatim.`);
+            // Deterministic beat fill (RCA fix for multi-second static tails): a beat the
+            // model left visual-less gets a node synthesized from that beat's own words.
+            // This is data, not a new call, and it is validated by the same gates below.
+            const allSourceChunks=chunkSource(source,{maxChars:1600});
+            const filled=fillBeats(candidate,allSourceChunks);
+            if(filled)log('planner.beat-fill-count',{chapter:chapter+1,nodes:filled});
+            // Deterministic conceptId heal: a model reusing one conceptId for different
+            // labels breaks the continuity invariant; drop the later, undeclared binding
+            // instead of burning a repair on a metadata field that does not affect visuals.
+            {
+              const seen=new Map<string,string>();
+              let dropped=0;
+              for(const scene of candidate.scenes)for(const node of scene.nodes){
+                if(typeof node.conceptId!=='string'||!node.conceptId)continue;
+                const prev=seen.get(node.conceptId);
+                if(prev===undefined)seen.set(node.conceptId,node.label||'');
+                else if(prev!==(node.label||'')){delete node.conceptId;dropped++;}
+              }
+              if(dropped)log('planner.concept-healed',{chapter:chapter+1,nodes:dropped});
+            }
             // Phase 1 deterministic teaching gates: quantities must be shown, every chapter
             // key point must be drawn and narrated. Thrown into the repair loop like anchors.
             // Deterministic key-point heal (before gates): models invent node claims
@@ -568,12 +659,18 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
               else{delete (node as {keyPoint?:string}).keyPoint;healed++;}
             }
             if(healed)log('planner.keypoint-healed',{chapter:chapter+1,nodes:healed});
-            // Anchor-spread deference: after one failed attempt the engine's deterministic
-            // draw-stretch fills residual silence anyway — repeated repairs against the
-            // same spread complaint cost ~20s each and ship the same clustered anchors.
-            const spreadFailures=attempt>=1?[]:checkAnchorSpread(candidate.scenes);
-            if(spreadFailures.length)log('planner.spread-deferred',{chapter:chapter+1,attempt:attempt+1,findings:spreadFailures});
-            let teachingFailures=[...checkQuantities(candidate.scenes),...checkKeyPoints(candidate.scenes,outline.chapters[chapter].keyPoints),...checkBoardText(candidate.scenes,outline.chapters[chapter].keyPoints),...checkFirstVisual(candidate.scenes),...spreadFailures,...checkConceptContinuity(candidate.scenes),...checkEdgeLabels(candidate.scenes),...checkConceptBudget(candidate.scenes)];
+            // Anchor-spread + beat-coverage deference: after two failed attempts the
+            // engine's deterministic draw-stretch fills residual silence anyway —
+            // repeated repairs against the same pacing complaint cost ~20s each and ship
+            // the same clustered anchors. Two attempts of pressure, then complete.
+            // Pacing pressure (anchor spread + beat coverage): the two attempts of
+            // pressure let the model fix a dead visual tail; after that the engine's
+            // deterministic draw-stretch handles residual silence, because repeated
+            // repairs against the same pacing complaint cost ~20s each and often ship
+            // the same clustered anchors. Two attempts of pressure, then complete.
+            const pacingFailures=attempt>=2?[]:[...checkAnchorSpread(candidate.scenes),...checkBeatCoverage(candidate.scenes)];
+            if(pacingFailures.length)log('planner.pacing-pressure',{chapter:chapter+1,attempt:attempt+1,findings:pacingFailures.length});
+            let teachingFailures=[...checkQuantities(candidate.scenes),...checkKeyPoints(candidate.scenes,outline.chapters[chapter].keyPoints),...checkBoardText(candidate.scenes,outline.chapters[chapter].keyPoints),...checkFirstVisual(candidate.scenes),...pacingFailures,...checkConceptContinuity(candidate.scenes),...checkEdgeLabels(candidate.scenes),...checkConceptBudget(candidate.scenes)];
             // Grounding autofix (always-on, orthogonal to other failures): a model that
             // cites lazily fails support deterministically — but the RIGHT citation usually
             // exists somewhere in the source. Search ALL document chunks; a claim supported
