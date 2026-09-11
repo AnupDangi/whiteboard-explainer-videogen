@@ -1,4 +1,23 @@
-# Current handoff — 2026-09-11, LD8 COMPLETE: first end-to-end large-doc video
+# Current handoff — 2026-09-11, LD8 STABLE: deterministic heal pipeline, 1:50 wall
+
+Two completing runs on the DeepSeek-V3 report (53pp): job `8d9f752c` (2:05) then
+`bbef4e24` (1:50) after the deterministic heals. Fix ledger in RESULTS.md (both 2026-09-11
+entries). Suite 126 tests, 124 pass, 0 fail, 2 skip. Per-call state: outline 4-7s,
+content 17-27s (+0-1 repairs), director 17-20s when called (auto-director skips it when
+labels map to concrete kinds), TTS overlapped, render ~5s. Planning cost ~$0.01.
+
+**Measured residuals:** staticInterval 8305/7230ms over the 3500 limit (spread-deference
+trade-off — the density debt is now the top QUALITY item); director is the slowest stage
+on abstract-label chapters; embeddings untested live; human playback review pending.
+
+**Remaining tasks (in value order):**
+1. **Eval/router program** — per-call traces already in the ledger (planner.call has
+   tokens/finish/cost/ms); add cost/success aggregation + judge live + Gemini-vs-Qwen
+   A/B (50 content + 50 director calls) before any model flip.
+2. **Machine-readable canvas contract** (`canvas-contract.ts`) — prompts + skills derive
+   from one spec; tests prevent drift.
+3. **Adaptive provider concurrency** — backoff tuning beyond the current 429 handler.
+4. Optional: 5-min live run to exercise multi-chapter concurrency with the new heals.
 
 LD8 done: DeepSeek-V3 report (53pp) → 1-min narrated MP4, job `8d9f752c`, $0.0102 planning,
 kokoro-aligned, connector crossings 0. Full evidence + fix ledger in RESULTS.md
