@@ -1,4 +1,37 @@
-# Current handoff — 2026-09-11, UI intake fixed, app.log tracking, latency bounded
+# Current handoff — 2026-09-11, at Lamina-parity: 43-53s, $0.005, director-free
+
+**Server**: rebuild + `node --env-file-if-exists=.env dist/src/server.js` at
+`http://127.0.0.1:3000`. UI source intake (Prompt / Source text / **Public HTTPS link** /
+**PDF document**) is visible by default; verified in-browser, 0 console errors.
+
+**All events + per-call cost/time land in `app.log`** (gitignored, `APP_LOG_PATH`, 20 MB
+rotation) plus per-job `log.jsonl`; `job.summary` has wall/first-playable/timeline/cost/
+calls/tokens/spans. `npm run router:report` aggregates the ledger per task+model.
+
+**Measured today (auto-directed, no director call):** URL 1-min 43.1/44.9/53.6s at
+$0.0052–0.0054; PDF via API 44.8s at $0.0078 (4 figures + bigger map); PDF via
+generate-video 43.4s, export ✓. Static intervals 2600/2600ms on the URL runs (limit 3500).
+
+**Completed this stretch:** auto-director reliability (3/3 runs director-free; broader
+kind hints + tolerance; engine-synthesized nodes excluded), per-item bullet reveal,
+model router (`src/model-router.ts`, `MODEL_ROUTER` JSON > per-task env > base) +
+`npm run router:report`, `app.log` durable logging + `job.summary`, UI source-intake fix
+(default AI planner + `/src/templates.js` whitelist + CSP inline-style), export-breaking
+shape bug fixed (`deCollideKinds` clears icon shape on demotion; `normalizeShapes` safety
+net). Suite 134 tests, 132 pass, 0 fail, 2 skip.
+
+**Remaining (value order):**
+1. **Outline cost** — ledger: outline gemini = **87% of run cost**, avg 5.0s; content qwen
+   = 37% repair rate, avg 25.3s. Experiment: route outline to a cheap model via
+   `MODEL_ROUTER`/`OPENROUTER_OUTLINE_MODEL` and compare cost/quality with `router:report`
+   (a shell env override through `npm run` did NOT take effect in one test — set it in
+   `.env` or verify the router path).
+2. **Hedged content** (2 concurrent attempts, first valid wins) — bounds the 25s+repair
+   variance; needs test request-count updates.
+3. **Fast path ≤2 min** (merge outline into content) — removes ~5s and most of the cost.
+4. Human playback review of the MP4s (last unautomated quality gate).
+
+---
 
 Server runs at `http://127.0.0.1:3000` (rebuild + `node --env-file-if-exists=.env
 dist/src/server.js`). UI now defaults to **AI planner** so the Source dropdown (Prompt /
