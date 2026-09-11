@@ -1,4 +1,32 @@
-# Current handoff — 2026-09-11, RCA pass 2: static tails fixed, PDF + URL both complete
+# Current handoff — 2026-09-11, UI intake fixed, app.log tracking, latency bounded
+
+Server runs at `http://127.0.0.1:3000` (rebuild + `node --env-file-if-exists=.env
+dist/src/server.js`). UI now defaults to **AI planner** so the Source dropdown (Prompt /
+Source text / Public HTTPS link / PDF document) is visible; verified in-browser with 0
+console errors (server whitelist was missing `/src/templates.js`).
+
+All events append to **`app.log`** (gitignored, `APP_LOG_PATH`, 20 MB rotation) plus the
+per-job `log.jsonl`. `job.summary` records wall/first-playable/timeline/scene-count/cost/
+calls/tokens/spans for every completion and failure.
+
+**Measured today (server URL runs, `app.log`):** best **55.7s** wall / $0.0075 / 3 calls
+(outline+content+director, content first-try); worst 84s with one content repair. Auto-
+director fires intermittently (skips the ~20s director) depending on content labels.
+Static intervals 2600–5950ms (under/around the 3500 limit). Model tiers are env-routed:
+outline gemini-3.8-flash (**~82% of cost**), content/director qwen3.7-flash (slow, cheap).
+
+**Remaining tasks (value order):**
+1. **Auto-director reliability** — make it fire on every composable chapter (biggest
+   latency lever; would take wall to ~35s).
+2. **Fast path ≤2 min** — merge outline into content; removes ~5s and ~$0.007/cost.
+3. **Hedged content** — 2 concurrent attempts, first valid wins (bounds the 20-30s repair
+   variance).
+4. **Model router** — move outline to a cheap model; per-task cost/success from app.log.
+5. Per-item bullet reveal; human playback review.
+
+Full latency/cost/architecture analysis: `docs/PERFORMANCE_ANALYSIS.md`.
+
+---
 
 Top quality debt root-caused and fixed: beats with no visual caused 8.3s/7.2s static
 tails; `fillBeats()` now synthesizes a node from each uncovered beat's own narration.
@@ -19,7 +47,7 @@ $0.0095. New deterministic heals this pass: `healDanglingEdges`, `fillBeats`,
 
 ---
 
-# Handoff — 2026-09-11, LD8 stability pass (superseded by RCA pass 2 above)
+# Handoff — 2026-09-11, LD8 stability pass (historical)
 
 Two completing runs on the DeepSeek-V3 report (53pp): job `8d9f752c` (2:05) then
 `bbef4e24` (1:50) after the deterministic heals. Fix ledger in RESULTS.md (both 2026-09-11
