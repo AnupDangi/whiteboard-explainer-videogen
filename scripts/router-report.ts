@@ -34,6 +34,7 @@ for(const line of lines()){
   const label=String(e.label||'');
   const task=taskOfLabel(label);
   const model=String(e.model||'?');
+  if(model==='test/model')continue; // mock calls from the test suite
   const key=`${task}\t${model}`;
   const row=agg.get(key)||{task,model,calls:0,repairs:0,failures:0,totalMs:0,cost:0};
   row.calls++;

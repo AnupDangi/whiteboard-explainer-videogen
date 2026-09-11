@@ -343,6 +343,18 @@ export function addKeyPointBoard(scenes:Scene[],keyPoints:string[],chunks:Array<
   return 1;
 }
 
+/** Final shape sanity: an icon/illustration shape whose kind lacks that asset is
+ *  invalid (engine rejects it, and an export re-validation then fails a completed job).
+ *  Downgrade to a plain box rather than let a validator-only defect reach disk. */
+export function normalizeShapes(scenes:Scene[]):number {
+  let n=0;
+  for(const scene of scenes)for(const node of scene.nodes){
+    if(node.shape==='icon'&&!hasIcon(node.kind)){node.shape='box';n++;}
+    else if(node.shape==='illustration'&&!hasIllustration(node.kind)){node.shape='box';n++;}
+  }
+  return n;
+}
+
 /** Concept continuity (V3-1 persistent example, enforced V3-2): one conceptId means
  *  one thing — same label and same kind in every scene. A redrawn glyph reads as a
  *  new concept, the worst visual defect a chapter can ship. */
@@ -378,7 +390,7 @@ const labelStem=(label:string)=>label.toLowerCase().replace(/[^\p{L}\p{N} ]/gu,'
  *  repair on a one-enum mistake). Same-kind-same-stem stays legal (token rows); a
  *  genuine collision demotes the later node to generic, which carries no glyph and
  *  therefore cannot collide. Used by both the auto-director and the director path. */
-export function deCollideKinds(scenes:Array<{nodes:Array<{id?:string;label?:string;kind?:unknown}>}>):number {
+export function deCollideKinds(scenes:Array<{nodes:Array<{id?:string;label?:string;kind?:unknown;shape?:unknown}>}>):number {
   let changed=0;
   for(const scene of scenes){
     const owners=new Map<string,string>();
@@ -390,6 +402,10 @@ export function deCollideKinds(scenes:Array<{nodes:Array<{id?:string;label?:stri
       if(owner===undefined){owners.set(kind,stem);continue;}
       if(owner===stem)continue;
       node.kind='generic';
+      // A demoted kind can no longer back an icon/illustration shape — leaving the
+      // shape on produced an invalid pairing that passed planning but failed export
+      // validation ("Icon shape requires a kind with an icon").
+      if(node.shape==='icon'||node.shape==='illustration')node.shape='box';
       changed++;
     }
   }
@@ -830,6 +846,8 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
         const kindHealed=deCollideKinds(directed.scenes);
         if(kindHealed)log('planner.kind-healed',{chapter:chapter+1,nodes:kindHealed});
         const upgraded:Plan={...directed,scenes:upgradeShapes(directed.scenes,Object.fromEntries(directed.scenes.map(s=>[s.id,arc||''])))};
+        const shapeNorms=normalizeShapes(upgraded.scenes);
+        if(shapeNorms)log('planner.shape-normalized',{chapter:chapter+1,nodes:shapeNorms});
         const shapeDiagnostic=checkShapeMix(upgraded.scenes);
         if(shapeDiagnostic.length)log('planner.shape-diagnostic',{chapter:chapter+1,findings:shapeDiagnostic});
         const visualFailures=[...checkKindCollision(upgraded.scenes)];

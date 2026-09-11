@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats,fillBeats,healDanglingEdges} from '../dist/src/planner.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats,fillBeats,healDanglingEdges,deCollideKinds,normalizeShapes} from '../dist/src/planner.js';
 import {retrieveChapterEvidence} from '../dist/src/retrieval.js';
 import {directorSchema} from '../dist/src/schema.js';
 
@@ -173,6 +173,18 @@ test('Deterministic edge heal: dangling and self edges dropped, real edges kept'
   const raw={scenes:[{nodes:[{id:'a'},{id:'b'}],edges:[{from:'a',to:'b'},{from:'a',to:'x'},{from:'a',to:'a'},{from:'b',to:'a'}]}]};
   assert.equal(healDanglingEdges(raw),2);
   assert.deepEqual(raw.scenes[0].edges,[{from:'a',to:'b'},{from:'b',to:'a'}]);
+});
+test('Shape sanity: demoted kinds cannot keep icon/illustration shapes',()=>{
+  const scenes=[{nodes:[
+    {id:'a',label:'Model one',kind:'model',shape:'icon'},
+    {id:'b',label:'Model two',kind:'model',shape:'icon'},
+  ]}];
+  assert.equal(deCollideKinds(scenes),1,'second same-kind different-concept node demoted');
+  assert.equal(scenes[0].nodes[1].kind,'generic');
+  assert.notEqual(scenes[0].nodes[1].shape,'icon','demoted node cannot keep an icon shape');
+  const bad=[{nodes:[{id:'x',label:'Auto reveal',shape:'icon'}]}];
+  assert.equal(normalizeShapes(bad),1,'icon without an icon-capable kind downgrades to box');
+  assert.equal(bad[0].nodes[0].shape,'box');
 });
 test('Perf: fillBeats synthesizes a node for a visual-less beat from its own words',()=>{
   const narration='Alpha introduces the model. Beta explains the routing mechanism clearly. Gamma closes with the training result.';
