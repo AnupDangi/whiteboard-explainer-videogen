@@ -4,7 +4,7 @@ import {validatePlan,compileScene,preflightScene,renderSVG} from './engine.js';
 import {semaphore} from './concurrency.js';
 import {retrieveChapterEvidence,chunkSource} from './retrieval.js';
 import {getOutputBudget,getRetrievalBudget,getInputBudget,getCostBudget,getLatencyBudget} from './budgets.js';
-import {canAutoDirect,autoDirect} from './auto-director.js';
+import {canAutoDirect,autoDirect,unmappedLabels} from './auto-director.js';
 import {embedEnabled,getOrBuildChunkVectors,embedTexts} from './embeddings.js';
 import {renderMapForOutline} from './document-map.js';
 import {NODE_KINDS,LAYOUTS} from './vocabulary.js';
@@ -837,7 +837,8 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
       const autoOrDirect=async(content:Plan,arc:string|undefined):Promise<Plan>=>{
         // Env gate: EXPLAIN_AUTO_DIRECT=0 forces the LLM director (ablations, tests that
         // exercise director retry paths).
-        if(env.EXPLAIN_AUTO_DIRECT!=='0'&&canAutoDirect(content)){
+        const autoOk=env.EXPLAIN_AUTO_DIRECT!=='0'&&canAutoDirect(content);
+        if(autoOk){
           const t=performance.now();
           try{
             const composed=autoDirect(content,outline.chapters[chapter].keyPoints);
@@ -850,6 +851,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
             // when it fails a validator.
           }
         }
+        if(env.EXPLAIN_AUTO_DIRECT!=='0')log('planner.auto-direct-skip',{chapter:chapter+1,unmapped:unmappedLabels(content).slice(0,6)});
         return directScene(content,arc);
       };
       async function directScene(content:Plan,arc:string|undefined):Promise<Plan> {

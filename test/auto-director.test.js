@@ -30,3 +30,16 @@ test('Auto-director: generic-heavy scenes defer to the LLM director',()=>{
   const plan={version:1,title:'t',scenes:[scene(['Some abstract notion','Another vague thing','Mystery third'])]};
   assert.equal(canAutoDirect(plan),false,'no label maps to a concrete kind');
 });
+
+test('Auto-director: live-run numeric/routing labels map (regression)',()=>{
+  const plan={version:1,title:'t',scenes:[scene(['671B total params','37B active params','Sparse Routing','Cost Efficiency','FP8 precision'])]};
+  assert.equal(canAutoDirect(plan),true);
+  const directed=autoDirect(plan);
+  const kinds=directed.scenes[0].nodes.map(n=>n.kind);
+  assert.equal(kinds[0],'graph','separated quantity noun maps to graph');
+  assert.equal(kinds[1],'graph');
+  assert(kinds.includes('process'),'routing/precision labels map to process');
+  // Engine-synthesized nodes never block the fast path.
+  const withAuto={version:1,title:'t',scenes:[{...scene(['671B total params','37B active params'])[0],nodes:[{id:'a',label:'671B total params',wordIndex:0,visualIntent:'x'},{id:'b',label:'unknown concept zzz',wordIndex:1,visualIntent:'x',auto:true}]}]};
+  assert.equal(canAutoDirect(withAuto),true,'auto nodes excluded from classification');
+});

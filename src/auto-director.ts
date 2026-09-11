@@ -18,14 +18,16 @@ const KIND_HINTS:Array<[RegExp,NodeKind]>=[
   [/\b(database|datastore|storage|store)\b/i,'database'],
   [/\b(token)s?\b/i,'token'],
   [/\b(model|neural network|transformer|llm|moe)\b/i,'model'],
-  [/\b(server|backend|host|gpu|hardware)\b/i,'server'],
+  [/\b(server|backend|host|gpus?|hardware)\b/i,'server'],
   [/\b(api|interface|endpoint)\b/i,'api'],
   [/\b(cloud)\b/i,'cloud'],
   [/\b(cache|memory|buffer|kv cache)\b/i,'memory'],
   [/\b(search|retriev)/i,'search'],
   [/\b(vector|embedding)\b/i,'vector'],
   [/\b(cost|price|\$|budget|flops)\b/i,'graph'],
-  [/\d[\d,.]*\s*[bmtk]?\s*(parameters?|tokens?|activations?|examples?|instances?|items?|rows?|cases?)\b/i,'graph'],
+  // Quantity labels: the noun may be separated ("671B total params", "37B active params").
+  [/\d[\d,.]*\s*[bmtk]?[\w\s-]*\b(parameters?|params?|tokens?|activations?|gpus?|flops?|examples?|instances?|items?|rows?|cases?)\b/i,'graph'],
+  [/\b(fp\d+|bf16|precision|quantiz\w*)\b/i,'process'],
   [/\b(key|credential)\b/i,'key'],
   [/\b(document|file|paper)\b/i,'document'],
   [/\b(lock|security|encrypt)/i,'lock'],
@@ -43,6 +45,13 @@ const KIND_HINTS:Array<[RegExp,NodeKind]>=[
   [/\b(container|payload|value)\b/i,'container'],
   [/\b(request|call)\b/i,'request'],
   [/\b(response|return)\b/i,'response'],
+  // Routing / MoE / training vocabulary (live-run labels the table missed).
+  [/\b(routing|router|dispatch|sparse|mixture|expert)s?\b/i,'process'],
+  [/\b(training|train|pretrain|fine-?tun|distill)\w*\b/i,'process'],
+  [/\b(efficien\w*|performance|throughput|speed|faster|optimiz\w*)\b/i,'success'],
+  [/\b(attention|transformer|layer|network)\b/i,'model'],
+  [/\b(scale|scaling|size|growth)\b/i,'graph'],
+  [/\b(ratio|percent|proportion|fraction)\b/i,'probability'],
   // Directive/annotation labels the content model emits for framing notes.
   [/^(show|shows|visualize|visualise|visualizes|contrast|compare|highlight|indicates?|illustrates?)\b/i,'note'],
 ];
@@ -72,16 +81,18 @@ function inferShape(kind:NodeKind|undefined,label:string):Scene['nodes'][number]
   return 'box';
 }
 
-/** A scene is auto-directable when all but at most one MODEL-authored node map to a
- *  concrete kind. Structural nodes synthesized by the engine (beat fills, the takeaway
- *  board) carry `auto:true` and are excluded — they are pacing devices, not concepts,
- *  and their labels are not expected to match a keyword table. This is what lets the
- *  common chapter skip the ~20s director call entirely. */
+/** A scene is auto-directable when most MODEL-authored nodes map to a concrete kind.
+ *  Structural nodes synthesized by the engine (beat fills, the takeaway board) carry
+ *  `auto:true` and are excluded. A small allowance for unclassifiable labels keeps the
+ *  common chapter on the deterministic path (no ~20s director call) while genuinely
+ *  ambiguous scenes still get the director. */
 function sceneAutoDirectable(scene:Scene):boolean {
   if(scene.nodes.length<2||scene.nodes.length>6)return false;
   const authored=scene.nodes.filter(n=>!n.auto);
+  if(!authored.length)return false;
   const generic=authored.filter(n=>!inferKind(n.label)).length;
-  return generic<=1;
+  const allowance=authored.length>=4?2:1;
+  return generic<=allowance;
 }
 
 /** Compose a chapter without the director call. Chapter-level: BOTH scenes must be
@@ -89,6 +100,13 @@ function sceneAutoDirectable(scene:Scene):boolean {
  *  would need a second call anyway — just use the call). */
 export function canAutoDirect(plan:Plan):boolean {
   return plan.scenes.every(sceneAutoDirectable);
+}
+
+/** Labels the keyword table could not classify (diagnostics for the auto-direct skip). */
+export function unmappedLabels(plan:Plan):string[] {
+  const out:string[]=[];
+  for(const scene of plan.scenes)for(const n of scene.nodes)if(!n.auto&&!inferKind(n.label))out.push(n.label);
+  return out;
 }
 
 export function autoDirect(plan:Plan,keyPoints:string[]=[]):Plan {
