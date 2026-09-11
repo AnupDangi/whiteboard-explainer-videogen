@@ -1,4 +1,25 @@
-# Current handoff — 2026-09-11, LD8 STABLE: deterministic heal pipeline, 1:50 wall
+# Current handoff — 2026-09-11, RCA pass 2: static tails fixed, PDF + URL both complete
+
+Top quality debt root-caused and fixed: beats with no visual caused 8.3s/7.2s static
+tails; `fillBeats()` now synthesizes a node from each uncovered beat's own narration.
+Both live paths on the 53-page DeepSeek-V3 report now complete with **staticInterval
+2600/2600ms (under 3500)**: PDF 1:28 wall / $0.0094 / first attempt; arXiv URL 1:15 /
+$0.0095. New deterministic heals this pass: `healDanglingEdges`, `fillBeats`,
+`keypoint-healed`, whole-source `grounding-autofix`, `conceptId` heal. Suite 128 tests,
+126 pass, 0 fail, 2 skip. Full table in RESULTS.md (2026-09-11 RCA pass 2).
+
+**Remaining tasks (value order):**
+1. **Eval/router** — cost/success aggregation from the existing planner.call ledger, judge
+   live, Gemini-vs-Qwen A/B (50 content + 50 director calls) before any model flip.
+2. **Director latency** — 18-21s + occasional 20s repair is now the slowest stage; extend
+   auto-director to handle note/directive labels (2 of 5 nodes blocked it this run).
+3. **Machine-readable canvas contract** (`canvas-contract.ts`) — prompts/skills derive
+   from one spec; tests prevent drift.
+4. Optional: 5-min live run (multi-chapter concurrency); adaptive provider concurrency.
+
+---
+
+# Handoff — 2026-09-11, LD8 stability pass (superseded by RCA pass 2 above)
 
 Two completing runs on the DeepSeek-V3 report (53pp): job `8d9f752c` (2:05) then
 `bbef4e24` (1:50) after the deterministic heals. Fix ledger in RESULTS.md (both 2026-09-11
