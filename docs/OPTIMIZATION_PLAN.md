@@ -1,3 +1,7 @@
+> **Status: largely superseded (2026-09-11).** Phase A landed; the V2 scene-graph/
+> storyboard program (Phases B–H) was never implemented. Current architecture and
+> next tasks live in `HANDOFF.md` and `ARCHITECTURE.md`.
+
 # Architecture and visual quality roadmap
 
 **Updated:** 2026-09-09, after reviewing five additional videos across their full timelines.

@@ -10,3 +10,8 @@ output/
 dist/
 .kokoro-venv/
 .claude/worktrees/
+
+# local tooling artifacts
+.playwright-mcp/
+app.server.out
+*.scenes/

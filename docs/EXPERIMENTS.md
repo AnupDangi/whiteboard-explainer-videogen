@@ -1,3 +1,6 @@
+> **Historical (research plan).** The E01–E08 protocol framed the original feasibility
+> study. Live results are recorded in `RESULTS.md`.
+
 # Experiment plan
 
 ## Evidence rules

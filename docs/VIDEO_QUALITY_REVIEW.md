@@ -1,3 +1,6 @@
+> **Historical (2026-09-09).** Evidence for the original roadmap; the code has changed
+> substantially since. Current state: `HANDOFF.md`.
+
 # Video quality review — 2026-09-09
 
 This review supports [the implementation roadmap](OPTIMIZATION_PLAN.md). It evaluates our independent implementation, not Lamina's private technology. No application source was changed or paid generation performed during this review.

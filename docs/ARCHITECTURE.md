@@ -28,17 +28,33 @@ flowchart TD
     F --> H["SVG frames and FFmpeg"]
 ```
 
-## Module map
+## Module map (current, 2026-09-11)
 
 | Module | Responsibility |
 |---|---|
-| `src/engine.ts` | Whitelist validation, timing estimate, three layouts, pure scene state, SVG rendering, playback clamp. |
-| `src/fixtures.js` | Hand-authored attention and photosynthesis examples. Never described as model output. |
-| `src/providers.ts` | ElevenLabs audio/alignment; OpenRouter chapter generation lives in planner.ts. Errors remain visible. |
-| `src/jobs.ts` | Single-process async preparation, atomic JSON snapshots, monotonic availability, cancellation. |
+| `src/planner.ts` | Outline → chapter content (with deterministic heals) → visual director/auto-director; validators, repair loops, model router. |
+| `src/auto-director.ts` | Deterministic layout/kind composition for composable scenes (skips the director LLM call). **Debt:** kind guessing is a keyword-regex table that must become model-driven (see HANDOFF). |
+| `src/model-router.ts` | Per-task model selection: `MODEL_ROUTER` JSON > per-task env > base model. |
+| `src/budgets.ts` | Input/retrieval/output/cost/latency budgets per stage. |
+| `src/sources.ts` | Ingest: PDF (`pdftotext -raw`, page-aware), docx/pptx/md/json/text/URL. |
+| `src/document-map.ts` | Hierarchical section map (heading detection, extractive summaries, sha256 cache). |
+| `src/retrieval.ts` | Structural chunking + BM25, optional RRF hybrid; tiny-source pass-through. |
+| `src/embeddings.ts` | Key-gated embedding index (fail-soft; BM25-only fallback). |
+| `src/figures.ts` | poppler figure/table detection, crops, bounded-parallel fail-soft VLM description. |
+| `src/engine.ts` | Whitelist validation, layouts, compile, pure SVG rendering, playback clamp, text metrics. |
+| `src/jobs.ts` | Single-process async preparation, atomic JSON snapshots, bounded concurrency, progressive availability, cancellation. |
+| `src/kokoro-speech.ts` / `scripts/kokoro_tts.py` | Kokoro TTS + native word timings (proportional fallback on alignment mismatch). |
+| `src/providers.ts` | ElevenLabs speech/alignment; errors remain visible. |
 | `src/server.ts` | Loopback HTTP app, job API, local media and static files. |
-| `public/app.ts` | Polling, play/pause/seek, audio clock integration, transcript and experiment metrics. |
-| `scripts/export.ts` | Render explicit frame times through SVG/Sharp; encode with FFmpeg; optionally mux per-scene narration. |
+| `public/app.ts` | Polling, play/pause/seek, audio clock, transcript, metrics, source intake (prompt/URL/PDF). |
+| `scripts/export.ts` / `src/scene-output.ts` | Frame rendering via SVG/Sharp, FFmpeg encode+mux, per-scene artifacts. |
+| `src/logger.ts` | Console + `app.log` + per-job `log.jsonl`; secret redaction. |
+| `src/progression.ts` | Progression frames + static-interval/connector lints. |
+
+**Current pipeline:** ingest → page-aware text → document map (cached) → outline (map-routed)
+→ per-chapter content (+ deterministic heals) → director or auto-director → per-scene TTS
+(speculative, overlapped) + compile → render/export. All model output is validated scene
+data; the renderer is deterministic and shared by browser and export.
 
 ## Plan versus compiled scene
 
