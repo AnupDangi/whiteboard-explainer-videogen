@@ -1,3 +1,15 @@
+# 2026-09-11 — LD8 stability pass: deterministic heal/autofix, 1:50 wall
+
+Job `bbef4e24`: complete, 2 scenes, 43.5s timeline, $0.0097 planning, wall 1:50 (was 10+ min
+failure loops). New deterministic repairs: keypoint-healed (invented claims remapped to the
+closest outline key point or dropped), outline rejects entity-only key points at validation
+time (~4s), grounding-autofix always-on over ALL source chunks (support found anywhere in
+the document is cited honestly), spread deference attempt≥1. Lints: staticInterval
+8305/7230ms still over 3500 (spread-deference trade-off); director still called here
+(ambiguous labels) — 20.1s+17.4s repairs. See the fuller LD8 entry below.
+
+---
+
 # 2026-09-11 — LD8: live validation on a 53-page paper — COMPLETE (first end-to-end large-doc run)
 
 DeepSeek-V3 technical report (arxiv 2412.19437, 53 pages / 36 extracted / 108k chars), 1-min
