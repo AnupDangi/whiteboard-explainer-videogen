@@ -1,4 +1,22 @@
-# Current handoff — 2026-09-10, source-intelligence program: LD1–LD7 complete, LD8 pending
+# Current handoff — 2026-09-11, LD8 COMPLETE: first end-to-end large-doc video
+
+LD8 done: DeepSeek-V3 report (53pp) → 1-min narrated MP4, job `8d9f752c`, $0.0102 planning,
+kokoro-aligned, connector crossings 0. Full evidence + fix ledger in RESULTS.md
+(2026-09-11 LD8 entry). Suite 122 tests, 120 pass, 0 fail, 2 skip.
+
+**Known residuals (measured):** staticInterval 10405/5155ms over the 3500 limit
+(spread-deference trade-off); director 19.1s is the slowest stage; two repair cycles
+burned ~58s; embeddings still BM25-only in live runs; human playback review pending.
+
+**Next bounded task — deterministic layout compiler (plan Next item 1, top latency lever):**
+compile `compare/flow/hierarchy/timeline/branch/radial` scenes from `visualIntent` without
+the Visual Director call; target 70-85% of scenes director-free (~19s/chapter saved).
+Constraint: preserve layout invariants (overlap/safe-region validators still run on the
+compiled result). Alternative next: eval/router (per-call traces + cost/success table).
+
+---
+
+# Handoff — 2026-09-10, source-intelligence program: LD1–LD7 complete (superseded by LD8 entry above)
 
 `docs/SOURCE_INTELLIGENCE_PLAN.md` phases LD1–LD7 shipped and committed on `opt-v3-harness`
 (LD1 `199332b`; LD2+LD3; LD4+LD5; LD6+LD7 — see git log and the RESULTS.md 2026-09-10

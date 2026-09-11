@@ -1,3 +1,43 @@
+# 2026-09-11 — LD8: live validation on a 53-page paper — COMPLETE (first end-to-end large-doc run)
+
+DeepSeek-V3 technical report (arxiv 2412.19437, 53 pages / 36 extracted / 108k chars), 1-min
+video, `--pdf` raw-source path, gemini-3.8-flash + Kokoro. Job `8d9f752c`: **complete**,
+2 scenes, 50.1s timeline (MP4 50.17s, h264+aac), per-scene SVGs + manifest in
+`output/videos/tmp-dsv3-pdf-1min.scenes/`. Planning cost **$0.0102** (5 model calls:
+outline 4.3s / content 27.3s + 2 repairs 21+37s / director 19.1s); wall ~109s including
+TTS+render. Kokoro-aligned timing both scenes (audio 26.25s/22.6s vs scene 26.9s/23.25s —
+exact designed 650ms tail); connector crossings 0.
+
+**Page coverage >15 proven**: `SourceDocument.pages` length 36; document map (v3 heuristics)
+30 clean sections routed by the outline (`sourceSections`); evidence chunks cited by every
+node (LD6 grounding gate passed after fixes below).
+
+**Fixes that got here (each root-caused from live stack traces, committed `b1379c5`+):**
+- Model-authored `beats[]` duplicated the whole narration → removed from schema, derived
+  deterministically from sentence boundaries (decimal-safe split at whitespace after
+  punctuation). Content call 28s → 14-17s.
+- Reasoning burn (gemini-3.8-flash thinking ~8k tokens per call) → `reasoning:{max_tokens:1200}`.
+- Map junk sections (table headers "Training Costs Pre-Training Context Extension
+  Post-Training", figure labels 30-104 chars, "Time ➔") polluted routing → three
+  deterministic filters; map cache versioned (v3) so stale maps rebuild.
+- `checkEvidence`/`checkKeyPoints` exact-token membership counted "active" vs "activated"
+  as uncovered → prefix-tolerant matching.
+- `checkAnchorSpread` deference after 2 failed attempts (engine draw-stretch fills
+  residual silence deterministically) — this UNBLOCKED completion but see limitation.
+- 429 in-place backoff (Retry-After), keyPoints ≤28 chars ×2-3, narration floor 90→80
+  words, visualIntent cap 80→120, hyphen-prefix anchor matching, parallel figure VLM
+  (3.4s for 4), parallel ingest/figure-detect, content payload slimmed (map/pages stripped).
+
+**Honest limitations:** (1) scene-1 staticIntervalMs 10405ms / scene-2 5155ms over the
+3500ms limit — the spread-deference traded the gate for completion; density debt persists
+in live output (V3-6 known issue); (2) director call is now the slowest single stage
+(19.1s) — the deterministic layout compiler (plan Next item 1) is the top latency lever;
+(3) embeddings untested live (BM25-only path used; no EMBEDDINGS_API_KEY configured);
+(4) two repair cycles still burned ~58s — first-attempt content success is not yet
+reliable on unseen large sources; (5) human listening of the MP4 pending.
+
+---
+
 # 2026-09-10 — LD2–LD7: source intelligence layer (map, BM25+hybrid retrieval, map-driven outline, evidence grounding, budgets)
 
 Implements `docs/SOURCE_INTELLIGENCE_PLAN.md` phases LD2–LD7 in one batched session
