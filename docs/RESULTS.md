@@ -1,3 +1,26 @@
+# 2026-09-11 — Critical-bug pass: TTS job-killer, mid-word splits, dead code, docs
+
+Fixes (suite 133 tests, 131 pass, 0 fail):
+- **TTS alignment no longer aborts a job.** `scripts/kokoro_tts.py` `fail()` on an
+  unmatchable word (`O(1).`, `RuBisCO`) killed fully planned + synthesized runs (2 real
+  failures, 165-170s, ~$0.007 each). Wrapped the mapper: on mismatch, drop the chunk's
+  partial timings and emit proportional word timings (character-length share of the
+  chunk's predicted duration) — audio preserved, job continues.
+- **`wrapText` breaks at `/` and `_` before any mid-word cut** (live SVGs showed
+  `recurrence/conv|olution`, `parameter|s`). Regression test added.
+- **Removed domain hardcoding** (biology keyword regex in `src/auto-director.ts`).
+- **Removed dead code**: `generateOpenRouterPlan`, legacy Anthropic `generatePlan` (+tests).
+
+Measured A/B (content model): gemini-3.8-flash content = 51.7s / **$0.0141** / 1 repair;
+qwen3.7-flash = ~25s / **$0.005** / 0-1 repairs. Conclusion: the **53% aggregate content
+repair rate is the gate stack, not the model** — buying a bigger model does not remove it.
+The next fix is gate consolidation, not a model swap.
+
+Docs: HANDOFF 693 -> 116 lines (history archived), ARCHITECTURE module map refreshed,
+docs/README index (current vs historical), historical banners on superseded docs.
+
+---
+
 # 2026-09-11 — UI source intake restored + durable app.log + model-tier audit
 
 **UI RCA:** `#prompt-fields` (which holds the Source dropdown with *Public HTTPS link*
