@@ -1,3 +1,32 @@
+# 2026-09-12 — Phase 12 visual critic + live calibration
+
+Implemented the calibrated critic boundary (`v4_docs/Tasks.md` Phase 12, `Tests.md §15`,
+`Evalaution.md §10`):
+
+- `src/v2/vision-judge.ts`: metered OpenRouter vision judge (model from
+  `OPENROUTER_VISION_MODEL`), two candidate contact sheets sent as image parts, strict JSON
+  verdict, no fixture fallback; refuses unpriced models and unmetered responses.
+- `src/v2/calibration.ts`: nine controlled corruptions from the plant golden; runs each in
+  both orders; `judgeCalibration` treats any order flip as inconsistent.
+- `scripts/calibrate-v2-critic.ts` + `npm run calibrate:v2:critic`: builds timestamped
+  event-aligned contact sheets, runs live calibration, writes `report.json`.
+
+Live evidence (both runs kept):
+
+- Run 1 `output/v2-critic-calibration/`: **not reliable** — accuracy 0.889 (16/18), misses
+  `delay_reveal` and `reverse_relation`, no order flips, $0.0362. Negative result retained.
+- Run 2 `output/v2-critic-calibration-02/`: after per-frame timestamps and an explicit
+  direction/timing rubric, **reliable** — accuracy 1.0 (18/18), 0 misses, 0 inconsistent;
+  18 calls, $0.0366.
+
+Full regression: 193 tests, 191 pass, 0 fail, 2 skip; 76.306 s (was 189/187/2).
+
+Limitation: one model (`google/gemini-3.8-flash`) on one scene; calibration is not a
+teaching-quality gate and does not replace human pairwise. Next: wire the calibrated judge
+into a bounded critic-repair path, then V2 speech + progressive jobs.
+
+---
+
 # 2026-09-12 — hierarchy + timeline + trajectory: Phase 14 complete
 
 Closed Phase 14 (`v4_docs/Tasks.md`): all twelve archetypes in the ordered list now have a

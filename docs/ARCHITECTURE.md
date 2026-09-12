@@ -14,7 +14,9 @@ equation_walkthrough, matrix_operation, hierarchy, timeline and trajectory. Flow
 ranks; cycles follow a closed semantic loop; equation lines stack monotonically; matrix terms read
 left to right; hierarchy is a validated single-root tree; timeline is declared order on a rail;
 trajectory is ordered steps on a descending path. Other archetypes and advanced motions fail
-explicitly.
+explicitly. A metered vision critic (`src/v2/vision-judge.ts`) is calibrated by
+`src/v2/calibration.ts` against nine known corruptions in both orders
+(`npm run calibrate:v2:critic`); it is optional and not yet an automatic repair trigger.
 See [V4_IMPLEMENTATION.md](V4_IMPLEMENTATION.md) for live status and boundaries.
 
 ---

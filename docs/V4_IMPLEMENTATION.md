@@ -37,7 +37,7 @@ motions fail explicitly; they are never silently rendered as a structural scene 
 | 9.1–9.3 | Implemented freeze boundary | `planning/narration.ts`, `generate.ts`; approved beat prose is frozen after asset/direction feasibility and before speech | Frozen narration + visible speech failure tests | No separate model rewrite call: reuse validated prose to avoid introducing independent facts. |
 | 10.1–10.4 | Initial timeline implemented | `compiler/timeline.ts`; exact beat-local anchors, bounded lag, speech timing authority, static interval union | Repeated term, timing mismatch, invalid times, explicit pause tests. Instantaneous reveals do not count as sustained motion | Full timing percentile reporting pending. |
 | 11.1–11.3 | Initial pure renderer implemented | `renderer/`; no DOM/env/clock in renderer, browser imports same module as export | Same/fresh-process/JSON-roundtrip tests; browser playback/seek checked, no console errors | Equation/chart/highlight module expansion accompanies later archetypes. |
-| 12 | Pending | Deterministic schema/geometry checks and event-aligned contact sheets exist | Known renderer failures rejected before model use | Calibrated VLM pairwise critic and bounded critic repair pending. |
+| 12 | Implemented + calibrated | `src/v2/vision-judge.ts` (metered vision boundary), `src/v2/calibration.ts`, `scripts/calibrate-v2-critic.ts`; deterministic lints still run first | Live: run 1 accuracy 0.889 / not reliable (2 misses, retained); run 2 accuracy 1.0, 0 misses, 0 order flips, 18 calls / $0.0366 in `output/v2-critic-calibration-02` | One model + one scene; critic is optional and not yet wired as an automatic repair trigger. |
 | 13 | Capability passed; human review pending | `scripts/generate-v2.ts` uses real configured router with shared $0.15 budget, one semantic repair per stage | Run 09: live scene, all ten semantic checks pass, $0.03532815, 22.123 s scene ready; final frame inspected. Earlier failures preserved | Silent estimated timing; no TTS or blind human pairwise result. JSON-object compatibility mode used; strict local schemas still mandatory. |
 | 14 | Complete (manual) | All ordered layouts: transformation, cross-section, spatial-process, numbered-step, dependency-flow, comparison, cycle, equation-walkthrough, matrix-operation, hierarchy, timeline, trajectory; structural/convergence share the physical-family compiler | Eleven manual cases export MP4/JSON/contact sheets under `output/v2-archetypes-07`; focused geometry/semantic/fail-closed tests | Manual fixtures are not live planner coverage; advanced state/motion and graph layout (ELK) remain pending. |
 | 15–16 | Pending | V1 preserved | No live performance improvement claimed | Full multi-domain evaluation, calibrated critic, speech, human pairwise and performance gates remain. |
@@ -46,7 +46,7 @@ motions fail explicitly; they are never silently rendered as a structural scene 
 
 - Baseline `npm test`: 153 tests / 151 pass / 0 fail / 2 skip.
 - Full suite after initial V2 stages: 176 tests / 174 pass / 0 fail / 2 skip.
-- Latest full suite: 189 tests / 187 pass / 0 fail / 2 skip (76.405 s); includes distinct layout, cycle closure, dependency-order, equation/matrix, hierarchy and timeline/trajectory closure plus existing HTTP regressions.
+- Latest full suite: 193 tests / 191 pass / 0 fail / 2 skip (76.306 s); adds critic corruption/calibration/vision-boundary tests to the layout, cycle, dependency-order, equation/matrix, hierarchy and timeline/trajectory closures plus existing HTTP regressions.
 - HTTP tests require loopback permission. Initial sandbox EPERM was environmental;
   the same tests passed with loopback access. A new test cleanup typo was corrected
   from nonexistent `shutdown()` to the store's `close()`; the hung run was stopped.
@@ -57,6 +57,7 @@ npm run test:v2
 npm run baseline:v1 -- output/new-immutable-baseline
 npm run bench:v2:plant -- output/manual-plant-review
 node --env-file-if-exists=.env dist/scripts/generate-v2.js output/new-automatic-run
+npm run calibrate:v2:critic -- output/v2-critic-calibration
 PORT=3014 VISUAL_PIPELINE=v2 npm start
 ```
 
@@ -93,6 +94,6 @@ Frame review found normalized SVG path lengths rasterizing as dotted primitive o
 Primitives now use explicit measured polyline geometry, matching illustration rendering.
 Hero/occupancy diagnostics apply only to structural/spatial families.
 
-Next: implement the real calibrated visual critic (Phase 12) and remaining state/motion
-operations. Then connect V2 to actual speech and progressive jobs before the full
-multi-domain/performance/migration evaluation.
+Next: wire the calibrated judge into a bounded critic-repair path and add remaining
+state/motion operations. Then connect V2 to actual speech and progressive jobs before the
+full multi-domain/performance/migration evaluation.

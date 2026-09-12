@@ -21,13 +21,18 @@ and a normalized SVG path-length rasterization issue; added a deterministic equa
 renderer, `top`/`bottom` anchors and tree/rail/trail geometry. Manual fixtures do not establish
 live multi-domain planning reliability or teaching efficacy.
 
-Validation: `npm test` passed 189 total / 187 pass / 0 fail / 2 skip, 76.405 s.
+Phase 12 critic is implemented and calibrated: `src/v2/vision-judge.ts` + `src/v2/calibration.ts`
+plus `npm run calibrate:v2:critic`. Live run 2 passed all nine known corruptions in both orders
+(accuracy 1.0, 0 order flips, 18 calls / $0.0366, `output/v2-critic-calibration-02/`); run 1
+failed on `delay_reveal` and `reverse_relation` and is retained. The judge is not yet wired as an
+automatic repair trigger.
+
+Validation: `npm test` passed 193 total / 191 pass / 0 fail / 2 skip, 76.306 s.
 This includes all V2 tests and the existing HTTP/provider regressions. Loopback access
 is required for HTTP tests. `npm run build` and `git diff --check` also pass.
 
-Next bounded task: the calibrated visual critic (Phase 12; the current evaluation module only
-provides hard lints, a calibration evaluator and a callback repair harness); then V2 speech
-adapter and progressive job lifecycle.
+Next bounded task: wire the calibrated judge into a bounded critic-repair path; then the V2
+speech adapter and progressive job lifecycle, followed by the full multi-domain benchmark.
 Remaining: actual V2 speech adapter, progressive V2 job lifecycle/UI, full multi-domain
 benchmark, measured live performance, blind human preference and migration gate.
 Do not silently map unsupported operations to generic boxes or invent provider success.

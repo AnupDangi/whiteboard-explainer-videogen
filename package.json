@@ -24,7 +24,8 @@
     "baseline:v1": "npm run build && node dist/scripts/capture-v1-baseline.js",
     "bench:v2:plant": "npm run build && node dist/scripts/bench-v2-plant.js",
     "test:v2": "npm run build && node --test test/v2*.test.js",
-    "bench:v2:archetypes": "npm run build && node dist/scripts/bench-v2-archetypes.js"
+    "bench:v2:archetypes": "npm run build && node dist/scripts/bench-v2-archetypes.js",
+    "calibrate:v2:critic": "npm run build && node --env-file-if-exists=.env dist/scripts/calibrate-v2-critic.js"
   },
   "optionalDependencies": {
     "sharp": "0.35.4"
