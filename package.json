@@ -20,7 +20,11 @@
     "kokoro-server": "sh -c '${KOKORO_PYTHON:-.kokoro-venv/bin/python} scripts/kokoro_server.py'",
     "kokoro-pool": "sh scripts/kokoro_pool.sh",
     "bench:tts": "npm run build && node dist/scripts/bench-tts.js",
-    "router:report": "npm run build && node dist/scripts/router-report.js"
+    "router:report": "npm run build && node dist/scripts/router-report.js",
+    "baseline:v1": "npm run build && node dist/scripts/capture-v1-baseline.js",
+    "bench:v2:plant": "npm run build && node dist/scripts/bench-v2-plant.js",
+    "test:v2": "npm run build && node --test test/v2*.test.js",
+    "bench:v2:archetypes": "npm run build && node dist/scripts/bench-v2-archetypes.js"
   },
   "optionalDependencies": {
     "sharp": "0.35.4"

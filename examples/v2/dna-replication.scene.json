@@ -1,0 +1,123 @@
+{
+  "version": 2,
+  "id": "dna_replication",
+  "title": "DNA opens into a replication fork",
+  "teachingGoal": "Compare paired DNA with the opened fork and complementary copies",
+  "mentalModel": "Compare paired DNA with the opened fork and complementary copies",
+  "archetype": "transformation",
+  "objects": [
+    {
+      "id": "helix",
+      "label": "Before: paired parental strands",
+      "role": "hero",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "biology.dna.helix.v2"
+    },
+    {
+      "id": "fork",
+      "label": "At the fork: strands separate",
+      "role": "hero",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "biology.dna.fork.v2"
+    }
+  ],
+  "relations": [
+    {
+      "id": "unzip",
+      "from": {
+        "objectId": "helix",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "fork",
+        "anchor": "input"
+      },
+      "relationType": "transforms_to",
+      "visualForm": "arrow"
+    }
+  ],
+  "beats": [
+    {
+      "id": "paired",
+      "narration": "DNA begins as two paired strands. Each strand carries a sequence of bases.",
+      "actions": [
+        {
+          "id": "draw_helix",
+          "type": "draw",
+          "objectIds": [
+            "helix"
+          ],
+          "relationIds": [],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "open",
+      "narration": "At a replication fork, the parental strands separate, exposing bases that can be copied.",
+      "actions": [
+        {
+          "id": "draw_fork",
+          "type": "draw",
+          "objectIds": [
+            "fork"
+          ],
+          "relationIds": [],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "show_unzip",
+          "type": "trace",
+          "objectIds": [],
+          "relationIds": [
+            "unzip"
+          ],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "copy",
+      "narration": "Each exposed strand acts as a template for a new complementary strand.",
+      "actions": [
+        {
+          "id": "highlight_fork",
+          "type": "highlight",
+          "objectIds": [
+            "fork"
+          ],
+          "relationIds": [],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

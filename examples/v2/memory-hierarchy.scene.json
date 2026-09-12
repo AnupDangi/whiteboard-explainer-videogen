@@ -1,0 +1,356 @@
+{
+  "version": 2,
+  "id": "memory_hierarchy",
+  "title": "The computer memory hierarchy",
+  "teachingGoal": "Show that storage is organised in levels that trade speed against size and cost",
+  "mentalModel": "One machine, two families of storage, each split into faster and slower levels",
+  "archetype": "hierarchy",
+  "objects": [
+    {
+      "id": "memory",
+      "label": "Memory hierarchy",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "cache_level",
+      "label": "Fast cache",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "storage_level",
+      "label": "Slow storage",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "registers",
+      "label": "CPU registers",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "l1_l2",
+      "label": "L1 and L2 cache",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "ram",
+      "label": "Main memory RAM",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "disk",
+      "label": "SSD and disk",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    }
+  ],
+  "relations": [
+    {
+      "id": "e_root_cache",
+      "from": {
+        "objectId": "memory",
+        "anchor": "center"
+      },
+      "to": {
+        "objectId": "cache_level",
+        "anchor": "center"
+      },
+      "relationType": "contains",
+      "visualForm": "arrow"
+    },
+    {
+      "id": "e_root_storage",
+      "from": {
+        "objectId": "memory",
+        "anchor": "center"
+      },
+      "to": {
+        "objectId": "storage_level",
+        "anchor": "center"
+      },
+      "relationType": "contains",
+      "visualForm": "arrow"
+    },
+    {
+      "id": "e_cache_reg",
+      "from": {
+        "objectId": "cache_level",
+        "anchor": "center"
+      },
+      "to": {
+        "objectId": "registers",
+        "anchor": "center"
+      },
+      "relationType": "contains",
+      "visualForm": "arrow"
+    },
+    {
+      "id": "e_cache_l2",
+      "from": {
+        "objectId": "cache_level",
+        "anchor": "center"
+      },
+      "to": {
+        "objectId": "l1_l2",
+        "anchor": "center"
+      },
+      "relationType": "contains",
+      "visualForm": "arrow"
+    },
+    {
+      "id": "e_storage_ram",
+      "from": {
+        "objectId": "storage_level",
+        "anchor": "center"
+      },
+      "to": {
+        "objectId": "ram",
+        "anchor": "center"
+      },
+      "relationType": "contains",
+      "visualForm": "arrow"
+    },
+    {
+      "id": "e_storage_disk",
+      "from": {
+        "objectId": "storage_level",
+        "anchor": "center"
+      },
+      "to": {
+        "objectId": "disk",
+        "anchor": "center"
+      },
+      "relationType": "contains",
+      "visualForm": "arrow"
+    }
+  ],
+  "beats": [
+    {
+      "id": "whole",
+      "narration": "A computer keeps data in several places, and they are arranged as one hierarchy of speed and size.",
+      "actions": [
+        {
+          "id": "draw_memory",
+          "type": "draw",
+          "objectIds": [
+            "memory"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "two_families",
+      "narration": "The hierarchy splits into fast cache close to the processor and slower storage that holds far more data.",
+      "actions": [
+        {
+          "id": "draw_cache_level",
+          "type": "draw",
+          "objectIds": [
+            "cache_level"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "draw_storage_level",
+          "type": "draw",
+          "objectIds": [
+            "storage_level"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "trace_root",
+          "type": "trace",
+          "objectIds": [],
+          "relationIds": [
+            "e_root_cache",
+            "e_root_storage"
+          ],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "cache_levels",
+      "narration": "Inside the cache family, registers are fastest and smallest, while L1 and L2 cache add more room.",
+      "actions": [
+        {
+          "id": "draw_registers",
+          "type": "draw",
+          "objectIds": [
+            "registers"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "draw_l1_l2",
+          "type": "draw",
+          "objectIds": [
+            "l1_l2"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "trace_cache",
+          "type": "trace",
+          "objectIds": [],
+          "relationIds": [
+            "e_cache_reg",
+            "e_cache_l2"
+          ],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "storage_levels",
+      "narration": "The storage family starts with main memory RAM and continues to SSD and disk for lasting storage.",
+      "actions": [
+        {
+          "id": "draw_ram",
+          "type": "draw",
+          "objectIds": [
+            "ram"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "draw_disk",
+          "type": "draw",
+          "objectIds": [
+            "disk"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "trace_storage",
+          "type": "trace",
+          "objectIds": [],
+          "relationIds": [
+            "e_storage_ram",
+            "e_storage_disk"
+          ],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "tradeoff",
+      "narration": "Moving down the tree buys more capacity at the cost of speed, so the levels work together.",
+      "actions": [
+        {
+          "id": "highlight_memory",
+          "type": "highlight",
+          "objectIds": [
+            "memory"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "ease_in_out",
+          "toState": "highlighted"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

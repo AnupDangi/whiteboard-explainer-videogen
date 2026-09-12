@@ -1,0 +1,177 @@
+{
+  "version": 2,
+  "id": "caching_rules",
+  "title": "Five rules for a useful cache",
+  "teachingGoal": "Teach five independent practical caching rules as a numbered list",
+  "mentalModel": "Teach five independent practical caching rules as a numbered list",
+  "archetype": "numbered_steps",
+  "objects": [
+    {
+      "id": "rule_1",
+      "label": "Cache results that are expensive to compute",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "rule_2",
+      "label": "Choose a key that includes every relevant input",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "rule_3",
+      "label": "Set an expiry appropriate to how the data changes",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "rule_4",
+      "label": "Invalidate entries when their source changes",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "rule_5",
+      "label": "Measure hit rate and check correctness",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    }
+  ],
+  "relations": [],
+  "beats": [
+    {
+      "id": "step_1",
+      "narration": "Start with expensive, repeated work. Caching a cheap one-off calculation often adds needless complexity.",
+      "actions": [
+        {
+          "id": "write_1",
+          "type": "draw",
+          "objectIds": [
+            "rule_1"
+          ],
+          "relationIds": [],
+          "durationMs": 4500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_2",
+      "narration": "Build the cache key from every input that can change the result, including relevant user context.",
+      "actions": [
+        {
+          "id": "write_2",
+          "type": "draw",
+          "objectIds": [
+            "rule_2"
+          ],
+          "relationIds": [],
+          "durationMs": 4500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_3",
+      "narration": "Choose an expiry based on how quickly the underlying information changes and how stale it may be.",
+      "actions": [
+        {
+          "id": "write_3",
+          "type": "draw",
+          "objectIds": [
+            "rule_3"
+          ],
+          "relationIds": [],
+          "durationMs": 4500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_4",
+      "narration": "When source data changes, invalidate the affected cache entries so readers do not keep receiving obsolete results.",
+      "actions": [
+        {
+          "id": "write_4",
+          "type": "draw",
+          "objectIds": [
+            "rule_4"
+          ],
+          "relationIds": [],
+          "durationMs": 4500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_5",
+      "narration": "Measure cache hits and latency, but also check correctness. A fast answer is useful only when it is right.",
+      "actions": [
+        {
+          "id": "write_5",
+          "type": "draw",
+          "objectIds": [
+            "rule_5"
+          ],
+          "relationIds": [],
+          "durationMs": 4500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

@@ -1,3 +1,24 @@
+# Experimental semantic V2 — 2026-09-12
+
+`src/v2/` is a parallel semantic pipeline following `../../v4_docs/`. It separates
+teaching claims/concepts/beats from visual inventory, trusted assets, deterministic
+composition, narration freeze and speech-aligned actions. The canonical V2 renderer is
+`src/v2/renderer/render-svg.ts`; browser and export import the same pure function.
+No generated executable code, raw SVG, or model coordinates are accepted.
+
+`VISUAL_PIPELINE=v1|v2` defaults to V1 and selects the landing UI. V2 currently has
+`GET /api/v2/golden` and `POST /api/v2/compile`, plus a real-model CLI. The legacy job
+API retains its V1 schema. All ordered Phase 14 archetypes compile: structural/convergence,
+transformation/comparison, cross-section/spatial-process, numbered steps, flow, cycle,
+equation_walkthrough, matrix_operation, hierarchy, timeline and trajectory. Flow uses dependency
+ranks; cycles follow a closed semantic loop; equation lines stack monotonically; matrix terms read
+left to right; hierarchy is a validated single-root tree; timeline is declared order on a rail;
+trajectory is ordered steps on a descending path. Other archetypes and advanced motions fail
+explicitly.
+See [V4_IMPLEMENTATION.md](V4_IMPLEMENTATION.md) for live status and boundaries.
+
+---
+
 # Current architecture note — 2026-09-09 review
 
 This document contains historical design sections. Current code already has seven layouts, a separate director, optional critic, 12 illustration kinds, up-to-five concurrent chapter preparation, speculative Kokoro speech and batched raster export. Statements below about three layouts, purely sequential preparation and deferred repair are historical, not the current module contract.

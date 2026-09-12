@@ -1,3 +1,76 @@
+# 2026-09-12 — hierarchy + timeline + trajectory: Phase 14 complete
+
+Closed Phase 14 (`v4_docs/Tasks.md`): all twelve archetypes in the ordered list now have a
+deterministic compiler and renderer. Added `hierarchy` (single-root tree, ≤3 levels,
+single-root/cycle/connectivity validation), `timeline` (2–6 declared-order events on a
+deterministic rail) and `trajectory` (3–6 ordered steps on a descending quadratic path
+with a dashed trail).
+
+- Compiler adds `top`/`bottom` anchors; hierarchy routes parent-bottom→child-top so tree
+  edges no longer cross label text. Timeline rail and trajectory trail are rendered from
+  compiled geometry (pure, deterministic).
+- Fixtures: `examples/v2/memory-hierarchy.scene.json`, `examples/v2/roman-timeline.scene.json`,
+  `examples/v2/gradient-steps.scene.json`; gates in `eval/v2/cases/`.
+- Evidence: `output/v2-archetypes-07/` — 11 cases, MP4/JSON/event+fixed sheets,
+  `diagnostics []`, 0 errors; silent estimated timing, no model calls.
+- Full regression: 189 tests, 187 pass, 0 fail, 2 skip; 76.405 s (was 187/185/2).
+- Limitation: manual fixtures only; live planner/director not yet exercised for these
+  archetypes; trajectory is a deterministic quadratic path, not a learned curve. Next:
+  Phase 12 calibrated critic, then V2 speech + progressive jobs.
+
+---
+
+# 2026-09-12 — equation_walkthrough + matrix_operation layouts
+
+Extended Phase 14 (V4 Tasks) from seven to nine distinct archetype compilers:
+`equation_walkthrough` (2–6 stacked equation lines, monotonic top-to-bottom
+derivation) and `matrix_operation` (3–6 left-to-right terms with at least one
+equation token and one matrix/vector asset).
+
+- New deterministic `renderEquation` primitive (progressive character reveal,
+  emphasis wash, monospace text) replaces the label fallback for `equation`
+  objects; collision bounds unchanged.
+- Manual fixtures: `examples/v2/equation-walkthrough.scene.json` (2x + 3 = 11
+  solved in four lines) and `examples/v2/matrix-multiply.scene.json` (A × x = b
+  with real `math.matrix.v2` / `math.vector.v2` geometry). Eval gates:
+  `eval/v2/cases/equation_walkthrough.json`, `eval/v2/cases/matrix_multiply.json`.
+- Evidence: `output/v2-archetypes-06/` — eight cases, MP4/JSON/event + fixed
+  contact sheets, `diagnostics []`; all silent estimated timing, no model calls.
+- Full regression: 187 tests, 185 pass, 0 fail, 2 skip; 76.513 s (was 185/183/2).
+  `npm run build` and `git diff --check` pass.
+- Limitation: manual fixtures prove the compiler/renderer only. The live
+  planner/director has not been run for these archetypes; `matrix_operation`
+  relation routing detours above the row (legible, not yet adjacent). Next:
+  `hierarchy`, `timeline`, `trajectory`, then Phase 12 calibrated critic.
+
+---
+
+# 2026-09-12 — Semantic V2 capability and archetype expansion
+
+Exact task matrix: [V4_IMPLEMENTATION.md](V4_IMPLEMENTATION.md).
+
+- Immutable baseline: six cases, 11 V1 scenes; silent estimated timing under
+  `output/v4-baseline/`. Original SHA `932af863982eac6d5d0db099c3914c00cd7a7813`.
+- Manual plant capability passed frame/browser review. Automatic live plant run 09
+  subsequently passed all ten semantic checks and final-frame review: $0.03532815,
+  22.123 s scene ready, 22.570 s reported first playable. One teaching call and two
+  director calls; JSON-object compatibility mode with strict local schemas. No TTS.
+- Earlier failed model attempts remain retained with their actual costs and causes.
+  Saved-output replays are separately labeled and do not count as live latency evidence.
+- Six manual archetype cases now export successfully: DNA, tectonic section, MLA,
+  numbered caching rules, HTTP flow and water cycle. Latest output:
+  `output/v2-archetypes-05/`. Frame review corrected a spurious query vector in the
+  MLA K/V representation, mantle placement, cycle crossings and dotted primitive
+  outlines caused by normalized SVG path-length rasterization. Registry: 39 assets.
+- Full regression: 185 tests, 183 pass, 0 fail, 2 skip; 76.158 s. Build and diff checks
+  pass. These checks establish implementation behavior, not human teaching efficacy.
+
+V1 remains default. Calibrated VLM/human pairwise, remaining math/graph/spatial layouts,
+advanced motion, V2 speech and progressive jobs, full multi-domain evaluation and live
+performance/migration gates remain unfinished. No commits or pushes made.
+
+---
+
 # 2026-09-11 — Stale-server incident + last-resort content commit (never 0 scenes)
 
 **Symptom:** a UI job (bare prompt, FHE) ended `error`, **0/2 scenes**, after 163.7 s with board-text

@@ -1,0 +1,162 @@
+{
+  "version": 2,
+  "id": "mla_compression",
+  "title": "MLA stores a compact latent representation",
+  "teachingGoal": "Show storage reduction and subsequent use of compressed attention state",
+  "mentalModel": "Show storage reduction and subsequent use of compressed attention state",
+  "archetype": "transformation",
+  "objects": [
+    {
+      "id": "kv",
+      "label": "Standard K/V representation",
+      "role": "hero",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "math.matrix.v2"
+    },
+    {
+      "id": "latent",
+      "label": "Compact latent representation",
+      "role": "hero",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "data.latent.v2"
+    },
+    {
+      "id": "reconstructed",
+      "label": "Keys and values used by attention",
+      "role": "support",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "data.kv.v2"
+    }
+  ],
+  "relations": [
+    {
+      "id": "compress",
+      "from": {
+        "objectId": "kv",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "latent",
+        "anchor": "input"
+      },
+      "relationType": "transforms_to",
+      "visualForm": "arrow"
+    },
+    {
+      "id": "use_latent",
+      "from": {
+        "objectId": "latent",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "reconstructed",
+        "anchor": "input"
+      },
+      "relationType": "transforms_to",
+      "visualForm": "arrow"
+    }
+  ],
+  "beats": [
+    {
+      "id": "storage",
+      "narration": "Conventional attention retains key and value information. These blocks illustrate storage, not exact model dimensions.",
+      "actions": [
+        {
+          "id": "draw_kv",
+          "type": "draw",
+          "objectIds": [
+            "kv"
+          ],
+          "relationIds": [],
+          "durationMs": 6500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "compress",
+      "narration": "Multi-head latent attention compresses key and value information into a smaller latent representation.",
+      "actions": [
+        {
+          "id": "draw_latent",
+          "type": "draw",
+          "objectIds": [
+            "latent"
+          ],
+          "relationIds": [],
+          "durationMs": 5500,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "compression_arrow",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "compress"
+          ],
+          "durationMs": 5500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "use",
+      "narration": "The model uses that latent representation to obtain the key and value information needed for attention.",
+      "actions": [
+        {
+          "id": "draw_reconstruction",
+          "type": "draw",
+          "objectIds": [
+            "reconstructed"
+          ],
+          "relationIds": [],
+          "durationMs": 6500,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "use_arrow",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "use_latent"
+          ],
+          "durationMs": 6500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

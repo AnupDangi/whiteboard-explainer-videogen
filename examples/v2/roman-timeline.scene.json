@@ -1,0 +1,189 @@
+{
+  "version": 2,
+  "id": "roman_timeline",
+  "title": "How the Roman Republic ended",
+  "teachingGoal": "Order the key political events that turned the Republic into an empire",
+  "mentalModel": "A chain of crises, each making one man more powerful than the Senate",
+  "archetype": "timeline",
+  "objects": [
+    {
+      "id": "event_1",
+      "label": "133 BC: land reform",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "event_2",
+      "label": "82 BC: Sulla dictator",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "event_3",
+      "label": "49 BC: Caesar crosses Rubicon",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "event_4",
+      "label": "44 BC: Caesar killed",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "event_5",
+      "label": "27 BC: Augustus rules",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    }
+  ],
+  "relations": [],
+  "beats": [
+    {
+      "id": "reform",
+      "narration": "The troubles begin with land reform, when populist tribunes challenged the Senate and were killed.",
+      "actions": [
+        {
+          "id": "draw_event_1",
+          "type": "draw",
+          "objectIds": [
+            "event_1"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "dictator",
+      "narration": "Later a general named Sulla marched on Rome itself and ruled as dictator, setting a dangerous example.",
+      "actions": [
+        {
+          "id": "draw_event_2",
+          "type": "draw",
+          "objectIds": [
+            "event_2"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "rubicon",
+      "narration": "Julius Caesar then crossed the Rubicon with his army, turning a political dispute into civil war.",
+      "actions": [
+        {
+          "id": "draw_event_3",
+          "type": "draw",
+          "objectIds": [
+            "event_3"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "killed",
+      "narration": "Caesar was made dictator for life and then assassinated, and the Republic fell into further fighting.",
+      "actions": [
+        {
+          "id": "draw_event_4",
+          "type": "draw",
+          "objectIds": [
+            "event_4"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "empire",
+      "narration": "Finally Octavian took the name Augustus and ruled alone, and the Roman Empire replaced the Republic.",
+      "actions": [
+        {
+          "id": "draw_event_5",
+          "type": "draw",
+          "objectIds": [
+            "event_5"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "highlight_timeline",
+          "type": "highlight",
+          "objectIds": [
+            "event_5"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "ease_in_out",
+          "toState": "highlighted"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

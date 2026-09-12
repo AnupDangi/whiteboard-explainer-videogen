@@ -1,0 +1,5 @@
+{
+  "id": "water_cycle",
+  "sceneFile": "examples/v2/water-cycle.scene.json",
+  "mode": "manual capability fixture"
+}

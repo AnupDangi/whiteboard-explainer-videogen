@@ -1,0 +1,103 @@
+{
+  "version": 2,
+  "id": "plate_tectonics",
+  "title": "A cross-section beneath moving plates",
+  "teachingGoal": "Show the spatial relationship between crust, a descending plate, and mantle circulation",
+  "mentalModel": "Show the spatial relationship between crust, a descending plate, and mantle circulation",
+  "archetype": "cross_section",
+  "objects": [
+    {
+      "id": "plates",
+      "label": "Crust and subducting plate",
+      "role": "hero",
+      "children": [
+        "mantle"
+      ],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "earth.plate.section.v2"
+    },
+    {
+      "id": "mantle",
+      "label": "Mantle flow",
+      "role": "structure",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "overlay",
+      "assetRef": "earth.mantle.convection.v2",
+      "parentId": "plates",
+      "preferredZone": "lower_left"
+    }
+  ],
+  "relations": [],
+  "beats": [
+    {
+      "id": "crust",
+      "narration": "The rigid outer plates meet at a boundary. This cutaway shows one plate descending beneath another.",
+      "actions": [
+        {
+          "id": "draw_plates",
+          "type": "draw",
+          "objectIds": [
+            "plates"
+          ],
+          "relationIds": [],
+          "durationMs": 6500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "mantle",
+      "narration": "Below the plates, hotter mantle material rises while cooler material sinks in slow circulation.",
+      "actions": [
+        {
+          "id": "draw_mantle",
+          "type": "draw",
+          "objectIds": [
+            "mantle"
+          ],
+          "relationIds": [],
+          "durationMs": 6000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "coupling",
+      "narration": "Plate motion and mantle flow are coupled. This schematic shows the geometry, not their actual speeds.",
+      "actions": [
+        {
+          "id": "focus_section",
+          "type": "highlight",
+          "objectIds": [
+            "plates",
+            "mantle"
+          ],
+          "relationIds": [],
+          "durationMs": 6500,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

@@ -1,3 +1,42 @@
+# Current handoff — 2026-09-12, V4 document implementation / semantic V2
+
+Implementation continues on `v4-optimization`; V1 remains default. Read
+[V4_IMPLEMENTATION.md](V4_IMPLEMENTATION.md) for the task matrix and constraints.
+No commits or pushes made. The overall V4 plan is not complete.
+
+Automatic plant run 09 passed all ten semantic checks and final-frame review: one
+teaching call, two director calls, $0.03532815, 22.123 s scene ready. This is estimated
+silent timing, not TTS latency. Failures 01–08 remain preserved. Replay runs are clearly
+labeled as recorded-output replays, never new provider successes.
+
+The registry now contains 39 original assets. All ordered Phase 14 archetypes are supported:
+structural, convergence, transformation, comparison, cross-section, spatial-process, numbered
+steps, flow, cycle, equation_walkthrough, matrix_operation, hierarchy, timeline and trajectory
+(use their exact schema enum names in code). Eleven manual fixtures cover DNA, tectonics, MLA,
+caching rules, HTTP request flow, water cycle, an equation walkthrough, matrix multiplication,
+the memory hierarchy, a Roman timeline and gradient descent. Latest artifacts:
+`output/v2-archetypes-07/` (MP4s, event/fixed sheets, final PNGs, JSON and hashes).
+Frame review corrected K/V semantics, mantle placement/label overlap, cycle port crossings,
+and a normalized SVG path-length rasterization issue; added a deterministic equation primitive
+renderer, `top`/`bottom` anchors and tree/rail/trail geometry. Manual fixtures do not establish
+live multi-domain planning reliability or teaching efficacy.
+
+Validation: `npm test` passed 189 total / 187 pass / 0 fail / 2 skip, 76.405 s.
+This includes all V2 tests and the existing HTTP/provider regressions. Loopback access
+is required for HTTP tests. `npm run build` and `git diff --check` also pass.
+
+Next bounded task: the calibrated visual critic (Phase 12; the current evaluation module only
+provides hard lints, a calibration evaluator and a callback repair harness); then V2 speech
+adapter and progressive job lifecycle.
+Remaining: actual V2 speech adapter, progressive V2 job lifecycle/UI, full multi-domain
+benchmark, measured live performance, blind human preference and migration gate.
+Do not silently map unsupported operations to generic boxes or invent provider success.
+
+Preview: `PORT=3014 VISUAL_PIPELINE=v2 npm start`; `/v2.html` also works under V1.
+The current viewer is manual scene playback; it does not expose automatic generation.
+
+---
+
 # Current handoff — 2026-09-11, TTS reliability + planner boundary + gate consolidation (Phase 1-3)
 
 **Suite:** `npm test` → **153 tests, 151 pass, 0 fail, 2 skip**.

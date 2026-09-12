@@ -1,0 +1,142 @@
+{
+  "version": 2,
+  "id": "http_request",
+  "title": "Following an HTTP request",
+  "teachingGoal": "Following an HTTP request",
+  "mentalModel": "Following an HTTP request",
+  "archetype": "flow",
+  "objects": [
+    {
+      "id": "client",
+      "label": "Client",
+      "role": "data",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "systems.document.v2"
+    },
+    {
+      "id": "server",
+      "label": "Application server",
+      "role": "data",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "systems.server.v2"
+    },
+    {
+      "id": "database",
+      "label": "Database",
+      "role": "data",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "systems.database.v2"
+    }
+  ],
+  "relations": [
+    {
+      "id": "link_0",
+      "from": {
+        "objectId": "client",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "server",
+        "anchor": "input"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    },
+    {
+      "id": "link_1",
+      "from": {
+        "objectId": "server",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "database",
+        "anchor": "input"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    }
+  ],
+  "beats": [
+    {
+      "id": "inventory",
+      "narration": "A client, an application server, and a database each play a different role in this request.",
+      "actions": [
+        {
+          "id": "draw_inventory",
+          "type": "draw",
+          "objectIds": [
+            "client",
+            "server",
+            "database"
+          ],
+          "relationIds": [],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_0",
+      "narration": "The client sends an HTTP request to the server, which decides how to handle it.",
+      "actions": [
+        {
+          "id": "trace_0",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "link_0"
+          ],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_1",
+      "narration": "When stored data is needed, the server queries the database. The response path is omitted here.",
+      "actions": [
+        {
+          "id": "trace_1",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "link_1"
+          ],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

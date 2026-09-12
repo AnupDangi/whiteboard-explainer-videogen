@@ -1,0 +1,224 @@
+{
+  "version": 2,
+  "lessonGoal": "Understand the three inputs a plant needs to make food",
+  "learnerAssumption": "Knows plants are living things",
+  "centralQuestion": "What does a plant need to make food?",
+  "requiredClaims": [
+    {
+      "id": "light_claim",
+      "statement": "Sunlight supplies energy",
+      "critical": true,
+      "evidenceRefs": []
+    },
+    {
+      "id": "water_claim",
+      "statement": "Roots absorb water",
+      "critical": true,
+      "evidenceRefs": []
+    },
+    {
+      "id": "carbon_claim",
+      "statement": "Carbon dioxide enters leaves",
+      "critical": true,
+      "evidenceRefs": []
+    }
+  ],
+  "requiredMechanisms": [
+    {
+      "id": "inputs_mechanism",
+      "statement": "Inputs enable plant food production",
+      "critical": true,
+      "evidenceRefs": [],
+      "conceptIds": [
+        "plant",
+        "sunlight",
+        "water",
+        "carbon_dioxide"
+      ],
+      "requiresStateChange": false
+    }
+  ],
+  "conceptRegistry": [
+    {
+      "id": "plant",
+      "canonicalName": "Plant",
+      "aliases": [
+        "sapling"
+      ],
+      "semanticType": "entity",
+      "evidenceRefs": []
+    },
+    {
+      "id": "sunlight",
+      "canonicalName": "Sunlight",
+      "aliases": [
+        "sun",
+        "light energy"
+      ],
+      "semanticType": "material",
+      "evidenceRefs": []
+    },
+    {
+      "id": "water",
+      "canonicalName": "Water",
+      "aliases": [
+        "droplet"
+      ],
+      "semanticType": "material",
+      "evidenceRefs": []
+    },
+    {
+      "id": "carbon_dioxide",
+      "canonicalName": "Carbon dioxide",
+      "aliases": [
+        "CO2"
+      ],
+      "semanticType": "material",
+      "evidenceRefs": []
+    }
+  ],
+  "scenes": [
+    {
+      "id": "photosynthesis_plant",
+      "teachingGoal": "Understand the three inputs a plant needs to make food",
+      "learnerShouldUnderstand": "Food production requires light, water, and carbon dioxide",
+      "mentalModel": "A plant is the central system receiving light through leaves, water through roots, and carbon dioxide through leaves",
+      "beats": [
+        {
+          "id": "establish",
+          "purpose": "Establish the central system",
+          "narrationDraft": "A plant makes its own food. Watch how its leaves and roots collect what it needs.",
+          "requirementIds": [],
+          "introduce": [
+            "plant"
+          ],
+          "reinforce": [
+            "plant"
+          ],
+          "transform": [],
+          "relationFocus": [],
+          "evidenceRefs": []
+        },
+        {
+          "id": "light",
+          "purpose": "Teach energy input",
+          "narrationDraft": "Sunlight provides energy. Leaves capture this light to power the reactions that help make sugar.",
+          "requirementIds": [
+            "light_claim"
+          ],
+          "introduce": [
+            "sunlight"
+          ],
+          "reinforce": [
+            "plant"
+          ],
+          "transform": [],
+          "relationFocus": [
+            "light_to_leaf"
+          ],
+          "evidenceRefs": []
+        },
+        {
+          "id": "water_input",
+          "purpose": "Teach water input",
+          "narrationDraft": "Water enters through the roots. It travels up the stem toward the leaves, supplying another essential ingredient.",
+          "requirementIds": [
+            "water_claim"
+          ],
+          "introduce": [
+            "water"
+          ],
+          "reinforce": [
+            "plant"
+          ],
+          "transform": [],
+          "relationFocus": [
+            "water_to_roots"
+          ],
+          "evidenceRefs": []
+        },
+        {
+          "id": "carbon_input",
+          "purpose": "Teach carbon input",
+          "narrationDraft": "Carbon dioxide comes from the air. It enters the leaves through tiny pores and supplies carbon for sugar.",
+          "requirementIds": [
+            "carbon_claim"
+          ],
+          "introduce": [
+            "carbon_dioxide"
+          ],
+          "reinforce": [
+            "plant"
+          ],
+          "transform": [],
+          "relationFocus": [
+            "co2_to_leaf"
+          ],
+          "evidenceRefs": []
+        },
+        {
+          "id": "combine",
+          "purpose": "Combine the inputs",
+          "narrationDraft": "Together, light energy, water and carbon dioxide allow the plant to build sugar. That is how photosynthesis helps plants make food.",
+          "requirementIds": [
+            "inputs_mechanism"
+          ],
+          "introduce": [],
+          "reinforce": [
+            "plant",
+            "sunlight",
+            "water",
+            "carbon_dioxide"
+          ],
+          "transform": [],
+          "relationFocus": [
+            "light_to_leaf",
+            "water_to_roots",
+            "co2_to_leaf"
+          ],
+          "evidenceRefs": []
+        }
+      ],
+      "requiredConceptIds": [
+        "plant",
+        "sunlight",
+        "water",
+        "carbon_dioxide"
+      ],
+      "requiredRelations": [
+        {
+          "id": "light_to_leaf",
+          "fromConceptId": "sunlight",
+          "toConceptId": "plant",
+          "relationType": "flows_to",
+          "targetAnchor": "leaf.top"
+        },
+        {
+          "id": "water_to_roots",
+          "fromConceptId": "water",
+          "toConceptId": "plant",
+          "relationType": "flows_to",
+          "targetAnchor": "roots"
+        },
+        {
+          "id": "co2_to_leaf",
+          "fromConceptId": "carbon_dioxide",
+          "toConceptId": "plant",
+          "relationType": "flows_to",
+          "targetAnchor": "leaf.right"
+        }
+      ],
+      "candidateArchetypes": [
+        "structural_diagram",
+        "convergence"
+      ],
+      "continuity": {
+        "keepFromPrevious": [],
+        "prepareForNext": []
+      },
+      "centralConceptId": "plant"
+    }
+  ],
+  "misconceptions": [],
+  "evidenceRefs": []
+}

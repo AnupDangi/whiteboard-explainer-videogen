@@ -1,0 +1,1 @@
+export function renderCursor(cursor:{x:number;y:number;angle:number}|undefined):string{return cursor?`<g transform="translate(${cursor.x} ${cursor.y}) rotate(${cursor.angle-35})"><path d="M 0 0 L 5 -4 L 29 -4 L 29 4 L 5 4 Z" fill="#d7ba76" stroke="#554c37" stroke-width="1.5"/><path d="M 0 0 L 5 -4 L 5 4 Z" fill="#263b33"/></g>`:'';}

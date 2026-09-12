@@ -1,0 +1,4 @@
+import type {Point,VisualArchetype,ObjectState} from '../types.js';
+/** Trusted polyline geometry: exact length and cursor interpolation share the same points. */
+export interface AssetPart {id:string;points:Point[];closed:boolean;stroke:'ink'|'green'|'blue'|'amber'|'earth'|'red';fill?:'green'|'blue'|'amber'|'earth'|'red';order:number;durationWeight:number;fillAfter:boolean;semanticRole:string}
+export interface AssetDefinition {id:string;flowPortPolicy?:'facing';anchorAliases?:Record<string,string>;type:'icon'|'illustration'|'diagram_template'|'composed';semanticTypes:string[];aliases:string[];tags:string[];archetypes:VisualArchetype[];viewBox:[number,number,number,number];parts:AssetPart[];anchors:Record<string,Point>;states:Partial<Record<ObjectState,{partIds:string[]}>>;styleFamily:string;source:string;license:string}

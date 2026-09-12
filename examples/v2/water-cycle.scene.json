@@ -1,0 +1,218 @@
+{
+  "version": 2,
+  "id": "water_cycle",
+  "title": "Water moves through a repeating cycle",
+  "teachingGoal": "Water moves through a repeating cycle",
+  "mentalModel": "Water moves through a repeating cycle",
+  "archetype": "cycle",
+  "objects": [
+    {
+      "id": "a_ocean",
+      "label": "Ocean",
+      "role": "data",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "earth.ocean.v2"
+    },
+    {
+      "id": "b_vapor",
+      "label": "Water vapor",
+      "role": "data",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "earth.water.vapor.v2"
+    },
+    {
+      "id": "c_cloud",
+      "label": "Cloud droplets",
+      "role": "data",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "earth.cloud.v2"
+    },
+    {
+      "id": "d_land",
+      "label": "Rain and runoff",
+      "role": "data",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "earth.runoff.v2"
+    }
+  ],
+  "relations": [
+    {
+      "id": "link_0",
+      "from": {
+        "objectId": "a_ocean",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "b_vapor",
+        "anchor": "input"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    },
+    {
+      "id": "link_1",
+      "from": {
+        "objectId": "b_vapor",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "c_cloud",
+        "anchor": "input"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    },
+    {
+      "id": "link_2",
+      "from": {
+        "objectId": "c_cloud",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "d_land",
+        "anchor": "input"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    },
+    {
+      "id": "link_3",
+      "from": {
+        "objectId": "d_land",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "a_ocean",
+        "anchor": "input"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    }
+  ],
+  "beats": [
+    {
+      "id": "inventory",
+      "narration": "These four reservoirs and stages help us follow one simplified route through the water cycle.",
+      "actions": [
+        {
+          "id": "draw_inventory",
+          "type": "draw",
+          "objectIds": [
+            "a_ocean",
+            "b_vapor",
+            "c_cloud",
+            "d_land"
+          ],
+          "relationIds": [],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_0",
+      "narration": "Liquid water evaporates from the ocean and enters the air as invisible water vapor.",
+      "actions": [
+        {
+          "id": "trace_0",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "link_0"
+          ],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_1",
+      "narration": "Cooling allows water vapor to condense into the small liquid droplets that form clouds.",
+      "actions": [
+        {
+          "id": "trace_1",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "link_1"
+          ],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_2",
+      "narration": "Droplets grow and fall as rain. Some of that water travels across the land as runoff.",
+      "actions": [
+        {
+          "id": "trace_2",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "link_2"
+          ],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "step_3",
+      "narration": "Runoff returns water to the ocean, completing this simplified cycle. Many other pathways also exist.",
+      "actions": [
+        {
+          "id": "trace_3",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "link_3"
+          ],
+          "durationMs": 5000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

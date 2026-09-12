@@ -1,0 +1,474 @@
+{
+  "version": 2,
+  "id": "photosynthesis_plant",
+  "title": "How a plant gathers the ingredients for food",
+  "teachingGoal": "Understand the three inputs a plant needs to make food",
+  "mentalModel": "A plant is the central system receiving light through leaves, water through roots, and carbon dioxide through leaves",
+  "archetype": "structural_diagram",
+  "objects": [
+    {
+      "id": "plant",
+      "label": "Plant",
+      "role": "hero",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "biology.plant.sapling.v2"
+    },
+    {
+      "id": "sunlight",
+      "label": "Sunlight",
+      "role": "support",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "assetRef": "nature.sun.v2",
+      "preferredZone": "upper_left"
+    },
+    {
+      "id": "water",
+      "label": "Water",
+      "role": "material",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "assetRef": "nature.water.v2",
+      "preferredZone": "lower_left"
+    },
+    {
+      "id": "carbon_dioxide",
+      "label": "Carbon dioxide (CO\u2082)",
+      "role": "material",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "assetRef": "chemistry.co2.v2",
+      "preferredZone": "upper_right"
+    },
+    {
+      "id": "leaf_label",
+      "label": "Leaves capture light",
+      "role": "annotation",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label",
+      "preferredZone": "right"
+    },
+    {
+      "id": "roots_label",
+      "label": "Roots absorb water",
+      "role": "annotation",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label",
+      "preferredZone": "lower_right"
+    }
+  ],
+  "relations": [
+    {
+      "id": "light_to_leaf",
+      "from": {
+        "objectId": "sunlight",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "plant",
+        "anchor": "leaf.top"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    },
+    {
+      "id": "water_to_roots",
+      "from": {
+        "objectId": "water",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "plant",
+        "anchor": "roots"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    },
+    {
+      "id": "co2_to_leaf",
+      "from": {
+        "objectId": "carbon_dioxide",
+        "anchor": "input"
+      },
+      "to": {
+        "objectId": "plant",
+        "anchor": "leaf.right"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    },
+    {
+      "id": "leaf_callout",
+      "from": {
+        "objectId": "leaf_label",
+        "anchor": "input"
+      },
+      "to": {
+        "objectId": "plant",
+        "anchor": "leaf.right"
+      },
+      "relationType": "labels",
+      "visualForm": "leader"
+    },
+    {
+      "id": "roots_callout",
+      "from": {
+        "objectId": "roots_label",
+        "anchor": "input"
+      },
+      "to": {
+        "objectId": "plant",
+        "anchor": "roots"
+      },
+      "relationType": "labels",
+      "visualForm": "leader"
+    }
+  ],
+  "beats": [
+    {
+      "id": "establish",
+      "narration": "A plant makes its own food. Watch how its leaves and roots collect what it needs.",
+      "actions": [
+        {
+          "id": "draw_plant",
+          "type": "draw",
+          "objectIds": [
+            "plant"
+          ],
+          "relationIds": [],
+          "durationMs": 6500,
+          "leadMs": -180,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "light",
+      "narration": "Sunlight provides energy. Leaves capture this light to power the reactions that help make sugar.",
+      "actions": [
+        {
+          "id": "draw_sun",
+          "type": "draw",
+          "objectIds": [
+            "sunlight"
+          ],
+          "relationIds": [],
+          "durationMs": 2200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "Sunlight",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "light_flow",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "light_to_leaf"
+          ],
+          "durationMs": 2200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "energy",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "reveal_leaf",
+          "type": "reveal",
+          "objectIds": [
+            "leaf_label"
+          ],
+          "relationIds": [],
+          "durationMs": 2200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "Leaves",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "leaf_leader",
+          "type": "trace",
+          "objectIds": [],
+          "relationIds": [
+            "leaf_callout"
+          ],
+          "durationMs": 2200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "Leaves",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "light_emphasis",
+          "type": "highlight",
+          "objectIds": [
+            "plant"
+          ],
+          "relationIds": [],
+          "durationMs": 2000,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "reactions",
+            "occurrence": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "water_input",
+      "narration": "Water enters through the roots. It travels up the stem toward the leaves, supplying another essential ingredient.",
+      "actions": [
+        {
+          "id": "draw_water",
+          "type": "draw",
+          "objectIds": [
+            "water"
+          ],
+          "relationIds": [],
+          "durationMs": 2200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "Water",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "water_flow",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "water_to_roots"
+          ],
+          "durationMs": 2800,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "roots",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "reveal_roots",
+          "type": "reveal",
+          "objectIds": [
+            "roots_label"
+          ],
+          "relationIds": [],
+          "durationMs": 2200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "roots",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "root_leader",
+          "type": "trace",
+          "objectIds": [],
+          "relationIds": [
+            "roots_callout"
+          ],
+          "durationMs": 2200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "roots",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "water_emphasis",
+          "type": "pulse",
+          "objectIds": [
+            "plant"
+          ],
+          "relationIds": [],
+          "durationMs": 1500,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "ingredient",
+            "occurrence": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "carbon_input",
+      "narration": "Carbon dioxide comes from the air. It enters the leaves through tiny pores and supplies carbon for sugar.",
+      "actions": [
+        {
+          "id": "draw_co2",
+          "type": "draw",
+          "objectIds": [
+            "carbon_dioxide"
+          ],
+          "relationIds": [],
+          "durationMs": 2200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "Carbon dioxide",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "carbon_flow",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "co2_to_leaf"
+          ],
+          "durationMs": 3000,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "enters",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "carbon_emphasis",
+          "type": "pulse",
+          "objectIds": [
+            "plant"
+          ],
+          "relationIds": [],
+          "durationMs": 1200,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "sugar",
+            "occurrence": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "combine",
+      "narration": "Together, light energy, water and carbon dioxide allow the plant to build sugar. That is how photosynthesis helps plants make food.",
+      "actions": [
+        {
+          "id": "combine_light",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "light_to_leaf"
+          ],
+          "durationMs": 3000,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "light",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "combine_water",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "water_to_roots"
+          ],
+          "durationMs": 3000,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "water",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "combine_carbon",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "co2_to_leaf"
+          ],
+          "durationMs": 3000,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "carbon dioxide",
+            "occurrence": 0
+          }
+        },
+        {
+          "id": "activate_plant",
+          "type": "fill",
+          "objectIds": [
+            "plant"
+          ],
+          "relationIds": [],
+          "durationMs": 3500,
+          "leadMs": -180,
+          "easing": "linear",
+          "anchor": {
+            "text": "build sugar",
+            "occurrence": 0
+          }
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "photosynthesis-plant",
+  "category": "biology",
+  "prompt": "Explain how plants make food to a middle-school student.",
+  "mustExplain": [
+    "light energy powers food production",
+    "roots absorb water",
+    "carbon dioxide enters leaves"
+  ],
+  "requiredRelations": [
+    "sunlight -> plant.leaf.top",
+    "water -> plant.roots",
+    "carbon_dioxide -> plant.leaf.right"
+  ],
+  "preferredArchetypes": [
+    "structural_diagram",
+    "convergence"
+  ],
+  "forbiddenPatterns": [
+    "generic_box_flow",
+    "water_arrow_to_center"
+  ],
+  "requiredAssets": [
+    "biology.plant.sapling.v2",
+    "nature.sun.v2",
+    "nature.water.v2",
+    "chemistry.co2.v2"
+  ]
+}

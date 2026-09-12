@@ -1,3 +1,21 @@
+# Current work — V4 documents / semantic V2, 2026-09-12
+
+Detailed task-by-task evidence: [docs/V4_IMPLEMENTATION.md](docs/V4_IMPLEMENTATION.md).
+
+- [x] Immutable offline V1 baseline: six cases, 11 scenes, MP4/JSON/contact sheets.
+- [x] Strict V2 contracts, concept/evidence validators, initial asset registry (39).
+- [x] Manual plant scene, structural compiler, part renderer, timeline and preview.
+- [x] Bounded planner/director and narration freeze implementation with mocked tests.
+- [x] Automatic plant live capability: run 09, all semantic checks pass; human review pending.
+- [x] Eleven manual cases: DNA, plates, MLA, numbered rules, HTTP flow, water cycle, equation walkthrough, matrix multiply, memory hierarchy, Roman timeline, gradient steps.
+- [x] All Phase 14 archetypes: equation_walkthrough, matrix_operation, hierarchy, timeline, trajectory, deterministic equation primitive, fail-closed tests.
+- [ ] Calibrated visual critic (Phase 12), full multi-domain benchmark.
+- [ ] V2 speech adapter + progressive jobs, live performance profile, blind human pairwise and release migration gates.
+
+No commit/push authorized. V1 remains the default. Keep the source V4 plans intact.
+
+---
+
 # Whiteboard Teacher Program — phased task tracker
 
 ## Current program — OPT-V3 teacher rebuild, 2026-09-10 (branch `opt-v3-harness`)

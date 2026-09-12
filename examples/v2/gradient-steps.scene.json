@@ -1,0 +1,157 @@
+{
+  "version": 2,
+  "id": "gradient_descent",
+  "title": "Gradient descent walks downhill",
+  "teachingGoal": "Show that each step follows the slope and shrinks as the loss approaches its minimum",
+  "mentalModel": "A ball rolling down a loss curve in successively smaller steps",
+  "archetype": "trajectory",
+  "objects": [
+    {
+      "id": "step_1",
+      "label": "Start: high loss",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "step_2",
+      "label": "Step 1: steep slope",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "step_3",
+      "label": "Step 2: smaller steps",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    },
+    {
+      "id": "step_4",
+      "label": "Near the minimum",
+      "role": "label",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "label"
+    }
+  ],
+  "relations": [],
+  "beats": [
+    {
+      "id": "start",
+      "narration": "Training starts at a random point on the loss surface, where the error is still very high.",
+      "actions": [
+        {
+          "id": "draw_step_1",
+          "type": "draw",
+          "objectIds": [
+            "step_1"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "first_step",
+      "narration": "The gradient points downhill, so the first update takes a large step in that direction.",
+      "actions": [
+        {
+          "id": "draw_step_2",
+          "type": "draw",
+          "objectIds": [
+            "step_2"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "smaller",
+      "narration": "As the slope flattens the steps get smaller, so the path settles instead of overshooting.",
+      "actions": [
+        {
+          "id": "draw_step_3",
+          "type": "draw",
+          "objectIds": [
+            "step_3"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "arrive",
+      "narration": "Near the bottom the gradient is almost zero, so training stops close to the minimum loss.",
+      "actions": [
+        {
+          "id": "draw_step_4",
+          "type": "draw",
+          "objectIds": [
+            "step_4"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "highlight_minimum",
+          "type": "highlight",
+          "objectIds": [
+            "step_4"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "ease_in_out",
+          "toState": "highlighted"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}

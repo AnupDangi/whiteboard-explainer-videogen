@@ -1,0 +1,238 @@
+{
+  "version": 2,
+  "id": "matrix_multiply",
+  "title": "A matrix transforms an input vector",
+  "teachingGoal": "Show that a weight matrix acts on an input vector to produce an output vector",
+  "mentalModel": "A matrix operation reads left to right as weight matrix times input equals output",
+  "archetype": "matrix_operation",
+  "objects": [
+    {
+      "id": "matrix_a",
+      "label": "Weight matrix A",
+      "role": "hero",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "math.matrix.v2"
+    },
+    {
+      "id": "op_multiply",
+      "label": "×",
+      "role": "equation",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "equation"
+    },
+    {
+      "id": "vector_x",
+      "label": "Input vector x",
+      "role": "support",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "math.vector.v2"
+    },
+    {
+      "id": "op_equals",
+      "label": "=",
+      "role": "equation",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "secondary",
+      "collisionPolicy": "forbid",
+      "primitiveRef": "equation"
+    },
+    {
+      "id": "vector_b",
+      "label": "Output vector b",
+      "role": "support",
+      "children": [],
+      "state": "neutral",
+      "allowedStates": [
+        "neutral",
+        "highlighted",
+        "activated"
+      ],
+      "importance": "primary",
+      "collisionPolicy": "forbid",
+      "assetRef": "math.vector.v2"
+    }
+  ],
+  "relations": [
+    {
+      "id": "apply_matrix",
+      "from": {
+        "objectId": "matrix_a",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "vector_x",
+        "anchor": "input"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    },
+    {
+      "id": "produce_output",
+      "from": {
+        "objectId": "vector_x",
+        "anchor": "output"
+      },
+      "to": {
+        "objectId": "vector_b",
+        "anchor": "input"
+      },
+      "relationType": "flows_to",
+      "visualForm": "flow"
+    }
+  ],
+  "beats": [
+    {
+      "id": "read_matrix",
+      "narration": "A weight matrix holds one row of numbers for every output the model can produce.",
+      "actions": [
+        {
+          "id": "draw_matrix",
+          "type": "draw",
+          "objectIds": [
+            "matrix_a"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "read_vector",
+      "narration": "The input vector supplies one number for each feature the model receives from the source.",
+      "actions": [
+        {
+          "id": "draw_multiply",
+          "type": "draw",
+          "objectIds": [
+            "op_multiply"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "draw_vector_x",
+          "type": "draw",
+          "objectIds": [
+            "vector_x"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "flow_input",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "apply_matrix"
+          ],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "read_equals",
+      "narration": "Multiplying the rows by the input combines the features into a new set of numbers.",
+      "actions": [
+        {
+          "id": "draw_equals",
+          "type": "draw",
+          "objectIds": [
+            "op_equals"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "read_output",
+      "narration": "The result is the output vector, and each entry is a weighted sum of the whole input.",
+      "actions": [
+        {
+          "id": "draw_vector_b",
+          "type": "draw",
+          "objectIds": [
+            "vector_b"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        },
+        {
+          "id": "flow_output",
+          "type": "flow",
+          "objectIds": [],
+          "relationIds": [
+            "produce_output"
+          ],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "linear"
+        }
+      ]
+    },
+    {
+      "id": "restate",
+      "narration": "Reading left to right, a matrix times an input equals the output the next layer uses.",
+      "actions": [
+        {
+          "id": "highlight_output",
+          "type": "highlight",
+          "objectIds": [
+            "vector_b"
+          ],
+          "relationIds": [],
+          "durationMs": 10000,
+          "leadMs": 0,
+          "easing": "ease_in_out",
+          "toState": "highlighted"
+        }
+      ]
+    }
+  ],
+  "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": []
+  }
+}
