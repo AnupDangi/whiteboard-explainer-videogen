@@ -27,7 +27,15 @@ plus `npm run calibrate:v2:critic`. Live run 2 passed all nine known corruptions
 failed on `delay_reveal` and `reverse_relation` and is retained. The judge is not yet wired as an
 automatic repair trigger.
 
-Validation: `npm test` passed 193 total / 191 pass / 0 fail / 2 skip, 76.306 s.
+Kokoro was removed from this repo on 2026-09-12 (files, npm scripts, live worker,
+`.kokoro-venv`). Local narration now goes through a separate `voice-engine` project
+at `../lamina-labs-video/voice-engine` (Supertonic 3 default, Piper fallback,
+Nepali always Piper) via the async `src/voice-engine-client.ts` / `src/v2/speech.ts`
+boundary. Engine timings are explicitly estimated; ElevenLabs stays the paid
+provider.
+
+Validation: `npm test` passed 185 total / 185 pass / 0 fail / 0 skip, 76.457 s
+(the two Kokoro tests and the pool tests were removed with the feature).
 This includes all V2 tests and the existing HTTP/provider regressions. Loopback access
 is required for HTTP tests. `npm run build` and `git diff --check` also pass.
 

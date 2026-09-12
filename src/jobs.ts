@@ -11,8 +11,7 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {fixtures} from './fixtures.js';
 import {validatePlan,compileScene,durationOf} from './engine.js';
-import {generateKokoroSpeech} from './kokoro-speech.js';
-import {createTtsPool,poolUrlsFromEnv} from './tts-pool.js';
+import {generateVoiceEngineSpeech} from './voice-engine-client.js';
 import {generateSpeech} from './providers.js';
 import {semaphore} from './concurrency.js';
 import {staticIntervalMs,connectorThroughNode} from './progression.js';
@@ -26,7 +25,7 @@ export function classifyError(message:string):string {
   if(/content filter|provider refused/i.test(message))return 'provider-refused';
   if(/truncated|incomplete or refused|finish_reason/i.test(message))return 'provider-truncated';
   if(/Source|PDF|HTTPS|redirect|Link must|readable|OCR/i.test(message))return 'source';
-  if(/Speech|Kokoro|TTS|ElevenLabs/i.test(message))return 'speech';
+  if(/Speech|TTS|ElevenLabs|voice-engine/i.test(message))return 'speech';
   if(/Anchor|outline|Expected two scenes|Chapter contains|Teaching checks|Visual checks|fallback exhausted|budget|Invalid (conceptId|evidenceIds|visualIntent|node|kind)/i.test(message))return 'plan';
   if(/schema|OpenRouter|HTTP \d/i.test(message))return 'provider';
   if(/ffmpeg|sharp|export/i.test(message))return 'media';
@@ -56,7 +55,7 @@ export class JobStore {
     const delayMs=options.delayMs??0;
     if(!Number.isFinite(delayMs)||delayMs<0||delayMs>20000)throw new Error('Delay must be 0–20000 ms');
     if(typeof options.narration!=='boolean')throw new Error('Invalid narration option');
-    if(options.ttsProvider&&!['elevenlabs','kokoro'].includes(options.ttsProvider))throw new Error('Unknown TTS provider');
+    if(options.ttsProvider&&!['elevenlabs','voice-engine'].includes(options.ttsProvider))throw new Error('Unknown TTS provider');
     if(options.visualCritic!==undefined&&typeof options.visualCritic!=='boolean')throw new Error('Invalid visual critic option');
     if(options.cachePrompts!==undefined&&typeof options.cachePrompts!=='boolean')throw new Error('Invalid cache prompts option');
     if(options.voiceId&& !/^[a-zA-Z0-9_-]{1,100}$/.test(options.voiceId))throw new Error('Invalid voice ID');
@@ -64,11 +63,11 @@ export class JobStore {
     if(active.length>=2)throw new Error('Two jobs already active; wait or cancel one.');
     const job:InternalJob={id:randomUUID(),status:'queued',revision:0,createdAt:Date.now(),mode:options.mode,
       targetMinutes:options.durationMinutes??1,plannerBudgetUsd:options.maxCostUsd??1,ttsCharacters:0,
-      timingMode:options.narration?(options.ttsProvider==='elevenlabs'?'provider-aligned':'kokoro-aligned'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[],manifestVersion:GENERATION_MANIFEST_VERSION};
+      timingMode:options.narration?(options.ttsProvider==='elevenlabs'?'provider-aligned':'engine-estimated'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[],manifestVersion:GENERATION_MANIFEST_VERSION};
     this.jobs.set(job.id,job);await mkdir(join(this.root,job.id),{recursive:true});
     await this.save(job,'queued');
     const controller=new AbortController();job.controller=controller;
-    log('job.created',{jobId:job.id,mode:options.mode,fixture:options.fixture,narration:options.narration,ttsProvider:options.ttsProvider||'kokoro',voiceId:options.voiceId||process.env.ELEVENLABS_VOICE_ID,targetMinutes:job.targetMinutes,budgetUsd:job.plannerBudgetUsd,simulatedDelayMs:delayMs});
+    log('job.created',{jobId:job.id,mode:options.mode,fixture:options.fixture,narration:options.narration,ttsProvider:options.ttsProvider||'voice-engine',language:options.language||process.env.VOICE_ENGINE_LANGUAGE||'en',voiceId:options.voiceId||process.env.ELEVENLABS_VOICE_ID,targetMinutes:job.targetMinutes,budgetUsd:job.plannerBudgetUsd,simulatedDelayMs:delayMs});
     job.task=logContext.run({...logContext.getStore(),jobId:job.id},()=>this.run(job,{...options,delayMs},controller.signal));
     return this.snapshot(job);
   }
@@ -89,19 +88,8 @@ export class JobStore {
     // on completion or failure alongside the planner spans already on job.usage.
     const ttsMsByScene:Record<string,number>={};
     const persistSpans=()=>{job.spans={...job.usage?.spans,ttsMsByScene:{...ttsMsByScene}};};
-    // TTS reliability: one bounded, priority-ordered Kokoro pool per job. The old fan-out
-    // fired all 20 scenes at one serialized server and the tail tripped a fixed deadline,
-    // killing a fully planned job. This pool caps in-flight work at one request per worker,
-    // dispatches by chapter/scene order so scene 1 is first, and measures queue wait and
-    // service time separately. Character reservation moves to enqueue, so speculative
-    // synthesis can no longer blow TTS_MAX_CHARACTERS_PER_JOB before the cap is checked.
-    const usePool=!!(options.narration&&options.ttsProvider!=='elevenlabs');
-    const pool=usePool?createTtsPool({
-      urls:poolUrlsFromEnv(process.env),
-      env:process.env,
-      ...(this.providers.speech?{synthesize:(_url:string,text:string,voice:string|undefined,signal:AbortSignal)=>this.providers.speech!(text,{signal,voiceId:voice})}:{}),
-      onEvent:(event,data)=>log(event,data),
-    }):null;
+    // Architecture: speech is one provider-independent async boundary per scene. The local
+    // voice-engine runs as a separate process behind it; providers are never imported here.
     const reservedByScene=new Map<string,number>();
     const reserveCharacters=(sceneId:string,chars:number):boolean=>{
       const prev=reservedByScene.get(sceneId)||0;
@@ -114,26 +102,6 @@ export class JobStore {
       const prev=reservedByScene.get(sceneId);if(prev===undefined)return;
       job.ttsCharacters=Math.max(0,job.ttsCharacters-prev);reservedByScene.delete(sceneId);
     };
-    // Phase 12: overlap TTS with the Visual Director call. Narration is immutable the moment
-    // content validates. Keyed by (sceneId, narration) so a stale speculative result from a
-    // regenerated chapter is never reused; regenerating cancels the superseded pool entry so
-    // a discarded narration stops holding a worker.
-    const speculativeSpeech=new Map<string,{narration:string;promise:Promise<{audio:Buffer;timing:Timing;format?:'wav'|'mp3'}>;priority:number}>();
-    const onContentReady=usePool&&pool
-      ?(chapter:number,scenes:Array<{id:string;narration:string}>)=>{
-          scenes.forEach((s,i)=>{
-            const priority=chapter*100+i;
-            if(speculativeSpeech.has(s.id))pool.cancel(s.id);
-            if(!reserveCharacters(s.id,s.narration.length)){
-              log('speech.characters-exceeded',{sceneId:s.id,cap:Number(process.env.TTS_MAX_CHARACTERS_PER_JOB||40000)},'warn');
-              return;
-            }
-            const promise=pool.enqueue({key:s.id,priority,text:s.narration,voice:options.voiceId});
-            promise.catch(()=>{}); // the commit path consumes it; prevent an unhandled rejection for discarded results
-            speculativeSpeech.set(s.id,{narration:s.narration,promise,priority});
-          });
-        }
-      :undefined;
     try {
       job.status='planning';await this.save(job,'planning');
       let sourceDocument!:SourceDocument;
@@ -174,7 +142,7 @@ export class JobStore {
         job.source={kind:sourceDocument.kind,label:sourceDocument.label,sha256:sourceDocument.sha256,characters:sourceDocument.text.length};
         await writeFile(join(this.root,job.id,'source.json'),JSON.stringify(sourceDocument));
       }
-      const plans=options.mode==='fixture'?[validatePlan(fixtures[options.fixture||''])]:this.providers.plan?[await this.providers.plan(options.prompt||'',{signal})]:generateChapters(sourceDocument,{signal,durationMinutes:options.durationMinutes??1,maxCostUsd:options.maxCostUsd??1,visualCritic:options.visualCritic??false,sessionId:job.id,cachePrompts:options.cachePrompts??true,cacheDir:this.root,onUsage:(usage:Usage)=>{job.usage=usage;log('planner.usage',{...usage});},onResponse:async(value,index)=>{await writeFile(join(this.root,job.id,`planner-${index}.json`),JSON.stringify(value,null,2));},onContentReady});
+      const plans=options.mode==='fixture'?[validatePlan(fixtures[options.fixture||''])]:this.providers.plan?[await this.providers.plan(options.prompt||'',{signal})]:generateChapters(sourceDocument,{signal,durationMinutes:options.durationMinutes??1,maxCostUsd:options.maxCostUsd??1,visualCritic:options.visualCritic??false,sessionId:job.id,cachePrompts:options.cachePrompts??true,cacheDir:this.root,onUsage:(usage:Usage)=>{job.usage=usage;log('planner.usage',{...usage});},onResponse:async(value,index)=>{await writeFile(join(this.root,job.id,`planner-${index}.json`),JSON.stringify(value,null,2));}});
       job.totalScenes=options.mode==='model'&&!this.providers.plan?(options.durationMinutes??1)*2:undefined;
       for await(const plan of plans){
         signal.throwIfAborted();job.title=plan.title;job.totalScenes??=plan.scenes.length;job.status='preparing';await queueSave('chapter-ready');
@@ -199,15 +167,7 @@ export class JobStore {
                 await queueSave('speech-started');
                 try {
                   const speechStarted=performance.now();
-                  let speech:{audio:Buffer;timing:Timing;format?:'wav'|'mp3'};
-                  if(pool){
-                    const speculative=speculativeSpeech.get(source.id);
-                    speech=await ((speculative&&speculative.narration===source.narration)
-                      ? speculative.promise
-                      : pool.enqueue({key:source.id,priority:plan.scenes.indexOf(source),text:source.narration,voice:options.voiceId}));
-                  } else {
-                    speech=await (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateKokoroSpeech))(source.narration,{signal,voiceId:options.voiceId});
-                  }
+                  const speech=await (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateVoiceEngineSpeech))(source.narration,{signal,voiceId:options.voiceId,language:options.language});
                   signal.throwIfAborted();timing=speech.timing;
                   ttsMsByScene[source.id]=Math.round(performance.now()-speechStarted);
                   log('speech.ready',{sceneId:source.id,elapsedMs:ttsMsByScene[source.id],bytes:speech.audio.length,format:speech.format||'mp3',words:speech.timing.words.length,timing:speech.timing.kind,durationMs:speech.timing.durationMs});
@@ -274,7 +234,7 @@ export class JobStore {
       log('job.summary',{status:job.status,wallMs:Date.now()-job.createdAt,costUsd:Number((job.usage?.costUsd||0).toFixed(6)),calls:job.usage?.calls||0,scenes:job.scenes.length,errorKind:job.errorKind,error:job.error,repairs:job.usage?.repairs||0,fallbackCount:job.fallbackCount||0,degradedScenes:job.degradedScenes||[],spans:job.usage?.spans||{}},signal.aborted?'warn':'error');
       persistSpans();await queueSave(job.status);
     }finally{
-      pool?.close();
+      // Provider processes are one-shot; nothing to tear down here.
     }
   }
   async get(id:string):Promise<JobSnapshot|null> {

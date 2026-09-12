@@ -20,7 +20,7 @@ for (const f of files) {
     promptTok: r.usage?.promptTokens ?? null, compTok: r.usage?.completionTokens ?? null,
     calls: r.usage?.calls ?? null, costUsd: r.usage?.costUsd?.toFixed(4) ?? null,
     elapsedS: r.elapsedMs ? Math.round(r.elapsedMs / 1000) : null,
-    voiceCostUsd: r.tts === 'kokoro' ? '0.0000' : 'n/a',
+    voiceCostUsd: r.tts === 'voice-engine' ? '0.0000' : 'n/a',
     error: (r.error || '').slice(0, 90), ...extra,
   });
 }
@@ -28,4 +28,4 @@ rows.sort((a, b) => a.log.localeCompare(b.log));
 console.log(JSON.stringify(rows, null, 1));
 const done = rows.filter(r => r.status === 'complete');
 const tot = done.reduce((s, r) => s + parseFloat(r.costUsd || 0), 0);
-console.log(`\nCOMPLETE=${done.length}/${rows.length} TOTAL_PLAN_COST=$${tot.toFixed(4)} TOTAL_VOICE_COST=$0.0000 (kokoro local)`);
+console.log(`\nCOMPLETE=${done.length}/${rows.length} TOTAL_PLAN_COST=$${tot.toFixed(4)} TOTAL_VOICE_COST=$0.0000 (local voice-engine)`);

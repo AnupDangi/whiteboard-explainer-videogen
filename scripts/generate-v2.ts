@@ -5,11 +5,13 @@ import {generateV2} from '../src/v2/planning/generate.js';
 import {renderSVG} from '../src/v2/renderer/render-svg.js';
 import {evaluatePlant} from '../src/v2/evaluation.js';
 import {staticIntervals} from '../src/v2/compiler/timeline.js';
+import {createVoiceEngineSpeech} from '../src/v2/speech.js';
 const out=process.argv[2]??'output/v2-automatic-plant';await mkdir(out); // Never overwrite model evidence.
+const narrate=process.argv.includes('--narration')||process.env.V2_NARRATION==='1';
 const model=createJsonModel({maxCostUsd:.15,onOutput:async(stage,attempt,value)=>{await writeFile(join(out,`${stage}-attempt-${attempt}.json`),JSON.stringify(value,null,2));}}),start=performance.now();let ready=0;
 try{
- for await(const result of generateV2({prompt:'Explain how plants make food to a middle-school student. For this first scene, teach the three inputs: sunlight arriving at leaves, water arriving at roots, and carbon dioxide entering leaves. Establish a plant as the central system, introduce each input, and restate how they enable food production. Keep the scope to these inputs; detailed chemistry and products belong in later scenes.',maxScenes:1,allowedArchetypes:['structural_diagram','convergence']},model)){
-  const scene=result.compiled;await writeFile(join(out,`${scene.scene.id}.json`),JSON.stringify({...result,speech:undefined},null,2));
+ for await(const result of generateV2({prompt:'Explain how plants make food to a middle-school student. For this first scene, teach the three inputs: sunlight arriving at leaves, water arriving at roots, and carbon dioxide entering leaves. Establish a plant as the central system, introduce each input, and restate how they enable food production. Keep the scope to these inputs; detailed chemistry and products belong in later scenes.',maxScenes:1,allowedArchetypes:['structural_diagram','convergence']},model,{...(narrate?{speech:createVoiceEngineSpeech()}: {})})){
+  const scene=result.compiled;if(result.speech)await writeFile(join(out,`${scene.scene.id}.wav`),result.speech.audio);await writeFile(join(out,`${scene.scene.id}.json`),JSON.stringify({...result,speech:undefined},null,2));
   const sharp=(await import('sharp')).default,tiles=[];
   const times=[0,...scene.scene.beats.map(b=>Math.max(...scene.actions.filter(a=>a.beatId===b.id).map(a=>a.startMs+a.durationMs))),scene.durationMs];
   for(const [i,time] of times.entries()){const svg=renderSVG(scene,time,{cursor:true});await writeFile(join(out,`frame-${i}.svg`),svg);tiles.push({input:await sharp(Buffer.from(svg)).resize(640,360).png().toBuffer(),left:i%2*640,top:Math.floor(i/2)*360});}

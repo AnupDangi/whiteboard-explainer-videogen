@@ -8,7 +8,6 @@ output/
 .DS_Store
 
 dist/
-.kokoro-venv/
 .claude/worktrees/
 
 # python build artifacts

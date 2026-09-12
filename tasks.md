@@ -11,7 +11,8 @@ Detailed task-by-task evidence: [docs/V4_IMPLEMENTATION.md](docs/V4_IMPLEMENTATI
 - [x] All Phase 14 archetypes: equation_walkthrough, matrix_operation, hierarchy, timeline, trajectory, deterministic equation primitive, fail-closed tests.
 - [x] Calibrated visual critic (Phase 12): metered vision judge + nine-corruption both-order calibration; run 2 reliable (accuracy 1.0, $0.0366).
 - [ ] Wire the critic into a bounded repair trigger, full multi-domain benchmark.
-- [ ] V2 speech adapter + progressive jobs, live performance profile, blind human pairwise and release migration gates.
+- [x] Kokoro removed; external local voice-engine (Supertonic 3 / Piper) integrated over an async boundary.
+- [ ] Progressive jobs using the voice-engine, live performance profile, blind human pairwise and release migration gates.
 
 No commit/push authorized. V1 remains the default. Keep the source V4 plans intact.
 

@@ -5,12 +5,11 @@
  *    node dist/scripts/generate-video.js --url https://arxiv.org/pdf/1706.03762 --minutes 1
  *    node dist/scripts/generate-video.js --pdf ./paper.pdf --minutes 1 --model qwen/qwen3.8-flash
  *    node dist/scripts/generate-video.js --prompt "Explain ..." --minutes 1,5
- *  Kokoro local neural narration is the demo default — no speech key needed, and the
- *  persistent server auto-starts itself if it isn't already running (run
- *  scripts/setup-kokoro.sh once first). Each (source, minutes) pair is generated
- *  sequentially, then exported to MP4 under --out-dir. Requires OPENROUTER_API_KEY.
- *  Pass --tts elevenlabs for natural voice (needs ELEVENLABS_API_KEY +
- *  ELEVENLABS_VOICE_ID). */
+ *  Local narration uses the external voice-engine (Supertonic 3 default, Piper
+ *  fallback) over an async boundary — no speech key needed. Each (source, minutes)
+ *  pair is generated sequentially, then exported to MP4 under --out-dir. Requires
+ *  OPENROUTER_API_KEY. Pass --tts elevenlabs for natural voice (needs
+ *  ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID); --language sets the TTS language. */
 import {JobStore} from '../src/jobs.js';
 import {ingestSource} from '../src/sources.js';
 import {detectFigures,describeFigures} from '../src/figures.js';
@@ -45,9 +44,10 @@ for (const m of minutesList) if (![1, 5, 10, 30].includes(m)) throw new Error(`-
 const budgetPerMinute = Number(arg('--budget-per-minute', '0.5'));
 const jobRetries = Number(arg('--retries', '3'));
 const narrate = !flag('--no-narration');
-// Robot (local) voice is the demo default: no speech key, unlimited use.
-const ttsProvider = arg('--tts', 'kokoro');
-if (ttsProvider !== 'elevenlabs' && ttsProvider !== 'kokoro') throw new Error(`--tts must be elevenlabs or kokoro (got ${ttsProvider})`);
+// Local voice-engine is the demo default: no speech key, CPU-only.
+const ttsProvider = arg('--tts', 'voice-engine');
+if (ttsProvider !== 'elevenlabs' && ttsProvider !== 'voice-engine') throw new Error(`--tts must be elevenlabs or voice-engine (got ${ttsProvider})`);
+const language = arg('--language', 'en')!;
 const modelFlag = arg('--model', null);
 if (modelFlag) process.env.OPENROUTER_MODEL = modelFlag;
 const enrich = !flag('--no-enrich');
@@ -120,7 +120,7 @@ for (const {input, label: sourceLabel} of rawSources) {
         const options: GenerationOptions = {
           mode: 'model', source: {...jobSource}, ...(figures?.length ? {figures} : {}), durationMinutes: minutes,
           maxCostUsd: Math.min(10, Math.max(0.2, budgetPerMinute * minutes)),
-          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'kokoro', visualCritic, cachePrompts,
+          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'voice-engine', language, visualCritic, cachePrompts,
           ...(voiceId ? {voiceId} : {}),
         };
         const created = await store.create(options);

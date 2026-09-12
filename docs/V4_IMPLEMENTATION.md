@@ -58,6 +58,7 @@ npm run baseline:v1 -- output/new-immutable-baseline
 npm run bench:v2:plant -- output/manual-plant-review
 node --env-file-if-exists=.env dist/scripts/generate-v2.js output/new-automatic-run
 npm run calibrate:v2:critic -- output/v2-critic-calibration
+echo '{"text":"Local narration check","language":"en"}' | (cd ../lamina-labs-video/voice-engine && node dist/cli.js)
 PORT=3014 VISUAL_PIPELINE=v2 npm start
 ```
 

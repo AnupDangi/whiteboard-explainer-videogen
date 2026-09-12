@@ -1,3 +1,27 @@
+# 2026-09-12 — Kokoro removed; external local voice-engine integrated (async)
+
+- Kokoro deleted from this repo: `src/kokoro-speech.ts`, `src/tts-pool.ts`, four
+  shell/python scripts, two test files, `bench:tts` and the three `kokoro:*` npm
+  scripts. The live worker (PID 30385, port 8765) was stopped and `.kokoro-venv/`
+  (1.0 GB) removed. Timing mode `kokoro-aligned` is gone.
+- Local narration now goes through the separate `voice-engine` project, moved to
+  `../lamina-labs-video/voice-engine` (Supertonic 3 default for its 31 languages,
+  Piper fallback, Nepali always Piper). The temporary Kokoro comparison provider
+  was removed from the engine too; `out/` was cleaned.
+- New async boundary: `src/voice-engine-client.ts` (JSON stdin/stdout, one process
+  per request) and `src/v2/speech.ts`. Local engines return audio duration only, so
+  word timings are explicitly `engine`-marked (`LOCAL TTS · ESTIMATED WORD TIMING`);
+  ElevenLabs remains the paid provider with real alignment. `generate-v2.js
+  --narration` synthesizes through the boundary.
+- Engine smoke (real, local, no key): Supertonic EN 4.6 s audio / 1.7 s gen
+  (RTF 0.375); Piper NE 3.4 s audio / 0.6 s gen (RTF 0.183).
+- Full regression: 185 tests, 185 pass, 0 fail, 0 skip (was 193/191/2; the Kokoro
+  and pool tests are gone). Build clean.
+- Limitation: engine timings are estimated, not word-aligned; V1 job integration is
+  proven by unit tests, not a new latency/cost profile.
+
+---
+
 # 2026-09-12 — Phase 12 visual critic + live calibration
 
 Implemented the calibrated critic boundary (`v4_docs/Tasks.md` Phase 12, `Tests.md §15`,
