@@ -56,7 +56,7 @@ test('HTTP job lifecycle, assets, missing media and cross-origin protection',asy
 });
 test('Voice selection reaches speech adapter and preparation events are persisted',async t=>{
   const calls=[];const {store}=await setup(t,{speech:async(text,options)=>{calls.push(options.voiceId);const {estimateTiming}=await import('../dist/src/engine.js');return {audio:Buffer.from('test'),timing:estimateTiming(text)};}});
-  const j=await store.create({...options,delayMs:0,narration:true,ttsProvider:'elevenlabs',voiceId:'chosen'});await store.jobs.get(j.id).task;
+  const j=await store.create({...options,delayMs:0,narration:true,ttsProvider:'voice-engine',voiceId:'chosen'});await store.jobs.get(j.id).task;
   const job=await store.get(j.id);assert.equal(job.status,'complete');assert.deepEqual(calls,['chosen','chosen','chosen','chosen']);assert(job.events.some(e=>e.type==='speech-started'));
   await assert.rejects(store.create({...options,ttsProvider:'invalid'}),/Unknown TTS/);
 });

@@ -12,7 +12,6 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {fixtures} from './fixtures.js';
 import {validatePlan,compileScene,durationOf} from './engine.js';
 import {generateVoiceEngineSpeech} from './voice-engine-client.js';
-import {generateSpeech} from './providers.js';
 import {semaphore} from './concurrency.js';
 import {staticIntervalMs,connectorThroughNode} from './progression.js';
 
@@ -25,7 +24,7 @@ export function classifyError(message:string):string {
   if(/content filter|provider refused/i.test(message))return 'provider-refused';
   if(/truncated|incomplete or refused|finish_reason/i.test(message))return 'provider-truncated';
   if(/Source|PDF|HTTPS|redirect|Link must|readable|OCR/i.test(message))return 'source';
-  if(/Speech|TTS|ElevenLabs|voice-engine/i.test(message))return 'speech';
+  if(/Speech|TTS|voice-engine/i.test(message))return 'speech';
   if(/Anchor|outline|Expected two scenes|Chapter contains|Teaching checks|Visual checks|fallback exhausted|budget|Invalid (conceptId|evidenceIds|visualIntent|node|kind)/i.test(message))return 'plan';
   if(/schema|OpenRouter|HTTP \d/i.test(message))return 'provider';
   if(/ffmpeg|sharp|export/i.test(message))return 'media';
@@ -55,7 +54,7 @@ export class JobStore {
     const delayMs=options.delayMs??0;
     if(!Number.isFinite(delayMs)||delayMs<0||delayMs>20000)throw new Error('Delay must be 0–20000 ms');
     if(typeof options.narration!=='boolean')throw new Error('Invalid narration option');
-    if(options.ttsProvider&&!['elevenlabs','voice-engine'].includes(options.ttsProvider))throw new Error('Unknown TTS provider');
+    if(options.ttsProvider&&options.ttsProvider!=='voice-engine')throw new Error('Unknown TTS provider');
     if(options.visualCritic!==undefined&&typeof options.visualCritic!=='boolean')throw new Error('Invalid visual critic option');
     if(options.cachePrompts!==undefined&&typeof options.cachePrompts!=='boolean')throw new Error('Invalid cache prompts option');
     if(options.voiceId&& !/^[a-zA-Z0-9_-]{1,100}$/.test(options.voiceId))throw new Error('Invalid voice ID');
@@ -63,11 +62,11 @@ export class JobStore {
     if(active.length>=2)throw new Error('Two jobs already active; wait or cancel one.');
     const job:InternalJob={id:randomUUID(),status:'queued',revision:0,createdAt:Date.now(),mode:options.mode,
       targetMinutes:options.durationMinutes??1,plannerBudgetUsd:options.maxCostUsd??1,ttsCharacters:0,
-      timingMode:options.narration?(options.ttsProvider==='elevenlabs'?'provider-aligned':'engine-estimated'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[],manifestVersion:GENERATION_MANIFEST_VERSION};
+      timingMode:options.narration?'engine-estimated':'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[],manifestVersion:GENERATION_MANIFEST_VERSION};
     this.jobs.set(job.id,job);await mkdir(join(this.root,job.id),{recursive:true});
     await this.save(job,'queued');
     const controller=new AbortController();job.controller=controller;
-    log('job.created',{jobId:job.id,mode:options.mode,fixture:options.fixture,narration:options.narration,ttsProvider:options.ttsProvider||'voice-engine',language:options.language||process.env.VOICE_ENGINE_LANGUAGE||'en',voiceId:options.voiceId||process.env.ELEVENLABS_VOICE_ID,targetMinutes:job.targetMinutes,budgetUsd:job.plannerBudgetUsd,simulatedDelayMs:delayMs});
+    log('job.created',{jobId:job.id,mode:options.mode,fixture:options.fixture,narration:options.narration,ttsProvider:options.ttsProvider||'voice-engine',language:options.language||process.env.VOICE_ENGINE_LANGUAGE||'en',voiceId:options.voiceId,targetMinutes:job.targetMinutes,budgetUsd:job.plannerBudgetUsd,simulatedDelayMs:delayMs});
     job.task=logContext.run({...logContext.getStore(),jobId:job.id},()=>this.run(job,{...options,delayMs},controller.signal));
     return this.snapshot(job);
   }
@@ -167,7 +166,7 @@ export class JobStore {
                 await queueSave('speech-started');
                 try {
                   const speechStarted=performance.now();
-                  const speech=await (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateVoiceEngineSpeech))(source.narration,{signal,voiceId:options.voiceId,language:options.language});
+                  const speech=await (this.providers.speech||generateVoiceEngineSpeech)(source.narration,{signal,voiceId:options.voiceId,language:options.language});
                   signal.throwIfAborted();timing=speech.timing;
                   ttsMsByScene[source.id]=Math.round(performance.now()-speechStarted);
                   log('speech.ready',{sceneId:source.id,elapsedMs:ttsMsByScene[source.id],bytes:speech.audio.length,format:speech.format||'mp3',words:speech.timing.words.length,timing:speech.timing.kind,durationMs:speech.timing.durationMs});

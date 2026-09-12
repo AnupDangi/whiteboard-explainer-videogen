@@ -1,3 +1,21 @@
+# 2026-09-12 — ElevenLabs removed; narration is local-only
+
+Per user request, the hosted ElevenLabs path is gone and only the local engine
+remains (Supertonic 3 default, Piper fallback):
+
+- Deleted `src/providers.ts` (ElevenLabs speech + `alignmentToTiming`) and
+  `test/providers.test.js`; removed `generateSpeech`, the `elevenlabs` branch in
+  `src/jobs.ts`, the `ELEVENLABS_*` vars from `.env.example` and the local `.env`,
+  the UI provider/voice selectors, and the `--tts` choice in scripts.
+- `ttsProvider` is now `'voice-engine'` only; `timingMode` is `engine-estimated`.
+- No Google TTS existed in the codebase; nothing to remove.
+- Live smoke: 1-min job completed, h264+aac, 65.25 s, `fallbackCount 0`,
+  $0.0018 planning; narration rendered by the local engine.
+- Full regression: 180 tests, 180 pass, 0 fail, 0 skip (was 185; the ElevenLabs
+  provider test was removed).
+
+---
+
 # 2026-09-12 — Kokoro removed; external local voice-engine integrated (async)
 
 - Kokoro deleted from this repo: `src/kokoro-speech.ts`, `src/tts-pool.ts`, four
@@ -10,8 +28,8 @@
   was removed from the engine too; `out/` was cleaned.
 - New async boundary: `src/voice-engine-client.ts` (JSON stdin/stdout, one process
   per request) and `src/v2/speech.ts`. Local engines return audio duration only, so
-  word timings are explicitly `engine`-marked (`LOCAL TTS · ESTIMATED WORD TIMING`);
-  ElevenLabs remains the paid provider with real alignment. `generate-v2.js
+  word timings are explicitly `engine`-marked (`LOCAL TTS · ESTIMATED WORD TIMING`).
+  ElevenLabs was then removed too, so narration is local-only. `generate-v2.js
   --narration` synthesizes through the boundary.
 - Engine smoke (real, local, no key): Supertonic EN 4.6 s audio / 1.7 s gen
   (RTF 0.375); Piper NE 3.4 s audio / 0.6 s gen (RTF 0.183).

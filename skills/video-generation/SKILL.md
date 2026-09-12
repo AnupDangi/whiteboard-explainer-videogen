@@ -11,9 +11,8 @@ planner + director on `OPENROUTER_MODEL` (default
 `google/gemini-3.8-flash` — confirmed current best fast/structured-JSON
 model in the OpenRouter catalog; tested alternative: `google/gemini-3.7-flash`),
 optional critic on `openai/gpt-5.6-luna`, speech on the external local
-voice-engine (`--tts voice-engine`, the default; ElevenLabs available via
-`--tts elevenlabs`). The engine is a separate project — never re-add a speech
-provider to this repo. Deterministic engine only — no generated drawing code,
+voice-engine (Supertonic 3 default, Piper fallback). The engine is a separate
+project — never re-add a hosted speech provider to this repo. Deterministic engine only — no generated drawing code,
 no Manim.
 
 ## Prerequisites
@@ -46,7 +45,7 @@ provider-aligned. Kokoro was removed from this repo on 2026-09-12.
 npm run build
 npm run test:live -- --minutes 1 --voice --tts voice-engine --budget 0.5 \
   --prompt "Your rich topic prompt here"
-# --minutes 1|5|10|30 · --tts voice-engine|elevenlabs · --budget USD cap
+# --minutes 1|5|10|30 · --tts voice-engine (only) · --budget USD cap
 # --prompt TEXT | --url URL | --pdf FILE
 ```
 
@@ -62,7 +61,7 @@ npm run generate-video -- --pdf ./paper.pdf --minutes 1 --model google/gemini-3.
 npm run generate-video -- --prompt "Explain how a refrigerator works" --minutes 1
 # --minutes accepts 1,5,10,30 (comma list allowed: 1,5,10)
 # --model overrides OPENROUTER_MODEL per run · --tts voice-engine is the default
-#   (no flag needed) · --tts elevenlabs for natural voice (needs ELEVENLABS_* keys)
+#   (no flag needed; local-only: Supertonic 3 / Piper)
 #   --language en|hi|ne|... selects the TTS language
 #   --no-enrich to skip the prompt-builder
 #   --no-narration for silent preview · --visual-critic for repair pass

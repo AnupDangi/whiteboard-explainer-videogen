@@ -67,7 +67,6 @@ flowchart TD
 | `src/engine.ts` | Whitelist validation, layouts, compile, pure SVG rendering, playback clamp, text metrics. |
 | `src/jobs.ts` | Single-process async preparation, atomic JSON snapshots, bounded concurrency, progressive availability, cancellation. |
 | `src/voice-engine-client.ts` / `src/v2/speech.ts` | Async boundary to the external local voice-engine (Supertonic 3 default, Piper fallback); engine timing explicitly marked estimated. |
-| `src/providers.ts` | ElevenLabs speech/alignment; errors remain visible. |
 | `src/server.ts` | Loopback HTTP app, job API, local media and static files. |
 | `public/app.ts` | Polling, play/pause/seek, audio clock, transcript, metrics, source intake (prompt/URL/PDF). |
 | `scripts/export.ts` / `src/scene-output.ts` | Frame rendering via SVG/Sharp, FFmpeg encode+mux, per-scene artifacts. |
@@ -131,12 +130,11 @@ providers; the main repo never imports a speech provider directly.
 
 Local engines return audio duration, not word timings, so the boundary builds
 word timings from duration and marks them `engine` — rendered as
-`LOCAL TTS · ESTIMATED WORD TIMING`, never as provider alignment. ElevenLabs
-(`src/providers.ts`, `generateSpeech`) remains a paid `--tts elevenlabs`
-alternative with real word alignment. Speech failures degrade to explicitly
-estimated silent timing (logged, counted in `fallbackCount`/`degradedScenes`);
-they are never hidden. Kokoro and the in-repo `.kokoro-venv` were removed on
-2026-09-12 per user request and moved out of this codebase.
+`LOCAL TTS · ESTIMATED WORD TIMING`, never as provider alignment. Speech
+failures degrade to explicitly estimated silent timing (logged, counted in
+`fallbackCount`/`degradedScenes`); they are never hidden. ElevenLabs and Kokoro
+were both removed from this repository on 2026-09-12 per user request; only the
+local Supertonic 3 / Piper engine remains.
 
 Browser media is the master clock during speech, with a separate visual tail.
 Seeking resets audio identity; seeking into the tail does not replay narration.
@@ -152,5 +150,5 @@ requires explicit `--tts elevenlabs`. Speech failures preserve the provider
 HTTP status/code/message; library-plan restrictions must not be labeled as
 exhausted quota. The UI default matches the API. 2026-09-12: Kokoro removed from
 this repository at the user's request; local narration now goes through the
-external `voice-engine` (Supertonic 3 / Piper), with `--tts elevenlabs`
-remaining the paid provider.
+external `voice-engine` (Supertonic 3 / Piper). ElevenLabs was then removed too,
+so the only narration providers are Supertonic 3 and Piper.

@@ -26,7 +26,7 @@ npm run benchmark
 - Deterministic SVG whiteboard renderer, progressive strokes and stable object placement.
 - Play/pause, seeking, playback speed, transcript, available duration and preparation log.
 - Background scene preparation with configurable delay injection, local snapshots and cancellation.
-- Optional OpenRouter plan generation (Anthropic legacy still supported) and ElevenLabs narration with character-to-word alignment.
+- Optional OpenRouter plan generation (Anthropic legacy still supported) and local voice-engine narration (Supertonic 3 / Piper).
 - Offline MP4 rendering with the same SVG renderer used by the browser.
 
 The main rendering surface is SVG, not HTML Canvas 2D. The research question is data-driven drawing, independent of that implementation detail. No model-generated executable code is run. TypeScript build required (`npm run build`).
@@ -35,9 +35,9 @@ The main rendering surface is SVG, not HTML Canvas 2D. The research question is 
 
 Copy `.env.example` to `.env`. Set `OPENROUTER_API_KEY` (default model `google/gemini-3.8-flash`, set via `OPENROUTER_MODEL` to override). Restart `npm start`, choose **AI planner → OpenRouter**, and enter a prompt or paste source text / URL / PDF.
 
-Narration defaults to the **local voice-engine** — free, CPU-only, no key — a separate project at `../lamina-labs-video/voice-engine` (Supertonic 3 default, Piper fallback; Nepali always Piper). It is called over an async JSON boundary. ElevenLabs (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`) is available as a paid alternative for more natural speech. These operations use your paid provider accounts where applicable. The repository contains no keys.
+Narration is **local-only**: the free CPU voice-engine at `../lamina-labs-video/voice-engine` (Supertonic 3 default, Piper fallback; Nepali always Piper), called over an async JSON boundary. No speech key is used. The repository contains no keys.
 
-Provider adapters were verified with mocked responses and now also with live OpenRouter/ElevenLabs runs for 1-minute chapters. Missing keys or provider failures produce visible errors (including `402 quota` / `429 rate limit`); they never silently substitute a fixture. Budget reservation is per-call progressive — already prepared chapters remain playable on budget/quota exhaustion.
+Provider adapters were verified with mocked responses and now also with live OpenRouter runs plus real local voice-engine synthesis for 1-minute chapters. Missing keys or provider failures produce visible errors (including `402 quota` / `429 rate limit`); they never silently substitute a fixture. Budget reservation is per-call progressive — already prepared chapters remain playable on budget/quota exhaustion.
 
 ## Export MP4
 
@@ -97,14 +97,9 @@ Local engines return audio duration, not word timings, so the boundary marks
 timing explicitly as estimated (`local TTS · estimated word timing`), never as
 provider alignment.
 
-**ElevenLabs** (`--tts elevenlabs`) provides more natural continuous speech with
-word-level alignment, using your configured `ELEVENLABS_API_KEY` +
-`ELEVENLABS_VOICE_ID`. This uses your paid provider account.
-
-Provider failures are visible errors (including `402 quota` / `429 rate limit`);
-they never become successful silent jobs. Reopen a saved job using
-`/?job=JOB_UUID` on the local server.
+Provider failures are visible errors; they never become successful silent jobs.
+Reopen a saved job using `/?job=JOB_UUID` on the local server.
 
 `npm run test:live -- --minutes 1 --voice --tts voice-engine --budget 0.1` uses
-configured OpenRouter credentials for a quick end-to-end check without a full
-MP4 export; `--tts elevenlabs` selects paid speech.
+configured OpenRouter credentials plus the local engine for a quick end-to-end
+check without a full MP4 export.

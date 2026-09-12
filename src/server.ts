@@ -28,9 +28,8 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
       if(req.method==='GET'&&url.pathname==='/api/config'){
         const orKey=!!process.env.OPENROUTER_API_KEY;
         const anKey=!!process.env.ANTHROPIC_API_KEY;
-        const eleKey=!!(process.env.ELEVENLABS_API_KEY&&process.env.ELEVENLABS_VOICE_ID);
-        log('server.config',{plannerConfigured:orKey||anKey,openRouter:orKey,speechConfigured:eleKey});
-        return json(res,200,{visualPipeline:pipeline,model:orKey||anKey,openRouter:orKey,speech:true,elevenlabs:!!process.env.ELEVENLABS_API_KEY,voiceEngine:true,modelId:process.env.OPENROUTER_MODEL||process.env.ANTHROPIC_MODEL||null,tiers:{outline:process.env.OPENROUTER_OUTLINE_MODEL||process.env.OPENROUTER_MODEL||'google/gemini-3.8-flash',content:process.env.OPENROUTER_CONTENT_MODEL||process.env.OPENROUTER_MODEL||'google/gemini-3.8-flash',director:process.env.OPENROUTER_DIRECTOR_MODEL||process.env.OPENROUTER_MODEL||'google/gemini-3.8-flash',vision:process.env.OPENROUTER_VISION_MODEL||process.env.OPENROUTER_MODEL||'google/gemini-3.8-flash'}});
+        log('server.config',{plannerConfigured:orKey||anKey,openRouter:orKey,speechConfigured:true});
+        return json(res,200,{visualPipeline:pipeline,model:orKey||anKey,openRouter:orKey,speech:true,voiceEngine:true,modelId:process.env.OPENROUTER_MODEL||process.env.ANTHROPIC_MODEL||null,tiers:{outline:process.env.OPENROUTER_OUTLINE_MODEL||process.env.OPENROUTER_MODEL||'google/gemini-3.8-flash',content:process.env.OPENROUTER_CONTENT_MODEL||process.env.OPENROUTER_MODEL||'google/gemini-3.8-flash',director:process.env.OPENROUTER_DIRECTOR_MODEL||process.env.OPENROUTER_MODEL||'google/gemini-3.8-flash',vision:process.env.OPENROUTER_VISION_MODEL||process.env.OPENROUTER_MODEL||'google/gemini-3.8-flash'}});
       }
       if(req.method==='POST'&&url.pathname==='/api/client-events'){
         const event=await body(req);

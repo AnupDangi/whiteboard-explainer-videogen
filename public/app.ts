@@ -86,9 +86,8 @@ $('generate').onsubmit=async (e:SubmitEvent)=>{
     const kind=$('source-kind').value;
     const source:any={kind,text:$('prompt').value,url:$('source-url').value};
     if(kind==='pdf'){const file=$('source-file').files[0];if(!file)throw new Error('Choose a PDF');if(file.size>50*1024*1024)throw new Error('PDF exceeds 50 MB');source.name=file.name;source.base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);});}
-    const provider=$('tts-provider').value;
-    const voiceId=provider==='elevenlabs'?($('voice').value==='custom'?$('custom-voice').value.trim():$('voice').value):undefined;
-    const data=await request('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:$('mode').value,fixture:$('fixture').value,prompt:$('prompt').value,source,durationMinutes:Number($('duration').value),maxCostUsd:Number($('budget').value),delayMs:0,narration:$('narration').checked,ttsProvider:provider,voiceId,visualCritic:$('visual-critic').checked})});showJob(data);refresh(data.id);}catch(error){$('message').textContent=error instanceof Error?error.message:String(error);$('create').disabled=false;$('status').textContent='Error';$('title').textContent='Explanation could not be prepared';$('voice-message').textContent='';}
+    const language=$('tts-language').value;
+    const data=await request('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:$('mode').value,fixture:$('fixture').value,prompt:$('prompt').value,source,durationMinutes:Number($('duration').value),maxCostUsd:Number($('budget').value),delayMs:0,narration:$('narration').checked,ttsProvider:'voice-engine',language,visualCritic:$('visual-critic').checked})});showJob(data);refresh(data.id);}catch(error){$('message').textContent=error instanceof Error?error.message:String(error);$('create').disabled=false;$('status').textContent='Error';$('title').textContent='Explanation could not be prepared';$('voice-message').textContent='';}
 };
 $('cancel').onclick=async()=>{if(job){await request('/api/jobs/'+job.id+'/cancel',{method:'POST'});clearTimeout(poll);await refresh(job.id);}};
 $('download').onclick=async()=>{if(!job||!['complete','partial'].includes(job.status)){$('message').textContent='Job must be complete to export video';return;}$('message').textContent='Exporting MP4...';const resp=await fetch(`/api/export?job=${job.id}`,{method:'GET'});const result=await resp.json();if(!resp.ok||result.status!=='complete'){$('message').textContent=result.error||'Export failed';return;}// `result.output` is a server route (/output/<jobId>.mp4), not a filesystem path — a browser
@@ -96,7 +95,6 @@ $('download').onclick=async()=>{if(!job||!['complete','partial'].includes(job.st
 if(typeof result.output!=='string'||!result.output.startsWith('/')){$('message').textContent='Export returned an unfetchable path';return;}
 $('message').textContent='Downloading MP4...';const mpxLink=document.createElement('a');mpxLink.href=result.output;mpxLink.download=`${job.title||'explanation'}-${job.id?.slice(0,8)}.mp4`;document.body.appendChild(mpxLink);mpxLink.click();mpxLink.remove();$('message').textContent='MP4 exported and downloaded.';setTimeout(()=>{$('message').textContent='';},2000);};
 request('/api/config').then(function(c){
-  $('tts-provider').querySelector('[value=elevenlabs]').disabled=!c.elevenlabs;
   if(c.tiers){
     const pipeline=$('pipeline');pipeline.hidden=false;
     const fill=(id:string,value?:string)=>{const el=$(id);if(el)el.querySelector('b').textContent=' '+(value||'default').split('/').pop();};
@@ -107,8 +105,6 @@ request('/api/config').then(function(c){
 }).catch(function(e){$('message').textContent=e instanceof Error?e.message:String(e);});
 $('source-kind').onchange=()=>{const kind=$('source-kind').value;$('prompt').hidden=!['prompt','text'].includes(kind);$('source-url').hidden=kind!=='url';$('source-file').hidden=kind!=='pdf';};
 $('narration').onchange=()=>{$('voice-fields').hidden=!$('narration').checked;};
-$('tts-provider').onchange=()=>{const provider=$('tts-provider').value;$('elevenlabs-fields').hidden=provider!=='elevenlabs';};
-$('voice').onchange=()=>{$('custom-voice').hidden=$('voice').value!=='custom';};
 const savedJob=new URLSearchParams(location.search).get('job');
 if(savedJob&&/^[a-f0-9-]{36}$/.test(savedJob))void refresh(savedJob);
 draw();requestAnimationFrame(frame);

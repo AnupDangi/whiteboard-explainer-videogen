@@ -8,8 +8,8 @@
  *  Local narration uses the external voice-engine (Supertonic 3 default, Piper
  *  fallback) over an async boundary — no speech key needed. Each (source, minutes)
  *  pair is generated sequentially, then exported to MP4 under --out-dir. Requires
- *  OPENROUTER_API_KEY. Pass --tts elevenlabs for natural voice (needs
- *  ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID); --language sets the TTS language. */
+ *  OPENROUTER_API_KEY. --language sets the TTS language; --voice overrides the
+ *  engine voice. Only the local Supertonic/Piper engine is supported. */
 import {JobStore} from '../src/jobs.js';
 import {ingestSource} from '../src/sources.js';
 import {detectFigures,describeFigures} from '../src/figures.js';
@@ -46,7 +46,7 @@ const jobRetries = Number(arg('--retries', '3'));
 const narrate = !flag('--no-narration');
 // Local voice-engine is the demo default: no speech key, CPU-only.
 const ttsProvider = arg('--tts', 'voice-engine');
-if (ttsProvider !== 'elevenlabs' && ttsProvider !== 'voice-engine') throw new Error(`--tts must be elevenlabs or voice-engine (got ${ttsProvider})`);
+if (ttsProvider !== 'voice-engine') throw new Error(`--tts must be voice-engine (got ${ttsProvider})`);
 const language = arg('--language', 'en')!;
 const modelFlag = arg('--model', null);
 if (modelFlag) process.env.OPENROUTER_MODEL = modelFlag;
@@ -120,7 +120,7 @@ for (const {input, label: sourceLabel} of rawSources) {
         const options: GenerationOptions = {
           mode: 'model', source: {...jobSource}, ...(figures?.length ? {figures} : {}), durationMinutes: minutes,
           maxCostUsd: Math.min(10, Math.max(0.2, budgetPerMinute * minutes)),
-          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'voice-engine', language, visualCritic, cachePrompts,
+          delayMs: 0, narration: narrate, ttsProvider: 'voice-engine', language, visualCritic, cachePrompts,
           ...(voiceId ? {voiceId} : {}),
         };
         const created = await store.create(options);

@@ -46,7 +46,7 @@ motions fail explicitly; they are never silently rendered as a structural scene 
 
 - Baseline `npm test`: 153 tests / 151 pass / 0 fail / 2 skip.
 - Full suite after initial V2 stages: 176 tests / 174 pass / 0 fail / 2 skip.
-- Latest full suite: 193 tests / 191 pass / 0 fail / 2 skip (76.306 s); adds critic corruption/calibration/vision-boundary tests to the layout, cycle, dependency-order, equation/matrix, hierarchy and timeline/trajectory closures plus existing HTTP regressions.
+- Latest full suite: 180 tests / 180 pass / 0 fail / 0 skip (76.461 s); after the Kokoro and ElevenLabs removals this covers layout, cycle, dependency-order, equation/matrix, hierarchy, timeline/trajectory, critic calibration, the local voice-engine boundary and existing HTTP regressions.
 - HTTP tests require loopback permission. Initial sandbox EPERM was environmental;
   the same tests passed with loopback access. A new test cleanup typo was corrected
   from nonexistent `shutdown()` to the store's `close()`; the hung run was stopped.

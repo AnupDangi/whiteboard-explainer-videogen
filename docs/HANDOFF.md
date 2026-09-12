@@ -31,11 +31,11 @@ Kokoro was removed from this repo on 2026-09-12 (files, npm scripts, live worker
 `.kokoro-venv`). Local narration now goes through a separate `voice-engine` project
 at `../lamina-labs-video/voice-engine` (Supertonic 3 default, Piper fallback,
 Nepali always Piper) via the async `src/voice-engine-client.ts` / `src/v2/speech.ts`
-boundary. Engine timings are explicitly estimated; ElevenLabs stays the paid
-provider.
+boundary. Engine timings are explicitly estimated. ElevenLabs was removed too
+(2026-09-12), so narration is local-only: Supertonic 3 or Piper.
 
-Validation: `npm test` passed 185 total / 185 pass / 0 fail / 0 skip, 76.457 s
-(the two Kokoro tests and the pool tests were removed with the feature).
+Validation: `npm test` passed 180 total / 180 pass / 0 fail / 0 skip, 76.461 s
+(Kokoro/pool and ElevenLabs provider tests removed with those features).
 This includes all V2 tests and the existing HTTP/provider regressions. Loopback access
 is required for HTTP tests. `npm run build` and `git diff --check` also pass.
 

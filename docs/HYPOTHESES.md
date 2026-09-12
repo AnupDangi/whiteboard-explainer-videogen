@@ -54,6 +54,6 @@ The finished MP4 does not distinguish these. Testing our design cannot settle th
 - [Lamina HTTP API](https://www.laminalabs.ai/docs/getting-started): background jobs, stream availability and final media.
 - [Lamina Node SDK](https://www.laminalabs.ai/docs/node-sdk): resumable progress-event interface.
 - [tldraw agent architecture](https://tldraw.dev/docs/ai): a public example of typed actions on a canvas; no evidence Lamina uses tldraw.
-- [ElevenLabs timing API](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps): implementation reference for optional narration.
+- ElevenLabs timing API (historical implementation reference): removed from this repository on 2026-09-12; narration is now local-only via Supertonic 3 / Piper.
 
 No competitor source code, brand assets, or supplied competitor video is included in this repository.
