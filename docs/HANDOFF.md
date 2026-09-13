@@ -1,3 +1,21 @@
+# Current handoff — 2026-09-13, Wave 2 critic-repair wiring
+
+Wave 2 done: `src/semantic/contact-sheet.ts` (event-aligned sheet frames via the
+pure renderer) and `src/semantic/critic-repair.ts` (lints-first $0 preflight,
+pairwise A/B+ B/A judgment, ONE bounded director repair using `criticRepairPrompt`,
+identity/narration protection, re-lint after repair). `generateV2` takes an
+optional `judge`; critic activates with `V2_CRITIC=on` + judge supplied, adding
+`criticMs`/`criticRepairs` to StageMetrics. Suite: `npm test` 191/191 pass, build
+clean, `git diff --check` clean. No live calibration run executed in this change.
+Next: Wave 3 — synchronous progressive V2 jobs (`POST /api/semantic/jobs`, SSE
+scene push with offset resume, polling fallback, prebuffering client, language →
+speech, firstPlayable = first scene ready); then Wave 4 (state variants/morph,
+ELK graph layout, general compiler repair, asset growth), Wave 5 (model A/B
+within $5: DeepSeek-V4-Flash-Vision vs Gemini on critic calibration), Wave 6
+(Phase 15 multi-domain benchmark), Wave 7 (performance + migration gate).
+
+---
+
 # Current handoff — 2026-09-13, Wave 1 prompt builder
 
 Wave 1 done: `src/semantic/planning/prompt-builder.ts` now generates the teaching

@@ -79,6 +79,26 @@ performance. Later renderer changes require regenerating acceptance artifacts.
 - V2 is not the release default. The final migration criteria in `v4_docs/Tasks.md`
   remain open, particularly blind human preference and live end-to-end performance.
 
+## Critic-repair wiring — 2026-09-13
+
+`src/semantic/contact-sheet.ts` renders event-aligned frames (initial, after each
+beat's last action, final) through the exact pure browser renderer into one labeled
+SVG sheet; verified rasterizable by sharp. `src/semantic/critic-repair.ts` wires
+the calibrated vision judge into the generation loop: deterministic lints run
+first ($0, hard findings throw before any judge call), then a pairwise judgment
+(A/B and B/A so position bias is measured), and at most ONE director repair call
+using `criticRepairPrompt` from the prompt builder. Repairs are constrained:
+scene identity, beat IDs and narration text must survive; the repaired scene must
+pass deterministic preflight again. `generateV2` accepts an optional `judge`; the
+critic path activates only when `V2_CRITIC=on` AND a judge is supplied, and adds
+`criticMs`/`criticRepairs` to StageMetrics. Judge calls remain metered and
+budget-capped by `vision-judge.ts`. Tests: 8 new cases (event alignment, sheet
+rasterization, accept-with-zero-model-calls, one-repair bound, position-bias
+union, preflight-before-judge, narration/identity protection). Suite after this
+change: 191 tests / 191 pass / 0 fail. No live calibration run was executed in
+this change; the critic remains optional and its earlier calibration results
+(run 2 accuracy 1.0) are unchanged.
+
 ## Prompt builder — 2026-09-13
 
 `src/semantic/planning/prompt-builder.ts` is now the single source of truth for V2
