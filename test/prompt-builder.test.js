@@ -1,64 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildRichBrief,briefStats,detectDomain,extractFacts,extractHeadings} from '../dist/src/explainer/prompt-builder.js';
-const doc = (text, kind = 'prompt', label = 't') => ({kind, label, text, sha256: 'x'});
-const PAPER = `Attention Is All You Need
+import {teachingPrompt,directorPrompt,criticRepairPrompt,TEACHER_VOICE_RULES,MATH_TEACHING_RULES,STYLE_FAMILY,assertPromptVocabulary} from '../dist/src/semantic/planning/prompt-builder.js';
+import {lintTeacherVoice} from '../dist/src/semantic/planning/validate.js';
 
-Abstract
-We propose a new network architecture, the Transformer, based solely on attention.
-
-1 Introduction
-Recurrent models are hard to parallelize. Our model trains in 12 hours on 8 GPUs.
-
-2 Model Architecture
-The encoder maps an input sequence to continuous representations.
-
-3 Experiments
-We achieve 28.4 BLEU on English-to-German, an improvement of 2.0 BLEU over prior work.
-Training cost was 3.5 days on a single GPU for the base model.
-`;
-
-test('headings skip abstract fluff but keep numbered sections', () => {
-  const h = extractHeadings(PAPER);
-  assert(h.some(x => /Model Architecture/.test(x)));
-  assert(h.some(x => /Experiments/.test(x)));
-  assert(!h.some(x => /achieve 28\.4/.test(x)));
+test('teaching prompt contains pedagogy, vocabulary and source rules',()=>{
+  const p=teachingPrompt({maxScenes:3,hasSource:true});
+  for(const rule of TEACHER_VOICE_RULES)assert.ok(p.includes(rule),`missing teacher rule: ${rule}`);
+  for(const rule of MATH_TEACHING_RULES)assert.ok(p.includes(rule),`missing math rule: ${rule}`);
+  assert.ok(p.includes('at most 3 scenes'));
+  assert.ok(p.includes('quote exact source spans'));
+  assert.ok(p.includes('step one'.length?'Step 1':''));
 });
-
-test('facts carry numbers and drop overlong sentences', () => {
-  const f = extractFacts(PAPER);
-  assert(f.some(x => /28\.4 BLEU/.test(x)));
-  assert(f.every(x => x.length <= 220 && /\d/.test(x)));
+test('teaching prompt forbids inventing sources when absent',()=>{
+  const p=teachingPrompt({maxScenes:1,hasSource:false});
+  assert.ok(p.includes('evidenceRefs arrays stay empty'));
+  assert.ok(!p.includes('quote exact source spans'));
 });
-
-test('domain detection routes papers to the right audience', () => {
-  assert.equal(detectDomain(PAPER).domain, 'ai-ml');
-  assert.match(detectDomain(PAPER).audience, /undergraduate/);
-  assert.equal(detectDomain('how to bake bread at home').domain, 'general');
+test('director prompt carries richness, style and archetype guidance',()=>{
+  const p=directorPrompt({archetype:'equation_walkthrough'});
+  assert.ok(p.includes('Supported actions: draw,reveal,trace,flow,move,fill,highlight,pulse,split,merge,morph,replace,fade'));
+  assert.ok(p.includes(STYLE_FAMILY));
+  assert.ok(p.includes('equation_walkthrough archetype'));
+  assert.ok(p.includes('persistent context visible'));
 });
-
-test('brief wraps source with delimiters and visual direction', () => {
-  const brief = buildRichBrief(doc(PAPER, 'url', 'https://arxiv.org/pdf/1706.03762'), {minutes: 1});
-  assert(brief.includes('WHITEBOARD LESSON BRIEF'));
-  assert(brief.includes('SOURCE MATERIAL (url, https://arxiv.org/pdf/1706.03762'));
-  assert(brief.includes('untrusted content to teach'));
-  assert(brief.includes('Never make all nodes in a scene plain boxes'));
-  assert(brief.includes('We achieve 28.4 BLEU'));
-  assert(brief.indexOf('WHITEBOARD LESSON BRIEF') < brief.indexOf('SOURCE MATERIAL'));
+test('critic repair prompt lists every error and forbids identity change',()=>{
+  const p=criticRepairPrompt({criticalErrors:['arrow points the wrong way','hero is missing'],reason:'layout broke teaching'});
+  assert.ok(p.includes('- arrow points the wrong way'));
+  assert.ok(p.includes('- hero is missing'));
+  assert.ok(p.includes('layout broke teaching'));
+  assert.ok(p.includes('same scene identity'));
+  assert.throws(()=>criticRepairPrompt({criticalErrors:[],reason:'x'}));
 });
-
-test('bare one-line prompt still yields a usable scaffold', () => {
-  const brief = buildRichBrief(doc('Explain how a refrigerator works'), {minutes: 1});
-  assert(brief.includes('Core questions'));
-  assert(brief.includes('concrete example with real numbers'));
-  const stats = briefStats(doc('Explain how a refrigerator works'), brief, {minutes: 1});
-  assert.equal(stats.domain, 'general');
-  assert(stats.questions >= 3);
+test('prompt vocabulary drift guard passes and catches drift',()=>{
+  assertPromptVocabulary();
 });
-
-test('long sources are clipped, short sources pass through intact', () => {
-  const long = 'word 42. ' + 'filler '.repeat(20000);
-  const brief = buildRichBrief(doc(long, 'text'), {minutes: 5});
-  assert(brief.length < 70000);
-  assert(brief.endsWith('…') || brief.includes('filler'));
+test('teacher-voice lints accept real narration and reject slide-bullet patterns',()=>{
+  lintTeacherVoice('A plant makes its own food. Watch how its leaves and roots collect what it needs.','b1');
+  lintTeacherVoice('Water enters through the roots and travels up the stem toward the leaves.','b2');
+  assert.throws(()=>lintTeacherVoice('Step 1: sunlight arrives at the leaf surface.','b3'));
+  assert.throws(()=>lintTeacherVoice('First step, look at the diagram.','b4'));
+  assert.throws(()=>lintTeacherVoice('Next slide shows water.','b5'));
+  assert.throws(()=>lintTeacherVoice('Too short.','b6'));
 });

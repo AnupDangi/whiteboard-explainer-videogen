@@ -2,6 +2,14 @@ import {parseTeachingPlan,parseVisualScene} from '../schemas.js';
 import type {TeachingPlanV2,VisualSceneV2} from '../types.js';
 export function uniqueIds(items:{id:string}[],label:string):Set<string>{const ids=new Set(items.map(x=>x.id));if(ids.size!==items.length)throw new Error(`Duplicate ${label} ID`);return ids;}
 function refs(values:string[],allowed:Set<string>,label:string){for(const v of values)if(!allowed.has(v))throw new Error(`Unknown ${label}: ${v}`);}
+/** Teacher-voice lints: narration must read like prose teaching, never slide bullets. */
+export function lintTeacherVoice(text:string,id:string):void{
+  const lower=text.toLowerCase();
+  if(/^\s*step\s*\d+\b|\bstep\s*(one|two|three|four|five)\b/.test(lower))throw new Error(`Meta-numbered narration (teacher voice, not steps): ${id}`);
+  if(/\b(first step|second step|next slide|point number)\b/.test(lower))throw new Error(`Slide-bullet narration: ${id}`);
+  const words=lower.match(/[a-z0-9']+/g)??[];
+  if(words.length<6)throw new Error(`Narration too short to teach: ${id}`);
+}
 export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warnings:string[]}{
   const plan=parseTeachingPlan(input),warnings:string[]=[];
   const concepts=uniqueIds(plan.conceptRegistry,'concept'),evidence=uniqueIds(plan.evidenceRefs,'evidence');
@@ -18,6 +26,7 @@ export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warning
     for(const r of scene.requiredRelations)refs([r.fromConceptId,r.toConceptId],concepts,'relation concept');
     const signatures=new Set<string>(),seen=new Set<string>();
     for(const b of scene.beats){
+      lintTeacherVoice(b.narrationDraft,b.id);
       refs(b.requirementIds,ids,'requirement');refs(b.evidenceRefs,evidence,'evidence');refs([...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)],concepts,'beat concept');refs(b.relationFocus,relations,'relation');
       b.requirementIds.forEach(x=>covered.add(x));b.transform.forEach(t=>{if(t.fromState===t.toState)throw new Error('State change must change state');transformed.add(t.conceptId);});
       [...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)].forEach(x=>seen.add(x));

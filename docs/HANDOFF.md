@@ -1,3 +1,22 @@
+# Current handoff — 2026-09-13, Wave 1 prompt builder
+
+Wave 1 done: `src/semantic/planning/prompt-builder.ts` now generates the teaching
+and director prompts (behavior-compatible refactor of the inline literals) with
+teacher-voice rules (no "Step 1" meta-numbering, natural mechanism prose), math
+pedagogy rules for equation/matrix scenes, visual richness rules and a shared
+`chalk-ink-v2` style token. `criticRepairPrompt()` is pre-built for Wave 2
+critic-repair wiring. `lintTeacherVoice` in `planning/validate.ts` deterministically
+rejects slide-bullet narration before TTS. Drift-guard tests pin prompt vocabulary
+to `types.ts`. Validation: `npm test` 183/183 pass, `npm run build` clean,
+`git diff --check` clean. Next: Wave 2 — wire the calibrated vision judge into the
+bounded one-repair path using `criticRepairPrompt` and contact sheets; then Wave 3
+(synchronous progressive V2 jobs with SSE scene push), Wave 4 (state variants/morph,
+ELK graph layout, general compiler repair, asset growth), Wave 5 (model A/B within
+$5: DeepSeek-V4-Flash-Vision vs Gemini on critic calibration), Wave 6 (Phase 15
+multi-domain benchmark), Wave 7 (performance + migration gate).
+
+---
+
 # Current handoff — 2026-09-12, V4 document implementation / semantic V2
 
 Implementation continues on `v4-optimization`; V1 remains default. Read

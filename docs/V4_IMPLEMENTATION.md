@@ -79,6 +79,22 @@ performance. Later renderer changes require regenerating acceptance artifacts.
 - V2 is not the release default. The final migration criteria in `v4_docs/Tasks.md`
   remain open, particularly blind human preference and live end-to-end performance.
 
+## Prompt builder — 2026-09-13
+
+`src/semantic/planning/prompt-builder.ts` is now the single source of truth for V2
+stage prompts. `teachingPrompt()` and `directorPrompt()` replace the inline
+literals in teaching-planner.ts and visual-director.ts (behavior-compatible
+refactor; same baseline rules plus teacher-voice, math-pedagogy and visual
+richness rules). `criticRepairPrompt()` is ready for the Wave 2 bounded
+critic-repair wiring. `assertPromptVocabulary()` plus `test/prompt-builder.test.js`
+pin capability words (ARCHETYPES/MOTIONS) and rule sections so prompts cannot
+drift from `types.ts`. New deterministic teacher-voice lints in
+`planning/validate.ts` (`lintTeacherVoice`) reject meta-numbered narration
+("Step 1", "first step", "next slide") and label-reading-length narration before
+TTS. Suite after this change: 183 tests / 183 pass / 0 fail (prompt-builder tests
+run in-suite; per-file sums differ only because some suites register tests
+conditionally). No model-call or schema changes.
+
 ## Archetype expansion review — 2026-09-12
 
 Eleven manual cases now cover DNA replication, tectonic cross-section, MLA compression,
