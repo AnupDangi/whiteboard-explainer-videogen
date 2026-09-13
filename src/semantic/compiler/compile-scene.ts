@@ -87,7 +87,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  if(scene.archetype==='cycle')for(const r of scene.relations){const from=objects.find(o=>o.id===r.from.objectId)!,to=objects.find(o=>o.id===r.to.objectId)!;
   for(const [o,target,name] of [[from,to,r.from.anchor],[to,from,r.to.anchor]] as const){if(!['input','output'].includes(name))continue;const b=visualBounds(o),cx=b.x+b.w/2,cy=b.y+b.h/2,dx=target.x+target.w/2-cx,dy=target.y+target.h/2-cy,scale=1/Math.max(Math.abs(dx)/(b.w/2+10),Math.abs(dy)/(b.h/2+10));o.anchors[name]={x:cx+dx*scale,y:cy+dy*scale};}
  }
- const relations=scene.relations.map(r=>routeRelation(scene.archetype==='hierarchy'?{...r,from:{...r.from,anchor:'bottom'},to:{...r.to,anchor:'top'}}:r,objects)),timing=structuredClone(timingInput??estimatedTiming(scene)),actions=compileTimeline(scene,timing);
+ const relations=scene.relations.map(r=>routeRelation(['hierarchy','equation_walkthrough'].includes(scene.archetype)?{...r,from:{...r.from,anchor:'bottom'},to:{...r.to,anchor:'top'}}:r,objects,{direct:scene.archetype==='equation_walkthrough'})),timing=structuredClone(timingInput??estimatedTiming(scene)),actions=compileTimeline(scene,timing);
  if(['structural_diagram','convergence','cross_section','spatial_process'].includes(scene.archetype)){const metrics=occupancy(objects);if(metrics.heroRatio<.3)diagnostics.push('Weak hero salience');if(metrics.areaRatio<.2)diagnostics.push('Low structural occupancy');}
  const gaps=staticIntervals(scene,timing,actions);if(gaps.some(g=>g.endMs-g.startMs>3500))diagnostics.push('Narrated static interval exceeds 3500ms');
  return {version:2,scene,objects,relations,actions,timing,durationMs:timing.durationMs+650,diagnostics};

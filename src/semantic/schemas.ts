@@ -80,11 +80,18 @@ export function healSchema(value:unknown,schema:Schema,path='$'):unknown{
    }
   }
   // Action target purity: draw/reveal/fill carry objectIds only; trace/flow carry
-  // relationIds only. Mixed targets are pruned to the primary side.
+  // relationIds only. Mixed targets are pruned to the primary side; a draw/reveal/fill
+  // with relation targets only becomes a trace (the relation-motion verb).
   if(typeof out.type==='string'&&Array.isArray(out.objectIds)&&Array.isArray(out.relationIds)){
    const record=out as Record<string,unknown>;
-   if(['draw','reveal','fill'].includes(out.type)&&out.objectIds.length)record.relationIds=[];
-   if(['trace','flow'].includes(out.type)&&out.relationIds.length)record.objectIds=[];
+   if(['draw','reveal','fill'].includes(out.type)){
+    if(out.objectIds.length)record.relationIds=[];
+    else if(out.relationIds.length)record.type='trace';
+   }
+   if(['trace','flow'].includes(out.type)){
+    if(out.relationIds.length)record.objectIds=[];
+    else if(out.objectIds.length)record.type='reveal';
+   }
   }
   // A scene with an empty requiredConceptIds inventory derives it from its beats'
   // introduce/reinforce/transform references plus the central concept.

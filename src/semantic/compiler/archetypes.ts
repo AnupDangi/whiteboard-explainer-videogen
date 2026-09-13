@@ -25,9 +25,11 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
   if(roots.length<2||roots.length>7||roots.some(o=>o.primitiveRef!=='label'))throw new Error('Numbered steps require 2–7 concise label objects');
   const row=470/roots.length;roots.forEach((o,i)=>placements.set(o.id,{x:200,y:140+i*row,w:950,h:row-12}));
  }else if(scene.archetype==='equation_walkthrough'){
-  if(roots.length<2||roots.length>6||roots.some(o=>o.primitiveRef!=='equation'))throw new Error('Equation walkthrough requires 2–6 equation lines');
-  const lineHeight=64,gap=18,total=roots.length*lineHeight+(roots.length-1)*gap,top=(720-total)/2;
-  roots.forEach((o,index)=>placements.set(o.id,{x:230,y:top+index*(lineHeight+gap),w:820,h:lineHeight}));
+  if(roots.length<2||roots.length>6)throw new Error('Equation walkthrough requires 2–6 derivation lines');
+  // Eq lines stack top-to-bottom as a derivation; short label objects are teacher-voice
+  // step notes placed inline between them (compact rows).
+  const rowHeights=roots.map(o=>o.primitiveRef==='equation'?64:34),gap=14,total=rowHeights.reduce((a,b)=>a+b,0)+(roots.length-1)*gap,top=(720-total)/2;let y=top;
+  roots.forEach((o,index)=>{placements.set(o.id,{x:o.primitiveRef==='equation'?230:300,y,w:o.primitiveRef==='equation'?820:680,h:rowHeights[index]});y+=rowHeights[index]+gap;});
  }else if(scene.archetype==='matrix_operation'){
   if(roots.length<3||roots.length>6)throw new Error('Matrix operation requires 3–6 equation terms');
   if(!roots.some(o=>o.primitiveRef==='equation'))throw new Error('Matrix operation requires an operator or equals token');

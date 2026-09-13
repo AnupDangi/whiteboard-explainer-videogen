@@ -21,6 +21,8 @@ export function classifySemanticError(message:string):string{
   if(/truncated|incomplete or refused|finish_reason/i.test(message))return 'provider-truncated';
   if(/budget|cost ceiling/i.test(message))return 'budget';
   if(/Speech|voice-engine/i.test(message))return 'speech';
+  if(/requires 2|requires one|exceeds|Untaught|Uncovered|Unrepresented|never appears|Untimed|Equation walkthrough|Matrix operation|Hierarchy|Flow|Cycle|Trajectory|Timeline|Spatial|Structural/i.test(message))return 'plan';
+  if(/No teaching asset|Unavailable semantic anchor|asset/i.test(message))return 'asset';
   if(/validation exhausted|schema|Unavailable|Missing|invented|changed/i.test(message))return 'plan';
   if(/OpenRouter|HTTP \d/i.test(message))return 'provider';
   return 'unknown';

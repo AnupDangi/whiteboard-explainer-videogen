@@ -60,9 +60,16 @@ export function teachingPrompt(options:TeachingPromptOptions):string{
 }
 
 export interface DirectorPromptOptions {archetype?:string;learnerLevel?:string}
+const PRIMITIVE_DIRECTIONS:Record<string,string>={
+ equation_walkthrough:'This is an equation walkthrough: every primary object MUST use primitiveRef "equation" (never assetRef) and its label is one full derivation line; only the objects that personify steps may use primitiveRef "label".',
+ matrix_operation:'This is a matrix/vector operation: use the matrix/vector assets when a candidate matches, and primitiveRef "equation" for operator/equals tokens (never both on one object).',
+ numbered_steps:'Every primary object uses primitiveRef "label" with a short step title (never assetRef).',
+ timeline:'Every primary object uses primitiveRef "label" with a short event title (never assetRef).',
+ trajectory:'Every primary object uses primitiveRef "label" with a short stage title (never assetRef).',
+};
 export function directorPrompt(options:DirectorPromptOptions={}):string{
-  const archetype=options.archetype?`This scene uses the ${options.archetype} archetype; direct it accordingly.`:'';
-  const level=options.learnerLevel?`Write for ${options.learnerLevel}.`:'';
+ const archetype=options.archetype?`This scene uses the ${options.archetype} archetype; direct it accordingly.${PRIMITIVE_DIRECTIONS[options.archetype]?` ${PRIMITIVE_DIRECTIONS[options.archetype]}`:''}`:'';
+ const level=options.learnerLevel?`Write for ${options.learnerLevel}.`:'';
   return [
     `Choose the visual mental model, object inventory, hierarchy, relations, semantic anchors, and meaningful actions. Explicitly answer all eight direction decisions.`,
     `Use only candidate asset IDs. The hero object MUST use mentalModel.heroConceptIds[0] as conceptId.`,

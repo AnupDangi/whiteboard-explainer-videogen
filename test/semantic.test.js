@@ -67,7 +67,9 @@ test('V2 equation and matrix layouts fail closed on invalid inputs',()=>{
  const obj=(id,extra)=>({id,role:'support',children:[],collisionPolicy:'forbid',...extra});
  assert.throws(()=>archetypePlacements({archetype:'matrix_operation',objects:[obj('a',{assetRef:'math.matrix.v2'}),obj('op',{primitiveRef:'equation'})],relations:[]}),/3–6/);
  assert.throws(()=>archetypePlacements({archetype:'matrix_operation',objects:[obj('a',{assetRef:'math.matrix.v2'}),obj('b',{assetRef:'math.vector.v2'}),obj('c',{assetRef:'data.latent.v2'})],relations:[]}),/operator/);
- assert.throws(()=>archetypePlacements({archetype:'equation_walkthrough',objects:[obj('l1',{primitiveRef:'label'}),obj('l2',{primitiveRef:'equation'})],relations:[]}),/equation lines/);
+ assert.throws(()=>archetypePlacements({archetype:'equation_walkthrough',objects:[obj('l1',{primitiveRef:'label'})],relations:[]}),/2–6/);
+ // Mixed equation and step-label derivation lines are accepted (teacher-voice steps).
+ archetypePlacements({archetype:'equation_walkthrough',objects:[obj('l1',{primitiveRef:'equation'}),obj('l2',{primitiveRef:'label'})],relations:[]});
 });
 test('V2 hierarchy places one root above its descendants and rejects invalid trees',()=>{
  const raw=JSON.parse(readFileSync('examples/semantic/memory-hierarchy.scene.json','utf8')),s=compileScene(raw);

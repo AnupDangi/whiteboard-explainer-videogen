@@ -6,6 +6,7 @@ import {renderSVG} from '../dist/src/semantic/renderer/render-svg.js';
 import {objectState} from '../dist/src/semantic/renderer/scene-state.js';
 import {renderEquation} from '../dist/src/semantic/renderer/primitives.js';
 import {ASSETS} from '../dist/src/semantic/assets/registry.js';
+import {wordsFromDuration} from '../dist/src/shared/voice-engine-client.js';
 const scene=()=>{const s=JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.scene.json','utf8'));for(const o of s.objects)if(['plant','sunlight','water','carbon_dioxide'].includes(o.id))o.conceptId=o.id;return s;};
 
 test('morph/replace actions are compiled and rendered with a state badge',()=>{
@@ -79,4 +80,15 @@ test('new Phase 15 assets validate and expose anchors',()=>{
     assert.ok(a,`missing ${id}`);
     assert.ok(a.anchors.input&&a.anchors.output,`${id} lacks flow ports`);
   }
+});
+
+test('timeline tokenization matches the speech segmenter for hyphens and symbols',()=>{
+  // Intl.Segmenter counts "middle-school" as two words and "+"/"=" as none; the timeline
+  // compiler must use the same segmenter as the speech timing or every narrated job fails.
+  const s=scene();
+  s.beats[0].narration=s.beats[0].narration.replace(/^A plant/,'A middle-school plant');
+  const text=s.beats.map(b=>b.narration).join(' ');
+  const timing=wordsFromDuration(text,20000);
+  assert.ok(timing.words.length>text.split(/\s+/).length,'segmenter produces more tokens than whitespace');
+  assert.doesNotThrow(()=>compileScene(s,timing,undefined));
 });
