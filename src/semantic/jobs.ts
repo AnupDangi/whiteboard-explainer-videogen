@@ -58,7 +58,7 @@ export class SemanticJobStore {
     this.jobs.set(job.id,job);await mkdir(join(this.root,job.id),{recursive:true});
     const env=process.env;job.model=this.factories.model(env);job.judge=env.V2_CRITIC==='on'?this.factories.judge?.(env):undefined;
     job.speech=options.narration?await this.factories.speech?.(language):undefined;
-    job.input={prompt:options.prompt,sourceText:options.sourceText,sourceId:options.sourceId,maxScenes,allowedArchetypes:options.allowedArchetypes as TeachingInput['allowedArchetypes']};
+    job.input={prompt:options.prompt,sourceText:options.sourceText,sourceId:options.sourceId,maxScenes,allowedArchetypes:options.allowedArchetypes as TeachingInput['allowedArchetypes'],language};
     const controller=new AbortController();job.controller=controller;
     log('semantic-job.created',{jobId:job.id,language,maxScenes,narration:options.narration,archetypes:options.allowedArchetypes.length});
     job.task=logContext.run({...logContext.getStore(),jobId:job.id},()=>this.run(job,controller.signal));

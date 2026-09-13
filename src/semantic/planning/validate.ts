@@ -1,13 +1,16 @@
 import {parseTeachingPlan,parseVisualScene} from '../schemas.js';
+import {segmentWords} from '../../shared/language.js';
 import type {TeachingPlanV2,VisualSceneV2} from '../types.js';
 export function uniqueIds(items:{id:string}[],label:string):Set<string>{const ids=new Set(items.map(x=>x.id));if(ids.size!==items.length)throw new Error(`Duplicate ${label} ID`);return ids;}
+const normalizeWord=(w:string)=>w.toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+const wordsOf=(text:string)=>segmentWords(text).map(normalizeWord).filter(Boolean);
 function refs(values:string[],allowed:Set<string>,label:string){for(const v of values)if(!allowed.has(v))throw new Error(`Unknown ${label}: ${v}`);}
 /** Teacher-voice lints: narration must read like prose teaching, never slide bullets. */
 export function lintTeacherVoice(text:string,id:string):void{
   const lower=text.toLowerCase();
   if(/^\s*step\s*\d+\b|\bstep\s*(one|two|three|four|five)\b/.test(lower))throw new Error(`Meta-numbered narration (teacher voice, not steps): ${id}`);
   if(/\b(first step|second step|next slide|point number)\b/.test(lower))throw new Error(`Slide-bullet narration: ${id}`);
-  const words=lower.match(/[a-z0-9']+/g)??[];
+  const words=wordsOf(text);
   if(words.length<6)throw new Error(`Narration too short to teach: ${id}`);
 }
 export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warnings:string[]}{
@@ -55,7 +58,7 @@ export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warning
      // Derive endpoints from the focus id's own words when they name registry concepts
      // (e.g. rel-sunlight-to-photosynthesis), else from the beat's introduced concepts.
      const parts=focus.split(/[_-]+/).filter(w=>w&&w!=='relation'&&w.length>1);
-     const conceptWords=(c:string)=>{const cw=new Set(c.split(/[_-]+/));const concept=plan.conceptRegistry.find(x=>x.id===c);if(concept)for(const alias of [concept.canonicalName,...concept.aliases])for(const w of alias.toLowerCase().match(/[a-z0-9]+/g)??[])if(w.length>1)cw.add(w);return cw;};
+     const conceptWords=(c:string)=>{const cw=new Set(c.split(/[_-]+/));const concept=plan.conceptRegistry.find(x=>x.id===c);if(concept)for(const alias of [concept.canonicalName,...concept.aliases])for(const w of wordsOf(alias))if(w.length>1)cw.add(w);return cw;};
      const position=(c:string)=>{const cw=conceptWords(c);let first=Infinity;parts.forEach((w,i)=>{if(cw.has(w)&&i<first)first=i;});return first;};
      const mentioned=conceptIds.filter(c=>position(c)<Infinity).sort((a,b)=>position(a)-position(b));
      const source=mentioned[0]??[...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)].find(c=>c!==scene.centralConceptId)??scene.centralConceptId;
@@ -70,9 +73,9 @@ export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warning
       refs(b.requirementIds,ids,'requirement');refs(b.evidenceRefs,evidence,'evidence');refs([...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)],concepts,'beat concept');refs(b.relationFocus,relations,'relation');
       b.requirementIds.forEach(x=>covered.add(x));b.transform.forEach(t=>{if(t.fromState===t.toState)throw new Error('State change must change state');transformed.add(t.conceptId);});
       [...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)].forEach(x=>seen.add(x));
-      const words=new Set(b.narrationDraft.toLowerCase().match(/[a-z0-9]+/g)??[]);const signature=[...words].sort().join(' ');
+      const words=new Set(wordsOf(b.narrationDraft));const signature=[...words].sort().join(' ');
       if(signatures.has(signature))throw new Error(`Duplicate beat: ${b.id}`);signatures.add(signature);
-      for(const earlier of scene.beats.slice(0,scene.beats.indexOf(b))){const other=new Set(earlier.narrationDraft.toLowerCase().match(/[a-z0-9]+/g)??[]);const overlap=[...words].filter(w=>other.has(w)).length;if(overlap/new Set([...words,...other]).size>0.88)throw new Error(`Near-identical beat: ${b.id}`);}
+      for(const earlier of scene.beats.slice(0,scene.beats.indexOf(b))){const other=new Set(wordsOf(earlier.narrationDraft));const overlap=[...words].filter(w=>other.has(w)).length;if(overlap/new Set([...words,...other]).size>0.88)throw new Error(`Near-identical beat: ${b.id}`);}
       if(new Set([...b.introduce,...b.reinforce]).size>4)warnings.push(`${scene.id}/${b.id}: excessive concept density`);
       if(plan.evidenceRefs.length&&b.requirementIds.some(r=>requirements.find(x=>x.id===r)!.critical)&&!b.evidenceRefs.length)throw new Error(`Critical beat lacks evidence: ${b.id}`);
     }
@@ -93,11 +96,11 @@ export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warning
       const vocab=(id:string)=>{
        const words=new Set(id.split(/[_-]+/));
        const concept=concepts.has(id)?plan.conceptRegistry.find(c=>c.id===id):undefined;
-       if(concept)for(const name of [concept.canonicalName,...concept.aliases])for(const w of name.toLowerCase().match(/[a-z0-9]+/g)??[])words.add(w);
+       if(concept)for(const name of [concept.canonicalName,...concept.aliases])for(const w of wordsOf(name))words.add(w);
        return words;
       };
       const fromWords=vocab(r.fromConceptId),toWords=vocab(r.toConceptId);
-      const beat=scene.beats.find(b=>{const words=new Set(b.narrationDraft.toLowerCase().match(/[a-z0-9]+/g)??[]);return [...fromWords].every(w=>words.has(w))&&[...toWords].some(w=>words.has(w));});
+      const beat=scene.beats.find(b=>{const words=new Set(wordsOf(b.narrationDraft));return [...fromWords].every(w=>words.has(w))&&[...toWords].some(w=>words.has(w));});
       if(beat){beat.relationFocus.push(r.id);warnings.push(`${scene.id}: attached untaught relation ${r.id} to beat ${beat.id}`);}
       else throw new Error(`Untaught relation: ${r.id}`);
     }
@@ -108,10 +111,10 @@ export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warning
   // when that overlap is decisive. A truly untaught requirement still throws.
   for(const r of requirements){
    if(!r.critical||covered.has(r.id))continue;
-   const statementWords:string[]=(r.statement.toLowerCase().match(/[a-z0-9]+/g)??[]);
+   const statementWords=wordsOf(r.statement);
    let best:{beat:typeof plan.scenes[number]['beats'][number];score:number}|undefined;
    for(const scene of plan.scenes)for(const b of scene.beats){
-    const words=new Set(b.narrationDraft.toLowerCase().match(/[a-z0-9]+/g)??[]);
+    const words=new Set(wordsOf(b.narrationDraft));
     const overlap=statementWords.filter(w=>words.has(w)).length;
     const score=overlap/Math.max(1,statementWords.length);
     if(!best||score>best.score)best={beat:b,score};

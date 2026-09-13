@@ -27,13 +27,13 @@ function normalizeRelationAnchors(visual:VisualSceneV2):void{
   if(!anchors.includes(ref.anchor))ref.anchor='center';
  }
 }
-export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
+export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
   const candidates=assetCandidates(scene,registry,mentalModel),allowedAssets=new Set(candidates.flatMap(c=>c.candidates.map(a=>a.id)));
   const primitiveScene=mentalModel.candidateArchetypes.every(a=>PRIMITIVE_ARCHETYPES.includes(a));
   // Asset feasibility is required only for asset-based scenes. Math/step/timeline scenes
   // represent concepts with primitiveRef equation/label, so no curator asset is needed.
   if(!primitiveScene)for(const id of mentalModel.heroConceptIds)if(!candidates.find(c=>c.conceptId===id)?.candidates.length)throw new Error(`No teaching asset for hero concept ${id}`);
-   const directed=await model.generate('director',directorPrompt({archetype:mentalModel.candidateArchetypes[0]}),{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,previousContinuity:previous?.scene.continuity??null},schema,value=>{
+   const directed=await model.generate('director',directorPrompt({archetype:mentalModel.candidateArchetypes[0],language}),{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,previousContinuity:previous?.scene.continuity??null},schema,value=>{
   const result=value as {scene:VisualSceneV2;decisions:DirectionDecisions};
   // Deterministic heal: objects with neither asset nor primitive are stray relation
   // stand-ins; drop them and every reference before validation.
@@ -103,7 +103,7 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
  catch(e){
   const message=e instanceof Error?e.message:String(e);
   if(!/No safe connector route|Illegal overlap|Canvas escape|Invalid semantic anchor/.test(message))throw e;
-  const retry=await model.generate('director',`${directorPrompt({archetype:mentalModel.candidateArchetypes[0]})}
+  const retry=await model.generate('director',`${directorPrompt({archetype:mentalModel.candidateArchetypes[0],language})}
 The previous composition failed deterministic geometry: ${message}. Choose different preferredZone placements or semantic anchors so every relation has a clear route around the hero.`,{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,previousContinuity:previous?.scene.continuity??null,previousFailure:message},schema,value=>{
     const result=value as {scene:VisualSceneV2;decisions:DirectionDecisions},visual=validateVisualScene(result.scene,new Set(registry.map(c=>c.id)),new Set(previous?.objects.map(o=>o.id)));
     if(visual.id!==scene.id)throw new Error('Director changed scene identity');
