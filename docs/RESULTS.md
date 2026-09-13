@@ -1,3 +1,33 @@
+# 2026-09-13 — First live V2 semantic job through the synchronous path
+
+Job `94117016-bb4b-4dfa-bbf4-c09d6ea6054f` via `POST /api/semantic/jobs`
+(`VISUAL_PIPELINE` unchanged; semantic routes always available).
+
+- Status `complete`, one scene `scene_gathering_inputs`, archetype `convergence`.
+- Cost **$0.022144**, 2 model calls (teaching + director), estimated silent timing
+  (narration:false, no TTS).
+- `firstPlayableMs` **17 439**, `sceneReadyMs` **17 426**; teaching 7 382 ms,
+  director 10 044 ms, visualModel 0.1 ms, narrationFinalize 0.04 ms, compile 0.4 ms.
+- Scene: hero plant (`biology.plant.sapling.v2`) + sunlight/water/CO₂ supports on
+  real assets; relations sunlight->leaf.top, water->roots, CO₂->leaf.right;
+  five beats matching the plan.
+- One advisory diagnostic: narrated static interval exceeds 3500 ms (pacing, not a
+  hard failure).
+
+Root cause of the preceding ~20 failed live attempts: `.env` set
+`OPENROUTER_OUTLINE_MODEL=google/gemini-2.5-flash-lite`. Direct probes showed
+`json_schema` strict mode on `google/gemini-3.8-flash` returns `{}` while
+`json_object` returns the full plan, so `V2_JSON_MODE=object` is required for this
+repo's custom schema subset. Models now teaching/director/vision =
+`google/gemini-3.8-flash`.
+
+**Honest limitations:** this is feasibility of our implementation, not evidence of
+teaching efficacy, live TTS latency, or Lamina behaviour. Deterministic heals now
+convert several former hard failures into warnings; the Phase 15 benchmark must
+confirm none of them mask a real planning gap. Static-timing is estimated.
+
+---
+
 # 2026-09-12 — General narration language support (any script)
 
 Replaced English-only narration with a script-general implementation:
