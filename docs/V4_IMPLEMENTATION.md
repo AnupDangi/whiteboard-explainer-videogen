@@ -79,6 +79,28 @@ performance. Later renderer changes require regenerating acceptance artifacts.
 - V2 is not the release default. The final migration criteria in `v4_docs/Tasks.md`
   remain open, particularly blind human preference and live end-to-end performance.
 
+## Synchronous progressive V2 jobs — 2026-09-13
+
+`src/semantic/jobs.ts` adds a `SemanticJobStore` (durable per-job snapshots under
+`.data/semantic/`, bounded to 2 active jobs, prompt/language/archetype/budget
+validation, failure taxonomy mirroring V1's classifyError). Each `generateV2`
+yield is committed as a scene snapshot the moment it is ready; `firstPlayableMs`
+is recorded when the FIRST scene commits, not when the job completes. Server
+routes: `POST /api/semantic/jobs`, `GET /api/semantic/jobs/:id` (polling
+fallback), `POST /api/semantic/jobs/:id/cancel`, and
+`GET /api/semantic/jobs/:id/stream` — an SSE stream that pushes each scene as it
+becomes ready with offset-based resume (`?from=N` replays only scenes the client
+is missing; a completed job replays its full scene list then `end`). Semantic
+audio is served at `/media/semantic/<job>/<scene>.wav`. The semantic viewer
+(`public/semantic.html`) gains a live generation panel: SSE scene push with
+prebuffering of later scenes while the first plays, automatic polling fallback on
+stream error, and firstPlayable display. Language is plumbed from the job into
+`createVoiceEngineSpeech`. Tests: 7 new cases (lifecycle, silent mode, input
+validation before any model call, error-vs-partial, taxonomy, SSE push+resume,
+polling fallback) using a deterministic mock model — no provider keys. Suite
+after this change: 198 tests / 198 pass / 0 fail. No live provider run was
+executed in this change; measured latency claims remain pending.
+
 ## Critic-repair wiring — 2026-09-13
 
 `src/semantic/contact-sheet.ts` renders event-aligned frames (initial, after each

@@ -9,11 +9,20 @@ import {fileURLToPath} from 'node:url';
 import {join,resolve,dirname,extname} from 'node:path';
 import {spawn} from 'node:child_process';
 import {JobStore} from './explainer/jobs.js';
+import {SemanticJobStore} from './semantic/jobs.js';
+import {createJsonModel} from './semantic/planning/model-adapter.js';
+import {createVisionJudge} from './semantic/vision-judge.js';
+import {createVoiceEngineSpeech} from './semantic/speech.js';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const json=(res:ServerResponse,status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
 async function body(req:IncomingMessage){let value='';for await(const chunk of req){value+=chunk;if(Buffer.byteLength(value)>72*1024*1024)throw new Error('Request too large');}return JSON.parse(value);}
 export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
   const store=new JobStore(dataRoot,providers);
+  const semanticStore=new SemanticJobStore(join(dataRoot,'semantic'),{
+    model:env=>createJsonModel({env,maxCostUsd:Number(env.V2_JOB_BUDGET_USD??.15)}),
+    judge:env=>createVisionJudge({env,maxCostUsd:Number(env.V2_CRITIC_BUDGET_USD??.25)}),
+    speech:language=>createVoiceEngineSpeech({language}),
+  });
   const pipeline=visualPipeline(process.env);
   const server=createServer((req,res)=>logContext.run({requestId:randomUUID()},async()=>{
     const started=performance.now();
@@ -43,6 +52,47 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
       }
       if(req.method==='POST'&&url.pathname==='/api/semantic/compile'){
         return json(res,200,compileSemanticScene(await body(req)));
+      }
+      if(req.method==='POST'&&url.pathname==='/api/semantic/jobs'){
+        return json(res,202,await semanticStore.create(await body(req)));
+      }
+      const semanticJobMatch=url.pathname.match(/^\/api\/semantic\/jobs\/([a-f0-9-]{36})(\/cancel)?$/);
+      if(semanticJobMatch){
+        if(req.method==='POST'&&semanticJobMatch[2]){
+          return json(res,200,{cancelled:await semanticStore.cancel(semanticJobMatch[1])});
+        }
+        if(req.method==='GET'&&!semanticJobMatch[2]){
+          const job=await semanticStore.get(semanticJobMatch[1]);
+          return json(res,job?200:404,job||{error:'Job not found'});
+        }
+      }
+      // SSE stream: pushes each scene as it becomes ready, with offset-based resume.
+      // `from` = number of scenes the client already has; events replay from there.
+      const semanticStreamMatch=url.pathname.match(/^\/api\/semantic\/jobs\/([a-f0-9-]{36})\/stream$/);
+      if(semanticStreamMatch&&req.method==='GET'){
+        const job=await semanticStore.get(semanticStreamMatch[1]);
+        if(!job)return json(res,404,{error:'Job not found'});
+        let from=Number(url.searchParams.get('from')??'0');
+        if(!Number.isInteger(from)||from<0)from=0;
+        res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-store','connection':'keep-alive'});
+        const send=(event:string,data:unknown)=>{res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);};
+        let closed=false;req.on('close',()=>{closed=true;});
+        for(let i=from;i<job.scenes.length&&!closed;i++)send('scene',job.scenes[i]);
+        send('status',{status:job.status,revision:job.revision,availableMs:job.availableMs,firstPlayableMs:job.firstPlayableMs,completedMs:job.completedMs,error:job.error,errorKind:job.errorKind});
+        if(['complete','partial','error','cancelled','interrupted'].includes(job.status)){send('end',{status:job.status});res.end();return;}
+        let lastRevision=job.revision;
+        const poll=setInterval(async()=>{
+          if(closed){clearInterval(poll);return;}
+          try{
+            const current=await semanticStore.get(semanticStreamMatch[1]);
+            if(!current){clearInterval(poll);res.end();return;}
+            for(let i=from;i<current.scenes.length&&!closed;i++){send('scene',current.scenes[i]);}
+            from=Math.max(from,current.scenes.length);
+            if(current.revision!==lastRevision){lastRevision=current.revision;send('status',{status:current.status,revision:current.revision,availableMs:current.availableMs,firstPlayableMs:current.firstPlayableMs,completedMs:current.completedMs,error:current.error,errorKind:current.errorKind});}
+            if(['complete','partial','error','cancelled','interrupted'].includes(current.status)){clearInterval(poll);send('end',{status:current.status});res.end();}
+          }catch(e){clearInterval(poll);res.end();}
+        },500);
+        return;
       }
       if(req.method==='POST'&&url.pathname==='/api/jobs'){
         return json(res,202,await store.create(await body(req)));
@@ -91,11 +141,13 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
         return;
       }
       const media=url.pathname.match(/^\/media\/([a-f0-9-]{36})\/([a-zA-Z0-9_-]+\.(?:mp3|wav))$/);
+      const semanticMedia=url.pathname.match(/^\/media\/semantic\/([a-f0-9-]{36})\/([a-zA-Z0-9_-]+\.(?:mp3|wav))$/);
       // Exported MP4s live outside public/, so they get their own id-scoped static route,
       // mirroring /media/. This is the URL /api/export hands back to the browser.
       const exported=url.pathname.match(/^\/output\/([a-f0-9-]{36})\.mp4$/);
       let path;
       if(media)path=join(dataRoot,media[1],media[2]);
+      else if(semanticMedia)path=join(dataRoot,'semantic',semanticMedia[1],semanticMedia[2]);
       else if(exported)path=join(root,'output',`${exported[1]}.mp4`);
       else if(/^\/src\/semantic\/(?:compiler\/text|renderer\/(?:render-svg|style|scene-state|illustrations|primitives|relations|cursor|captions|steps)|assets\/(?:registry|validator|geometry|illustrations\/plant|icons\/inputs|templates\/catalog))\.js$/.test(url.pathname))path=join(root,'dist',url.pathname);
       else if(/^\/src\/(?:explainer\/[a-z0-9-]+|shared\/(?:logger|model-router|types|voice-engine-client|vocabulary))\.js$/.test(url.pathname))path=join(root,'dist',url.pathname);
@@ -111,10 +163,10 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
     }
   }));
   server.on('error',error=>{log('server.error',{error},'error');process.exit(1);});
-  return {server,store};
+  return {server,store,semanticStore};
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
-  const {server,store}=makeServer();const port=Number(process.env.PORT||3000);
+  const {server,store,semanticStore}=makeServer();const port=Number(process.env.PORT||3000);
   server.listen(port,'127.0.0.1',()=>log('server.listening',{url:'http://127.0.0.1:'+port,pid:process.pid,node:process.version}));
-  for(const event of ['SIGINT','SIGTERM'])process.on(event,async()=>{log('server.shutdown',{signal:event});await store.close();server.close(()=>process.exit(0));});
+  for(const event of ['SIGINT','SIGTERM'])process.on(event,async()=>{log('server.shutdown',{signal:event});await Promise.allSettled([store.close(),semanticStore.close()]);server.close(()=>process.exit(0));});
 }

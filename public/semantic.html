@@ -33,8 +33,15 @@
   </section>
 
   <aside class="panel data-panel">
-    <p class="eyebrow">SCENE DATA</p>
-    <h2>Inspect or load a scene</h2>
+    <p class="eyebrow">GENERATE</p>
+    <h2>Live semantic generation</h2>
+    <div class="controls stacked">
+      <label class="file">Teaching prompt <textarea id="prompt" rows="3" placeholder="Explain how plants make food to a middle-school student."></textarea></label>
+      <button id="generate" type="button">▶ Generate scene</button>
+      <output id="jobstatus" role="status">idle</output>
+    </div>
+    <p class="hint">Scenes stream in over SSE as soon as each is ready (offset-resumable; polling fallback). The first scene becomes playable before later scenes finish.</p>
+    <p class="eyebrow" style="margin-top:1rem">SCENE DATA</p>
     <div class="controls stacked">
       <label class="file">Load scene JSON <input id="file" type="file" accept=".json,application/json"></label>
       <button id="download" type="button">↓ Download compiled JSON</button>

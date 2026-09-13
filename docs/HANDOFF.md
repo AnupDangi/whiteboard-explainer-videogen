@@ -1,3 +1,23 @@
+# Current handoff — 2026-09-13, Wave 3 synchronous progressive V2 jobs
+
+Wave 3 done: `src/semantic/jobs.ts` (`SemanticJobStore`: durable snapshots,
+2-active cap, taxonomy, per-scene commit on each generateV2 yield, firstPlayable
+= first scene), server routes `POST/GET /api/semantic/jobs[/:id][/cancel]` +
+SSE `/api/semantic/jobs/:id/stream` with `?from=N` offset resume and `end` event
+on terminal states (also sent when the job is already complete on connect),
+`/media/semantic/...` audio route, viewer live-generation panel (SSE + prebuffer
++ polling fallback). Language flows job → `createVoiceEngineSpeech`. Suite:
+`npm test` 198/198 pass, build clean, `git diff --check` clean. Mock-model tests
+only; no live provider run yet. Next: Wave 4 — richer visuals (state variants/
+morph Task 6.5, ELK graph layout Task 7.5, general compiler repair Task 7.4,
+asset registry growth toward Phase 15 domains, multi-line equation renderer);
+then Wave 5 (model A/B within $5), Wave 6 (Phase 15 multi-domain benchmark),
+Wave 7 (performance + migration gate). A live end-to-end run through the new
+`POST /api/semantic/jobs` path should be done before Wave 5 to confirm real
+provider behavior.
+
+---
+
 # Current handoff — 2026-09-13, Wave 2 critic-repair wiring
 
 Wave 2 done: `src/semantic/contact-sheet.ts` (event-aligned sheet frames via the
