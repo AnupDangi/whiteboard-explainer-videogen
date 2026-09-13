@@ -10,7 +10,7 @@ import {occupancy} from './occupancy.js';
 import {compileTimeline,estimatedTiming,staticIntervals} from './timeline.js';
 export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:CompiledSceneV2):CompiledSceneV2{
  const scene=validateVisualScene(input,undefined,new Set(previous?.objects.map(o=>o.id))),diagnostics:string[]=[];
- for(const action of scene.beats.flatMap(b=>b.actions))if(!['draw','reveal','trace','flow','fill','highlight','pulse','fade'].includes(action.type))throw new Error(`Motion not implemented: ${action.type}`);
+  for(const action of scene.beats.flatMap(b=>b.actions))if(!['draw','reveal','trace','flow','fill','highlight','pulse','fade','morph','replace'].includes(action.type))throw new Error(`Motion not implemented: ${action.type}`);
  for(const r of scene.relations)for(const ref of [r.from,r.to]){const o=scene.objects.find(o=>o.id===ref.objectId)!;if(o.assetRef)ref.anchor=canonicalAnchor(o.assetRef,ref.anchor);}
  if(!supportedArchetype(scene.archetype))throw new Error(`Archetype not implemented: ${scene.archetype}`);
  if(['structural_diagram','convergence'].includes(scene.archetype)&&scene.objects.filter(o=>o.role==='hero').length!==1)throw new Error('Structural composition requires exactly one hero');
@@ -18,7 +18,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  const objects:CompiledObject[]=[],remaining=[...scene.objects];let support=0;
  while(remaining.length){const index=remaining.findIndex(o=>!o.parentId||objects.some(p=>p.id===o.parentId));if(index<0)throw new Error('Unresolved parent');const o=remaining.splice(index,1)[0];
   const asset=o.assetRef?getAsset(o.assetRef):undefined;if(asset&&!asset.archetypes.includes(scene.archetype))throw new Error(`Asset incompatible with archetype: ${o.id}`);
-  if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
+  if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!['before','after'].includes(state)&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
   const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',w=hero?330:labelOnly?250:132,h=hero?440:labelOnly?44:132;
   const zone=o.preferredZone??(hero?'center':(['upper_left','upper_right','lower_left','lower_right'] as LayoutZone[])[support++%4]);
   let rect=placements.get(o.id)??zoneRect(zone,w,h);const parent=o.parentId?objects.find(p=>p.id===o.parentId):undefined;
@@ -41,20 +41,39 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
    }
   }
  }
- // Treat zones as preferences. Repair crowded supports locally, preserving the hero and persisted objects.
- for(let pass=0;pass<3&&['structural_diagram','convergence'].includes(scene.archetype)&&findCollisions(objects).length;pass++){
-  for(const o of objects.filter(o=>!o.parentId&&o.role!=='hero'&&!['annotation','label'].includes(o.role)&&!scene.continuity.keepFromPrevious.includes(o.id))){
-   const before=findCollisions(objects),involved=before.some(pair=>pair.split('/').includes(o.id));if(!involved)continue;
-   const original={x:o.x,y:o.y,w:o.w,h:o.h};let best={...original},bestCount=before.length,bestDistance=Infinity;
-   for(const scale of [1,.9,.8])for(const zone of ['upper_left','upper_right','lower_left','lower_right','left','right'] as LayoutZone[]){
-    Object.assign(o,zoneRect(zone,original.w*scale,original.h*scale));
-    if(!contains(BOARD.safe,visualBounds(o)))continue;
-    const count=findCollisions(objects).length,distance=Math.hypot(o.x-original.x,o.y-original.y)+(1-scale)*100;
-    if(count<bestCount||(count===bestCount&&count<before.length&&distance<bestDistance)){best={x:o.x,y:o.y,w:o.w,h:o.h};bestCount=count;bestDistance=distance;}
+  // Treat zones as preferences. Repair crowded supports locally, preserving the hero and persisted objects.
+  for(let pass=0;pass<3&&['structural_diagram','convergence'].includes(scene.archetype)&&findCollisions(objects).length;pass++){
+   for(const o of objects.filter(o=>!o.parentId&&o.role!=='hero'&&!['annotation','label'].includes(o.role)&&!scene.continuity.keepFromPrevious.includes(o.id))){
+    const before=findCollisions(objects),involved=before.some(pair=>pair.split('/').includes(o.id));if(!involved)continue;
+    const original={x:o.x,y:o.y,w:o.w,h:o.h};let best={...original},bestCount=before.length,bestDistance=Infinity;
+    for(const scale of [1,.9,.8])for(const zone of ['upper_left','upper_right','lower_left','lower_right','left','right'] as LayoutZone[]){
+     Object.assign(o,zoneRect(zone,original.w*scale,original.h*scale));
+     if(!contains(BOARD.safe,visualBounds(o)))continue;
+     const count=findCollisions(objects).length,distance=Math.hypot(o.x-original.x,o.y-original.y)+(1-scale)*100;
+     if(count<bestCount||(count===bestCount&&count<before.length&&distance<bestDistance)){best={x:o.x,y:o.y,w:o.w,h:o.h};bestCount=count;bestDistance=distance;}
+    }
+    Object.assign(o,best);if(bestCount<before.length)diagnostics.push(`geometry repair: repositioned support ${o.id}`);
    }
-   Object.assign(o,best);if(bestCount<before.length)diagnostics.push(`geometry repair: repositioned support ${o.id}`);
   }
- }
+  // General repair (Task 7.4) for the remaining archetypes: shrink secondary supports
+  // and nudge non-hero objects within their own zone before declaring an illegal overlap.
+  for(let pass=0;pass<3&&!['structural_diagram','convergence'].includes(scene.archetype)&&findCollisions(objects).length;pass++){
+   for(const o of objects.filter(o=>!o.parentId&&o.role!=='hero'&&!['annotation','label'].includes(o.role)&&!scene.continuity.keepFromPrevious.includes(o.id))){
+    const before=findCollisions(objects).length,original={x:o.x,y:o.y,w:o.w,h:o.h};
+    for(const [dx,dy] of [[0,24],[0,-24],[24,0],[-24,0]]){
+     o.x=original.x+dx;o.y=original.y+dy;
+     if(contains(BOARD.safe,visualBounds(o))&&findCollisions(objects).length<before){diagnostics.push(`geometry repair: nudged ${o.id}`);break;}
+     o.x=original.x;o.y=original.y;
+    }
+    if(findCollisions(objects).length>=before){
+     for(const scale of [.9,.8]){
+      o.w=original.w*scale;o.h=original.h*scale;
+      if(contains(BOARD.safe,visualBounds(o))&&findCollisions(objects).length<before){diagnostics.push(`geometry repair: scaled ${o.id} to ${scale}`);break;}
+      o.w=original.w;o.h=original.h;
+     }
+    }
+   }
+  }
  const collisions=findCollisions(objects);if(collisions.length)throw new Error(`Illegal overlap: ${collisions.join(', ')}`);
  for(const o of objects)if(!contains(BOARD.safe,visualBounds(o)))throw new Error(`Canvas escape: ${o.id}`);
  resolveAnchors();

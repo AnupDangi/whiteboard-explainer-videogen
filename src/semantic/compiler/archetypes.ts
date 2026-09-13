@@ -34,6 +34,16 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
   if(!roots.some(o=>o.assetRef))throw new Error('Matrix operation requires a matrix or vector asset');
   const totalWidth=1100,gap=18,weights=roots.map(o=>o.assetRef?1.5:.5),sum=weights.reduce((a,b)=>a+b,0),usable=totalWidth-gap*(roots.length-1);let x=90;
   roots.forEach((o,index)=>{const w=usable*weights[index]/sum,h=o.assetRef?200:52;placements.set(o.id,{x,y:(720-h)/2,w,h});x+=w+gap;});
+ }else if(scene.archetype==='branch'||scene.archetype==='cause_effect'||scene.archetype==='state_machine'){
+  // Layered graph layout for branching graphs (deterministic Sugiyama-lite, no ELK
+  // dependency): longest-path ranking, barycenter ordering, bounded to 4 ranks.
+  if(roots.length<2||roots.length>10)throw new Error('Branch graph requires 2–10 primary representations');
+  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!['labels','compares_with'].includes(r.relationType));
+  const rank=new Map<string,number>(),pending=new Set(ids);
+  while(pending.size){const ready=[...pending].filter(id=>edges.filter(e=>e.to.objectId===id).every(e=>rank.has(e.from.objectId))).sort();if(!ready.length)throw new Error('Branch graph contains a cycle; choose the cycle archetype');for(const id of ready){rank.set(id,Math.max(0,...edges.filter(e=>e.to.objectId===id).map(e=>rank.get(e.from.objectId)!+1)));pending.delete(id);}}
+  const ranks=Math.max(...rank.values())+1;if(ranks>4)throw new Error('Branch graph exceeds four readable layers');
+  for(let layer=0;layer<ranks;layer++){const group=roots.filter(o=>rank.get(o.id)===layer).sort((a,b)=>a.id.localeCompare(b.id));if(group.length>4)throw new Error('Branch graph layer exceeds four readable nodes');
+   group.forEach((o,row)=>placements.set(o.id,{x:120+(layer+.5)*(1040/ranks)-70,y:170+(row+.5)*400/group.length-55,w:140,h:110}));}
  }else if(scene.archetype==='hierarchy'){
   if(roots.length<2||roots.length>12)throw new Error('Hierarchy requires 2–12 nodes');
   const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'&&['contains','part_of','depends_on','causes'].includes(r.relationType));

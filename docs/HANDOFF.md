@@ -1,3 +1,21 @@
+# Current handoff — 2026-09-13, Wave 4 richer visuals
+
+Wave 4 done: morph/replace actions compiled + rendered with state badge; `before`
+state renders dimmed part sets; multi-line equation renderer (per-line reveal,
+completed dim, active wash); branch/cause_effect/state_machine layered graph
+layout (deterministic Sugiyama-lite, no ELK dependency); general nudge/scale
+repair for non-structural archetypes; assets 39 → 43 (refrigeration cycle trio
+with flow ports, economy price level). Suite: `npm test` 204/204 pass, build
+clean, `git diff --check` clean. NOTE: renderer changed — regenerate
+`output/semantic-plant-accepted/` artifacts before new fixture claims. Next:
+Wave 5 — model A/B within $5 (DeepSeek-V4-Flash-Vision vs Gemini-3.8-Flash on
+critic calibration; per-stage tier table via `npm run router:report`), preceded
+by one live end-to-end run through `POST /api/semantic/jobs` to confirm real
+provider behavior on the Wave 3 path. Then Wave 6 (Phase 15 multi-domain
+benchmark) and Wave 7 (performance + migration gate).
+
+---
+
 # Current handoff — 2026-09-13, Wave 3 synchronous progressive V2 jobs
 
 Wave 3 done: `src/semantic/jobs.ts` (`SemanticJobStore`: durable snapshots,

@@ -79,6 +79,29 @@ performance. Later renderer changes require regenerating acceptance artifacts.
 - V2 is not the release default. The final migration criteria in `v4_docs/Tasks.md`
   remain open, particularly blind human preference and live end-to-end performance.
 
+## Richer visuals capability — 2026-09-13
+
+Wave 4 additions, all deterministic: (1) state variants — `before` renders the
+highlighted part set dimmed (stroke-opacity .55), `after`/`morph`/`replace`
+actions are compiled (previously rejected as unimplemented) and render a state
+badge that fades in with morph progress; the compiler no longer requires assets
+to declare `before`/`after` state maps (Task 6.5). (2) Multi-line equation
+renderer — derivation lines reveal one at a time, completed lines dim to 0.75
+opacity, the active line gets a green wash tied to emphasis (supports the
+math-pedagogy prompt rules). (3) Branch/cause_effect/state_machine layered graph
+layout — deterministic longest-path ranking + sorted barycenter-lite placement,
+2–10 nodes, ≤4 layers, ≤4 per layer, cycle rejection (deterministic Sugiyama-lite
+in lieu of an ELK dependency; physical families still never pass through graph
+layout, Task 7.5). (4) General repair for non-structural archetypes — nudge
+within zone then scale-down .9/.8 before declaring an illegal overlap, matching
+the structural repair's philosophy (Task 7.4). (5) Asset registry 39 → 43:
+refrigeration cycle (compressor/condenser/evaporator with flow ports) and
+economy price-level for the Phase 15 inflation case. Tests: 6 new cases
+(morph badge, dimmed before state, per-line equation reveal, layered branch
+layout, general repair path, new asset validation). Suite after this change:
+204 tests / 204 pass / 0 fail. Renderer changes require regenerating acceptance
+artifacts (`output/semantic-plant-accepted/`) before any new fixture claims.
+
 ## Synchronous progressive V2 jobs — 2026-09-13
 
 `src/semantic/jobs.ts` adds a `SemanticJobStore` (durable per-job snapshots under

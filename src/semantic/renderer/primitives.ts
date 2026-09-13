@@ -8,10 +8,20 @@ export function renderLabel(o:CompiledObject,emphasis=0,draw=1):string{const lab
 
 export function renderEquation(o:CompiledObject,draw=1,emphasis=0):string{
  const text=o.lines.join(' ');if(draw<=0||!text)return '';
- const shown=text.slice(0,Math.ceil(text.length*draw)),panelOpacity=Math.min(1,draw*1.5),baseline=o.y+o.h/2+o.fontSize*.35;
- const panel=`<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="8" fill="#ffffff" stroke="${COLORS.green}" stroke-opacity="${(.35+emphasis*.5).toFixed(3)}" stroke-width="${(1.6+emphasis*1.4).toFixed(2)}" opacity="${panelOpacity.toFixed(3)}"/>`;
- const wash=emphasis>0?`<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="8" fill="${COLORS.green}" opacity="${(emphasis*.1).toFixed(3)}"/>`:'';
- return `${panel}${wash}<text x="${o.x+o.w/2}" y="${baseline}" text-anchor="middle" font-family="'SFMono-Regular', Menlo, Consolas, monospace" font-size="${o.fontSize}" fill="${COLORS.ink}">${escape(shown)}</text>`;
+ // Multi-line derivation: each line is one transformation step; the active line is
+ // emphasized so learners see exactly which step is being spoken about.
+ const lineCount=o.lines.length,lineProgress=draw*lineCount,activeIndex=Math.min(lineCount-1,Math.floor(lineProgress));
+ const panelOpacity=Math.min(1,draw*1.5),panel=`<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="8" fill="#ffffff" stroke="${COLORS.green}" stroke-opacity="${(.35+emphasis*.5).toFixed(3)}" stroke-width="${(1.6+emphasis*1.4).toFixed(2)}" opacity="${panelOpacity.toFixed(3)}"/>`;
+ const lineHeight=o.lines.length>1?o.fontSize+8:0,firstBaseline=o.lines.length>1?o.y+o.fontSize+14:o.y+o.h/2+o.fontSize*.35;
+ const body=o.lines.map((line,i)=>{
+  const isActive=lineCount>1&&i===activeIndex,completed=lineCount>1&&i<activeIndex;
+  const visible=i<activeIndex?line:i===activeIndex?line.slice(0,Math.ceil(line.length*(lineProgress-activeIndex))):'';
+  if(!visible)return '';
+  const opacity=completed?.75:1;
+  const wash=isActive?`<rect x="${o.x+8}" y="${firstBaseline+(i*lineHeight)-o.fontSize-4}" width="${o.w-16}" height="${o.fontSize+10}" rx="4" fill="${COLORS.green}" opacity="${(.12+emphasis*.12).toFixed(3)}"/>`:'';
+  return wash+`<text x="${o.x+o.w/2}" y="${firstBaseline+i*lineHeight}" text-anchor="middle" font-family="'SFMono-Regular', Menlo, Consolas, monospace" font-size="${o.fontSize}" fill="${COLORS.ink}" opacity="${opacity}">${escape(visible)}</text>`;
+ }).join('');
+ return panel+body;
 }
 
 export function renderPrimitive(o:CompiledObject,draw=1):string{
