@@ -19,7 +19,11 @@ async function body(req:IncomingMessage){let value='';for await(const chunk of r
 export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
   const store=new JobStore(dataRoot,providers);
   const semanticStore=new SemanticJobStore(join(dataRoot,'semantic'),{
-    model:env=>createJsonModel({env,maxCostUsd:Number(env.V2_JOB_BUDGET_USD??.15)}),
+    model:env=>createJsonModel({env,maxCostUsd:Number(env.V2_JOB_BUDGET_USD??.15),onOutput:async(stage,attempt,value)=>{
+      const active=[...semanticStore.jobs.values()].find(j=>['queued','planning','streaming'].includes(j.status));if(!active)return;
+      const {mkdir,writeFile}=await import('node:fs/promises');await mkdir(join(dataRoot,'semantic',active.id),{recursive:true});
+      await writeFile(join(dataRoot,'semantic',active.id,`${stage}-attempt-${attempt}.json`),JSON.stringify(value,null,2));
+    }}),
     judge:env=>createVisionJudge({env,maxCostUsd:Number(env.V2_CRITIC_BUDGET_USD??.25)}),
     speech:language=>createVoiceEngineSpeech({language}),
   });

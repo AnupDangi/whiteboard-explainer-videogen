@@ -79,6 +79,38 @@ performance. Later renderer changes require regenerating acceptance artifacts.
 - V2 is not the release default. The final migration criteria in `v4_docs/Tasks.md`
   remain open, particularly blind human preference and live end-to-end performance.
 
+## Live end-to-end run + model config — 2026-09-13
+
+First successful live V2 job through the new synchronous path: job `94117016`,
+status `complete`, one `convergence` scene, **$0.022144**, firstPlayable /
+sceneReady **17.4 s**, estimated silent timing (no TTS). Objects: hero plant +
+sunlight/water/CO₂ supports on real assets; relations terminate on plant
+anchors leaf.top / roots / leaf.right; five beats match the teaching plan. One
+advisory diagnostic: narrated static interval >3500 ms. Live split: teaching
+7.4 s, director 10.0 s, compile 0.4 ms, TTS 0 (silent).
+
+Root cause of the preceding failure streak: `.env` routed V2 teaching to
+`google/gemini-2.5-flash-lite`. Probes: `json_schema` strict mode on
+`gemini-3.8-flash` returns an empty object (`{}`), while `json_object` returns
+the full valid plan. This repo's custom schema subset is not compatible with the
+provider's strict structured-output path, so `V2_JSON_MODE=object` is required
+(as the earlier handoff noted) and the models are now teaching/director/vision =
+`google/gemini-3.8-flash`.
+
+Deterministic robustness heals added so accepted provider output is repaired
+locally instead of paying for repairs: schema-level (array-from-object,
+missing required arrays, single-value version default, `part_of` and motion-verb
+enum aliases, numeric clamp, parent/child sync, action target purity,
+`hidden`→`neutral`), planner-level (derive empty `requiredConceptIds` and
+undeclared relations from beats, continuity concept mapping, attach uncovered
+critical requirements, drop implicit structural relations), director-level
+(accept required relations via hero/subpart anchors or either-direction concept
+pairs, drop stray relation-objects, map `prepareForNext` concepts to objects,
+degrade unknown anchors to `center`), one bounded re-direction on proven
+geometry failure, and a `length`-truncation retry at ×1.5. Suite after this
+change: 204 tests / 204 pass / 0 fail. This run is a feasibility result for OUR
+implementation; it does not establish teaching efficacy or live TTS latency.
+
 ## Richer visuals capability — 2026-09-13
 
 Wave 4 additions, all deterministic: (1) state variants — `before` renders the

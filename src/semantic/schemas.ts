@@ -17,7 +17,7 @@ const continuity=obj({keepFromPrevious:arr(id),prepareForNext:arr(id)});
 export const conceptSchema=obj({id,canonicalName:str(120),aliases:arr(str(120),12),semanticType:en(['entity','material','process','state','quantity','equation','location','role']),visualFamily:str(80),preferredColorRole:str(40),evidenceRefs:evidenceIds},['visualFamily','preferredColorRole']);
 export const semanticBeatSchema=obj({id,purpose:str(),narrationDraft:str(1800),requirementIds:arr(id),introduce:arr(id),reinforce:arr(id),transform:arr(obj({conceptId:id,fromState:str(80),toState:str(80)})),relationFocus:arr(id),evidenceRefs:evidenceIds,intentionalPause:str(200)},['intentionalPause']);
 export const semanticSceneSchema=obj({id,centralConceptId:id,teachingGoal:str(),learnerShouldUnderstand:str(),mentalModel:str(),beats:arr(semanticBeatSchema,24,1),requiredConceptIds:arr(id,48,1),requiredRelations:arr(obj({id,fromConceptId:id,toConceptId:id,relationType:en(RELATIONS),targetAnchor:anchor},['targetAnchor']),48),candidateArchetypes:arr(en(ARCHETYPES),4,1),continuity});
-export const teachingPlanSchema=obj({version:{type:'integer',enum:[2]},lessonGoal:str(),learnerAssumption:str(),centralQuestion:str(),requiredClaims:arr(obj(claim),48,1),requiredMechanisms:arr(obj({...claim,conceptIds:arr(id,16,1),requiresStateChange:{type:'boolean'}}),32),conceptRegistry:arr(conceptSchema,100,1),scenes:arr(semanticSceneSchema,24,1),misconceptions:arr(obj({claim:str(),correction:str()}),12),evidenceRefs:arr(obj({id,sourceId:id,quote:str(3000)}),100)});
+export const teachingPlanSchema=obj({version:{type:'integer',enum:[2]},lessonGoal:str(),learnerAssumption:str(),centralQuestion:str(),requiredClaims:arr(obj(claim),48,1),requiredMechanisms:arr(obj({...claim,conceptIds:arr(id,16,1),requiresStateChange:{type:'boolean'}}),32),conceptRegistry:arr(conceptSchema,100,1),scenes:arr(semanticSceneSchema,24,1),misconceptions:arr(obj({claim:str(),correction:str()}),12),evidenceRefs:arr(obj({id,sourceId:id,quote:str(3000)}),100)},['lessonGoal','learnerAssumption','centralQuestion']);
 export const visualObjectSchema=obj({id,conceptId:id,label:str(120),role:en(ROLES),assetRef:asset,primitiveRef:en(['label','rectangle','circle','equation']),parentId:id,children:arr(id),state:states,allowedStates:arr(states,6,1),importance:en(['primary','secondary','tertiary']),preferredZone:en(ZONES),collisionPolicy:en(['forbid','allow','contain','overlay','touch'])},['conceptId','assetRef','primitiveRef','parentId','preferredZone']);
 export const visualRelationSchema=obj({id,from:obj({objectId:id,anchor}),to:obj({objectId:id,anchor}),relationType:en(RELATIONS),visualForm:en(['arrow','flow','leader','brace','containment','none']),label:str(80)},['label']);
 export const visualActionSchema=obj({id,type:en(MOTIONS),objectIds:arr(id,32),relationIds:arr(id,48),anchor:obj({text:str(120),occurrence:{type:'integer',minimum:0,maximum:30}}),durationMs:num(100,10000),leadMs:num(-300,300),easing:en(['linear','ease_in_out']),fromState:states,toState:states,destination:en(ZONES)},['anchor','fromState','toState','destination']);
@@ -35,6 +35,7 @@ export function assertSchema(value:unknown,schema:Schema,path='$',depth=0):void 
     if(!Array.isArray(value)||value.length<schema.minItems!||value.length>schema.maxItems!)throw new Error(`${path}: array bounds`);
     value.forEach((v,i)=>assertSchema(v,schema.items!,`${path}[${i}]`,depth+1));
   }else if(schema.type==='string'){
+    if(value===null)return; // optional strings arrive as null from json_object mode
     if(typeof value!=='string'||value.length<(schema.minLength??0)||value.length>(schema.maxLength??Infinity)||(schema.pattern&&!new RegExp(schema.pattern).test(value)))throw new Error(`${path}: invalid string`);
   }else if(schema.type==='boolean'){
     if(typeof value!=='boolean')throw new Error(`${path}: expected boolean`);
@@ -42,3 +43,70 @@ export function assertSchema(value:unknown,schema:Schema,path='$',depth=0):void 
 }
 export function parseTeachingPlan(value:unknown):TeachingPlanV2 {assertSchema(value,teachingPlanSchema);return structuredClone(value) as TeachingPlanV2;}
 export function parseVisualScene(value:unknown):VisualSceneV2 {assertSchema(value,visualSceneSchema);return structuredClone(value) as VisualSceneV2;}
+/** Deterministic heal before schema assertion: models in json_object mode sometimes
+ *  emit an object-of-ids where the schema wants an array of ids, or an out-of-enum
+ *  semanticType like 'part_of' for a subpart concept. Keys become values (for id
+ *  arrays) or values pass through; unknown keys drop instead of failing. */
+const SEMANTIC_TYPES=['entity','material','process','state','quantity','equation','location','role'];
+/** Near-miss motion verbs models emit, mapped onto the implemented vocabulary. */
+const MOTION_ALIASES:Record<string,string>={activate:'fill',activation:'fill',emphasize:'highlight',emphasis:'highlight',move_to:'move',transport:'flow',appear:'reveal',disappear:'fade',erase:'fade',draw_arrow:'trace'};
+export function healSchema(value:unknown,schema:Schema,path='$'):unknown{
+ if(schema.type==='array'){
+  if(Array.isArray(value))return value.map((v,i)=>healSchema(v,schema.items!,`${path}[${i}]`));
+  if(value&&typeof value==='object')return Object.entries(value).map(([k,v])=>schema.items!.type==='string'?k:v).map(v=>healSchema(v,schema.items!,path));
+  return value;
+ }
+ if(schema.type==='object'&&value&&typeof value==='object'&&!Array.isArray(value)){
+  const record=value as Record<string,unknown>,out:Record<string,unknown>={};
+  for(const key of Object.keys(record))if(Object.hasOwn(schema.properties!,key))out[key]=healSchema(record[key],schema.properties![key],`${path}.${key}`);
+  // Subpart concepts arrive typed 'part_of' (a relation, not a type); they are entities.
+  if(typeof out.semanticType==='string'&&!SEMANTIC_TYPES.includes(out.semanticType))out.semanticType='entity';
+  // Missing required array fields default to empty arrays (never missing required scalars).
+  for(const key of schema.required??[])if(!(key in out)&&schema.properties![key].type==='array')out[key]=[];
+  // A version field with a single-value enum defaults to that value when omitted.
+  if(!('version' in out)){const v=schema.properties?.version;if(v?.type==='integer'&&v.enum?.length===1)out.version=v.enum[0];}
+  // A relative collision policy without a parent degrades to 'forbid' (standalone object).
+  if(typeof out.collisionPolicy==='string'&&['contain','overlay','touch'].includes(out.collisionPolicy)&&!out.parentId)out.collisionPolicy='forbid';
+  // 'hidden' initial state normalizes to 'neutral': visibility is controlled by reveal
+  // timing, and assets do not declare a hidden part set.
+  if(out.state==='hidden')out.state='neutral';
+  if(Array.isArray(out.allowedStates))out.allowedStates=out.allowedStates.filter(st=>st!=='hidden');
+  // Sync parent/child links: a parentId without a matching children entry is repaired.
+  if(Array.isArray(out.objects)&&Array.isArray(out.beats)){
+   const byId=new Map((out.objects as Array<{id:string;parentId?:string;children:string[]}>).map(o=>[o.id,o]));
+   for(const o of out.objects as Array<{id:string;parentId?:string;children:string[]}>){
+    if(o.parentId&&byId.has(o.parentId)){const parent=byId.get(o.parentId)!;if(!parent.children.includes(o.id))parent.children.push(o.id);}
+    o.children=(o.children??[]).filter(c=>byId.has(c)&&(byId.get(c)!.parentId===o.id));
+   }
+  }
+  // Action target purity: draw/reveal/fill carry objectIds only; trace/flow carry
+  // relationIds only. Mixed targets are pruned to the primary side.
+  if(typeof out.type==='string'&&Array.isArray(out.objectIds)&&Array.isArray(out.relationIds)){
+   const record=out as Record<string,unknown>;
+   if(['draw','reveal','fill'].includes(out.type)&&out.objectIds.length)record.relationIds=[];
+   if(['trace','flow'].includes(out.type)&&out.relationIds.length)record.objectIds=[];
+  }
+  // A scene with an empty requiredConceptIds inventory derives it from its beats'
+  // introduce/reinforce/transform references plus the central concept.
+  if(Array.isArray(out.requiredConceptIds)&&!out.requiredConceptIds.length&&Array.isArray(out.beats)){
+   const derived=new Set<string>([out.centralConceptId as string]);
+   for(const b of out.beats as Array<{introduce?:string[];reinforce?:string[];transform?:Array<{conceptId:string}>}>)
+    for(const c of [...(b.introduce??[]),...(b.reinforce??[]),...(b.transform??[]).map(t=>t.conceptId)])derived.add(c);
+   out.requiredConceptIds=[...derived];
+  }
+  return out;
+ }
+ if(schema.type==='number'||schema.type==='integer'){
+  // Out-of-bounds numbers clamp instead of failing (e.g. leadMs 1600 vs max 300).
+  if(typeof value==='number'&&Number.isFinite(value)&&(schema.minimum!==undefined||schema.maximum!==undefined)){
+   const clamped=Math.min(schema.maximum??Infinity,Math.max(schema.minimum??-Infinity,value));
+   return schema.type==='integer'?Math.round(clamped):clamped;
+  }
+ }
+ if(schema.type==='string'&&schema.enum&&!schema.enum.includes(value as string)){
+  if(value==='part_of')return 'entity';
+  const alias=MOTION_ALIASES[value as string];
+  if(alias)return alias;
+ }
+ return value;
+}

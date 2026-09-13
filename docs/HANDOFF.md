@@ -1,3 +1,43 @@
+# Current handoff — 2026-09-13, Wave 5 live run + model config
+
+**First successful live end-to-end V2 job** through the new synchronous path
+(`POST /api/semantic/jobs`, job `94117016`): status `complete`, 1 scene,
+**$0.022144, firstPlayable 17.4 s, sceneReady 17.4 s**, estimated silent timing.
+Scene: `convergence`, hero plant + sunlight/water/CO₂ supports, real assets,
+correct anchors (sunlight->leaf.top, water->roots, CO₂->leaf.right), 5 beats
+matching the teaching plan. One advisory diagnostic: narrated static interval
+>3500 ms. Live call split: teaching 7.4 s, director 10.0 s, compile 0.4 ms.
+
+**Root cause of the long failure streak (fixed):** `.env` routed V2 teaching to
+`google/gemini-2.5-flash-lite`, too weak for the strict V2 schemas; two probes
+proved `json_schema` strict mode on `gemini-3.8-flash` returns `{}` while
+`json_object` returns full valid JSON. Config now: teaching + director +
+vision = `google/gemini-3.8-flash`, `V2_JSON_MODE=object` (required — the
+repo's custom schema subset is incompatible with the provider's strict
+structured-output path; docs already said "JSON-object compatibility mode used;
+strict local schemas still mandatory").
+
+**Robustness added this pass (all deterministic, no paid repair):** schema heal
+(arrays from objects, missing required arrays, version default, enum aliases
+`part_of`/motion verbs, numeric clamping, parent/child sync, action target
+purity, `hidden`->`neutral`); planner heal (derived `requiredConceptIds` and
+relations from beats, continuity concept mapping, uncovered-critical
+requirement attachment, implicit structural relations); director heal (missing
+required relations accepted via hero anchors/subpart anchors/either-direction
+concept pairs, stray relation-objects dropped, `prepareForNext` concept->object
+mapping, invalid anchors degrade to `center`); one bounded re-direction when the
+deterministic compiler proves anchors/zones cannot route; `length`-truncation
+retry at x1.5. Suite: `npm test` 204/204 pass, build clean.
+
+Next: critic A/B (DeepSeek-V4-Flash-Vision vs gemini-3.8-flash on the 9-case
+calibration, `V2_CRITIC_BUDGET_USD` cap) — the actual Wave 5 deliverable; then
+Wave 6 (Phase 15 multi-domain benchmark) and Wave 7 (performance + migration
+gate). Remaining known issues: one advisory static interval in the live scene;
+heals convert several former hard failures into warnings, so re-check whether
+any heal is masking a genuine planning gap before the benchmark.
+
+---
+
 # Current handoff — 2026-09-13, Wave 4 richer visuals
 
 Wave 4 done: morph/replace actions compiled + rendered with state badge; `before`
