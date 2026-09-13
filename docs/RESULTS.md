@@ -1,3 +1,23 @@
+# 2026-09-12 — General narration language support (any script)
+
+Replaced English-only narration with a script-general implementation:
+
+- `src/shared/language.ts`: `Intl.DisplayNames` for language names and `Intl.Segmenter` for
+  word/sentence segmentation. No per-language tables, no CJK special-casing.
+- The planner takes a `language` option and writes titles, narration, labels, notes, edge
+  labels and key points in that language (a LANGUAGE RULE is appended to the outline and
+  content prompts).
+- Word timing, anchor resolution, beat derivation and word budgets all use the shared
+  segmenter, so space-free scripts (Chinese) tokenize correctly; `deriveBeats` slices the
+  original text so the exact beat partition holds on any script.
+- `scripts/export.ts` validates imported timing with the same segmenter.
+
+Evidence: four one-minute videos on one topic (China's silicon-28 quantum-computing
+breakthrough) in English, Hindi, Nepali and Chinese, each with real target-language narration
+and the matching voice (`--language`): `output/china-s28/{en,hi,ne,zh}/`. Full suite 183/183.
+
+---
+
 # 2026-09-12 — ElevenLabs removed; narration is local-only
 
 Per user request, the hosted ElevenLabs path is gone and only the local engine
@@ -5,7 +25,7 @@ remains (Supertonic 3 default, Piper fallback):
 
 - Deleted `src/providers.ts` (ElevenLabs speech + `alignmentToTiming`) and
   `test/providers.test.js`; removed `generateSpeech`, the `elevenlabs` branch in
-  `src/jobs.ts`, the `ELEVENLABS_*` vars from `.env.example` and the local `.env`,
+  `src/explainer/jobs.ts`, the `ELEVENLABS_*` vars from `.env.example` and the local `.env`,
   the UI provider/voice selectors, and the `--tts` choice in scripts.
 - `ttsProvider` is now `'voice-engine'` only; `timingMode` is `engine-estimated`.
 - No Google TTS existed in the codebase; nothing to remove.
@@ -23,13 +43,13 @@ remains (Supertonic 3 default, Piper fallback):
   scripts. The live worker (PID 30385, port 8765) was stopped and `.kokoro-venv/`
   (1.0 GB) removed. Timing mode `kokoro-aligned` is gone.
 - Local narration now goes through the separate `voice-engine` project, moved to
-  `../lamina-labs-video/voice-engine` (Supertonic 3 default for its 31 languages,
+  `voice-engine` (Supertonic 3 default for its 31 languages,
   Piper fallback, Nepali always Piper). The temporary Kokoro comparison provider
   was removed from the engine too; `out/` was cleaned.
-- New async boundary: `src/voice-engine-client.ts` (JSON stdin/stdout, one process
-  per request) and `src/v2/speech.ts`. Local engines return audio duration only, so
+- New async boundary: `src/shared/voice-engine-client.ts` (JSON stdin/stdout, one process
+  per request) and `src/semantic/speech.ts`. Local engines return audio duration only, so
   word timings are explicitly `engine`-marked (`LOCAL TTS · ESTIMATED WORD TIMING`).
-  ElevenLabs was then removed too, so narration is local-only. `generate-v2.js
+  ElevenLabs was then removed too, so narration is local-only. `generate-semantic.js
   --narration` synthesizes through the boundary.
 - Engine smoke (real, local, no key): Supertonic EN 4.6 s audio / 1.7 s gen
   (RTF 0.375); Piper NE 3.4 s audio / 0.6 s gen (RTF 0.183).
@@ -45,19 +65,19 @@ remains (Supertonic 3 default, Piper fallback):
 Implemented the calibrated critic boundary (`v4_docs/Tasks.md` Phase 12, `Tests.md §15`,
 `Evalaution.md §10`):
 
-- `src/v2/vision-judge.ts`: metered OpenRouter vision judge (model from
+- `src/semantic/vision-judge.ts`: metered OpenRouter vision judge (model from
   `OPENROUTER_VISION_MODEL`), two candidate contact sheets sent as image parts, strict JSON
   verdict, no fixture fallback; refuses unpriced models and unmetered responses.
-- `src/v2/calibration.ts`: nine controlled corruptions from the plant golden; runs each in
+- `src/semantic/calibration.ts`: nine controlled corruptions from the plant golden; runs each in
   both orders; `judgeCalibration` treats any order flip as inconsistent.
-- `scripts/calibrate-v2-critic.ts` + `npm run calibrate:v2:critic`: builds timestamped
+- `scripts/calibrate-semantic-critic.ts` + `npm run calibrate:semantic:critic`: builds timestamped
   event-aligned contact sheets, runs live calibration, writes `report.json`.
 
 Live evidence (both runs kept):
 
-- Run 1 `output/v2-critic-calibration/`: **not reliable** — accuracy 0.889 (16/18), misses
+- Run 1 `output/semantic-critic-calibration/`: **not reliable** — accuracy 0.889 (16/18), misses
   `delay_reveal` and `reverse_relation`, no order flips, $0.0362. Negative result retained.
-- Run 2 `output/v2-critic-calibration-02/`: after per-frame timestamps and an explicit
+- Run 2 `output/semantic-critic-calibration-02/`: after per-frame timestamps and an explicit
   direction/timing rubric, **reliable** — accuracy 1.0 (18/18), 0 misses, 0 inconsistent;
   18 calls, $0.0366.
 
@@ -80,9 +100,9 @@ with a dashed trail).
 - Compiler adds `top`/`bottom` anchors; hierarchy routes parent-bottom→child-top so tree
   edges no longer cross label text. Timeline rail and trajectory trail are rendered from
   compiled geometry (pure, deterministic).
-- Fixtures: `examples/v2/memory-hierarchy.scene.json`, `examples/v2/roman-timeline.scene.json`,
-  `examples/v2/gradient-steps.scene.json`; gates in `eval/v2/cases/`.
-- Evidence: `output/v2-archetypes-07/` — 11 cases, MP4/JSON/event+fixed sheets,
+- Fixtures: `examples/semantic/memory-hierarchy.scene.json`, `examples/semantic/roman-timeline.scene.json`,
+  `examples/semantic/gradient-steps.scene.json`; gates in `eval/semantic/cases/`.
+- Evidence: `output/semantic-archetypes-07/` — 11 cases, MP4/JSON/event+fixed sheets,
   `diagnostics []`, 0 errors; silent estimated timing, no model calls.
 - Full regression: 189 tests, 187 pass, 0 fail, 2 skip; 76.405 s (was 187/185/2).
 - Limitation: manual fixtures only; live planner/director not yet exercised for these
@@ -101,11 +121,11 @@ equation token and one matrix/vector asset).
 - New deterministic `renderEquation` primitive (progressive character reveal,
   emphasis wash, monospace text) replaces the label fallback for `equation`
   objects; collision bounds unchanged.
-- Manual fixtures: `examples/v2/equation-walkthrough.scene.json` (2x + 3 = 11
-  solved in four lines) and `examples/v2/matrix-multiply.scene.json` (A × x = b
+- Manual fixtures: `examples/semantic/equation-walkthrough.scene.json` (2x + 3 = 11
+  solved in four lines) and `examples/semantic/matrix-multiply.scene.json` (A × x = b
   with real `math.matrix.v2` / `math.vector.v2` geometry). Eval gates:
-  `eval/v2/cases/equation_walkthrough.json`, `eval/v2/cases/matrix_multiply.json`.
-- Evidence: `output/v2-archetypes-06/` — eight cases, MP4/JSON/event + fixed
+  `eval/semantic/cases/equation_walkthrough.json`, `eval/semantic/cases/matrix_multiply.json`.
+- Evidence: `output/semantic-archetypes-06/` — eight cases, MP4/JSON/event + fixed
   contact sheets, `diagnostics []`; all silent estimated timing, no model calls.
 - Full regression: 187 tests, 185 pass, 0 fail, 2 skip; 76.513 s (was 185/183/2).
   `npm run build` and `git diff --check` pass.
@@ -130,7 +150,7 @@ Exact task matrix: [V4_IMPLEMENTATION.md](V4_IMPLEMENTATION.md).
   Saved-output replays are separately labeled and do not count as live latency evidence.
 - Six manual archetype cases now export successfully: DNA, tectonic section, MLA,
   numbered caching rules, HTTP flow and water cycle. Latest output:
-  `output/v2-archetypes-05/`. Frame review corrected a spurious query vector in the
+  `output/semantic-archetypes-05/`. Frame review corrected a spurious query vector in the
   MLA K/V representation, mantle placement, cycle crossings and dotted primitive
   outlines caused by normalized SVG path-length rasterization. Registry: 39 assets.
 - Full regression: 185 tests, 183 pass, 0 fail, 2 skip; 76.158 s. Build and diff checks
@@ -181,14 +201,14 @@ Suite: `npm test` → **152 tests, 150 pass, 0 fail, 2 skip** (up from 150/148).
 
 **Two over-strict gates root-caused and demoted (harness §36 + §56):**
 
-1. **Schema-format fields threw before any heal.** `validatePlan` (`src/engine.ts:76,80,82`) rejects
+1. **Schema-format fields threw before any heal.** `validatePlan` (`src/explainer/engine.ts:76,80,82`) rejects
    an over-long `visualIntent`, a non-charset `conceptId`, or a malformed `evidenceIds`, and it runs
    inside `resolveAnchors` *before* every deterministic heal. One stray space in a `conceptId` cost a
-   full 20-50 s model repair. Fix: `healSchemaFields()` (`src/planner.ts`, exported) normalizes these
+   full 20-50 s model repair. Fix: `healSchemaFields()` (`src/explainer/planner.ts`, exported) normalizes these
    planning-metadata fields before validation — visualIntent/keyPoint trimmed to their limits at a
    word boundary, `conceptId` charset-normalized + capped at 40, `evidenceIds` filtered to valid
    `p\d+:c\d+` and capped at 4 (or dropped so grounding can re-cite). Logged `planner.schema-healed`.
-2. **Shape diversity was hard on the director-exhausted fallback** (`src/planner.ts`), so a chapter
+2. **Shape diversity was hard on the director-exhausted fallback** (`src/explainer/planner.ts`), so a chapter
    whose director failed 3× died instead of degrading. Harness §36: "Shape diversity may remain a
    soft diagnostic." Fix: demote to a `planner.shape-diagnostic{fallback:true}` warning; keep
    `checkKindCollision` and `preflightScene` hard.
@@ -244,7 +264,7 @@ match). A 10 h 31 m Kokoro server (`pid 29415`) was holding an **18 GB footprint
 free**. `mx.clear_cache()` / `set_cache_limit` appeared **nowhere**; the process Metal buffer pool
 grew without bound. Compounding: `kokoro_mlx` is single-flight (`with self._lock:`,
 `kokoro.py:114`) with no batch API, and the job runner fired **all 20 scenes at once**
-(`src/jobs.ts` speculative fan-out bypassed `sceneSem` and the character cap).
+(`src/explainer/jobs.ts` speculative fan-out bypassed `sceneSem` and the character cap).
 
 ## Fixes shipped
 
@@ -258,7 +278,7 @@ grew without bound. Compounding: `kokoro_mlx` is single-flight (`with self._lock
 - `src/tts-pool.ts` (new): bounded priority pool — one in-flight request per worker, priority
   `chapter*100 + scene` so scene 1 is first, **queue-wait and service-time deadlines separate**,
   one retry on a different worker, health-gated workers, `cancel(key)`.
-- `src/jobs.ts`: `onContentReady` enqueues instead of firing unbounded calls; character
+- `src/explainer/jobs.ts`: `onContentReady` enqueues instead of firing unbounded calls; character
   reservation moves to enqueue; a regenerated chapter cancels its superseded pool entry; a TTS
   failure degrades **one scene** to explicitly-estimated silent timing (`degradedScenes`,
   `fallbackCount`, `job.status='partial'`) instead of killing the job. `src/kokoro-speech.ts`
@@ -267,7 +287,7 @@ grew without bound. Compounding: `kokoro_mlx` is single-flight (`with self._lock
   `provider-refused` / `speech` (was 18 blind `unknown`).
 
 **Phase 2 — deterministic planner boundary**
-- `src/planner.ts`: outline is now a bounded repair loop (`OUTLINE_ATTEMPTS=3`) that re-asks with
+- `src/explainer/planner.ts`: outline is now a bounded repair loop (`OUTLINE_ATTEMPTS=3`) that re-asks with
   the exact clauses instead of throwing once; `validateOutline()` returns **named clauses**;
   `healOutline()` trims >28 chars, drops entity-only key points (fixes the live `"+ 6O2"`), snaps
   unknown arcs by position, and synthesises a missing key point from the chapter's own objective.
@@ -276,7 +296,7 @@ grew without bound. Compounding: `kokoro_mlx` is single-flight (`with self._lock
   loudly and distinctly; `require_parameters:true` is now sent unless the model is a known
   non-strict tier (`qwen/`, `inclusionai/`, `deepseek/`) — the old guard keyed on `callModel`
   truthiness, which the router made always-true, so strict-schema pinning was **never** sent.
-- `src/budgets.ts`: outline floor `2000+250·ch` → `2600+400·ch` (1-min: 2250 → 3000).
+- `src/explainer/budgets.ts`: outline floor `2000+250·ch` → `2600+400·ch` (1-min: 2250 → 3000).
 
 ## Measured
 
@@ -326,7 +346,7 @@ Fixes (suite 133 tests, 131 pass, 0 fail):
   chunk's predicted duration) — audio preserved, job continues.
 - **`wrapText` breaks at `/` and `_` before any mid-word cut** (live SVGs showed
   `recurrence/conv|olution`, `parameter|s`). Regression test added.
-- **Removed domain hardcoding** (biology keyword regex in `src/auto-director.ts`).
+- **Removed domain hardcoding** (biology keyword regex in `src/explainer/auto-director.ts`).
 - **Removed dead code**: `generateOpenRouterPlan`, legacy Anthropic `generatePlan` (+tests).
 
 Measured A/B (content model): gemini-3.8-flash content = 51.7s / **$0.0141** / 1 repair;
@@ -468,14 +488,14 @@ text; chapter evidence scoped to outline-routed sections; small sources keep leg
 unit tests in `test/validators.test.js`.
 
 **What shipped (our implementation):**
-- LD2 `src/document-map.ts`: heading detection over page-tagged text → ordered sections
+- LD2 `src/explainer/document-map.ts`: heading detection over page-tagged text → ordered sections
   with true page numbers, tiling spans, extractive summaries (zero model calls); 48-section
   cap with even selection; page-window fallback; sha256-cached under `.data/`; jobs.ts
   builds/caches it fail-soft after ingest (`source.map-built` ledger event).
-- LD3 `src/retrieval.ts`: paragraph-boundary chunking (stable per-page ids) + zero-dep BM25
+- LD3 `src/explainer/retrieval.ts`: paragraph-boundary chunking (stable per-page ids) + zero-dep BM25
   over objective/keyPoints; evidence assembled in document order within budget; chunk ids
   returned. Old lexical `retrieveForChapter` removed.
-- LD4 `src/embeddings.ts` + RRF: key-gated OpenAI-compatible embeddings
+- LD4 `src/explainer/embeddings.ts` + RRF: key-gated OpenAI-compatible embeddings
   (`EMBEDDINGS_API_KEY/URL/MODEL`, ~$0.02/1M tokens), batched, sha256-cached, fully fail-soft
   (no key/error → BM25-only, logged `source.embed-mode`); Reciprocal Rank Fusion (k=60) of
   BM25 + cosine ranks; vectors aligned by stable chunk id; per-chapter query embed.
@@ -488,7 +508,7 @@ unit tests in `test/validators.test.js`.
   labeled `source.evidenceChunks` ride into content calls; deterministic `checkEvidence`
   flags unknown chunk ids and citations with <2 shared content words vs the node's
   label+keyPoint — thrown into the existing content repair loop.
-- LD7 `src/budgets.ts`: five budget functions (output/retrieval/input/cost/latency); all
+- LD7 `src/explainer/budgets.ts`: five budget functions (output/retrieval/input/cost/latency); all
   planner + figure call sites (max_tokens, timeouts, outline clip) now read it. Live-proven
   1-min values unchanged (content 9000, director 5000, outline min(9000,2000+chapters·250)).
 
@@ -512,7 +532,7 @@ zero new deps) through real poppler `pdftotext` → all 20 pages extracted with 
 updated for the raised cap.
 
 **Code changes:**
-- `src/sources.ts`: `PAGE_LIMIT=15` removed (full-document `pdftotext -raw`, maxBuffer
+- `src/explainer/sources.ts`: `PAGE_LIMIT=15` removed (full-document `pdftotext -raw`, maxBuffer
   2MB→16MB, timeout 30s→60s); `TEXT_LIMIT` 200k→5M chars (book scale); new exported
   `buildPageText(raw, tailCut)` — form-feed page split, per-page compaction, joined with
   `\n\n`, returns `pages: {page, start}[]` with true 1-based page numbers; blank pages
@@ -520,7 +540,7 @@ updated for the raised cap.
 - `stripAcademicTail` now gated to paper-like docs (≤150k chars AND marker in back 40%)
   so a book's References/Appendix sections survive. NOTE: gate tightened from the old
   `index>0.3` rule — papers with References before ~60% of body now keep their tail.
-- `SourceDocument.pages?: Array<{page:number;start:number}>` (`src/types.ts`); PDF and
+- `SourceDocument.pages?: Array<{page:number;start:number}>` (`src/shared/types.ts`); PDF and
   arxiv-fallback URL paths populate it; text/markdown/json/docx/pptx stay flat.
 
 **What this does NOT establish:** the outline call still clips at 120k chars and the
@@ -645,21 +665,21 @@ Suite progression: 75 → 87 passing across V3 (89 tests, 2 live-skip). No paid 
   live: `TEST_KOKORO_TTS=1 npm test` — first word now starts after a nonzero BOS offset; trailing
   gap after the last word is under 1ms (was previously 1.55-5.125s per the 2026-09-09 review's 32
   audited scenes). Human listening verification across those 32 scenes remains outstanding.
-- A4 (`src/planner.ts`): `checkKindCollision` now allows same-kind nodes whose labels reduce to
+- A4 (`src/explainer/planner.ts`): `checkKindCollision` now allows same-kind nodes whose labels reduce to
   one stem after stripping a trailing instance marker (number/letter/ordinal) — token rows and
   multiple lettered keys pass; two different concepts sharing a kind still fail. The hard
   `checkShapeMix` gate was removed from `directScene`'s normal per-attempt path (now a
   `planner.shape-diagnostic` log line only) but deliberately left in place on the
   exhausted-director-fallback path, per the existing `'Exhausted director retries fail loudly...'`
   regression test it protects.
-- A5 (`src/schema.ts`, `src/planner.ts`): found that the single-scene critic-repair call was
+- A5 (`src/explainer/schema.ts`, `src/explainer/planner.ts`): found that the single-scene critic-repair call was
   validated against the fixed 2-scene `directorSchema` — a real, previously-silent bug meaning
   critic-requested repairs have likely never actually applied (the failure was swallowed by
   `repairFromCritique`'s own `catch`). `directorSchema` is now `directorSchema(count)`; a new
   end-to-end test with `visualCritic:true` proves a repair's changed `kind` now reaches the
   committed scene.
-- A6 (`src/types.ts`, `src/jobs.ts`, `docs/REVIEW_CORPUS.md`): every new `JobSnapshot` carries
-  `manifestVersion` (`GENERATION_MANIFEST_VERSION` in `src/jobs.ts`); added a named, stable
+- A6 (`src/shared/types.ts`, `src/explainer/jobs.ts`, `docs/REVIEW_CORPUS.md`): every new `JobSnapshot` carries
+  `manifestVersion` (`GENERATION_MANIFEST_VERSION` in `src/explainer/jobs.ts`); added a named, stable
   review corpus table so future reports cite the same evidence set by name.
 - No paid provider calls in this pass; no commits beyond what was explicitly authorized.
 
@@ -817,7 +837,7 @@ Those gates remain explicit in `EXPERIMENTS.md`. Do not relabel them passed beca
 
 ## 2026-09-09 — internal prompt-builder, multi-model + multi-source demo (local TTS)
 
-- New `src/prompt-builder.ts` (pure, deterministic, zero cost): any bare
+- New `src/explainer/prompt-builder.ts` (pure, deterministic, zero cost): any bare
   source → optimized rich visual brief (domain→audience, headings→chapter
   questions, numbered sentences→anchor facts, misconception/scope guards,
   concrete-objects visual direction, untrusted-source delimiters).
@@ -853,7 +873,7 @@ Those gates remain explicit in `EXPERIMENTS.md`. Do not relabel them passed beca
     tokens/attempt → truncation loops → timeout). Flaky, not recommended.
 - Guidance fix from the deepseek all-box case (prompt-text only, live-
   verified on gemini): anti-generic kind mapping + hard "every scene uses
-  ≥2 shapes" rule in `src/planner.ts`.
+  ≥2 shapes" rule in `src/explainer/planner.ts`.
 - Limits: local TTS pacing overshoots estimates (1-min targets render
   1.2–1.7 min); Qwen/DeepSeek/GPT-mini unsuitable for strict-JSON planning
   on this key; no human quality scoring yet.

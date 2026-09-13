@@ -171,7 +171,7 @@ reach outline+brief only).
 
 # Current handoff — 2026-09-10, V3 program complete through V3-6
 
-All six V3 items checked on `opt-v3-harness` (latest: matrix/fork/tectonic templates + `scripts/compare-v1-v2.ts` → `output/compare/{v1,v2}/` lint report: 17/20 scenes over the 3500ms static-interval limit — the measurable density debt; 2 residual connector crossings in `icons/lookup` and `shapes/primitives`). Suite 89 tests, 87 pass, 0 fail, 2 skip. RESULTS.md has the full V3 entry.
+All six V3 items checked on `opt-v3-harness` (latest: matrix/fork/tectonic templates + `scripts/compare-pipelines.ts` → `output/compare/{v1,v2}/` lint report: 17/20 scenes over the 3500ms static-interval limit — the measurable density debt; 2 residual connector crossings in `icons/lookup` and `shapes/primitives`). Suite 89 tests, 87 pass, 0 fail, 2 skip. RESULTS.md has the full V3 entry.
 
 Next bounded tasks, in value order: (1) kill the 17 static-interval violations — mostly late-anchored tails; the beat model supports it, the planner prompt needs "spread reveals across the whole narration, not just the opening" plus a validator bump; (2) fix the 2 residual connector crossings (grow routeEdge candidate set or shrink obstacle band); (3) human pairwise judgment on `output/compare/` artifacts; (4) browser-side style toggle for EXPLAIN_SKETCH; (5) full harness V2 (scene-graph/actions) — large, separate.
 

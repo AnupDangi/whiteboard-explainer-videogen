@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {loadModelRouter,taskOfLabel} from '../dist/src/model-router.js';
+import {loadModelRouter,taskOfLabel} from '../dist/src/shared/model-router.js';
 
 test('Model router: precedence MODEL_ROUTER JSON > per-task env > base',()=>{
   const base='base/model';

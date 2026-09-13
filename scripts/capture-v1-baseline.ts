@@ -3,10 +3,10 @@ import {mkdir,writeFile,readFile,readdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
-import {fixtures} from '../src/fixtures.js';
-import {compileScene,validatePlan} from '../src/engine.js';
-import {progressionFrames,staticIntervalMs,connectorThroughNode} from '../src/progression.js';
-import type {Plan} from '../src/types.js';
+import {fixtures} from '../src/explainer/fixtures.js';
+import {compileScene,validatePlan} from '../src/explainer/engine.js';
+import {progressionFrames,staticIntervalMs,connectorThroughNode} from '../src/explainer/progression.js';
+import type {Plan} from '../src/shared/types.js';
 const out=process.argv[2]??'output/v4-baseline';
 await mkdir(out); // Deliberately refuse to overwrite an existing capture.
 const hash=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');

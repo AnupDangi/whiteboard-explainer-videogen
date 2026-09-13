@@ -1,7 +1,7 @@
 import {performance} from 'node:perf_hooks';
 import {mkdir,writeFile} from 'node:fs/promises';
-import {fixtures} from '../src/fixtures.js';
-import {validatePlan,compileScene,renderSVG,durationOf} from '../src/engine.js';
+import {fixtures} from '../src/explainer/fixtures.js';
+import {validatePlan,compileScene,renderSVG,durationOf} from '../src/explainer/engine.js';
 const plan=validatePlan(fixtures.attention),scenes=plan.scenes.map(s=>compileScene(s));
 for(let i=0;i<100;i++)renderSVG(scenes[i%scenes.length],i*100);
 const samples=[],count=5000;let bytes=0;

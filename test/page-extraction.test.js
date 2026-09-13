@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {buildPageText,ingestSource} from '../dist/src/sources.js';
+import {buildPageText,ingestSource} from '../dist/src/explainer/sources.js';
 
 // LD1 acceptance: (a) buildPageText is a pure, deterministic page assembler;
 // (b) a real >15-page PDF extracts IN FULL with correct page offsets — the old

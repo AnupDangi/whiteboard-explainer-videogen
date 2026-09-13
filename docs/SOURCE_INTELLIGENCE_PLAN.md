@@ -1,3 +1,5 @@
+> Historical (2026-09-10): paths below predate the 2026-09-13 `src/` restructure (now `src/explainer/`, `src/shared/`, `src/semantic/`).
+
 # Source Intelligence Plan — large-document support (LD1–LD8)
 
 > Status 2026-09-10 (end of batched session): **LD1–LD7 implemented and committed**

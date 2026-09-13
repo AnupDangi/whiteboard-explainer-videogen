@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {generateChapters} from '../dist/src/planner.js';
-import {renderMapForOutline} from '../dist/src/document-map.js';
+import {generateChapters} from '../dist/src/explainer/planner.js';
+import {renderMapForOutline} from '../dist/src/explainer/document-map.js';
 
 const env={OPENROUTER_API_KEY:'test-only',OPENROUTER_MODEL:'test/model'};
 

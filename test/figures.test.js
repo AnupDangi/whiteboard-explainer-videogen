@@ -5,7 +5,7 @@ import {promisify} from 'node:util';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {detectFigures,cropFigure,describeFigures} from '../dist/src/figures.js';
+import {detectFigures,cropFigure,describeFigures} from '../dist/src/explainer/figures.js';
 
 const run=promisify(execFile);
 /** Tools the poppler pipeline needs; skip the file if the machine lacks them. */

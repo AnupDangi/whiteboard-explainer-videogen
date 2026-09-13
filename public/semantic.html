@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Semantic visual teaching lab</title>
+<link rel="stylesheet" href="/semantic.css">
+</head>
+<body>
+<header class="topbar">
+  <a href="/" class="brand"><span class="mark">e.</span><span>explain <strong>canvas lab</strong></span></a>
+  <nav class="nav" aria-label="Pipelines">
+    <a class="nav-link" href="/">Explainer</a>
+    <a class="nav-link is-active" href="/semantic.html" aria-current="page">Semantic lab</a>
+  </nav>
+  <span class="pill badge-prototype">SEMANTIC PIPELINE · EXPERIMENTAL</span>
+</header>
+
+<main>
+  <section class="panel preview">
+    <div class="panel-head">
+      <div><p class="eyebrow">WHITEBOARD / SCENE PREVIEW</p><h1>Semantic visual teaching lab</h1></div>
+      <p id="status" class="status" role="status">Loading manual scene…</p>
+    </div>
+    <div id="board" role="img" aria-label="Semantic scene preview"></div>
+    <div class="controls">
+      <button id="play" type="button">▶ Play</button>
+      <label class="seek">Timeline <input id="seek" type="range" min="0" max="1" step="1" value="0"></label>
+      <output id="time">0:00</output>
+      <label class="check"><input id="cursor" type="checkbox" checked> Pencil cursor</label>
+    </div>
+    <p class="hint">This lab renders semantic scene data (objects, relations, beats) with the same pure renderer the browser and MP4 export use. Timing here is estimated and silent.</p>
+  </section>
+
+  <aside class="panel data-panel">
+    <p class="eyebrow">SCENE DATA</p>
+    <h2>Inspect or load a scene</h2>
+    <div class="controls stacked">
+      <label class="file">Load scene JSON <input id="file" type="file" accept=".json,application/json"></label>
+      <button id="download" type="button">↓ Download compiled JSON</button>
+    </div>
+    <p class="hint">Start from the bundled plant golden, then load your own <code>VisualSceneV2</code> JSON to see it compiled and drawn.</p>
+    <pre id="details"></pre>
+  </aside>
+</main>
+<script type="module" src="/semantic-viewer.js"></script>
+</body>
+</html>

@@ -15,22 +15,22 @@ steps, flow, cycle, equation_walkthrough, matrix_operation, hierarchy, timeline 
 (use their exact schema enum names in code). Eleven manual fixtures cover DNA, tectonics, MLA,
 caching rules, HTTP request flow, water cycle, an equation walkthrough, matrix multiplication,
 the memory hierarchy, a Roman timeline and gradient descent. Latest artifacts:
-`output/v2-archetypes-07/` (MP4s, event/fixed sheets, final PNGs, JSON and hashes).
+`output/semantic-archetypes-07/` (MP4s, event/fixed sheets, final PNGs, JSON and hashes).
 Frame review corrected K/V semantics, mantle placement/label overlap, cycle port crossings,
 and a normalized SVG path-length rasterization issue; added a deterministic equation primitive
 renderer, `top`/`bottom` anchors and tree/rail/trail geometry. Manual fixtures do not establish
 live multi-domain planning reliability or teaching efficacy.
 
-Phase 12 critic is implemented and calibrated: `src/v2/vision-judge.ts` + `src/v2/calibration.ts`
-plus `npm run calibrate:v2:critic`. Live run 2 passed all nine known corruptions in both orders
-(accuracy 1.0, 0 order flips, 18 calls / $0.0366, `output/v2-critic-calibration-02/`); run 1
+Phase 12 critic is implemented and calibrated: `src/semantic/vision-judge.ts` + `src/semantic/calibration.ts`
+plus `npm run calibrate:semantic:critic`. Live run 2 passed all nine known corruptions in both orders
+(accuracy 1.0, 0 order flips, 18 calls / $0.0366, `output/semantic-critic-calibration-02/`); run 1
 failed on `delay_reveal` and `reverse_relation` and is retained. The judge is not yet wired as an
 automatic repair trigger.
 
 Kokoro was removed from this repo on 2026-09-12 (files, npm scripts, live worker,
 `.kokoro-venv`). Local narration now goes through a separate `voice-engine` project
-at `../lamina-labs-video/voice-engine` (Supertonic 3 default, Piper fallback,
-Nepali always Piper) via the async `src/voice-engine-client.ts` / `src/v2/speech.ts`
+at `voice-engine` (Supertonic 3 default, Piper fallback,
+Nepali always Piper) via the async `src/shared/voice-engine-client.ts` / `src/semantic/speech.ts`
 boundary. Engine timings are explicitly estimated. ElevenLabs was removed too
 (2026-09-12), so narration is local-only: Supertonic 3 or Piper.
 
@@ -45,7 +45,7 @@ Remaining: actual V2 speech adapter, progressive V2 job lifecycle/UI, full multi
 benchmark, measured live performance, blind human preference and migration gate.
 Do not silently map unsupported operations to generic boxes or invent provider success.
 
-Preview: `PORT=3014 VISUAL_PIPELINE=v2 npm start`; `/v2.html` also works under V1.
+Preview: `PORT=3014 VISUAL_PIPELINE=semantic npm start`; `/semantic.html` also works under explainer.
 The current viewer is manual scene playback; it does not expose automatic generation.
 
 ---
@@ -148,7 +148,7 @@ generate-video 43.4s, export ✓. Static intervals 2600/2600ms on the URL runs (
 
 **Completed this stretch:** auto-director reliability (3/3 runs director-free; broader
 kind hints + tolerance; engine-synthesized nodes excluded), per-item bullet reveal,
-model router (`src/model-router.ts`, `MODEL_ROUTER` JSON > per-task env > base) +
+model router (`src/shared/model-router.ts`, `MODEL_ROUTER` JSON > per-task env > base) +
 `npm run router:report`, `app.log` durable logging + `job.summary`, UI source-intake fix
 (default AI planner + `/src/templates.js` whitelist + CSP inline-style), export-breaking
 shape bug fixed (`deCollideKinds` clears icon shape on demotion; `normalizeShapes` safety
@@ -225,7 +225,7 @@ $0.0095. New deterministic heals this pass: `healDanglingEdges`, `fillBeats`,
   proportional word timings and keeps the audio.
 - **Text no longer splits mid-word.** `wrapText` breaks at `/` and `_` (was
   `recurrence/conv|olution`, `parameter|s`).
-- **Removed domain hardcoding**: the biology keyword regex in `src/auto-director.ts`.
+- **Removed domain hardcoding**: the biology keyword regex in `src/explainer/auto-director.ts`.
 - **Removed dead code**: `generateOpenRouterPlan` (zero callers), legacy Anthropic
   `generatePlan` (+ tests), stale `validatePlan` import.
 
@@ -238,7 +238,7 @@ the gates.
 1. **Gate consolidation** — 12 validators in `planContent` are reject-and-retry loops.
    Keep correctness (anchors, edges, quantities, first-visual); make quality signals
    (pacing, key-point completeness, beat coverage) advisory with deterministic heals.
-2. **Kind selection should be the model's job** — `src/auto-director.ts` guesses kinds
+2. **Kind selection should be the model's job** — `src/explainer/auto-director.ts` guesses kinds
    from ~37 hardcoded keyword regexes. Move `kind`/`shape` into the content schema (the
    model emits them from the kind list already in the prompt); keep the compiler
    deterministic for layout/geometry only. This removes the regex table entirely.

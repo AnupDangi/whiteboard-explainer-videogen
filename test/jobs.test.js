@@ -4,7 +4,7 @@ import {mkdtemp,rm,writeFile,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {JobStore,classifyError} from '../dist/src/jobs.js';
+import {JobStore,classifyError} from '../dist/src/explainer/jobs.js';
 import {makeServer} from '../dist/src/server.js';
 const options={mode:'fixture',fixture:'attention',delayMs:30,narration:false};
 async function setup(t,providers={}){const root=await mkdtemp(join(tmpdir(),'canvas-test-'));const store=new JobStore(root,providers);t.after(async()=>{await store.close();await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:50});});return {store,root};}
@@ -25,7 +25,7 @@ test('H22 a failing TTS scene degrades to estimated timing; later scenes still c
   // committed with explicitly-estimated (silent) timing and the failure stays visible.
   const {store}=await setup(t,{speech:async text=>{
     if(text.includes('learned vectors, not literal questions'))throw new Error('Synthetic outage');
-    const {estimateTiming}=await import('../dist/src/engine.js');return {audio:Buffer.from('test'),timing:estimateTiming(text)};
+    const {estimateTiming}=await import('../dist/src/explainer/engine.js');return {audio:Buffer.from('test'),timing:estimateTiming(text)};
   }});
   const j=await store.create({...options,delayMs:0,narration:true});await store.jobs.get(j.id).task;
   const result=await store.get(j.id);
@@ -49,13 +49,13 @@ test('HTTP job lifecycle, assets, missing media and cross-origin protection',asy
   const base=`http://127.0.0.1:${server.address().port}`;
   const player=await fetch(base+'/api/client-events',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'seek',jobId:null,timeMs:5000,rate:1})});assert.equal(player.status,200);
   const invalidPlayer=await fetch(base+'/api/client-events',{method:'POST',body:JSON.stringify({type:'arbitrary-log',jobId:null,timeMs:0,rate:1})});assert.equal(invalidPlayer.status,400);
-  assert.equal((await fetch(base+'/')).status,200);assert.equal((await fetch(base+'/src/engine.js')).status,200);assert.equal((await fetch(base+'/.env')).status,404);
+  assert.equal((await fetch(base+'/')).status,200);assert.equal((await fetch(base+'/src/explainer/engine.js')).status,200);assert.equal((await fetch(base+'/.env')).status,404);
   const forbidden=await fetch(base+'/api/jobs',{method:'POST',headers:{Origin:'https://unrelated.example'},body:JSON.stringify(options)});assert.equal(forbidden.status,403);
   const response=await fetch(base+'/api/jobs',{method:'POST',body:JSON.stringify({...options,delayMs:0})});assert.equal(response.status,202);const j=await response.json();await store.jobs.get(j.id).task;
   assert.equal((await (await fetch(base+`/api/jobs/${j.id}`)).json()).status,'complete');
 });
 test('Voice selection reaches speech adapter and preparation events are persisted',async t=>{
-  const calls=[];const {store}=await setup(t,{speech:async(text,options)=>{calls.push(options.voiceId);const {estimateTiming}=await import('../dist/src/engine.js');return {audio:Buffer.from('test'),timing:estimateTiming(text)};}});
+  const calls=[];const {store}=await setup(t,{speech:async(text,options)=>{calls.push(options.voiceId);const {estimateTiming}=await import('../dist/src/explainer/engine.js');return {audio:Buffer.from('test'),timing:estimateTiming(text)};}});
   const j=await store.create({...options,delayMs:0,narration:true,ttsProvider:'voice-engine',voiceId:'chosen'});await store.jobs.get(j.id).task;
   const job=await store.get(j.id);assert.equal(job.status,'complete');assert.deepEqual(calls,['chosen','chosen','chosen','chosen']);assert(job.events.some(e=>e.type==='speech-started'));
   await assert.rejects(store.create({...options,ttsProvider:'invalid'}),/Unknown TTS/);

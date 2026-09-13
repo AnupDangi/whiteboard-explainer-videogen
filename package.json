@@ -18,10 +18,10 @@
     "generate-video": "npm run build && node --env-file-if-exists=.env dist/scripts/generate-video.js",
     "router:report": "npm run build && node dist/scripts/router-report.js",
     "baseline:v1": "npm run build && node dist/scripts/capture-v1-baseline.js",
-    "bench:v2:plant": "npm run build && node dist/scripts/bench-v2-plant.js",
-    "test:v2": "npm run build && node --test test/v2*.test.js",
-    "bench:v2:archetypes": "npm run build && node dist/scripts/bench-v2-archetypes.js",
-    "calibrate:v2:critic": "npm run build && node --env-file-if-exists=.env dist/scripts/calibrate-v2-critic.js"
+    "bench:semantic:plant": "npm run build && node dist/scripts/bench-semantic-plant.js",
+    "test:semantic": "npm run build && node --test test/semantic*.test.js",
+    "bench:semantic:archetypes": "npm run build && node dist/scripts/bench-semantic-archetypes.js",
+    "calibrate:semantic:critic": "npm run build && node --env-file-if-exists=.env dist/scripts/calibrate-semantic-critic.js"
   },
   "optionalDependencies": {
     "sharp": "0.35.4"

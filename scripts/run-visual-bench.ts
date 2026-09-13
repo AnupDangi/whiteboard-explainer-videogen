@@ -5,11 +5,11 @@
  *  saved contact sheets afterwards. */
 import {readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import {generateChapters} from '../src/planner.js';
-import {validatePlan,compileScene,renderSVG,preflightScene} from '../src/engine.js';
-import {staticIntervalMs,connectorThroughNode} from '../src/progression.js';
-import {renderTemplate} from '../src/templates.js';
-import {log} from '../src/logger.js';
+import {generateChapters} from '../src/explainer/planner.js';
+import {validatePlan,compileScene,renderSVG,preflightScene} from '../src/explainer/engine.js';
+import {staticIntervalMs,connectorThroughNode} from '../src/explainer/progression.js';
+import {renderTemplate} from '../src/explainer/templates.js';
+import {log} from '../src/shared/logger.js';
 
 interface BenchCase { id:string; prompt:string; category:string; mustExplain:string[]; preferredTemplates?:string[]; forbiddenPatterns?:string[]; expectedKinds?:string[] }
 const live=process.argv.includes('--live');
@@ -41,7 +41,7 @@ for(const testCase of cases){
       }
     }else{
       // Mock mode exercises the same validators/deterministic layers with fixtures.
-      const {fixtures}=await import('../src/fixtures.js');
+      const {fixtures}=await import('../src/explainer/fixtures.js');
       for(const [name,fixture] of Object.entries(fixtures)){
         const plan=validatePlan(fixture);
         for(const raw of plan.scenes){

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validatePlan,compileScene,estimateTiming,renderSVG,sceneState,locateScene,durationOf,advancePlayback,wrapText,preflightScene} from '../dist/src/engine.js';
-import {renderIcon,hasIcon} from '../dist/src/icons.js';
-import {fixtures} from '../dist/src/fixtures.js';
+import {validatePlan,compileScene,estimateTiming,renderSVG,sceneState,locateScene,durationOf,advancePlayback,wrapText,preflightScene} from '../dist/src/explainer/engine.js';
+import {renderIcon,hasIcon} from '../dist/src/explainer/icons.js';
+import {fixtures} from '../dist/src/explainer/fixtures.js';
 const copy=()=>structuredClone(fixtures.attention);
 test('Bullet takeaway list reveals items in sequence, not all at once',()=>{
   const plan={version:1,title:'t',scenes:[{id:'s1',title:'S',narration:'alpha beta gamma delta',layout:'flow',nodes:[
@@ -70,7 +70,7 @@ test('edge labels paint above node boxes, never underneath',()=>{
   assert(done.indexOf('deploys')>done.lastIndexOf('rx="10"'),'label markup sits after the last node box');
 });
 test('V3-3 routeEdge avoids intermediate nodes, flipping and growing the bow',async()=>{
-  const {routeEdge}=await import('../dist/src/engine.js');
+  const {routeEdge}=await import('../dist/src/explainer/engine.js');
   const e={x1:100,y1:300,x2:700,y2:300};
   const obstacle={x:330,y:260,w:160,h:80};
   // Base upward bow would pass straight through the obstacle.

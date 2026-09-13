@@ -10,14 +10,14 @@
  *  pair is generated sequentially, then exported to MP4 under --out-dir. Requires
  *  OPENROUTER_API_KEY. --language sets the TTS language; --voice overrides the
  *  engine voice. Only the local Supertonic/Piper engine is supported. */
-import {JobStore} from '../src/jobs.js';
-import {ingestSource} from '../src/sources.js';
-import {detectFigures,describeFigures} from '../src/figures.js';
-import {buildRichBrief,briefStats} from '../src/prompt-builder.js';
+import {JobStore} from '../src/explainer/jobs.js';
+import {ingestSource} from '../src/explainer/sources.js';
+import {detectFigures,describeFigures} from '../src/explainer/figures.js';
+import {buildRichBrief,briefStats} from '../src/explainer/prompt-builder.js';
 import {resolve,join} from 'node:path';
 import {mkdir,readFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
-import type {GenerationOptions,SourceInput,SourceFigure} from '../src/types.js';
+import type {GenerationOptions,SourceInput,SourceFigure} from '../src/shared/types.js';
 
 const args = process.argv.slice(2);
 const arg = (name: string, fallback: string | null) => { const i = args.indexOf(name); return i < 0 ? fallback : args[i + 1]; };

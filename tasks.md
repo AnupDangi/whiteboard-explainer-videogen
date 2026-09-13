@@ -29,7 +29,7 @@ Contract: `EXPLAIN_CANVAS_AGENT_HARNESS_V3.md`. Evidence: competitor frames vs o
 - [x] V3-3 — Rough sketch style flag + obstacle-avoiding connectors + endpoint rules. Proof: suite 80/0/2; `routeEdge` flips/grows bow around obstacles; icon endpoints anchor to glyph edge; `EXPLAIN_SKETCH=1` sketch export of pump video (`output/videos/Explain-how-a-bicycle-pump-works-1min-sketch.mp4`, frame `output/review-pump-v32/sketch20b.png`).
 - [x] V3-4 — Domain templates: all 5 shipped (TLS ladder, supply/demand, attention matrix, DNA fork, tectonic section), director-requested via schema, geometry fully deterministic. Proof: suite 87/0/2; frames `output/review-v36/v2-{tls,dna,tectonic,matrix}*.png`; Lucide vendoring deferred (coverage already 55/56 kinds — style refresh, not gap).
 - [x] V3-5 — Critic progression sheets + deterministic lints. Proof: suite 86/0/2; critic reviews a 5-frame contact strip (not one end-state thumbnail); `staticIntervalMs` (>3500ms) + `connectorThroughNode` (residual fallback crossings) pre-flag issues into the critic prompt and drive repair even when the image is unavailable; attention fixture's real 9.6s narrated dead zone exposed by the lint (known quality debt, now measurable).
-- [x] V3-6 — V1-vs-V2 benchmark artifacts. Proof: `scripts/compare-v1-v2.ts` (`node dist/scripts/compare-v1-v2.js [--v2]`) → `output/compare/{v1,v2}/` 20 scenes × 5 deterministic frames + `lints.json`; honest numbers: 17/20 scenes exceed the 3500ms static-interval limit, 2 scenes carry residual connector crossings (icons/lookup, shapes/primitives), templates themselves clear the connector lint. Teaching-quality judgment pending on the rendered artifacts.
+- [x] V3-6 — V1-vs-V2 benchmark artifacts. Proof: `scripts/compare-pipelines.ts` (`node dist/scripts/compare-pipelines.js [--v2]`) → `output/compare/{v1,v2}/` 20 scenes × 5 deterministic frames + `lints.json`; honest numbers: 17/20 scenes exceed the 3500ms static-interval limit, 2 scenes carry residual connector crossings (icons/lookup, shapes/primitives), templates themselves clear the connector lint. Teaching-quality judgment pending on the rendered artifacts.
 
 ## Prior program — multi-video review, 2026-09-09
 
@@ -285,12 +285,12 @@ Planning is complete; implementation is pending. Mark a phase complete only when
 > then-current `main` verbatim rather than git-merged (avoids resurrecting stale reverts of
 > unrelated Phase 6-13 work already on `main`). Verified: `npm run build` clean, suite 64/64
 > (1 skipped — Kokoro server not pre-warmed in this run).
-- [x] **Icon rewrite** (`src/icons.ts`): replaced the old icon set with a shared low-level
+- [x] **Icon rewrite** (`src/explainer/icons.ts`): replaced the old icon set with a shared low-level
       stroke primitive (`draw`/`glyph`) so every icon draws with consistent stroke width,
       dash caps and paper-colored knockout circles at joints — plus new multi-part glyphs
       (bust/head figures, gear teeth, radial burst variants) reused across several kinds
       instead of one-off paths per icon.
-- [x] **Prompt consistency audit** (`src/planner.ts`): addressed the user's original
+- [x] **Prompt consistency audit** (`src/explainer/planner.ts`): addressed the user's original
       cross-chapter coherence complaint directly in the two-stage prompt rather than in
       skills/*.md. Added a fixed `VOICE_CONTRACT` (byte-identical narrator voice rules across
       all chapters — banned AI-tell phrases, consistent register, contractions) and a

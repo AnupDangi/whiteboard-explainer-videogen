@@ -1,5 +1,5 @@
-import type {JobSnapshot,CompiledScene} from '../src/types.js';
-import {compileScene,renderSVG,sceneState,locateScene,durationOf,advancePlayback} from '../src/engine.js';
+import type {JobSnapshot,CompiledScene} from '../src/shared/types.js';
+import {compileScene,renderSVG,sceneState,locateScene,durationOf,advancePlayback} from '../src/explainer/engine.js';
 const $=(id:string)=>document.getElementById(id) as any;
 const terminal=['complete','partial','error','cancelled','interrupted'];
 let scenes:CompiledScene[]=[],job:JobSnapshot|null=null,time=0,playing=false,last=0,poll:ReturnType<typeof setTimeout>|undefined=undefined,stalls=0,buffering=false,audioScene:string|null=null,audioTail=false,audioPending=false;
@@ -103,7 +103,12 @@ request('/api/config').then(function(c){
   if(!c.model)$('message').textContent='Configure OPENROUTER_API_KEY in .env to generate an explanation.';
   else if(c.openRouter===false)$('message').textContent='Using legacy Anthropic planner; set OPENROUTER_API_KEY for OpenRouter.';
 }).catch(function(e){$('message').textContent=e instanceof Error?e.message:String(e);});
-$('source-kind').onchange=()=>{const kind=$('source-kind').value;$('prompt').hidden=!['prompt','text'].includes(kind);$('source-url').hidden=kind!=='url';$('source-file').hidden=kind!=='pdf';};
+const sourceFields=()=>{const kind=$('source-kind').value,wrap=(el:HTMLElement|null,show:boolean)=>{if(el)el.hidden=!show;};
+  wrap($('prompt').closest('.field') as HTMLElement,['prompt','text'].includes(kind));
+  wrap(document.getElementById('source-url')?.closest('.field') as HTMLElement,kind==='url');
+  wrap(document.getElementById('source-file')?.closest('.field') as HTMLElement,kind==='pdf');};
+$('source-kind').onchange=sourceFields;sourceFields();
+$('demo').onclick=()=>{$('mode').value='fixture';$('mode').dispatchEvent(new Event('change'));$('generate').requestSubmit();};
 $('narration').onchange=()=>{$('voice-fields').hidden=!$('narration').checked;};
 const savedJob=new URLSearchParams(location.search).get('job');
 if(savedJob&&/^[a-f0-9-]{36}$/.test(savedJob))void refresh(savedJob);

@@ -1,0 +1,19 @@
+{
+  "id": "roman_timeline",
+  "prompt": "Explain how the Roman Republic ended as a timeline",
+  "category": "manual-archetype-gate",
+  "mustExplain": [
+    "land reform began the political crisis",
+    "Caesar crossing the Rubicon started civil war",
+    "Augustus replaced the Republic with an empire"
+  ],
+  "requiredRelations": [],
+  "preferredArchetypes": [
+    "timeline"
+  ],
+  "forbiddenPatterns": [
+    "generic_box_flow",
+    "unordered_events"
+  ],
+  "sceneFile": "examples/semantic/roman-timeline.scene.json"
+}

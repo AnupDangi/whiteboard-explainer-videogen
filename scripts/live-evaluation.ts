@@ -1,9 +1,9 @@
-import {JobStore} from '../src/jobs.js';
+import {JobStore} from '../src/explainer/jobs.js';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
 import {join,resolve} from 'node:path';
-import {renderSVG} from '../src/engine.js';
-import type {GenerationOptions} from '../src/types.js';
+import {renderSVG} from '../src/explainer/engine.js';
+import type {GenerationOptions} from '../src/shared/types.js';
 const args=process.argv.slice(2);const arg=(name:string,fallback:string)=>{const i=args.indexOf(name);return i<0?fallback:args[i+1];};
 const durationMinutes=Number(arg('--minutes','1'));
 if(arg('--model',''))process.env.OPENROUTER_MODEL=arg('--model','');

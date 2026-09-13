@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats,fillBeats,healDanglingEdges,deCollideKinds,normalizeShapes} from '../dist/src/planner.js';
-import {retrieveChapterEvidence} from '../dist/src/retrieval.js';
-import {directorSchema} from '../dist/src/schema.js';
+import {checkQuantities,checkKeyPoints,checkBoardText,checkFirstVisual,checkConceptContinuity,checkShapeMix,checkKindCollision,checkEdgeLabels,upgradeShapes,checkConceptBudget,resolveAnchors,checkEvidence,deriveBeats,fillBeats,healDanglingEdges,deCollideKinds,normalizeShapes} from '../dist/src/explainer/planner.js';
+import {retrieveChapterEvidence} from '../dist/src/explainer/retrieval.js';
+import {directorSchema} from '../dist/src/explainer/schema.js';
 
 test('quantity manifest: narrated number+noun must be drawn or labeled',()=>{
   const ok=[{id:'s',narration:'The cluster runs on 8 GPUs.',nodes:[{id:'a',label:'GPU cluster (8 units)'}],note:''}];

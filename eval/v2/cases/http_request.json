@@ -1,5 +1,0 @@
-{
-  "id": "http_request",
-  "sceneFile": "examples/v2/http-request.scene.json",
-  "mode": "manual capability fixture"
-}

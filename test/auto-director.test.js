@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {canAutoDirect,autoDirect} from '../dist/src/auto-director.js';
+import {canAutoDirect,autoDirect} from '../dist/src/explainer/auto-director.js';
 
 const scene=(nodes,intent='grow over time')=>({id:'s1',title:'t',narration:'x',layout:'flow',nodes:nodes.map((label,i)=>({id:`n${i}`,label,wordIndex:0,keyPoint:'k',visualIntent:intent})),edges:[],note:''});
 

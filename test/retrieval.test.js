@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chunkSource,retrieveChapterEvidence} from '../dist/src/retrieval.js';
+import {chunkSource,retrieveChapterEvidence} from '../dist/src/explainer/retrieval.js';
 
 function docWithPages(pageTexts){
   const pages=[];let text='';

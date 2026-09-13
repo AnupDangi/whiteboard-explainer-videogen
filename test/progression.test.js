@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fixtures} from '../dist/src/fixtures.js';
-import {compileScene,estimateTiming} from '../dist/src/engine.js';
-import {progressionFrames,staticIntervalMs,connectorThroughNode} from '../dist/src/progression.js';
+import {fixtures} from '../dist/src/explainer/fixtures.js';
+import {compileScene,estimateTiming} from '../dist/src/explainer/engine.js';
+import {progressionFrames,staticIntervalMs,connectorThroughNode} from '../dist/src/explainer/progression.js';
 
 const compile=(name,index,timing)=>compileScene(fixtures[name].scenes[index],timing);
 

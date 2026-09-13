@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chunkSource,retrieveChapterEvidence} from '../dist/src/retrieval.js';
+import {chunkSource,retrieveChapterEvidence} from '../dist/src/explainer/retrieval.js';
 
 // LD4 hybrid: RRF fusion of BM25 and cosine ranks. Vectors are synthetic — the point
 // is the fusion math and the BM25-only fallback, not embedding quality.

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {embedTexts,embedEnabled,getOrBuildChunkVectors,embedCachePath} from '../dist/src/embeddings.js';
-import {chunkSource} from '../dist/src/retrieval.js';
+import {embedTexts,embedEnabled,getOrBuildChunkVectors,embedCachePath} from '../dist/src/explainer/embeddings.js';
+import {chunkSource} from '../dist/src/explainer/retrieval.js';
 
 const env={EMBEDDINGS_API_KEY:'test-only'};
 function embedFetcher(batches){

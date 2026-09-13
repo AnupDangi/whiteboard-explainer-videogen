@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {buildDocumentMap,mapCachePath,readCachedMap,writeCachedMap} from '../dist/src/document-map.js';
+import {buildDocumentMap,mapCachePath,readCachedMap,writeCachedMap} from '../dist/src/explainer/document-map.js';
 
 function docWithPages(pageTexts){
   const pages=[];let text='';

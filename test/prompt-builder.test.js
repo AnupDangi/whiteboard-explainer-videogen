@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildRichBrief,briefStats,detectDomain,extractFacts,extractHeadings} from '../dist/src/prompt-builder.js';
+import {buildRichBrief,briefStats,detectDomain,extractFacts,extractHeadings} from '../dist/src/explainer/prompt-builder.js';
 const doc = (text, kind = 'prompt', label = 't') => ({kind, label, text, sha256: 'x'});
 const PAPER = `Attention Is All You Need
 

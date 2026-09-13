@@ -1,20 +1,163 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Explain Canvas Lab</title><link rel="stylesheet" href="/style.css"></head>
-<body><header><a href="/" class="brand"><span class="mark">e.</span> explain <strong>canvas lab</strong></a><span class="pill">RESEARCH PROTOTYPE · 0.2</span><div class="pipeline" id="pipeline" hidden><span class="pill pill-tiny" id="tier-outline" title="Plans chapters and understands the source">outline <b></b></span><span class="pill pill-tiny" id="tier-content" title="Writes narration and canvas scenes">content <b></b></span><span class="pill pill-tiny" id="tier-director" title="Chooses shapes, icons and layout">director <b></b></span><span class="pill pill-tiny" id="tier-vision" title="Describes PDF figures and tables">vision <b></b></span><span class="pill pill-tiny" id="speech-badge" title="Local CPU voice engine (Supertonic/Piper), no key">local tts</span></div></header>
-<main><aside><div class="eyebrow">THE EXPERIMENT</div><h1>Ideas unfold.<br>One scene at a time.</h1><p class="muted">A small, inspectable engine for turning structured ideas into timed visual explanations.</p>
-<form id="generate"><label for="mode">Generation source</label><select id="mode"><option value="model" selected>AI planner · OpenRouter</option><option value="fixture">Offline fixture · no API key</option></select>
-<div id="fixture-fields" hidden><label for="fixture">Explanation</label><select id="fixture"><option value="attention">How attention works</option><option value="photosynthesis">How photosynthesis works</option></select></div>
-<div id="prompt-fields"><label for="source-kind">Source</label><select id="source-kind"><option value="prompt">Prompt / question</option><option value="text">Source text</option><option value="url">Public HTTPS link</option><option value="pdf">PDF document</option></select><input id="source-url" type="url" placeholder="https://…" hidden><input id="source-file" type="file" accept="application/pdf" hidden><label for="prompt">What should we explain?</label><textarea id="prompt" rows="5" maxlength="120000" placeholder="Describe a concept, or paste source text…"></textarea></div>
-<label for="duration">Target length</label><select id="duration"><option value="1">1 minute</option><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="30">30 minutes (experimental)</option></select><p class="hint">Distinct chapters; actual duration follows narration. Boxes appear as the spoken words arrive.</p><label for="budget">Maximum planning budget (USD)</label><input id="budget" type="number" min="0.01" max="10" step="0.01" value="1">
-<label class="check"><input type="checkbox" id="narration" checked> Generate narration</label>
-<label class="check"><input type="checkbox" id="visual-critic"> Visual critic (experimental, slower)</label><p class="hint">Reviews each scene's rendered thumbnail with a second AI model and repairs it once if flagged — overlap, clipped text, or a weak visual metaphor. Adds cost and latency per scene.</p>
-<div id="voice-fields"><label for="tts-language">Narration language</label><select id="tts-language"><option value="en" selected>English · Supertonic</option><option value="hi">Hindi · Supertonic</option><option value="fr">French · Supertonic</option><option value="de">German · Supertonic</option><option value="ne">Nepali · Piper</option><option value="zh">Chinese · Piper</option></select><p class="hint">Local narration runs on CPU through the external voice-engine (Supertonic 3 default, Piper fallback; Nepali always Piper). No key required.</p></div>
-<button class="primary" id="create" type="submit">Generate explanation <span>↗</span></button><p id="message" class="hint" role="status"></p><p id="voice-message" class="hint small voice-note"></p></form>
-<div class="principle"><span class="eyebrow">WORKING HYPOTHESIS</span><p>Generate scene data.<br>Let a fixed engine draw it.</p><small>Independent feasibility experiment. No claim about Lamina’s private implementation.</small></div></aside>
-<section class="workspace"><div class="workspace-heading"><div><span class="eyebrow">WHITEBOARD / LIVE PREVIEW</span><h2 id="title">Your explanation</h2></div><span class="status" id="status">Ready to explore</span></div>
-<div class="stage"><div id="board" role="img" aria-label="Animated whiteboard explanation"></div><div class="stage-footer"><span id="scene-name">Scene 01 / 04</span><span id="timing">Estimated timing · silent preview</span></div></div>
-<div class="transport"><button id="play" aria-label="Play explanation">▶ Play</button><input type="range" id="seek" value="0" min="0" max="1" step="0.01" aria-label="Seek explanation"><span id="clock">0:00 / 0:00</span><select id="speed" aria-label="Playback speed"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select><button id="download">↓ Export MP4</button></div>
-<div class="metrics"><div><span id="ready-metric">0 / 0</span><small>SCENES PREPARED</small></div><div><span id="first-metric">—</span><small>FIRST PLAYABLE</small></div><div><span id="buffer-metric">0</span><small>BUFFER STALLS</small></div><button id="cancel" disabled>Cancel job</button></div>
-<p id="cost-metric" class="hint">Provider usage appears here. Voice billing is separate.</p><div class="detail-grid"><section class="transcript"><span class="eyebrow">NARRATION / FOLLOW THE IDEA</span><p id="transcript"></p></section><section class="event-panel"><span class="eyebrow">PREPARATION LOG</span><ol id="events"><li>Add a source to generate an explanation.</li></ol></section></div>
-<p class="footnote">The preview plays committed scene data; the available duration grows as scenes arrive. Export the same timeline to MP4 with <code>npm run export</code>.</p>
-</section></main><audio id="audio" preload="auto"></audio><script type="module" src="/app.js"></script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Explain Canvas Lab — Explainer</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a href="/" class="brand"><span class="mark">e.</span><span>explain <strong>canvas lab</strong></span></a>
+  <nav class="nav" aria-label="Pipelines">
+    <a class="nav-link is-active" href="/" aria-current="page">Explainer</a>
+    <a class="nav-link" href="/semantic.html">Semantic lab</a>
+  </nav>
+  <div class="pipeline" id="pipeline" hidden>
+    <span class="pill pill-tiny" id="tier-outline" title="Plans chapters and understands the source">outline <b></b></span>
+    <span class="pill pill-tiny" id="tier-content" title="Writes narration and canvas scenes">content <b></b></span>
+    <span class="pill pill-tiny" id="tier-director" title="Chooses shapes, icons and layout">director <b></b></span>
+    <span class="pill pill-tiny" id="tier-vision" title="Describes PDF figures and tables">vision <b></b></span>
+    <span class="pill pill-tiny" id="speech-badge" title="Local CPU voice engine (Supertonic/Piper), no key">local tts</span>
+  </div>
+  <span class="pill badge-prototype">RESEARCH PROTOTYPE · 0.3</span>
+</header>
+
+<main>
+  <aside class="builder">
+    <p class="eyebrow">THE EXPERIMENT</p>
+    <h1>Explain anything,<br>one scene at a time.</h1>
+    <p class="muted">Turn a prompt, document or link into a timed, narrated whiteboard explanation. This is an independent feasibility prototype — not a production product.</p>
+
+    <form id="generate">
+      <section class="card">
+        <div class="card-head"><span class="step">1</span><h2>Pick a source</h2></div>
+        <div class="field">
+          <label for="mode">Generation mode</label>
+          <select id="mode">
+            <option value="model" selected>AI planner · needs an OpenRouter key</option>
+            <option value="fixture">Offline example · no key needed</option>
+          </select>
+        </div>
+        <div class="field" id="fixture-fields" hidden>
+          <label for="fixture">Example explanation</label>
+          <select id="fixture">
+            <option value="attention">How attention works</option>
+            <option value="photosynthesis">How photosynthesis works</option>
+          </select>
+        </div>
+        <div id="prompt-fields">
+          <div class="field">
+            <label for="source-kind">Source type</label>
+            <select id="source-kind">
+              <option value="prompt">Prompt / question</option>
+              <option value="text">Pasted source text</option>
+              <option value="url">Public HTTPS link</option>
+              <option value="pdf">PDF document</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="source-url" id="source-url-label" hidden>Public HTTPS link</label>
+            <input id="source-url" type="url" placeholder="https://…" hidden>
+          </div>
+          <div class="field">
+            <label for="source-file" id="source-file-label" hidden>PDF document</label>
+            <input id="source-file" type="file" accept="application/pdf" hidden>
+          </div>
+          <div class="field">
+            <label for="prompt">What should we explain?</label>
+            <textarea id="prompt" rows="5" maxlength="120000" placeholder="Describe a concept, or paste source text…"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><span class="step">2</span><h2>Shape the lesson</h2></div>
+        <div class="field">
+          <label for="duration">Target length</label>
+          <select id="duration">
+            <option value="1">1 minute</option>
+            <option value="5">5 minutes</option>
+            <option value="10">10 minutes</option>
+            <option value="30">30 minutes (experimental)</option>
+          </select>
+          <p class="hint">Distinct chapters; the real duration follows the narration.</p>
+        </div>
+        <div class="field">
+          <label for="budget">Maximum planning budget (USD)</label>
+          <input id="budget" type="number" min="0.01" max="10" step="0.01" value="1">
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><span class="step">3</span><h2>Narration &amp; review</h2></div>
+        <label class="check"><input type="checkbox" id="narration" checked> Generate narration</label>
+        <div class="field" id="voice-fields">
+          <label for="tts-language">Narration language</label>
+          <select id="tts-language">
+            <option value="en" selected>English · Supertonic</option>
+            <option value="hi">Hindi · Supertonic</option>
+            <option value="fr">French · Supertonic</option>
+            <option value="de">German · Supertonic</option>
+            <option value="ne">Nepali · Piper</option>
+            <option value="zh">Chinese · Piper</option>
+          </select>
+          <p class="hint">Local CPU narration (Supertonic 3 default, Piper fallback; Nepali always Piper). No key required.</p>
+        </div>
+        <label class="check"><input type="checkbox" id="visual-critic"> Visual critic (experimental, slower)</label>
+        <p class="hint">Reviews each rendered scene with a second model and repairs it once if flagged. Adds cost and latency.</p>
+      </section>
+
+      <div class="actions">
+        <button class="primary" id="create" type="submit">Generate explanation</button>
+        <button class="ghost" id="demo" type="button">Try offline example</button>
+      </div>
+      <p id="message" class="hint" role="status"></p>
+      <p id="voice-message" class="hint small voice-note"></p>
+    </form>
+
+    <div class="principle">
+      <span class="eyebrow">WORKING HYPOTHESIS</span>
+      <p>Generate scene data.<br>Let a fixed engine draw it.</p>
+      <small>Independent feasibility experiment. No claim about Lamina’s private implementation.</small>
+    </div>
+  </aside>
+
+  <section class="workspace">
+    <div class="workspace-heading">
+      <div><span class="eyebrow">WHITEBOARD / LIVE PREVIEW</span><h2 id="title">Your explanation</h2></div>
+      <span class="status" id="status">Ready to explore</span>
+    </div>
+
+    <div class="stage">
+      <div id="board" role="img" aria-label="Animated whiteboard explanation"></div>
+      <div class="stage-footer"><span id="scene-name">Scene 01 / 04</span><span id="timing">Estimated timing · silent preview</span></div>
+    </div>
+
+    <div class="transport">
+      <button id="play" aria-label="Play explanation">▶ Play</button>
+      <input type="range" id="seek" value="0" min="0" max="1" step="0.01" aria-label="Seek explanation">
+      <span id="clock">0:00 / 0:00</span>
+      <select id="speed" aria-label="Playback speed"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+      <button id="download">↓ Export MP4</button>
+    </div>
+
+    <div class="metrics">
+      <div><span id="ready-metric">0 / 0</span><small>SCENES PREPARED</small></div>
+      <div><span id="first-metric">—</span><small>FIRST PLAYABLE</small></div>
+      <div><span id="buffer-metric">0</span><small>BUFFER STALLS</small></div>
+      <button id="cancel" disabled>Cancel job</button>
+    </div>
+    <p id="cost-metric" class="hint">Provider usage appears here.</p>
+
+    <div class="detail-grid">
+      <section class="transcript"><span class="eyebrow">NARRATION / FOLLOW THE IDEA</span><p id="transcript"></p></section>
+      <section class="event-panel"><span class="eyebrow">PREPARATION LOG</span><ol id="events"><li>Add a source to generate an explanation.</li></ol></section>
+    </div>
+    <p class="footnote">The preview plays committed scene data; the available duration grows as scenes arrive. Export the same timeline to MP4 with <code>npm run export</code>.</p>
+  </section>
+</main>
+<audio id="audio" preload="auto"></audio>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

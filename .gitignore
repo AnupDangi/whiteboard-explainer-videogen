@@ -20,3 +20,6 @@ app.server.out
 *.scenes/
 .agents/
 .claude/
+
+# downloaded Chinese g2pW lookup cache (regenerated on demand)
+/g2pW/

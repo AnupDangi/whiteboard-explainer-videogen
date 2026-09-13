@@ -1,3 +1,5 @@
+> Historical (2026-09-11): file paths below predate the 2026-09-13 `src/` restructure (now `src/explainer/`, `src/shared/`, `src/semantic/`).
+
 # Performance, cost and architecture analysis — 2026-09-11
 
 Scope: why a 1-minute video takes 70–90s, where the cost goes, what the architecture

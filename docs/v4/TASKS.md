@@ -69,8 +69,8 @@ Do not edit these fixtures after capture.
 Create:
 
 ```text
-src/v2/types.ts
-src/v2/schemas.ts
+src/semantic/types.ts
+src/semantic/schemas.ts
 ```
 
 Implement:
@@ -162,7 +162,7 @@ Deterministic checks:
 Create:
 
 ```text
-src/v2/planning/visual-model.ts
+src/semantic/planning/visual-model.ts
 ```
 
 Inputs:
@@ -208,13 +208,13 @@ Examples:
 Create modules:
 
 ```text
-src/v2/assets/registry.ts
-src/v2/assets/search.ts
-src/v2/assets/types.ts
-src/v2/assets/validator.ts
-src/v2/assets/illustrations/
-src/v2/assets/icons/
-src/v2/assets/templates/
+src/semantic/assets/registry.ts
+src/semantic/assets/search.ts
+src/semantic/assets/types.ts
+src/semantic/assets/validator.ts
+src/semantic/assets/illustrations/
+src/semantic/assets/icons/
+src/semantic/assets/templates/
 ```
 
 ## Task 4.2
@@ -305,7 +305,7 @@ Create:
 
 ```text
 eval/visual-bench/cases/photosynthesis-plant.json
-examples/v2/photosynthesis-plant.scene.json
+examples/semantic/photosynthesis-plant.scene.json
 ```
 
 Manually author the ideal SceneGraph.
@@ -397,12 +397,12 @@ Add state variants:
 Create:
 
 ```text
-src/v2/compiler/compile-scene.ts
-src/v2/compiler/zones.ts
-src/v2/compiler/collisions.ts
-src/v2/compiler/routing.ts
-src/v2/compiler/text.ts
-src/v2/compiler/occupancy.ts
+src/semantic/compiler/compile-scene.ts
+src/semantic/compiler/zones.ts
+src/semantic/compiler/collisions.ts
+src/semantic/compiler/routing.ts
+src/semantic/compiler/text.ts
+src/semantic/compiler/occupancy.ts
 ```
 
 ## Task 7.2
@@ -468,7 +468,7 @@ Do not use graph layout for:
 Create:
 
 ```text
-src/v2/planning/visual-director.ts
+src/semantic/planning/visual-director.ts
 ```
 
 Inputs:
@@ -565,7 +565,7 @@ The finalizer should avoid reading every label.
 Create:
 
 ```text
-src/v2/compiler/timeline.ts
+src/semantic/compiler/timeline.ts
 ```
 
 Input:

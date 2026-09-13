@@ -6,7 +6,7 @@
 import {readFile,writeFile,readdir,mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import sharp from 'sharp';
-import {log} from '../src/logger.js';
+import {log} from '../src/shared/logger.js';
 
 const env=process.env;
 if(!env.OPENROUTER_API_KEY)throw new Error('OPENROUTER_API_KEY required');

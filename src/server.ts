@@ -1,6 +1,6 @@
-import {visualPipeline} from './v2/pipeline.js';
-import {compileScene as compileV2Scene} from './v2/compiler/compile-scene.js';
-import {log,logContext} from './logger.js';
+import {visualPipeline} from './semantic/pipeline.js';
+import {compileScene as compileSemanticScene} from './semantic/compiler/compile-scene.js';
+import {log,logContext} from './shared/logger.js';
 import {randomUUID} from 'node:crypto';
 import {createServer,type IncomingMessage,type ServerResponse} from 'node:http';
 import {readFile} from 'node:fs/promises';
@@ -8,7 +8,7 @@ import {existsSync,statSync,mkdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {join,resolve,dirname,extname} from 'node:path';
 import {spawn} from 'node:child_process';
-import {JobStore} from './jobs.js';
+import {JobStore} from './explainer/jobs.js';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const json=(res:ServerResponse,status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
 async function body(req:IncomingMessage){let value='';for await(const chunk of req){value+=chunk;if(Buffer.byteLength(value)>72*1024*1024)throw new Error('Request too large');}return JSON.parse(value);}
@@ -38,11 +38,11 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
         log('player.'+event.type,{jobId:event.jobId,timeMs:event.timeMs,rate:event.rate});
         return json(res,200,{ok:true});
       }
-      if(req.method==='GET'&&url.pathname==='/api/v2/golden'){
-        return json(res,200,compileV2Scene(JSON.parse(await readFile(join(root,'examples/v2/photosynthesis-plant.scene.json'),'utf8'))));
+      if(req.method==='GET'&&url.pathname==='/api/semantic/golden'){
+        return json(res,200,compileSemanticScene(JSON.parse(await readFile(join(root,'examples/semantic/photosynthesis-plant.scene.json'),'utf8'))));
       }
-      if(req.method==='POST'&&url.pathname==='/api/v2/compile'){
-        return json(res,200,compileV2Scene(await body(req)));
+      if(req.method==='POST'&&url.pathname==='/api/semantic/compile'){
+        return json(res,200,compileSemanticScene(await body(req)));
       }
       if(req.method==='POST'&&url.pathname==='/api/jobs'){
         return json(res,202,await store.create(await body(req)));
@@ -97,14 +97,14 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
       let path;
       if(media)path=join(dataRoot,media[1],media[2]);
       else if(exported)path=join(root,'output',`${exported[1]}.mp4`);
-      else if(/^\/src\/v2\/(?:compiler\/text|renderer\/(?:render-svg|style|scene-state|illustrations|primitives|relations|cursor|captions|steps)|assets\/(?:registry|validator|geometry|illustrations\/plant|icons\/inputs|templates\/catalog))\.js$/.test(url.pathname))path=join(root,'dist',url.pathname);
-      else if(['/src/engine.js','/src/fixtures.js','/src/vocabulary.js','/src/icons.js','/src/illustrations.js','/src/style.js','/src/templates.js'].includes(url.pathname))path=join(root,'dist',url.pathname);
+      else if(/^\/src\/semantic\/(?:compiler\/text|renderer\/(?:render-svg|style|scene-state|illustrations|primitives|relations|cursor|captions|steps)|assets\/(?:registry|validator|geometry|illustrations\/plant|icons\/inputs|templates\/catalog))\.js$/.test(url.pathname))path=join(root,'dist',url.pathname);
+      else if(/^\/src\/(?:explainer\/[a-z0-9-]+|shared\/(?:logger|model-router|types|voice-engine-client|vocabulary))\.js$/.test(url.pathname))path=join(root,'dist',url.pathname);
       else {
-        const requested=url.pathname==='/'?(pipeline==='v2'?'v2.html':'index.html'):url.pathname.slice(1);
+        const requested=url.pathname==='/'?(pipeline==='semantic'?'semantic.html':'index.html'):url.pathname.slice(1);
         path=resolve(root,'public',requested);
         if(!path.startsWith(resolve(root,'public')+'/'))return json(res,403,{error:'Forbidden'});
       }
-      if(url.pathname==='/v2-viewer.js')path=join(root,'dist/public/v2-viewer.js');
+      if(url.pathname==='/semantic-viewer.js')path=join(root,'dist/public/semantic-viewer.js');
       if(url.pathname==='/app.js')path=join(root,'dist/public/app.js');
       const bytes=await readFile(path);res.writeHead(200,{'content-type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.mp3':'audio/mpeg','.wav':'audio/wav','.mp4':'video/mp4'})[extname(path)]||'application/octet-stream','x-content-type-options':'nosniff','cache-control':'no-cache','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"});res.end(bytes);
     }catch(caught){const error=caught as NodeJS.ErrnoException;log('http.error',{error},'error');json(res,error.code==='ENOENT'?404:400,{error:error.code==='ENOENT'?'Not found':error.message||'Request failed'});

@@ -5,7 +5,7 @@
  *  Usage: npm run router:report [-- --log app.log] */
 import {readFileSync,existsSync,readdirSync} from 'node:fs';
 import {join} from 'node:path';
-import {taskOfLabel} from '../src/model-router.js';
+import {taskOfLabel} from '../src/shared/model-router.js';
 
 interface Row{task:string;model:string;calls:number;repairs:number;failures:number;totalMs:number;cost:number}
 const args=process.argv.slice(2);

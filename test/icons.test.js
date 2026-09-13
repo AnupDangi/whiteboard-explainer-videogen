@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {NODE_KINDS} from '../dist/src/vocabulary.js';
-import {renderIcon,hasIcon} from '../dist/src/icons.js';
-import {renderIllustration,hasIllustration} from '../dist/src/illustrations.js';
+import {NODE_KINDS} from '../dist/src/shared/vocabulary.js';
+import {renderIcon,hasIcon} from '../dist/src/explainer/icons.js';
+import {renderIllustration,hasIllustration} from '../dist/src/explainer/illustrations.js';
 
 // Every kind the director can emit must render a working glyph — no broken paths,
 // no empty output. Catches icon regressions for all 50 kinds in one place.

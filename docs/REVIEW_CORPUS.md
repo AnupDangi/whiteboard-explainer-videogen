@@ -1,3 +1,5 @@
+> Historical: paths below predate the 2026-09-13 `src/` restructure (now `src/explainer/`, `src/shared/`, `src/semantic/`).
+
 # Fixed review corpus
 
 A named, stable set of generated jobs/topics that quality reports (`docs/RESULTS.md`,

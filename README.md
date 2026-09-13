@@ -4,6 +4,8 @@ A working research prototype for **structured scene data → timed whiteboard an
 
 This is an independent implementation. It does not use Lamina's API, private code, logo, or uploaded demo. Passing our experiments does not establish how Lamina's product works.
 
+Source layout is documented in [src/README.md](src/README.md): `explainer/` (default node/edge pipeline), `semantic/` (V4 teaching pipeline) and `shared/`. The local narration engine lives in [voice-engine/](voice-engine/).
+
 ## Start here
 
 Requires Node.js 22 or newer. The web demo and core tests have **no package dependencies or API-key requirements**.
@@ -35,7 +37,7 @@ The main rendering surface is SVG, not HTML Canvas 2D. The research question is 
 
 Copy `.env.example` to `.env`. Set `OPENROUTER_API_KEY` (default model `google/gemini-3.8-flash`, set via `OPENROUTER_MODEL` to override). Restart `npm start`, choose **AI planner → OpenRouter**, and enter a prompt or paste source text / URL / PDF.
 
-Narration is **local-only**: the free CPU voice-engine at `../lamina-labs-video/voice-engine` (Supertonic 3 default, Piper fallback; Nepali always Piper), called over an async JSON boundary. No speech key is used. The repository contains no keys.
+Narration is **local-only**: the free CPU voice-engine at `voice-engine` (Supertonic 3 default, Piper fallback; Nepali always Piper), called over an async JSON boundary. No speech key is used. The repository contains no keys.
 
 Provider adapters were verified with mocked responses and now also with live OpenRouter runs plus real local voice-engine synthesis for 1-minute chapters. Missing keys or provider failures produce visible errors (including `402 quota` / `429 rate limit`); they never silently substitute a fixture. Budget reservation is per-call progressive — already prepared chapters remain playable on budget/quota exhaustion.
 
@@ -88,7 +90,7 @@ This is a loopback-only, single-process prototype, not a deployed multi-user pro
 ### Narration voices
 
 **Local voice-engine** (default, `--tts voice-engine`) is free, CPU-only and needs
-no API key. It is a **separate project** at `../lamina-labs-video/voice-engine`
+no API key. It is a **separate project** at `voice-engine`
 (async JSON stdin/stdout boundary). Supertonic 3 is the default for its 31
 supported languages; Piper is the fallback for everything else, and Nepali is
 always Piper. Set `VOICE_ENGINE_DIR` to override the path, `VOICE_ENGINE_LANGUAGE`

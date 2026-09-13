@@ -1,22 +1,23 @@
-# Experimental semantic V2 — 2026-09-12
+# Experimental semantic pipeline — 2026-09-13
 
-`src/v2/` is a parallel semantic pipeline following `../../v4_docs/`. It separates
+`src/semantic/` is a parallel semantic pipeline following `../../v4_docs/`. It separates
 teaching claims/concepts/beats from visual inventory, trusted assets, deterministic
-composition, narration freeze and speech-aligned actions. The canonical V2 renderer is
-`src/v2/renderer/render-svg.ts`; browser and export import the same pure function.
+composition, narration freeze and speech-aligned actions. The canonical semantic renderer is
+`src/semantic/renderer/render-svg.ts`; browser and export import the same pure function.
 No generated executable code, raw SVG, or model coordinates are accepted.
 
-`VISUAL_PIPELINE=v1|v2` defaults to V1 and selects the landing UI. V2 currently has
-`GET /api/v2/golden` and `POST /api/v2/compile`, plus a real-model CLI. The legacy job
-API retains its V1 schema. All ordered Phase 14 archetypes compile: structural/convergence,
+`VISUAL_PIPELINE=explainer|semantic` selects the landing UI and defaults to `explainer`
+(legacy `v1`/`v2` values are aliases). The semantic pipeline has
+`GET /api/semantic/golden` and `POST /api/semantic/compile`, plus a real-model CLI. The legacy job
+API retains its explainer schema. All ordered Phase 14 archetypes compile: structural/convergence,
 transformation/comparison, cross-section/spatial-process, numbered steps, flow, cycle,
 equation_walkthrough, matrix_operation, hierarchy, timeline and trajectory. Flow uses dependency
 ranks; cycles follow a closed semantic loop; equation lines stack monotonically; matrix terms read
 left to right; hierarchy is a validated single-root tree; timeline is declared order on a rail;
 trajectory is ordered steps on a descending path. Other archetypes and advanced motions fail
-explicitly. A metered vision critic (`src/v2/vision-judge.ts`) is calibrated by
-`src/v2/calibration.ts` against nine known corruptions in both orders
-(`npm run calibrate:v2:critic`); it is optional and not yet an automatic repair trigger.
+explicitly. A metered vision critic (`src/semantic/vision-judge.ts`) is calibrated by
+`src/semantic/calibration.ts` against nine known corruptions in both orders
+(`npm run calibrate:semantic:critic`); it is optional and not yet an automatic repair trigger.
 See [V4_IMPLEMENTATION.md](V4_IMPLEMENTATION.md) for live status and boundaries.
 
 ---
@@ -51,27 +52,29 @@ flowchart TD
     F --> H["SVG frames and FFmpeg"]
 ```
 
-## Module map (current, 2026-09-11)
+## Module map (current, 2026-09-13 — `src/` split into `explainer/`, `shared/`, `semantic/`; see `src/README.md`)
+
+`src/explainer/` is the default node/edge pipeline; `src/semantic/` is the V4 teaching pipeline; `src/shared/` is used by both.
 
 | Module | Responsibility |
 |---|---|
-| `src/planner.ts` | Outline → chapter content (with deterministic heals) → visual director/auto-director; validators, repair loops, model router. |
-| `src/auto-director.ts` | Deterministic layout/kind composition for composable scenes (skips the director LLM call). **Debt:** kind guessing is a keyword-regex table that must become model-driven (see HANDOFF). |
-| `src/model-router.ts` | Per-task model selection: `MODEL_ROUTER` JSON > per-task env > base model. |
-| `src/budgets.ts` | Input/retrieval/output/cost/latency budgets per stage. |
-| `src/sources.ts` | Ingest: PDF (`pdftotext -raw`, page-aware), docx/pptx/md/json/text/URL. |
-| `src/document-map.ts` | Hierarchical section map (heading detection, extractive summaries, sha256 cache). |
-| `src/retrieval.ts` | Structural chunking + BM25, optional RRF hybrid; tiny-source pass-through. |
-| `src/embeddings.ts` | Key-gated embedding index (fail-soft; BM25-only fallback). |
-| `src/figures.ts` | poppler figure/table detection, crops, bounded-parallel fail-soft VLM description. |
-| `src/engine.ts` | Whitelist validation, layouts, compile, pure SVG rendering, playback clamp, text metrics. |
-| `src/jobs.ts` | Single-process async preparation, atomic JSON snapshots, bounded concurrency, progressive availability, cancellation. |
-| `src/voice-engine-client.ts` / `src/v2/speech.ts` | Async boundary to the external local voice-engine (Supertonic 3 default, Piper fallback); engine timing explicitly marked estimated. |
-| `src/server.ts` | Loopback HTTP app, job API, local media and static files. |
-| `public/app.ts` | Polling, play/pause/seek, audio clock, transcript, metrics, source intake (prompt/URL/PDF). |
-| `scripts/export.ts` / `src/scene-output.ts` | Frame rendering via SVG/Sharp, FFmpeg encode+mux, per-scene artifacts. |
-| `src/logger.ts` | Console + `app.log` + per-job `log.jsonl`; secret redaction. |
-| `src/progression.ts` | Progression frames + static-interval/connector lints. |
+| `src/explainer/planner.ts` | Outline → chapter content (with deterministic heals) → visual director/auto-director; validators, repair loops, model router. |
+| `src/explainer/auto-director.ts` | Deterministic layout/kind composition for composable scenes (skips the director LLM call). **Debt:** kind guessing is a keyword-regex table that must become model-driven (see HANDOFF). |
+| `src/shared/model-router.ts` | Per-task model selection: `MODEL_ROUTER` JSON > per-task env > base model. |
+| `src/explainer/budgets.ts` | Input/retrieval/output/cost/latency budgets per stage. |
+| `src/explainer/sources.ts` | Ingest: PDF (`pdftotext -raw`, page-aware), docx/pptx/md/json/text/URL. |
+| `src/explainer/document-map.ts` | Hierarchical section map (heading detection, extractive summaries, sha256 cache). |
+| `src/explainer/retrieval.ts` | Structural chunking + BM25, optional RRF hybrid; tiny-source pass-through. |
+| `src/explainer/embeddings.ts` | Key-gated embedding index (fail-soft; BM25-only fallback). |
+| `src/explainer/figures.ts` | poppler figure/table detection, crops, bounded-parallel fail-soft VLM description. |
+| `src/explainer/engine.ts` | Whitelist validation, layouts, compile, pure SVG rendering, playback clamp, text metrics. |
+| `src/explainer/jobs.ts` | Single-process async preparation, atomic JSON snapshots, bounded concurrency, progressive availability, cancellation. |
+| `src/shared/voice-engine-client.ts` / `src/semantic/speech.ts` | Async boundary to the bundled local voice-engine (Supertonic 3 default, Piper fallback); engine timing explicitly marked estimated. |
+| `src/server.ts` | Loopback HTTP app, job API, local media and static files; serves both pipelines. |
+| `public/app.ts` | Explainer UI: polling, play/pause/seek, audio clock, transcript, metrics, source intake (prompt/URL/PDF). |
+| `scripts/export.ts` / `src/explainer/scene-output.ts` | Frame rendering via SVG/Sharp, FFmpeg encode+mux, per-scene artifacts. |
+| `src/shared/logger.ts` | Console + `app.log` + per-job `log.jsonl`; secret redaction. |
+| `src/explainer/progression.ts` | Progression frames + static-interval/connector lints. |
 
 **Current pipeline:** ingest → page-aware text → document map (cached) → outline (map-routed)
 → per-chapter content (+ deterministic heals) → director or auto-director → per-scene TTS
@@ -120,13 +123,18 @@ This is not a production multi-user service. Job snapshots remain in memory afte
 
 ## Narration (updated 2026-09-12 — external local voice-engine)
 
-Narration is provider-independent. `src/voice-engine-client.ts` is the async
+Narration is provider-independent. `src/shared/voice-engine-client.ts` is the async
 boundary to the separate local `voice-engine` project at
-`../lamina-labs-video/voice-engine` (JSON stdin/stdout, one process per request):
+`voice-engine` (JSON stdin/stdout, one process per request):
 Supertonic 3 is the default for its 31 languages, Piper is the fallback for
-everything else, and Nepali is always Piper. `src/v2/speech.ts` adapts the same
+everything else, and Nepali is always Piper. `src/semantic/speech.ts` adapts the same
 boundary for the V2 pipeline. The engine owns language routing, voices and
 providers; the main repo never imports a speech provider directly.
+
+Language is a planner input, not a table: `src/shared/language.ts` names languages with
+`Intl.DisplayNames` and segments words/sentences with `Intl.Segmenter`, so any script
+(Devanagari, Chinese, Arabic, ...) is narrated in-language and timed correctly. No
+per-language code paths.
 
 Local engines return audio duration, not word timings, so the boundary builds
 word timings from duration and marks them `engine` — rendered as

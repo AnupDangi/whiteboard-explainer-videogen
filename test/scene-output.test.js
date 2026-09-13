@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {fixtures} from '../dist/src/fixtures.js';
-import {validatePlan,compileScene,renderSVG} from '../dist/src/engine.js';
-import {writeSceneArtifacts} from '../dist/src/scene-output.js';
+import {fixtures} from '../dist/src/explainer/fixtures.js';
+import {validatePlan,compileScene,renderSVG} from '../dist/src/explainer/engine.js';
+import {writeSceneArtifacts} from '../dist/src/explainer/scene-output.js';
 
 test('scene artifacts: every scene saved scene-by-scene with manifest',async t=>{
   const root=await mkdtemp(join(tmpdir(),'canvas-scenes-'));

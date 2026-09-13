@@ -1,0 +1,19 @@
+{
+  "id": "gradient_descent",
+  "prompt": "Explain gradient descent step by step",
+  "category": "manual-archetype-gate",
+  "mustExplain": [
+    "training starts at a high loss",
+    "each step follows the downhill gradient",
+    "steps shrink as the loss approaches its minimum"
+  ],
+  "requiredRelations": [],
+  "preferredArchetypes": [
+    "trajectory"
+  ],
+  "forbiddenPatterns": [
+    "generic_box_flow",
+    "flat_unordered_steps"
+  ],
+  "sceneFile": "examples/semantic/gradient-steps.scene.json"
+}

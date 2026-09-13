@@ -23,11 +23,11 @@ no speech key. Never commit `.env`, `.data/`, or `output/`.
 
 ## Local voice-engine (free, CPU, no key)
 
-The engine is a separate project at `../lamina-labs-video/voice-engine`. One-time
+The engine is a separate project at `voice-engine`. One-time
 setup there:
 
 ```bash
-cd ../lamina-labs-video/voice-engine
+cd voice-engine
 npm run setup   # uv venv + Supertonic + Piper voices (English, Nepali)
 npm run build
 ```

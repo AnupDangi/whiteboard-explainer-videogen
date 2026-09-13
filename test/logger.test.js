@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {log,logContext,loggedFetch,sanitizeLog} from '../dist/src/logger.js';
+import {log,logContext,loggedFetch,sanitizeLog} from '../dist/src/shared/logger.js';
 
 test('Terminal logging redacts nested credentials and secrets embedded in errors',t=>{
   const prior=process.env.CANVAS_TEST_API_KEY;process.env.CANVAS_TEST_API_KEY='private-test-value';

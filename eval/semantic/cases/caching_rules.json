@@ -1,0 +1,20 @@
+{
+  "id": "caching_rules",
+  "prompt": "Explain five practical caching rules",
+  "category": "manual-archetype-gate",
+  "mustExplain": [
+    "Cache results that are expensive to compute",
+    "Choose a key that includes every relevant input",
+    "Set an expiry appropriate to how the data changes",
+    "Invalidate entries when their source changes",
+    "Measure hit rate and check correctness"
+  ],
+  "requiredRelations": [],
+  "preferredArchetypes": [
+    "numbered_steps"
+  ],
+  "forbiddenPatterns": [
+    "unnecessary_graph"
+  ],
+  "sceneFile": "examples/semantic/caching-rules.scene.json"
+}

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {getOutputBudget,getRetrievalBudget,getInputBudget,getCostBudget,getLatencyBudget} from '../dist/src/budgets.js';
+import {getOutputBudget,getRetrievalBudget,getInputBudget,getCostBudget,getLatencyBudget} from '../dist/src/explainer/budgets.js';
 
 test('LD7 output budgets: scale with chapters, never with source size',()=>{
   assert.equal(getOutputBudget('content'),9000,'1-min live-proven content budget unchanged');

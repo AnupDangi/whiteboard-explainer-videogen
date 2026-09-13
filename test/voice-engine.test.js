@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {writeFile,mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createVoiceEngineRunner,wordsFromDuration} from '../dist/src/voice-engine-client.js';
-import {createVoiceEngineSpeech} from '../dist/src/v2/speech.js';
+import {createVoiceEngineRunner,wordsFromDuration} from '../dist/src/shared/voice-engine-client.js';
+import {createVoiceEngineSpeech} from '../dist/src/semantic/speech.js';
 
 test('voice-engine timing marks estimated word boundaries',()=>{
  const t=wordsFromDuration('one two three four',4000);

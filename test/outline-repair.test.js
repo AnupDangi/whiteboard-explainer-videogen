@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {generateChapters,healOutline,validateOutline,healSchemaFields,resolveAnchors} from '../dist/src/planner.js';
+import {generateChapters,healOutline,validateOutline,healSchemaFields,resolveAnchors} from '../dist/src/explainer/planner.js';
 
 const source={kind:'text',label:'unseen source',text:'A newly supplied source explains the core idea through a working example with an arbitrary experimental value of 739 liters.',sha256:'test'};
 const reply=(result,extra={})=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:100,completion_tokens:100,cost:0.00005},...extra});

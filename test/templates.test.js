@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fixtures} from '../dist/src/fixtures.js';
-import {validatePlan,compileScene,renderSVG} from '../dist/src/engine.js';
-import {renderTemplate} from '../dist/src/templates.js';
+import {fixtures} from '../dist/src/explainer/fixtures.js';
+import {validatePlan,compileScene,renderSVG} from '../dist/src/explainer/engine.js';
+import {renderTemplate} from '../dist/src/explainer/templates.js';
 
 const compile=(name,index)=>compileScene(validatePlan({version:1,title:fixtures[name].title,scenes:fixtures[name].scenes}).scenes[index]);
 
@@ -39,7 +39,7 @@ test('V3-4 templates: attention matrix, DNA fork and tectonic section render det
 test('V3-4 templates: unknown template values fail validation and merge',async()=>{
   const bad={version:1,title:'t',scenes:[{...structuredClone(fixtures.templates.scenes[0]),template:'freeform'}]};
   assert.throws(()=>validatePlan(bad),/Unknown scene template/);
-  const {generateChapters}=await import('../dist/src/planner.js');
+  const {generateChapters}=await import('../dist/src/explainer/planner.js');
   const env={OPENROUTER_API_KEY:'test-only',OPENROUTER_MODEL:'test/model'};
   const source={kind:'text',label:'x',text:'Point one matters here because point one anchors the explanation and point two resolves it.',sha256:'t'};
   const reply=(result)=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}],usage:{prompt_tokens:10,completion_tokens:10,cost:0.00001}});
