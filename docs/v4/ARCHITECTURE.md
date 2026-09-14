@@ -1081,3 +1081,12 @@ It is ready to become the default only when:
 - plant + structural + transformation + math + flow benchmarks all demonstrate
   representation-appropriate visuals
 - latency remains compatible with progressive playback
+# Implementation alignment note, 2026-09-14
+
+`src/semantic/harness/` now implements the harness-owned teaching compiler
+boundary described by this architecture: typed stage envelopes, expected
+learner state, persistent semantic identity, deterministic representation
+resolution, append-only journals, stage gates, accounting, and publishability.
+The compiler and `renderSVG(scene, timeMs)` remain deterministic. This note does
+not close live reliability, independent comprehension, or human preference
+gates; see `../HANDOFF.md` for the precise open items.

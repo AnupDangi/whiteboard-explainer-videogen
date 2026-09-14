@@ -2,10 +2,12 @@
 
 Current (read these):
 - `HANDOFF.md` — current state, next tasks, known issues.
-- `ARCHITECTURE.md` — current module map and data flow.
+- `ARCHITECTURE.md` — current module map and data flow (rewritten 2026-09-13).
 - `PERFORMANCE_ANALYSIS.md` — measured latency/cost, model-router and parallelism plan.
 - `SOURCE_INTELLIGENCE_PLAN.md` — LD1–LD8 source-intelligence program (implemented).
 - `RESULTS.md` — append-only evidence log of live runs.
+- `V4_IMPLEMENTATION.md` — append-only V2 build log (see currency note at top).
+- `v4/` — V4 spec reference package (contracts, not implementation status).
 
 Historical / superseded (kept for provenance):
 - `HANDOFF_ARCHIVE.md` — pre-2026-09-11 handoff entries.

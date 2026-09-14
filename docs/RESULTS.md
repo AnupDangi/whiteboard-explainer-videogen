@@ -1,3 +1,405 @@
+# 2026-09-14 — Phase 8 targeted stage repair
+
+- `executeStage` implements the bounded repair contract: one owner-scoped retry
+  per failed stage, failed attempt journaled as `FAIL`/`attempt:0`, repaired
+  output re-validated as `attempt:1`; `maxRepairs:0` stages never retry.
+- `knowledge-compiler` and `visual-director` re-invoke their owning stage with
+  the hard gate findings appended to the stage prompt; unrelated regeneration is
+  forbidden and provider failures without findings stay visible.
+- Repair ownership routing (`repairOwnerForStage`) covers semantic,
+  representation, geometry, timing, speech and provider classes.
+- Verification: `npm run typecheck` clean; `npm test` **271/271 pass, 0 fail**
+  (7 new in `test/harness-repair.test.js`); `git diff --check` clean.
+- Evidence scope: local unit/regression only. No paid benchmark or migration-gate
+  run; V1 remains default.
+
+# 2026-09-14 — Harness-controlled teaching compiler implementation
+
+- Added the versioned `TeachingHarness` kernel and typed ConceptGraph,
+  LearnerProfile/State, TeachingContract, WhiteboardPlan, SemanticRegistry,
+  StageEnvelope/Failure, GateResult, and run-manifest contracts.
+- The complete lesson arc is validated before visual planning. Runtime
+  representation candidates are resolved by the harness and only bounded
+  semantic inputs reach the visual director. Geometry remains deterministic.
+- Job artifacts now include append-only success/failure journal entries,
+  individual stage inputs, manifests, raw provider outputs, compiled data,
+  audio, diagnostics, hashes, route, cost, and latency. Final MP4 publication
+  requires PASS; the duration gate rejects outputs outside 85–115% of target.
+- UI/browser contract updated for PDF-based 1/5/10/30/60-minute runs, learner
+  level, goals, voice/language, grounding policy, budget, cancellation, and
+  live gate/stage/learner/cost state. Visual QA passed on the fresh build.
+- Evaluation reports now include stage accounting and eight separate quality
+  dimensions. No composite score was introduced.
+- Verification: typecheck/build pass; 246 total tests, with 243 passing in the
+  restricted sandbox and all three loopback suites passing 30/30 when allowed.
+  `git diff --check` passes.
+- This is implementation evidence, not teaching-efficacy evidence. No paid
+  144-run benchmark, new long-form provider run, blind pairwise study, or real
+  learner study was performed. V1 remains default and migration gates remain
+  closed.
+
+# 2026-09-14 — Skills expansion (15-skill tree)
+
+- Added `knowledge-compiler`, `source-visual-grounding`,
+  `multilingual-teacher` (stub). Strengthened `teaching-architect` (+4
+  learning-evidence fields) and `pedagogy-critic` (+8 video-failure checks).
+- No renderer or pipeline-code changes; no live provider run; structural
+  conformance only (11-section template, consumer mapping, eval sketches).
+- Validation: `npm test` 256/256 pass, `git diff --check` clean.
+
+# 2026-09-14 — Skills audit (12-skill teaching pipeline)
+
+- Reworked `skills/` with no renderer or pipeline-code changes: 12 native
+  skills (canvas, teaching-architect, whiteboard-planner,
+  representation-guide, visual-director, pedagogy-critic, video-generation,
+  eval-builder, eval-audit, pdf-extraction, prompt-builder, skill-writer).
+- Every `SKILL.md` carries the full contract sections; detail lives in
+  `references/`. All emitted fields mapped to runtime consumers
+  (`contentSchema`, `directorSchema`, `TeachingIntent`, job/export routes).
+- Overlap removed: prompt-builder (deterministic enrich) vs
+  teaching-architect (pedagogical order); representation-guide (reference)
+  vs director (choices); pedagogy-critic (per-lesson binary) vs eval-builder
+  (run gates) vs eval-audit (generic hygiene).
+- Validation: `npm test` 256/256 pass, `git diff --check` clean. No live
+  provider run; no quality claim beyond structural conformance.
+
+# 2026-09-14 — Typed continuity/speech contracts and live artifact persistence
+
+## Cost and long-source generation check
+
+- DeepSeek V4.1 report: source extraction succeeded at 161,123 characters and
+  37 mapped sections. The 30-minute job stopped at OpenRouter HTTP 403 before
+  the first billable call: **$0**, 0 model calls, 0 TTS characters, 0 scenes.
+- Recursive self-improvement survey: extraction succeeded at 100,669 characters
+  and 35 mapped sections. The 60-minute job stopped at the same provider error:
+  **$0**, 0 model calls, 0 TTS characters, 0 scenes.
+- Added normalized CLI cost fields: `costUsd`, `modelCalls`, `ttsCostUsd`, and
+  `ttsMsByScene`. Local voice-engine usage is currently cost-free and its CPU
+  duration is tracked separately.
+- Current provider catalog prices were readable, but generation authorization
+  was rejected. No content or narration quality claim is made from these runs.
+
+## Voice and UI verification
+
+- Local Supertonic English synthesis works through the application speech
+  adapter and produces WAV audio with explicitly estimated word timing.
+- Semantic Lab now supports narration selection, language selection, scene audio
+  playback, and narrated MP4 download.
+- Fresh narrated exports passed `ffprobe`: 1 minute (photosynthesis and water
+  cycle), 5 minutes (matrix, equations, gradients, caching, MLA compression),
+  and 10 minutes (HTTP, DNA, tectonics, timeline, memory, water cycle).
+- Full regression suite after these changes: **256/256**.
+
+- Added schema-validated continuity transitions with explicit `KEEP`, `MOVE`,
+  `TRANSFORM`, `REPLACE`, `REMOVE`, and `REINTRODUCE` actions.
+- Added speech timing provenance and an optional buffered-to-streaming adapter;
+  local engine word timings remain explicitly estimated.
+- Live run directories now persist input/hash metadata and event-aligned plus
+  fixed-progress contact sheets through the canonical renderer.
+- Validation: `npm run typecheck`, `npm run build`, affected tests **40/40**,
+  full `npm test` **256/256** (local network permission for server tests), and
+  `git diff --check`.
+- Provider-backed narrated quality gates remained unavailable during the code
+  wave; migration gates remain unevaluated.
+
+The required narrated 144-run baseline was attempted afterward. All 144 runs
+were persisted under `.data/eval/live/v2-narrated-144-20260914` and recorded
+OpenRouter `fetch failed` provider errors with total cost **$0**; no fixture
+successes were substituted. The local voice engine is unavailable, so this is
+an infrastructure-failure baseline rather than a quality result.
+
+## Duration/export soak — 2026-09-14
+
+Three different complex fixture topics passed long-duration MP4 export checks:
+
+- photosynthesis: 60.166667s
+- matrix multiplication: 300.166667s
+- HTTP request lifecycle: 600.166667s
+
+All measured files are H.264, 960x540, 12 fps. This validates deterministic
+renderer/export handling only; the videos are silent repeated fixtures and do
+not establish live narration or model-quality gates.
+
+# 2026-09-14 — Retry isolation and live semantic coverage
+
+- Added injectable legacy planner retry delays so provider-failure tests do not
+  sleep through 15/30-second production backoffs; production retry behavior remains
+  bounded and abort-aware.
+- Live evaluation now records case-level critical-claim, concept, relationship,
+  archetype, forbidden-pattern, and critical-asset-role coverage alongside existing
+  reliability and latency metrics.
+- Validation: `npm run typecheck`; generation tests **17/17**; focused semantic
+  planning/live evaluation **23/23**; full `npm test` **250/250** with local network
+  permission required by server integration tests; `git diff --check` clean.
+- Limitation: no provider-backed narrated benchmark has been run in this pass; no
+  teaching-quality or latency improvement is claimed from local fixtures.
+
+# Quality implementation — v4 parallel first-AV + auto MP4, 2026-09-13
+
+Implemented (`docs/v4/critical_changes.md` P0-E §§25–26, §31):
+- `generateV2`: TTS + estimated compile concurrently; preliminary compile success
+  sets firstVisualReady while TTS runs; rebind compile with speech timing for the
+  final timeline (silent jobs compile once). New pin: visual lands before a 150ms
+  delayed TTS and final `timing.kind` is `engine`.
+- `SemanticJobStore.exportMp4` + `autoMp4` job option + background assembly with
+  `mp4Status/mp4Url/mp4Error` on the snapshot; export route delegates to it
+  (404 unknown preserved); viewer requests `autoMp4:true` and surfaces assembly
+  state; `--data-root` isolates export from repo `.data`.
+- Pins: autoMp4 ready/failed recorded without failing the lesson; non-autoMp4 jobs
+  untouched; unknown export rejects loudly.
+
+Validation: `npm run build` clean; focused continuity+jobs+server 21/21; full suite
+247/247; `git diff --check` clean. No live provider run; 11/18 smoke stands.
+Remaining: blind preference gate, semantic PDF/URL ingestion, streaming TTS,
+MOVE/TRANSFORM continuity, fresh live comparison.
+
+---
+
+# Quality implementation — viewer/continuity stage, 2026-09-13
+
+Implemented: `GET /media/semantic/:job/:scene.json` scene route (+json content type);
+viewer `showScene` uses it with job id (dead `compile-from-job`, `/media/semantic-jobs/`
+removed); `export-semantic-job` throws on missing/failed narration per scene;
+`generateV2` bridges `semantic.continuity.keepFromPrevious` concept keys to current
+runtime ids with same role/appearance (compiler reuses geometry, rejects changes).
+
+Validation: `npm run build` clean; `test/semantic-server.test.js` 5/5 (new scene-route +
+viewer-path pins); `test/semantic-continuity.test.js` 1/1 (cross-scene plant geometry
+identical); full suite 242/242. No live provider run in this change; 11/18 smoke and
+9/18 replay numbers stand. Remaining: parallel TTS/visual, background encode + auto MP4,
+human preference gate, semantic PDF/URL ingestion.
+
+---
+
+# Quality implementation — correctness stage, 2026-09-13
+
+Implemented: strict directed relationship/part/timing validation shared with critic repair;
+removed geometry-to-model retry; ID canonicalization preserves topology/anchors/forms;
+awaited atomic scene/audio persistence; request budget and cancellation reach model;
+actual scene counts and nonduplicated costs; request-relative telemetry and honest
+unavailable TTFA; separate normalization/static diagnostics; isolated evaluation reports.
+
+Validation: full suite 239/239; focused critic 8/8. New live smoke: 11/18 complete,
+$0.495662, silent estimated timing (`.data/eval/live/quality-correctness-20260913`).
+Historical Wave 3: 13/18 under weaker contracts; this is NOT a quality improvement claim.
+Normalized saved-output replay: 9/18; originals unchanged, source hashes recorded in
+`.data/eval/live/quality-correctness-replay-normalized-20260913/report.json`.
+Known gaps: DNA relation/part mismatch; other remaining director/schema failures;
+representation, continuity, first-AV concurrency and automatic media still in progress.
+Next: semantic-key model contracts and reusable representations, then a fresh comparison.
+
+---
+
+# 2026-09-13 — Wave 3 live smoke (13/18) + novel-topic narrated video
+
+## Smoke benchmark
+Command: `npm run test:live:v2:smoke -- --runs 3 --budget 2.0 --out .data/eval/live/wave3-3runs`
+Model: `google/gemini-3.8-flash` both stages; `V2_JSON_MODE=object`; silent timing.
+
+| Case | Success / 3 | Note |
+|---|---|---|
+| photosynthesis_inputs | 3 | — |
+| linear_equation | 3 | — |
+| deepseek_mla | 3 (was 1) | comparison demotion fallback works |
+| matrix_multiplication | 2 + 1 partial | token injection works |
+| http_lifecycle | 2 (was 0) | cycle return-arc works; 1 residual overlap |
+| dna_replication | 0 | asset/archetype mismatch (fixed in code after; recheck partial/partial) |
+
+Stage rates: visualDirection/sceneGraph/compile/timeline 14/18 (77.8%);
+fullJob 13/18 (72.2%). Total $0.420567. representationFallbackCount 37.
+
+## Novel-topic video with real audio
+Topic (outside the 48-case manifest): how noise-cancelling headphones silence the
+world. Command: `scripts/generate-v2-video.ts --out output/noise-cancelling
+--scenes 2 --narration --budget 0.5` with cause_effect/transformation/flow/
+structural_diagram allowed.
+- 2/2 scenes exported one-shot: `scene_detection` (structural, 30.8s) +
+  `scene_cancellation` (cause_effect, 32.8s). h264 + aac, durations match.
+- Real local-engine narration: 30.1s + 32.1s WAVs, RMS 1658/1805 (non-silent).
+- 4 model calls, $0.0476, 58.5s wall. Findings: advisories only (static-interval
+  pacing, one warned label truncation).
+- Root issues fixed in code along the way (never scene edits): asset-strip anchor
+  repair, connector safety net, fitLabel 18px floor, recursive artifact mkdir.
+
+## Validation
+- `npm run typecheck` clean; `npm test` 232/232 pass; `git diff --check` clean.
+- Honest limits: silent smoke timing is estimated; static-interval advisories remain;
+  dna needs its hard-lint cause addressed for full completion.
+
+---
+
+# 2026-09-13 — Wave 3: Representation Resolver and fallback composition (no live rerun)
+
+## What changed
+- New `src/semantic/identity/representation.ts`: tiered resolver — strict scored
+  search unioned across all candidate archetypes, then alias-substring asset match
+  constrained to archetype-compatible assets, then labeled-primitive fallback.
+  Every degradation emits a `representation fallback` warning.
+- New `src/semantic/compiler/fallback.ts` (`applyCompositionFallbacks`), wired at
+  the top of `compileScene` (warnings land in scene diagnostics):
+  flow cycle → smallest-id feedback edge becomes a direct return arc (`visualForm
+  none`, excluded from flow ranking in `archetypes.ts`); comparison/transformation
+  overflow → extras demoted to annotations; matrix → curated `math.matrix.v2`
+  assignment + injected `=` token (only when a matrix-family asset is present, so
+  wrong-archetype misuse still throws); missing hero → deterministic promotion;
+  text-only archetypes convert stray assets to labels.
+- `text.ts` gains `fitLabel` (shrink to 14px, then truncate with ellipsis);
+  `compile-scene.ts` and `render-svg.ts` use it instead of throwing `wrapLabel`.
+- `visual-director.ts`: asset candidates via the resolver (union archetypes);
+  removed the `No teaching asset for hero concept` throw; appends a
+  primitive-fallback note to the director prompt when concepts lack candidates.
+- `generate.ts` emits a `representation` telemetry stage (fallback warnings +
+  count); `metrics.ts` derives `representationResolutionSuccess` from it and counts
+  `representation fallback` diagnostics into `representationFallbackCount`.
+
+## Validation (local, no provider calls)
+- `npm run typecheck`: clean. `git diff --check`: clean.
+- `npm test`: **228/228 pass** (was 217/217; +11 in `test/representation-fallback.test.js`).
+- Covers all five Wave 2 failure modes offline: dna substring match, primitive
+  fallback for unmatched concepts, flow-cycle return arc, comparison demotion,
+  matrix token injection, long-token fit, hero promotion, metrics counting.
+- One existing test updated to the new intended behavior (flow cycle degrades
+  instead of throwing); placement-level bound tests and the wrong-archetype
+  matrix fail-closed pin are unchanged.
+
+## Interpretation and limits
+- The five Wave 2 hard failures (5 asset, 2 flow-cycle, 2 comparison-count,
+  2 label-width, 1 matrix-token across 11 failed runs) now have deterministic
+  fallback paths, but **no live smoke rerun was executed in this pass**, so no
+  success-rate delta is claimed. Run
+  `npm run test:live:v2:smoke -- --runs 3 --budget 2.0 --out .data/eval/live/wave3-3runs`
+  with a provider key to measure.
+- Fallbacks preserve concepts/beats/narration and stay visible in diagnostics;
+  they do not silently convert unsupported operations to generic boxes, but they
+  do trade layout fidelity (return arcs, demotions, injected tokens) for
+  completion — confirm on the smoke benchmark that none masks a planning gap.
+
+---
+
+# 2026-09-13 — Wave 1 live reliability harness (smoke benchmark)
+
+Command: `npm run test:live:v2:smoke -- --runs 3 --budget 2.0 --out .data/eval/live/smoke-3runs-v2`
+
+Config hash: `a7ae0569d74f2e32`. Model: `google/gemini-3.8-flash` for teaching
+and director; `V2_JSON_MODE=object`; silent estimated timing.
+
+Cases: 6 smoke cases × 3 runs = 18 generations.
+
+## Stage success rates
+
+| Stage | Pass | Fail | Rate |
+|---|---|---|---|
+| sourceUnderstandingSuccess | 18 | 0 | 100% |
+| teachingPlanSuccess | 18 | 0 | 100% |
+| storyboardSuccess | 18 | 0 | 100% |
+| mentalModelSuccess | 18 | 0 | 100% |
+| representationResolutionSuccess | 18 | 0 | 100% |
+| visualDirectionSuccess | 8 | 10 | 44.4% |
+| sceneGraphSuccess | 8 | 10 | 44.4% |
+| compileSuccess | 8 | 10 | 44.4% |
+| timelineSuccess | 8 | 10 | 44.4% |
+| ttsSuccess | 0 | 18 | 0% *(silent runs)* |
+| fullJobSuccess | 8 | 10 | 44.4% |
+
+## Case-level results
+
+| Case | Category | Runs | Success | Error | Mean cost | Mean full ms |
+|---|---|---|---|---|---|---|
+| photosynthesis_inputs | structural | 3 | 3 | 0 | $0.021651 | 14 381 |
+| linear_equation | equation | 3 | 3 | 0 | $0.020817 | 14 390 |
+| deepseek_mla | comparison | 3 | 2 | 1 | $0.023754 | 15 578 |
+| dna_replication | spatial_process | 3 | 0 | 3 | $0.009744 | — |
+| matrix_multiplication | matrix | 3 | 0 | 3 | $0.027018 | — |
+| http_lifecycle | flow | 3 | 0 | 3 | $0.019387 | — |
+
+## Failure taxonomy
+
+- `plan`: 5 — `Flow contains a cycle`, `Matrix operation requires an operator or equals token`, `Label token exceeds available width`, `Label needs more than three lines`.
+- `asset`: 4 — `No teaching asset for hero concept ...` (DNA `parent_dna`, HTTP `client_browser`).
+- `unknown`: 1.
+
+## Cost and latency
+
+- Total cost: **$0.367112**.
+- Mean cost/run: **$0.020395**.
+- fullPlayableMs: P50 **14.8 s**, mean **14.7 s** on successful runs.
+- firstAVPlayableMs not measured because runs were silent.
+
+## Interpretation
+
+Teaching planning and mental-model selection are reliable with the current model
+configuration. Visual direction and compile are the dominant failure modes: missing
+hero assets, narrow primitive pipelines, and archetype mismatches. These failures
+are captured, not healed into generic boxes, which is the intended Wave 1 behavior.
+
+Artifacts: `.data/eval/live/smoke-3runs-v2/`; report: `eval/live/reports/latest.md`.
+
+---
+
+# 2026-09-13 — Wave 2: canonical semantic identity (smoke benchmark)
+
+Command: `npm run test:live:v2:smoke -- --runs 3 --budget 2.0 --out .data/eval/live/wave2-3runs-fixed`
+
+Model: `google/gemini-3.8-flash`; `V2_JSON_MODE=object`; silent estimated timing.
+Config hash: `a7ae0569d74f2e32`.
+
+## What changed
+- Added `src/semantic/identity/` layer: `types.ts`, `resolver.ts`, `canonicalize.ts`,
+  `canonical-schemas.ts`, `registry.ts`, `references.ts`, `index.ts`.
+- Runtime now generates deterministic object/relation/action IDs and rewrites
+  model-generated IDs after `directVisual` succeeds.
+- Semantic keys remain authoritative; unknown semantic parts degrade to `center`.
+- Added `test/semantic-identity.test.js` (6 tests, all pass).
+
+## Stage success rates
+
+| Stage | Pass | Fail | Rate |
+|---|---|---|---|
+| sourceUnderstandingSuccess | 18 | 0 | 100% |
+| teachingPlanSuccess | 18 | 0 | 100% |
+| storyboardSuccess | 18 | 0 | 100% |
+| mentalModelSuccess | 18 | 0 | 100% |
+| representationResolutionSuccess | 18 | 0 | 100% |
+| visualDirectionSuccess | 7 | 11 | 38.9% |
+| sceneGraphSuccess | 7 | 11 | 38.9% |
+| compileSuccess | 7 | 11 | 38.9% |
+| timelineSuccess | 7 | 11 | 38.9% |
+| ttsSuccess | 0 | 18 | 0% |
+| fullJobSuccess | 7 | 11 | 38.9% |
+
+## Case-level results
+
+| Case | Category | Runs | Success | Error | Mean cost |
+|---|---|---|---|---|---|
+| photosynthesis_inputs | structural | 3 | 3 | 0 | $0.020615 |
+| dna_replication | spatial_process | 3 | 0 | 3 | $0.008167 |
+| linear_equation | equation | 3 | 3 | 0 | $0.023939 |
+| matrix_multiplication | matrix | 3 | 0 | 3 | $0.032907 |
+| deepseek_mla | comparison | 3 | 1 | 2 | $0.025900 |
+| http_lifecycle | flow | 3 | 0 | 3 | $0.018564 |
+
+## Failure taxonomy
+
+- `plan`: 7 — flow cycle detection, comparison primary count, matrix operator tokens.
+- `asset`: 4 — missing hero assets for `dna_molecule` and `web_browser`.
+
+## Cost and latency
+
+- Total cost: **$0.390277**.
+- Mean cost/run: **$0.021682**.
+- fullPlayableMs: P50 **14.9 s**, mean **15.2 s** on successful runs.
+- firstAVPlayableMs not measured because runs were silent.
+
+## Interpretation
+
+Identity layer successfully moved ID ownership to runtime; failures stayed in
+representation/archetype/asset coverage, which confirms these are the next levers.
+Teaching plan and mental model selection remain reliable.
+
+Artifacts: `.data/eval/live/wave2-3runs-fixed/`; report `eval/live/reports/wave2-3runs.md`.
+
+---
+
 # 2026-09-13 — First live V2 semantic job through the synchronous path
 
 Job `94117016-bb4b-4dfa-bbf4-c09d6ea6054f` via `POST /api/semantic/jobs`
@@ -1085,3 +1487,60 @@ Those gates remain explicit in `EXPERIMENTS.md`. Do not relabel them passed beca
 - Out-of-order chapter→TTS deliberately NOT changed: in-order commit is
   load-bearing for monotonic playback; planning already overlaps via 5-way
   concurrency.
+## 2026-09-14 — long-form paper generation attempt
+
+- 60-minute narrated run requested for [arXiv 2607.07663](https://arxiv.org/pdf/2607.07663): source extraction passed (100,669 characters, 35 sections), then the first OpenRouter outline call returned HTTP 403.
+- Job `ef8e3126-14dd-43f8-8845-0968c96e1079` ended `error/provider` with 0 scenes, 0 model calls, 0 audio/video output, and `$0.00` recorded cost.
+- The 30-minute local DeepSeek V4.1 PDF request remains pending explicit approval to transmit that local document to the external model provider.
+- Provider recovery smoke: after the limit update, the same frontend HTTP path
+  returned `200` for `/api/config`, accepted a one-minute model job, and completed
+  the Gemini outline plus Qwen content calls for `$0.00509` before cancellation.
+  The remaining work was slow provider latency; no new 403 occurred.
+- Current configured shortlist: DeepSeek V3.2 for outline/content on long documents,
+  Gemini 3 Flash Preview for director/vision, and Qwen 3.5 27B as the alternate
+  content route. This change addresses the observed Google AI Studio 504 followed
+  by OpenRouter 400 `INVALID_ARGUMENT` on the large-source outline request.
+- Frontend preparation RCA: job `0c963f8e-3473-44b5-89b0-0c7fbf88bcc8` failed
+  before scene 1 because Google AI Studio returned a 504 upstream timeout and
+  OpenRouter surfaced a 400 invalid argument. The active route is now DeepSeek
+  V3.2 for outline/content, with Gemini retained for visual stages.
+- A full 30-minute DeepSeek-outline attempt received HTTP 200 headers but timed out
+  before the response body completed (150s, 0 recorded calls/cost). Google model
+  requests now omit provider-incompatible `cache_control` content parts; this keeps
+  strict JSON schema while avoiding the observed AI Studio `INVALID_ARGUMENT` path.
+- Three cache-disabled Gemini 30-minute outline attempts still returned
+  `INVALID_ARGUMENT` (0 calls, $0). Long outlines now use provider `json_object`
+  mode because Google rejects the exact 30-item strict schema; local validation and
+  repair remain unchanged.
+
+## 2026-09-14 — DeepSeek V4.1 report, 30-minute one-shot generation
+
+- Source: local `DeepSeek_V41_Tech_Report.pdf` (1.7 MB). Ingestion extracted
+  161,123 characters, 37 sections, and four detected/described figures; the model
+  received a 64,048-character grounded brief after explicit user approval.
+- Job `827ee077-6098-43f5-a7ea-735e515d0af6` completed on its first generation
+  attempt with 30 chapters, 60 compiled scenes, and local `voice-engine` narration.
+  The requested 30-minute target produced 2,047.865 seconds (34:07.865), an
+  overshoot of 247.865 seconds / 13.77%.
+- First playable A/V: 80.625 seconds. Full prepared timeline: 467.067 seconds.
+  Export: 115.947 seconds render + 10.886 seconds mux; end-to-end CLI wall time:
+  594.163 seconds (9:54.163).
+- Model route: `google/gemini-3-flash-preview`. Usage: 81 calls, 526,120 prompt
+  tokens, 57,068 completion tokens, 9,150 cached tokens, 27 bounded repairs, and
+  **$0.425845** recorded planning cost ($0.01419/requested minute or
+  $0.01247/actual minute). Local voice synthesis incurred no provider charge;
+  machine/electricity cost is not measured.
+- Export validation (`ffprobe`): H.264 1280×720 at 12 fps plus mono AAC at 24 kHz,
+  duration 2,047.916667 seconds, 50,935,451 bytes. Renderer produced 24,575 frames
+  and 60 SVG scene artifacts.
+- Degradation ledger: five semantic-gate findings were deferred after bounded
+  repair exhaustion; three chapters used deterministic direction fallback after
+  director failures; six shape diagnostics remained. Job-level representation
+  `fallbackCount` was zero and no scene/audio/export failed. These are successful
+  reliability results, not a claim that the output passed subjective teaching or
+  visual-quality review.
+- Root-cause fix validated: Google AI Studio rejected the exact 30-item strict
+  outline schema with HTTP 400 `INVALID_ARGUMENT`. Long outlines now use provider
+  `json_object` mode, while local outline schema validation and one bounded repair
+  remain authoritative. The first response contained 20 chapters; repair produced
+  the required 30 and the remainder of the provider run completed without 400/403.

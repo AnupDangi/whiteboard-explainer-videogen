@@ -543,3 +543,10 @@ draws them coherently,
 coordinates them with narration,
 and measurably improves understanding.
 ```
+# Implementation alignment note, 2026-09-14
+
+Live reports now expose Truth, Teaching, Visual, Timing, Continuity,
+Reliability, Performance, and Cost separately, plus per-stage P50/P95 latency,
+tokens, cost, semantic coverage, failures, repairs, and case regressions. These
+are structural measurements until the fixed narrated corpus and independent
+human/comprehension protocols in this document are rerun.

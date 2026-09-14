@@ -1,5 +1,16 @@
 # V4 document implementation — semantic pipeline V2
 
+> **Currency note (2026-09-13):** entries below are append-only history. Current
+> architecture: `ARCHITECTURE.md`; current state: `HANDOFF.md`. Corrections to the
+> above tail: the critic-repair wiring, prompt builder, speech adapter and
+> progressive jobs all landed; flow cycles now degrade to return arcs instead of
+> rejecting; Wave 3 added the tiered Representation Resolver and composition
+> fallbacks (13/18 live smoke, `test:live:v2:smoke`). On 2026-09-14 the
+> semantic path gained the `teaching-compiler-v1` harness kernel, lesson-wide
+> learner/identity state, stage journals, publication gates, stage accounting,
+> and long-form UI controls. See the current top entry in `HANDOFF.md`; live and
+> human migration gates remain open.
+
 Source contract: `../../v4_docs/{Architecture(1),Tasks,Tests,Harness,Evalaution}.md`.
 The documents call the new runtime **V2**; this is separate from earlier V1 sketch-style
 experiments also labeled V2. Branch: `v4-optimization`. No commits or pushes made.

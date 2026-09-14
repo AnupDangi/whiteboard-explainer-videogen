@@ -3,6 +3,13 @@
 Source-grounded visual teaching compiler. Not Simi source code; Simi is a
 quality/performance benchmark only. See `AGENTS.md`.
 
+Current implementation note (2026-09-14): semantic V2 is wrapped by the
+versioned `teaching-compiler-v1` harness with typed learner, identity, stage,
+journal, representation, gate, and accounting contracts. This is an additive
+compatibility refactor; the 48×3 narrated and human migration gates remain open,
+so V1 is still the default. Exact evidence and limitations are in
+`../HANDOFF.md` and `../RESULTS.md`.
+
 | Doc | Contract |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Production architecture: semantic storyboard, mental-model selector, concept/visual bible, asset engine, SceneGraph V2, hero-first composition compiler, semantic collisions, path drawing, timing compiler, progressive playback, plant benchmark. |
