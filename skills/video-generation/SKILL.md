@@ -1,91 +1,80 @@
 ---
 name: video-generation
-description: End-to-end whiteboard video generation — plan chapters, synthesize narration, compile canvas scenes, verify, export MP4. Supports 1/5/10-minute targets.
+description: >
+  End-to-end orchestrator. Use to plan, narrate, compile, verify, and export
+  a lesson MP4. Owns sequencing and budgets, not stage internals.
 ---
 
-# Video generation skill (orchestrator)
+# Purpose
 
-Generate narrated whiteboard videos with the prompt-builder → planner →
-director → compiler → speech → renderer pipeline. Default model stack:
-planner + director on `OPENROUTER_MODEL` (default
-`google/gemini-3.8-flash` — confirmed current best fast/structured-JSON
-model in the OpenRouter catalog; tested alternative: `google/gemini-3.7-flash`),
-optional critic on `openai/gpt-5.6-luna`, speech on the external local
-voice-engine (Supertonic 3 default, Piper fallback). The engine is a separate
-project — never re-add a hosted speech provider to this repo. Deterministic engine only — no generated drawing code,
-no Manim.
+Run prompt-builder -> teaching-architect -> planner -> director -> speech +
+compile -> critic -> export in order, with cost/latency budgets and honest
+failure records. Deterministic engine only; no drawing code, no Manim.
 
-## Prerequisites
+# When to use
 
-`.env` with `OPENROUTER_API_KEY` (+ optional `OPENROUTER_MODEL`).
-FFmpeg + `npm install` (sharp) required for MP4 export. Local narration needs
-no speech key. Never commit `.env`, `.data/`, or `output/`.
+User requests a video or eval run from prompt/URL/PDF/text with a duration
+target and budget.
 
-## Local voice-engine (free, CPU, no key)
+# When NOT to use
 
-The engine is a separate project at `voice-engine`. One-time
-setup there:
+Single-stage work (call that stage skill directly), metric design
+(eval-builder), teaching validation (pedagogy-critic).
 
-```bash
-cd voice-engine
-npm run setup   # uv venv + Supertonic + Piper voices (English, Nepali)
-npm run build
-```
+# Inputs
 
-The main repo calls it over an async JSON stdin/stdout boundary. Supertonic 3 is
-the default for its 31 languages; Piper is the fallback for everything else;
-Nepali is always Piper. Override with `VOICE_ENGINE_DIR`, `VOICE_ENGINE_LANGUAGE`,
-`VOICE_ENGINE_PROVIDER=auto|supertonic|piper`. Local engines return audio
-duration only, so timings are explicitly estimated (`engine`), never
-provider-aligned. Kokoro was removed from this repo on 2026-09-12.
+- Source (prompt text | URL | PDF path | extracted text).
+- Duration target minutes (1/5/10/30), USD budget, language, narration
+  on/off, critic on/off, enrich on/off.
 
-## Quick evaluations (JSON + thumbnail, no MP4)
+# Outputs
 
-```bash
-npm run build
-npm run test:live -- --minutes 1 --voice --tts voice-engine --budget 0.5 \
-  --prompt "Your rich topic prompt here"
-# --minutes 1|5|10|30 · --tts voice-engine (only) · --budget USD cap
-# --prompt TEXT | --url URL | --pdf FILE
-```
+- `.data/.../job.json` (scenes, audio, costs, telemetry) consumed by
+  library (`GET /api/jobs`), resume (`/?job=`), eval-builder.
+- `output/<id>.mp4` (H264+AAC) consumed by viewer download/export route.
+- Run log (job id, scenes, cost, TTS chars, elapsed) consumed by HANDOFF/
+  RESULTS. Provider failures recorded, never masked as fixture success.
 
-Each chapter = 2 scenes ≈ 1 minute. Budget ≈ $0.50/minute of planning.
-Output: `.data/JOB/job.json` + `output/evaluations/JOB.json|.png`.
+# Hard invariants
 
-## Full MP4 videos from any source (demo default: local voice-engine)
+- Scene count `2 x minutes` is a **planning target**, not a teaching rule.
+  Final count follows TeachingContract beats + duration budget; record
+  deviation with reason.
+- Narration 110-160 words/chapter target; pacing (static interval <=3500ms)
+  gates quality, not completion.
+- Speech local-only voice-engine (Supertonic 3 default, Piper fallback,
+  Nepali always Piper). Never re-add hosted TTS. Timings labeled estimated.
+- Keys in `.env`, media in `.data/`, exports in `output/`; never commit.
+- Same SVGs for browser and export via `renderSVG`.
 
-```bash
-npm run build
-npm run generate-video -- --url https://arxiv.org/pdf/1512.03385 --minutes 1
-npm run generate-video -- --pdf ./paper.pdf --minutes 1 --model google/gemini-3.7-flash
-npm run generate-video -- --prompt "Explain how a refrigerator works" --minutes 1
-# --minutes accepts 1,5,10,30 (comma list allowed: 1,5,10)
-# --model overrides OPENROUTER_MODEL per run · --tts voice-engine is the default
-#   (no flag needed; local-only: Supertonic 3 / Piper)
-#   --language en|hi|ne|... selects the TTS language
-#   --no-enrich to skip the prompt-builder
-#   --no-narration for silent preview · --visual-critic for repair pass
-```
+# Decision procedure
 
-You supply ONLY the source — the internal prompt-builder (see
-`prompt-builder` skill) enriches it into the rich visual brief. The default
-when no source is given is Attention Is All You Need.
+1. Ingest source (pdf-extraction only if native parse fails; see its skill).
+2. Enrich brief (unless --no-enrich) -> architect contract -> plan scenes
+   (target count, adjust to beats) -> direct -> parallel speech+compile ->
+   critic gate (if on) -> export MP4.
+3. On stage failure: persist partial, log taxonomy (plan/asset/provider),
+   stop claiming success. Retry bounded only.
 
-## Rich prompt recipe (only needed with --no-enrich)
+# Failure conditions
 
-Cover: audience + prerequisites, 3–6 key questions the video must answer,
-concrete examples/numbers to ground anchors, misconceptions to correct,
-and explicit scope exclusions. Longer targets add sections, never padding:
-each chapter gets a distinct objective from the global outline, and the
-planner enforces 110–160 narration words per chapter.
+- 403/auth/provider outage -> visible failure record, $0 misleading success
+  forbidden. Missing FFmpeg/sharp -> export fails loudly. Budget exhausted
+  -> stop before unmetered calls.
 
-## Verify before delivering
+# Repair behavior
 
-1. `npm test` — all passing, 0 failing (the voice-engine boundary is tested with
-   an injected runner; no provider process is required).
-2. Job status `complete`; scene count = 2 × minutes; narration word count
-   ≈ 110–160/chapter; shapes mixed (not all-box — check
-   `job.json` node `shape` fields); `renderSVG` deterministic.
-3. MP4 plays with narration in sync; subtitle bar never covers content;
-   `output/videos/*.mp4` listed with sizes.
-4. Record: job id, minutes, scenes, planning cost, TTS chars, elapsed ms.
+Resume from persisted snapshot; re-run failed stage only. Heals are
+deterministic (schema/array/enum); pedagogy issues return to architect.
+
+# Success criteria
+
+- Job complete/partial honestly labeled; scene durations match audio + tail;
+  `ffprobe` H264+AAC; `npm test` green; HANDOFF/RESULTS updated with exact
+  tests, limits, next task.
+
+# Representative evals
+
+- `eval:duration-target`: 1-min run -> scenes near target, deviation logged.
+- `eval:export-integrity`: ffprobe codec/duration + frame count match plan.
+  See `references/evaluation.md`.

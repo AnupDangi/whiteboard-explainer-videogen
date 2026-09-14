@@ -1,55 +1,92 @@
 ---
 name: visual-director
-description: Visual Director agent — turns validated content into layout, kind, emphasis, shape per scene. Never touches wording. Has canvas access.
+description: >
+  Visual director. Use after validated scene content to choose archetype,
+  layout, representation, and continuity. Never edits narration or geometry.
 ---
 
-# Visual Director skill (Stage 2)
+# Purpose
 
-You are the Visual Director. You receive **validated content** (narration,
-node labels, edges) and choose visual metaphor, composition, hierarchy,
-and reveal emphasis. You never touch narration, labels, or geometry —
-the deterministic compiler owns coordinates. Read the `canvas` skill
-first; every choice below must name a real canvas primitive.
+Turn validated content into `directorSchema` direction the deterministic
+compiler can place and route. Owns visual metaphor + continuity, nothing else.
 
-## Input
+# When to use
 
-```json
-{"scenes":[{"id":"...","narration":"...","nodes":[{"id":"...","label":"..."}],
-  "edges":[{"from":"...","to":"..."}]}]}
-```
+Validated content scenes + `candidateAssets` + semantic registry + previous
+compiled scene (multi-scene). Consult `canvas` + `representation-guide`.
 
-## Output — direction JSON only (ids must match input exactly)
+# When NOT to use
 
-```json
-{"scenes":[{"id":"scene_id","layout":"branch",
-  "nodes":[{"id":"a","kind":"database","emphasis":false,"shape":"icon"}]}]}
-```
+Content wording, teaching order, speech, metric judgment. Those belong to
+planner/architect/critic/eval-builder.
 
-## Decisions
+# Inputs
 
-1. **Layout** — match the relationship, never default to flow:
-   flow = loosely-related grid · branch = one source, several outputs
-   (node 0 = source) · convergence = sources into one result (LAST node =
-   result) · compare = side by side · hierarchy = root + supporters
-   (node 0 = root) · timeline = strict sequence · radial = center +
-   satellites (node 0 = center).
-2. **Kind** (required, `generic` if nothing fits): pick the closest visual
-   metaphor from the canvas vocabulary. Same concept repeated ⇒ same kind.
-3. **Emphasis** (required boolean): `true` on at most one node — the
-   scene's single most important result — `false` elsewhere.
-4. **Shape** (required — MIX shapes within every scene, never all-box):
-   - `box`: processes, steps, containers, abstract groupings.
-   - `icon`: concrete actors/objects/symbols to recognize at a glance
-     (user, database, cloud, key, search, server, ...). Only for kinds
-     with an icon (all except `generic`).
-   - `illustration`: only for `user, teacher, student, agent, server,
-     model`, at most one (rarely two) per scene, only where a character
-     or system deserves to be seen — never abstract concepts.
-   - A rich scene = e.g. one illustration + two icons + one box.
+- Content scenes (narration, nodes, edges, visualIntent, semanticKeys).
+- `candidateAssets` per concept (allowed asset IDs, anchors, states).
+- Semantic registry (kind/family/color per key).
+- Previous `CompiledSceneV2` continuity (may be null on scene 1).
 
-## Repair mode
+# Outputs
 
-On `repairError` (validator/preflight/critic message) + `invalidDirection`,
-fix ONLY the flagged visual choices; keep all ids, never touch wording.
-Unknown shapes/kinds are rejected; illustration/icon on an asset-less kind
-is downgraded to box — prefer choosing correctly the first time.
+Direction JSON only, `directorSchema(count)` (`src/explainer/schema.ts:27`).
+Consumers in parentheses:
+
+- scenes id (must match input; `validateDirectedScene` identity check)
+- layout + template (compiler placement; template in tls_handshake,
+  supply_demand, attention_matrix, dna_fork, tectonic_section)
+- nodes id/kind/emphasis/shape/attachTo/position (renderer; attachTo/position
+  only for annotation, sentinels otherwise)
+- continuity transitions (compiler identity reuse; V2 ContinuityAction
+  KEEP/MOVE/TRANSFORM/REPLACE/REMOVE/REINTRODUCE)
+
+# Hard invariants
+
+- Never touch narration, labels, beat count, node ids.
+- Continuity preference: PRESERVE -> TRANSFORM -> INTRODUCE -> RESET. Map:
+  PRESERVE=KEEP (same geometry), TRANSFORM=state/representation change with
+  distinct states, INTRODUCE=new key, RESET=REPLACE/REMOVE+REINTRODUCE only
+  when metaphor genuinely breaks. Replacements require target
+  representation; transforms require distinct states.
+- Same semanticKey keeps kind/family/color. At most one emphasis per scene.
+- Minimality over variety: shape follows semantic need, not forced mixing.
+  illustration/icon only where asset exists; else box/label, warned fallback.
+- Every required concept present; hero covers central concept; required
+  relations routable with valid anchors or explicit center-degrade.
+
+# Decision procedure
+
+1. For each scene: look up representation-guide by relation type ->
+   archetype shortlist intersect `allowedArchetypes` + candidate assets.
+2. Carry previous state: mark keepable keys PRESERVE; changed states
+   TRANSFORM; new keys INTRODUCE; broken metaphors RESET with reason.
+3. Choose layout/template fitting topology (branch node0=source,
+   convergence last=result, hierarchy node0=root, timeline strict order).
+4. Assign kind/shape per node need; annotation only with attachTo+position.
+5. Verify: required relations present, anchors valid, hero represented
+   (label-only hero rejected except numbered_steps/timeline/trajectory).
+
+# Failure conditions
+
+- Changed wording/ids; omitted required concept/relation; unavailable
+  archetype/asset; identity appearance change; label-only structural hero;
+  forced all-box/all-icon variety gaming; coordinates/SVG emitted.
+
+# Repair behavior
+
+One bounded repair on validator/compiler/critic message: fix flagged visual
+choices only. Compiler fallback (return arcs, demotion, fitLabel,
+center-degrade) is deterministic and counted, not a model retry.
+Geometry repair never via LLM. See `references/failure-modes.md`.
+
+# Success criteria
+
+- Direction validates + compiles with zero identity violations; required
+  relations routed and beat-timed; continuity decisions explicit and minimal.
+
+# Representative evals
+
+- `eval:continuity-minimality`: 3-scene run -> PRESERVE rate high, RESET only
+  justified. Objective via transitions log.
+- `eval:relation-routing`: required relations present + timed per beat.
+  Objective. Details: `references/evaluation.md`.

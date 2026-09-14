@@ -1,90 +1,88 @@
 ---
 name: canvas
-description: Deterministic whiteboard canvas access for explain-canvas-lab agents — logical canvas, shapes, icons, illustrations, layouts, drawing grammar.
+description: >
+  Shared renderer contract for explain-canvas-lab. Use when any agent emits or
+  reviews scene data. Never generates SVG, coordinates, pixels, or code.
 ---
 
-# Canvas skill — the only drawing surface agents may use
+# Purpose
 
-Agents never emit SVG, pixels, or executable drawing code. Agents emit
-validated scene **data**; `src/engine.ts` owns all geometry and rendering.
-This skill documents the canvas contract so planner/director prompts stay
-grounded in what the renderer can actually draw.
+Single source of drawing truth. All planner/director prompts ground here so
+agents request only what `compileScene` + `renderSVG(scene,timeMs)` can draw.
+Deterministic runtime owns geometry, IDs, routing, timing, rendering, export.
 
-## Logical canvas
+# When to use
 
-- Size: **1280 × 720**. Title band occupies y < 150, subtitle bar y 640–698.
-- Safe drawing region: x in [0, 1280], y in **[150, 600]**.
-  `compileScene` + `preflightScene` reject anything outside it.
-- Render entry: `renderSVG(compiledScene, timeMs)` — pure, deterministic,
-  shared by browser playback and MP4 export. Same timestamp ⇒ same pixels.
+Any stage emitting or validating scene data: teaching content, visual
+direction, critic repair, eval rendering.
 
-## Node shapes (mix them — never one shape for a whole scene)
+# When NOT to use
 
-1. `box` (default) — rounded-rect outline drawn stroke-by-stroke
-   (dash reveal, 900 ms), small kind glyph top-left, centered label,
-   pastel fill after 35%. Best for steps, processes, containers.
-2. `icon` — **paste the kind's icon large with the label written BESIDE it,
-   no box border or fill.** Icon pops in with a quick scale+fade (first 35%
-   of the 900 ms draw), label reads on beside it. Best for simple actors,
-   objects, symbols the viewer should recognize before reading.
-   Requires `kind` to have an icon (everything except `generic`).
-   See `src/icons.ts` + `hasIcon()`.
-3. `illustration` — full multi-part figure drawn stroke-by-stroke in stages
-   (major outline 45% → secondary detail 30% → fill wash 25%, 1700 ms total)
-   with a caption strip below. Valid for kinds with a reusable figure:
-   `user, teacher, student, agent, server, model, plant, sun, browser,
-   phone, robot, pipeline`. See `src/illustrations.ts` + `hasIllustration()`.
-   At most one (rarely two) per scene; never for abstract concepts.
-4. `circle` / `square` — box behavior with round/sharp containers (circle has
-   no corner glyph). Best for cycles, cells, round entities / rigid artifacts.
-5. `bullet` — no container; label renders as a bulleted key-point list
-   (points separated by `. `, ≤120 chars). Best for recap/takeaway nodes.
-6. `number` — round badge with the count BIG. Best for narrated quantities.
-   Short labels only; type shrinks to fit.
-7. `annotation` — short floating caption attached via `attachTo` (target node
-   id) + `position` (below|above|left|right); compiler places it, plus scene
-   notes auto-promote to marginalia. Best for definitions, units, warnings.
+Source ingestion, speech synthesis, job orchestration, metric computation.
+Those live in runtime, not this contract.
 
-A rich scene mixes shapes, e.g. one illustration + two icons + one box.
+# Inputs
 
-## Kind vocabulary (`src/vocabulary.ts` — single source of truth)
+None. This skill is a read-only contract. Runtime capability sources:
+`src/shared/vocabulary.ts` (kinds/layouts), `src/semantic/types.ts`
+(archetypes/relations/zones), `src/semantic/assets/registry.ts` (assets),
+`src/semantic/compiler/*` (layout/routing), `src/semantic/renderer/*`.
 
-`generic, question, key, container, database, model, user, document, api,
-cloud, memory, search, vector, token, brain, lock, warning, success, graph,
-matrix, agent, server, file, image, request, response, idea, teacher,
-student, book, example, result, equation, probability, atom, cell, energy,
-input, process, output, loop, choice, attract, repel, note, tool, cycle,
-light, temperature, molecule, plant, sun, browser, phone, robot, pipeline`
+# Outputs
 
-- `generic` renders no glyph — use only when nothing fits.
-- Kind selects the icon glyph AND the accent stroke color (`src/style.ts`).
-- Same concept repeated across scenes keeps the same kind + color.
-- Opposites get opposite kinds (`attract` vs `repel`) — never one kind for both.
-- Edges accept short verb labels (≤24 chars); emphasis nodes get a highlight wash.
+None emitted. Consumers of the contract: `whiteboard-planner` (content
+bounds), `visual-director` (legal choices), `pedagogy-critic`
+(visual_dependency), `eval-builder` (render checks).
 
-## Layouts (topology before coordinates — never emit x/y)
+# Hard invariants
 
-`flow` loosely-related grid · `branch` one source → outputs (node 0 =
-source) · `convergence` sources → one result (LAST node = result) ·
-`compare` side-by-side · `hierarchy` root + children (node 0 = root) ·
-`timeline` strict left-to-right sequence · `radial` center + satellites
-(node 0 = center). 2–6 nodes per scene; compiler resolves geometry,
-connector routing, whitespace, safe regions. One learning objective per
-scene — split crowded scenes instead of shrinking.
+- Agents emit scene **data** only. Never SVG, x/y, pixels, code, Manim.
+- Logical canvas 1280x720. Safe band y 150-600. Title y<150, subtitle 640-698.
+  Compiler rejects out-of-bounds; agents never position by coordinate.
+- V1 layouts from `LAYOUTS`; V2 archetypes 19 in `ARCHETYPES`
+  (`src/semantic/types.ts:3`). Archetype availability is per-job
+  (`allowedArchetypes`); never request an unavailable one.
+- Semantic minimality: every node must encode a required entity, state,
+  relation endpoint, transformation, quantity, hierarchy level, sequence step,
+  or contrast. No decorative nodes. No forced shape variety.
+- Persistent visual identity: same concept across scenes keeps same
+  `semanticKey`/`conceptId`, kind, visual family, color role. Appearance
+  changes are compiler-rejected identity violations.
+- Anchors are 1-3 verbatim words from own-scene narration. Runtime resolves
+  `wordIndex`; agents never emit indices.
+- Bounds: 2-6 nodes/scene, <=10 edges, same-scene endpoints only,
+  labels <=40 chars (V1 content schema allows <=120, renderer wraps),
+  titles <=70, notes <=170.
 
-## Drawing grammar (`renderSVG`)
+# Decision procedure
 
-Title fade-in → node outline/icon/illustration reveal → label/caption →
-edge path draw + arrowhead → fill/highlight → result emphasis. A pencil
-cursor follows the single active stroke (perimeter point for boxes,
-path point for edges) and hides at rest. Visual order tracks narration
-anchors: object may start ~80 ms before its spoken term.
+1. Need a visual element? Map to representation-guide first (semantic fit).
+2. Need identity? Reuse existing `semanticKey`, kind, family. New concept?
+   Register once, keep stable thereafter.
+3. Need emphasis? At most one hero/result per scene; highlight wash only.
+4. Crowded? Split scene (one objective each), never shrink into overlap.
 
-## Constraints agents must respect
+# Failure conditions
 
-- Labels ≤ 40 chars (engine wraps + rejects overflow); titles ≤ 70.
-- `wordIndex` is resolved server-side from a verbatim 1–3 word `anchor`
-  copied exactly from the scene narration — never invent indices.
-- 2–6 nodes, ≤ 10 edges, edges reference same-scene node ids only.
-- Never place annotations by coordinates; `note` (≤ 170 chars) is the
-  only caption channel and the compiler positions everything else.
+- Requested archetype/layout outside job allowlist or asset outside
+  `candidateAssets` -> compiler/director validation throws.
+- Decorative node, duplicate concept with new kind/family, invented anchor
+  indices, coordinates, SVG, shape for abstract-only illustration abuse.
+
+# Repair behavior
+
+Deterministic only: `compileScene` fallback demotes extras, fits labels,
+degrades bad anchors to `center`, fails closed on unknown assets/identity
+breaks. No LLM geometry repair. See `references/failure-modes.md`.
+
+# Success criteria
+
+- All emitted scenes compile with zero identity violations.
+- No fallback diagnostics except explicitly warned representation fallbacks.
+- Same timestamp renders byte-identical SVG in browser and export.
+
+# Representative evals
+
+- Determinism: render same scene at same ms twice -> identical bytes.
+- Identity: repeat concept across 3 scenes -> same kind/family, zero
+  appearance rejections. Details: `references/evaluation.md`.
