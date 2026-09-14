@@ -1,3 +1,32 @@
+# Phase 2 real source-grounded knowledge compiler, 2026-09-14
+
+Grounded sources (PDF/text) now run a real knowledge-compiler model stage
+(`src/semantic/planning/knowledge-compiler.ts`, prompt per the
+`knowledge-compiler` skill): one canonical concept per meaning with
+normalization-collapsed aliases, prerequisite DAG, causal mechanisms, claims
+with verbatim evidence, quantities and terminology. Deterministic validation
+merges spelling variants through `normalizeSemanticKey`, and rejects alias
+forks, prerequisite cycles, orphan claims, unknown references and any evidence
+quote absent from the source text. The model contract's schema forbids
+coordinates, code, executable fields and unknown keys. The teaching stage is
+then grounded: concept ids, required concepts, requirement ids and evidence ids
+must all come from the compiled inventory (`planTeaching` with `conceptGraph`).
+Prompt-only jobs keep the previous deterministic projection path unchanged.
+Source figures are attached as provenance-tagged `sourceVisuals`.
+
+The `knowledge` stage routes to the same strong outline model with the
+configured fallback chain and shares the job budget; a gate failure triggers
+the Phase 8 one-attempt owner repair with the findings appended.
+
+Verification: `npm run typecheck` clean; `npm test` **286/286 pass, 0 fail**
+(279 prior + 7 new in `test/knowledge-compiler.test.js`, including the skill's
+`eval:alias-collapse` and invariant evals); `git diff --check` clean. Voice
+engine: real bundled Supertonic synthesis verified directly (F3, 1397 ms for a
+2926 ms sample, RTF 0.477; adapter returns a 258 KB WAV with explicitly
+estimated word timing) plus a grounded narrated pipeline test through
+`generateV2`. Not yet done: bounded chapter windows for 30-60 minute
+documents, and any live provider run (requires `OPENROUTER_API_KEY`).
+
 # Phase 4 whiteboard diffs now drive visual direction, 2026-09-14
 
 The harness-owned `WhiteboardPlan` no longer dead-ends at validation. The

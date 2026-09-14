@@ -1,3 +1,20 @@
+# 2026-09-14 — Phase 2 source-grounded knowledge compiler
+
+- New `knowledge` model stage (`knowledge-compiler.ts`) aligned to the
+  `knowledge-compiler` skill: alias collapse via `normalizeSemanticKey`,
+  prerequisite DAG, mechanisms, claims with verbatim evidence, quantities,
+  terminology; forks/cycles/orphans/fabricated evidence reject deterministically.
+- Teaching planning is grounded by the compiled inventory (concepts, required
+  concepts, requirement ids, evidence ids); prompt-only path unchanged.
+- Verification: typecheck clean; `npm test` **286/286** (7 new
+  `knowledge-compiler` tests incl. `eval:alias-collapse`); `git diff --check`
+  clean.
+- Voice engine: real bundled Supertonic synthesis verified (1397 ms / 2926 ms
+  sample, RTF 0.477; WAV 258 KB; timing explicitly estimated) and a narrated
+  grounded run through `generateV2`.
+- Skipped pending approval: bounded chapter windows for 30-60 min documents;
+  live provider run (needs `OPENROUTER_API_KEY`).
+
 # 2026-09-14 — Phase 4 whiteboard-to-director wiring
 
 - `WhiteboardPlan` is now consumed by visual direction: board beats and diffs

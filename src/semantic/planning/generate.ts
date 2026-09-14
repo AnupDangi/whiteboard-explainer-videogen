@@ -20,6 +20,7 @@ import {gateBoardAlignment,gateCompiled,gateConceptGraph,gateLesson,gateTeaching
 import {HARNESS_VERSION,type LearnerProfile} from '../harness/contracts.js';
 import type {GateResult,HarnessStage} from '../harness/contracts.js';
 import {renderSVG} from '../renderer/render-svg.js';
+import {compileKnowledge,attachSourceVisuals} from './knowledge-compiler.js';
 
 export interface StageMetrics {
   teachingMs:number;
@@ -68,7 +69,16 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
  let plan,conceptGraph;
  try{
    const beforeCalls=model.calls.length;
-   const buildKnowledge=async(repairFindings?:string[])=>{const generated=await planTeaching(input,model,{repairFindings});const sourceVisuals=(input.sourceFigures??[]).map((figure,index)=>({id:`source-visual:${index+1}`,sourceId:input.sourceId??'source',page:figure.page,caption:figure.caption,provenance:`source-${figure.kind}`}));return {plan:generated,conceptGraph:conceptGraphFromPlan(generated,sourceVisuals)};};
+   const buildKnowledge=async(repairFindings?:string[])=>{
+    if(input.sourceText){
+     const graph=await compileKnowledge({prompt:input.prompt,sourceText:input.sourceText,sourceId:input.sourceId,language:input.language,repairFindings},model);
+     const grounded=await planTeaching(input,model,{repairFindings,conceptGraph:graph});
+     return {plan:grounded,conceptGraph:attachSourceVisuals(structuredClone(graph),input.sourceFigures,input.sourceId)};
+    }
+    const generated=await planTeaching(input,model,{repairFindings});
+    const sourceVisuals=(input.sourceFigures??[]).map((figure,index)=>({id:`source-visual:${index+1}`,sourceId:input.sourceId??'source',page:figure.page,caption:figure.caption,provenance:`source-${figure.kind}`}));
+    return {plan:generated,conceptGraph:conceptGraphFromPlan(generated,sourceVisuals)};
+   };
    const stage=await harness.execute({stage:'knowledge-compiler',input,run:()=>buildKnowledge(),repair:async({error,gate})=>{const findings=gate.findings.filter(f=>f.severity==='hard').map(f=>`${f.code}: ${f.message}`);if(!findings.length)throw error;return buildKnowledge(findings);},gate:value=>gateConceptGraph(value.conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'knowledge-compiler',version:HARNESS_VERSION}),skillHash:stableHash('knowledge-compiler'),usage:()=>{const calls=model.calls.slice(beforeCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
   plan=stage.output.plan;conceptGraph=stage.output.conceptGraph;
   telemetry('teaching','success',{elapsedMs:performance.now()-teachingStart,details:{harnessStage:'knowledge-compiler',harnessVersion:HARNESS_VERSION}});

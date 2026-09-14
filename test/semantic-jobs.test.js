@@ -197,6 +197,7 @@ test('document source is ingested and grounded as teaching evidence',async()=>{
  let teachingInput=null;
  const model={calls:[],async generate(stage,_instructions,input,_schema,validate){
   this.calls.push({stage});
+  if(stage==='knowledge')return validate({version:1,concepts:['plant','sunlight','water','carbon_dioxide'].map(key=>({key,canonicalName:key,aliases:[],semanticType:'entity',evidenceRefs:['e1']})),prerequisites:[],mechanisms:[{id:'inputs_mechanism',statement:'Inputs enable plant food production',conceptIds:['plant'],requiresStateChange:false,evidenceRefs:['e1']}],claims:[{id:'light_claim',statement:'light claim',critical:true,evidenceRefs:['e1']},{id:'water_claim',statement:'water claim',critical:true,evidenceRefs:['e1']},{id:'carbon_claim',statement:'carbon claim',critical:true,evidenceRefs:['e1']}],quantities:[],terminology:[],evidence:[{id:'e1',sourceId:input.sourceId,quote:'sunlight, water and carbon dioxide'}]});
   if(stage==='teaching'){teachingInput=input;const p=teaching();p.evidenceRefs=[{id:'e1',sourceId:input.sourceId,quote:'sunlight, water and carbon dioxide'}];for(const s of p.scenes)for(const b of s.beats)if(b.requirementIds.length)b.evidenceRefs=['e1'];return validate(p);}
   const s=sceneJson();s.id=input.semanticScene.id;
   return validate({scene:s,decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'inputs',labelsOnly:'none',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'none'}});

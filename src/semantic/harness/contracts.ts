@@ -7,12 +7,14 @@ export type StageOwner='harness'|'knowledge-compiler'|'teaching-architect'|'whit
 export type GateCode='PREREQUISITE_ORDER'|'LEARNER_DELTA'|'MECHANISM_COVERAGE'|'CONTINUITY'|'COGNITIVE_LOAD'|'GROUNDING'|'DUPLICATION'|'VISUAL_SUPPORT'|'REPRESENTATION_DEGRADATION'|'COMPILE'|'TIMING'|'SPEECH';
 
 export interface SourceEvidence extends EvidenceRef {page?:number;section?:string}
+export interface KnowledgeClaim {id:string;statement:string;critical:boolean;evidenceRefs:string[]}
 export interface ConceptGraph {
   version:1;
   concepts:ConceptIdentity[];
   aliases:Record<string,string>;
   prerequisites:{before:string;after:string;reason:string}[];
   mechanisms:{id:string;statement:string;conceptIds:string[];requiresStateChange:boolean;evidenceRefs:string[]}[];
+  claims:KnowledgeClaim[];
   terminology:Record<string,{definition:string;introducedBy?:string}>;
   quantities:{conceptId:string;value:string;evidenceRefs:string[]}[];
   evidence:SourceEvidence[];
