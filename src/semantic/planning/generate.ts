@@ -16,7 +16,7 @@ import type {StageJournal} from '../harness/journal.js';
 import {TeachingHarness} from '../harness/teaching-harness.js';
 import {advanceLearnerState,conceptGraphFromPlan,contractsFromScene,defaultLearnerProfile,deriveContinuityDecisions,initialLearnerState,stableHash,whiteboardPlanFromContracts} from '../harness/state.js';
 import {LessonSemanticRegistry} from '../harness/registry.js';
-import {gateCompiled,gateConceptGraph,gateLesson,gateTeachingContracts,gateVisual,gateWhiteboard} from '../harness/gates.js';
+import {gateBoardAlignment,gateCompiled,gateConceptGraph,gateLesson,gateTeachingContracts,gateVisual,gateWhiteboard} from '../harness/gates.js';
 import {HARNESS_VERSION,type LearnerProfile} from '../harness/contracts.js';
 import type {GateResult,HarnessStage} from '../harness/contracts.js';
 import {renderSVG} from '../renderer/render-svg.js';
@@ -98,7 +98,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   at=performance.now();
   telemetry('director','started');
   let directed:Awaited<ReturnType<typeof directVisual>>;
-  try{const beforeDirectorCalls=model.calls.length;const buildDirected=async(repairNotes?:string[])=>{const value=await directVisual(semantic,plan.conceptRegistry,mentalModel,model,previous,input.language,{candidates,sourceVisualIds:groundedSourceVisualIds,repairNotes});value.scene=canonicalizeVisualScene(semantic.id,value.scene,plan.conceptRegistry);
+  try{const beforeDirectorCalls=model.calls.length;const buildDirected=async(repairNotes?:string[])=>{const value=await directVisual(semantic,plan.conceptRegistry,mentalModel,model,previous,input.language,{candidates,sourceVisualIds:groundedSourceVisualIds,repairNotes,whiteboardPlan:board});value.scene=canonicalizeVisualScene(semantic.id,value.scene,plan.conceptRegistry);
     // Bridge semantic continuity (concept keys) to runtime continuity (object ids).
     // Per-scene canonical ids differ, so resolve each kept concept to the current
     // object with the same appearance; the compiler then reuses previous geometry
@@ -113,7 +113,8 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
     }
     value.scene.continuity.transitions=deriveContinuityDecisions(value.scene,previous,semanticRegistry.snapshot());
     return value;};
-   const visualStage=await harness.execute({stage:'visual-director',input:{semantic,mentalModel,whiteboardPlan:board,registry:semanticRegistry.snapshot(),candidates,groundedSourceVisualIds},run:()=>buildDirected(),repair:async({error,gate})=>{const findings=gate.findings.filter(f=>f.severity==='hard').map(f=>`${f.code}: ${f.message}`);if(!findings.length)throw error;return buildDirected(findings);},gate:value=>gateVisual(value.scene,semanticRegistry.snapshot()),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'visual-director',version:HARNESS_VERSION}),skillHash:stableHash('visual-director'),usage:()=>{const calls=model.calls.slice(beforeDirectorCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});directed=visualStage.output;
+   const directorGate=(value:Awaited<ReturnType<typeof buildDirected>>)=>{const visual=gateVisual(value.scene,semanticRegistry.snapshot()),boardGate=gateBoardAlignment(board,value.scene);return {stage:'visual-director' as const,passed:visual.passed&&boardGate.passed,findings:[...visual.findings,...boardGate.findings]};};
+   const visualStage=await harness.execute({stage:'visual-director',input:{semantic,mentalModel,whiteboardPlan:board,registry:semanticRegistry.snapshot(),candidates,groundedSourceVisualIds},run:()=>buildDirected(),repair:async({error,gate})=>{const findings=gate.findings.filter(f=>f.severity==='hard').map(f=>`${f.code}: ${f.message}`);if(!findings.length)throw error;return buildDirected(findings);},gate:directorGate,model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'visual-director',version:HARNESS_VERSION}),skillHash:stableHash('visual-director'),usage:()=>{const calls=model.calls.slice(beforeDirectorCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});directed=visualStage.output;
     telemetry('director','success',{elapsedMs:performance.now()-at});}catch(e){telemetry('director','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-at});throw stageFailure(e,'director');}
   const directorMs=performance.now()-at;
   at=performance.now();

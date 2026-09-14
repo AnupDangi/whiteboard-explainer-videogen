@@ -1,3 +1,25 @@
+# Phase 4 whiteboard diffs now drive visual direction, 2026-09-14
+
+The harness-owned `WhiteboardPlan` no longer dead-ends at validation. The
+visual-director stage now receives the board in its model input, and the
+director prompt carries `WHITEBOARD_ALIGNMENT_RULE` (never re-draw PRESERVED
+concepts; one draw/reveal per INTRODUCE beat; every TRANSFORM realized as a
+state-changing action with the required `toState`; RESET only at the declared
+boundary). A deterministic `gateBoardAlignment` (`src/semantic/harness/gates.ts`)
+checks the canonicalized scene beat for beat against the board: INTRODUCE keys
+need a draw/reveal in their beat, TRANSFORM keys need an action reaching the
+required `toState`, PRESERVE keys must not be re-drawn. Findings merge into the
+visual-director gate, so a violation triggers the Phase 8 owner-scoped repair
+with the exact findings before the job can fail.
+
+Verification: `npm run typecheck` clean; `npm test` **279/279 pass, 0 fail**
+(271 prior + 8 new in `test/board-alignment.test.js`); `git diff --check`
+clean. One existing continuity test was updated to the new contract: a
+preserved concept is now highlighted instead of re-drawn in the following
+scene. Known limitation: the board still expresses intent that the legacy
+director schema consumes only through prompt and gate pressure; full
+diff-driven scene synthesis remains future work. No live provider run.
+
 # Phase 8 targeted stage repair wired through the harness, 2026-09-14
 
 `TeachingHarness` now executes the one-owner, one-attempt repair contract from

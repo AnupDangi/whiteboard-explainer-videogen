@@ -25,6 +25,7 @@ test('concept continuity persists geometry across scenes', async () => {
       if (stage === 'teaching') return validate(plan);
       const s = sceneJson();
       s.id = input.semanticScene.id;
+      if (input.semanticScene.id === 'plant_again') for (const b of s.beats) for (const a of b.actions) if (a.type === 'draw' && a.objectIds.includes('plant')) { a.type = 'highlight'; a.id = `${a.id}_preserved`; }
       return validate({ scene: s, decisions: { centralTeachingObject: 'plant', firstFocus: 'plant', illustratedConcepts: 'plant and inputs', labelsOnly: 'root and leaf labels', movingRelations: 'input flows', persistentContext: 'plant', stateChanges: 'activation', omit: 'detailed chemistry' } });
     },
   };

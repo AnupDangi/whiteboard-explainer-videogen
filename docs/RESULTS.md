@@ -1,3 +1,16 @@
+# 2026-09-14 — Phase 4 whiteboard-to-director wiring
+
+- `WhiteboardPlan` is now consumed by visual direction: board beats and diffs
+  enter the director model input; `WHITEBOARD_ALIGNMENT_RULE` constrains the
+  prompt; `gateBoardAlignment` validates the canonicalized scene beat for beat
+  (INTRODUCE → draw/reveal, TRANSFORM → toState action, PRESERVE → no redraw).
+- Alignment findings merge into the visual-director gate, so violations route
+  into the one-attempt owner repair from Phase 8.
+- Verification: typecheck clean; `npm test` **279/279** (8 new
+  `board-alignment` tests); `git diff --check` clean. One continuity fixture
+  updated: preserved concepts highlight instead of redraw.
+- Evidence scope: local deterministic tests only; no live benchmark.
+
 # 2026-09-14 — Phase 8 targeted stage repair
 
 - `executeStage` implements the bounded repair contract: one owner-scoped retry

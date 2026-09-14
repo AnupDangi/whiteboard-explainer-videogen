@@ -65,7 +65,10 @@ export function teachingPrompt(options:TeachingPromptOptions):string{
   ].filter(Boolean).join(' ');
 }
 
-export interface DirectorPromptOptions {archetype?:string;learnerLevel?:string;language?:string}
+/** Canvas-diff discipline handed to the director when a whiteboard plan exists. */
+export const WHITEBOARD_ALIGNMENT_RULE = `A validated whiteboard plan supplies per-beat canvas diffs (PRESERVE, INTRODUCE, TRANSFORM, RESET): never re-draw a PRESERVED concept in its preserve beat; give every INTRODUCE concept exactly one draw or reveal in its introduce beat; realize every TRANSFORM as a state-changing action with the required toState in that beat; RESET only at the declared boundary.` as const;
+
+export interface DirectorPromptOptions {archetype?:string;learnerLevel?:string;language?:string;whiteboard?:boolean}
 const PRIMITIVE_DIRECTIONS:Record<string,string>={
  equation_walkthrough:'This is an equation walkthrough: every primary object MUST use primitiveRef "equation" (never assetRef) and its label is one full derivation line; only the objects that personify steps may use primitiveRef "label".',
  matrix_operation:'This is a matrix/vector operation: use the matrix/vector assets when a candidate matches, and primitiveRef "equation" for operator/equals tokens (never both on one object).',
@@ -92,6 +95,7 @@ export function directorPrompt(options:DirectorPromptOptions={}):string{
     `When candidateAssets supplies a representation, use its family via representation and primitiveRef rectangle. signal parameters are normalized amplitude value, phase in half-turns, cycles; quantity value is a normalized fraction; component_group count is bounded. afterValue/afterPhase define meaningful state changes. Never invent measurements or units.`,
     `No pixel coordinates.`,
     ...VISUAL_RICHNESS_RULES,
+    options.whiteboard?WHITEBOARD_ALIGNMENT_RULE:'',
     `All scenes share the ${STYLE_FAMILY} style family; do not mix visual styles.`,
     archetype,
     level,

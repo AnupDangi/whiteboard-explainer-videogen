@@ -40,6 +40,24 @@ export function gateVisual(scene:VisualSceneV2,registry:SemanticRegistrySnapshot
  for(const object of scene.objects){if(object.role==='decorative_support')findings.push(finding('COGNITIVE_LOAD','visual-director',`Decorative object ${object.id} is not permitted`,{},'advisory'));if(object.conceptId&&!keys.has(object.conceptId))findings.push(finding('VISUAL_SUPPORT','visual-director',`Object ${object.id} has unknown concept identity`));if(object.importance==='primary'&&['rectangle','label'].includes(object.primitiveRef??'')&&!labelFriendly.has(scene.archetype))findings.push(finding('REPRESENTATION_DEGRADATION','visual-director',`Critical object ${object.id} degraded to a generic primitive`));}
  return result('visual-director',findings);
 }
+/** WhiteboardPlan canvas diffs must be realized by the directed scene, beat for beat. */
+export function gateBoardAlignment(board:WhiteboardPlan,scene:VisualSceneV2):GateResult{
+ const findings:GateFinding[]=[];
+ if(board.beats.length!==scene.beats.length)return result('visual-director',[finding('VISUAL_SUPPORT','visual-director',`Whiteboard plan covers ${board.beats.length} beats but the scene has ${scene.beats.length}`)]);
+ for(const [index,beat] of board.beats.entries()){
+  const visual=scene.beats[index];
+  const conceptOf=(objectId:string)=>scene.objects.find(o=>o.id===objectId)?.conceptId;
+  for(const diff of beat.diffs)for(const key of diff.semanticKeys){
+   if(diff.operation==='INTRODUCE'&&!visual.actions.some(action=>['draw','reveal'].includes(action.type)&&action.objectIds.some(id=>conceptOf(id)===key)))
+    findings.push(finding('VISUAL_SUPPORT','visual-director',`INTRODUCE ${key} has no draw or reveal in ${visual.id}`,{beatId:visual.id,concept:key}));
+   if(diff.operation==='TRANSFORM'&&!visual.actions.some(action=>action.toState===diff.toState&&action.objectIds.some(id=>conceptOf(id)===key)))
+    findings.push(finding('VISUAL_SUPPORT','visual-director',`TRANSFORM ${key} has no state-changing action reaching ${diff.toState} in ${visual.id}`,{beatId:visual.id,concept:key,toState:diff.toState}));
+   if(diff.operation==='PRESERVE'&&visual.actions.some(action=>action.type==='draw'&&action.objectIds.some(id=>conceptOf(id)===key)))
+    findings.push(finding('CONTINUITY','visual-director',`PRESERVE ${key} is re-drawn in ${visual.id}`,{beatId:visual.id,concept:key}));
+  }
+ }
+ return result('visual-director',findings);
+}
 export function gateCompiled(scene:CompiledSceneV2):GateResult{
  const findings:GateFinding[]=[];if(!Number.isFinite(scene.durationMs)||scene.durationMs<=0)findings.push(finding('COMPILE','compiler','Compiled duration is invalid'));
  for(const object of scene.objects)for(const value of [object.x,object.y,object.w,object.h])if(!Number.isFinite(value))findings.push(finding('COMPILE','compiler',`Object ${object.id} contains non-finite geometry`));
