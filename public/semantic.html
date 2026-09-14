@@ -13,7 +13,7 @@
     <a class="nav-link" href="/">Explainer</a>
     <a class="nav-link is-active" href="/semantic.html" aria-current="page">Semantic lab</a>
   </nav>
-  <span class="pill badge-prototype">SEMANTIC PIPELINE · EXPERIMENTAL</span>
+  <span class="pill badge-prototype">SEMANTIC PIPELINE / EXPERIMENTAL</span>
 </header>
 
 <main>
@@ -24,23 +24,50 @@
     </div>
     <div id="board" role="img" aria-label="Semantic scene preview"></div>
     <div class="controls">
-      <button id="play" type="button">▶ Play</button>
+      <button id="play" class="primary" type="button">Play preview</button>
       <label class="seek">Timeline <input id="seek" type="range" min="0" max="1" step="1" value="0"></label>
       <output id="time">0:00</output>
       <label class="check"><input id="cursor" type="checkbox" checked> Pencil cursor</label>
     </div>
-    <p class="hint">This lab renders semantic scene data (objects, relations, beats) with the same pure renderer the browser and MP4 export use. Timing here is estimated and silent.</p>
+    <audio id="audio" class="audio" controls hidden></audio>
+    <p class="hint">The preview and exported MP4 use the same deterministic renderer. Narration is generated locally with Supertonic or Piper when enabled.</p>
   </section>
 
   <aside class="panel data-panel">
-    <p class="eyebrow">GENERATE</p>
-    <h2>Live semantic generation</h2>
+    <p class="eyebrow">BUILD A LESSON</p>
+    <h2>Turn an idea into a visual explanation</h2>
     <div class="controls stacked">
       <label class="file">Teaching prompt <textarea id="prompt" rows="3" placeholder="Explain how plants make food to a middle-school student."></textarea></label>
-      <button id="generate" type="button">▶ Generate scene</button>
+      <label class="file">Source document <input id="source" type="file" accept=".pdf,application/pdf"></label>
+      <div class="field-grid">
+        <label class="file">Target length <select id="target-minutes"><option value="1">1 minute</option><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option></select></label>
+        <label class="file">Learner level <select id="learner-level"><option value="beginner">Beginner</option><option value="novice">Novice</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
+      </div>
+      <label class="check feature-check"><input id="narration" type="checkbox" checked> Include local narration</label>
+      <label class="file" id="voice-field">Narration voice
+        <select id="language"><option value="en">English / Supertonic</option><option value="hi">Hindi / Supertonic</option><option value="fr">French / Supertonic</option><option value="de">German / Supertonic</option><option value="ne">Nepali / Piper</option><option value="zh">Chinese / Piper</option></select>
+      </label>
+      <details class="advanced">
+        <summary>Run constraints</summary>
+        <div class="advanced-fields">
+          <label class="file">Generation budget (USD) <input id="budget" type="number" min="0.01" max="100" step="0.01" value="2.00"></label>
+          <label class="file">Grounding <select id="grounding"><option value="source-only">Source only</option><option value="source-plus-verified">Source + verified references</option></select></label>
+          <label class="file">Learning goals <input id="learner-goals" type="text" maxlength="300" placeholder="Mechanism, tradeoffs, practical intuition"></label>
+        </div>
+      </details>
+      <button id="generate" class="primary" type="button">Generate lesson video</button>
+      <button id="cancel-job" type="button" hidden>Cancel active run</button>
       <output id="jobstatus" role="status">idle</output>
+      <button id="download-mp4" type="button" hidden>↓ Download job MP4</button>
     </div>
-    <p class="hint">Scenes stream in over SSE as soon as each is ready (offset-resumable; polling fallback). The first scene becomes playable before later scenes finish.</p>
+    <section id="run-summary" class="run-summary" aria-label="Teaching compiler status" hidden>
+      <div><span>Gate</span><strong id="run-gate">PENDING</strong></div>
+      <div><span>Stage</span><strong id="run-stage">queued</strong></div>
+      <div><span>Learned</span><strong id="run-learned">0 concepts</strong></div>
+      <div><span>Cost</span><strong id="run-cost">$0.0000</strong></div>
+      <p id="run-note">The final MP4 is available only after every critical teaching gate passes.</p>
+    </section>
+    <p class="hint">Scenes stream over SSE as soon as they are ready. Preview artifacts remain inspectable after failure, but final MP4 publication requires a complete PASS.</p>
     <p class="eyebrow" style="margin-top:1rem">SCENE DATA</p>
     <div class="controls stacked">
       <label class="file">Load scene JSON <input id="file" type="file" accept=".json,application/json"></label>

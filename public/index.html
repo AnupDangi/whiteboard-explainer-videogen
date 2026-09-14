@@ -80,6 +80,7 @@
             <option value="5">5 minutes</option>
             <option value="10">10 minutes</option>
             <option value="30">30 minutes (experimental)</option>
+            <option value="60">60 minutes (experimental)</option>
           </select>
           <p class="hint">Distinct chapters; the real duration follows the narration.</p>
         </div>
@@ -114,6 +115,11 @@
       </div>
       <p id="message" class="hint" role="status"></p>
       <p id="voice-message" class="hint small voice-note"></p>
+      <section class="card" id="library-card">
+        <div class="card-head"><span class="step">⌂</span><h2>Your videos</h2></div>
+        <p class="hint">Prompt-built videos saved on this machine. Select one to replay it.</p>
+        <ol id="library"><li>Loading…</li></ol>
+      </section>
     </form>
 
     <div class="principle">

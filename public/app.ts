@@ -4,11 +4,12 @@ const $=(id:string)=>document.getElementById(id) as any;
 const terminal=['complete','partial','error','cancelled','interrupted'];
 let scenes:CompiledScene[]=[],job:JobSnapshot|null=null,time=0,playing=false,last=0,poll:ReturnType<typeof setTimeout>|undefined=undefined,stalls=0,buffering=false,audioScene:string|null=null,audioTail=false,audioPending=false;
 const audio=$('audio');const format=(t:number)=>`${Math.floor(t/60000)}:${String(Math.floor(t/1000)%60).padStart(2,'0')}`;let lastDraw=0,transcriptScene:CompiledScene|null=null,activeWord=-1;
-function reportPlayback(type:string){
-  void fetch('/api/client-events',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type,jobId:job?.id||null,timeMs:time,rate:Number($('speed').value)})}).catch(()=>{});
+function reportPlayback(type:string,detail?:string){
+  void fetch('/api/client-events',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type,jobId:job?.id||null,timeMs:time,rate:Number($('speed').value),...(detail?{detail:detail.slice(0,300)}:{})})}).catch(()=>{});
 }
-window.addEventListener('error',()=>reportPlayback('client-error'));
-window.addEventListener('unhandledrejection',()=>reportPlayback('client-error'));
+const errorDetail=(e:any)=>{const m=e?.reason?.stack||e?.reason?.message||e?.message||e?.error?.message||String(e&&e.message||e);return String(m).split('\n').slice(0,3).join(' | ').slice(0,300);};
+window.addEventListener('error',e=>reportPlayback('client-error',errorDetail(e)));
+window.addEventListener('unhandledrejection',e=>reportPlayback('client-error',errorDetail(e)));
 function draw(){
   const found=locateScene(scenes,time);if(!found){$('board').replaceChildren();$('transcript').textContent=job&&terminal.includes(job.status)?(job.error||'No scenes were prepared.'):'Preparing the first scene…';return;}
   const {scene,index,localMs}=found;
@@ -38,15 +39,25 @@ async function syncAudio(found:ReturnType<typeof locateScene>){
   finally{if(generation===audioGeneration)audioPending=false;}
 }
 audio.addEventListener('ended',()=>{audioTail=true;reportPlayback('audio-ended');});
-audio.addEventListener('error',()=>{if(audioScene){playing=false;reportPlayback('audio-error');$('message').textContent='Narration could not load. Retry the job or disable narration.';draw();}});
+audio.addEventListener('error',()=>{if(audioScene){playing=false;reportPlayback('audio-error',(audio.error?.message||'media error'));$('message').textContent='Narration could not load. Retry the job or disable narration.';draw();}});
+let stallRetries=0,lastAudioClock=0,lastAudioWall=0;
+audio.addEventListener('waiting',()=>{if(playing)reportPlayback('audio-stalled','waiting for data');});
 function frame(now:number){
   const delta=last?Math.min(250,now-last):0;last=now;
+  try{
   if(playing){
     const found=locateScene(scenes,time),complete=!job||terminal.includes(job.status);
     let next=time+delta*Number($('speed').value);
     if(found?.scene.audioUrl){
       if(audioScene!==found.scene.id){void syncAudio(found);next=time;}
       else if(!audioTail){void syncAudio(found);next=audioPending?time:found.offsetMs+audio.currentTime*1000;}
+      // Stall recovery: clock follows the audio element, so a paused-but-should-play
+      // element freezes time forever. Detect and re-kick once per stall.
+      if(!audioTail&&!audioPending&&audioScene===found.scene.id){
+        if(!audio.paused&&audio.currentTime!==lastAudioClock){lastAudioClock=audio.currentTime;lastAudioWall=now;stallRetries=0;}
+        else if(audio.paused&&playing&&stallRetries<3){stallRetries++;reportPlayback('audio-stalled','paused while playing; resume attempt');void syncAudio(found);}
+        else if(!audio.paused&&now-lastAudioWall>5000&&stallRetries<3){stallRetries++;lastAudioWall=now;reportPlayback('audio-stalled','clock frozen; re-sync');resetAudio();void syncAudio(found);}
+      }
     }else if(audioScene){resetAudio();}
     const result=advancePlayback(time,next-time,durationOf(scenes),complete);
     if(result.buffering&&!buffering)stalls++;
@@ -57,6 +68,7 @@ function frame(now:number){
     else if(job)$('status').textContent=job.status==='complete'?'Complete':job.status;
     if(now-lastDraw>=80){draw();lastDraw=now;}
   }
+  }catch(e){reportPlayback('frame-error',errorDetail(e));$('message').textContent='Player hit an error — playback continues; details logged.';}
   requestAnimationFrame(frame);
 }
 $('play').onclick=()=>{if(!scenes.length)return;if(time>=durationOf(scenes)&&(!job||terminal.includes(job.status))){time=0;resetAudio();}playing=!playing;reportPlayback(playing?'play':'pause');if(!playing)audio.pause();last=0;draw();};
@@ -76,10 +88,15 @@ function showJob(data:JobSnapshot){
   $('events').replaceChildren(...data.events.slice(-10).map(e=>{const li=document.createElement('li');li.textContent=(`${(e.atMs/1000).toFixed(1)}s  ${e.type}  · ${format(e.availableMs)} ready`);return li;}));
   const ended=terminal.includes(data.status);$('first-metric').textContent=data.firstPlayableMs===undefined?'—':(data.firstPlayableMs/1000).toFixed(1)+' s';$('cancel').disabled=ended;$('create').disabled=!ended;
   $('cost-metric').textContent=data.usage?`$${data.usage.costUsd.toFixed(4)} planning · ${data.usage.calls} calls · ${data.ttsCharacters} TTS characters`:data.mode==='fixture'?`${data.ttsCharacters} TTS characters · offline fixture`:'Waiting for provider usage';
-  if(data.error)$('message').textContent=data.error;
+  if(data.error){
+    const error=String(data.error);
+    $('message').textContent=/monthly limit|budget limit/i.test(error)
+      ? 'OpenRouter monthly budget is exhausted. Increase the limit or use a funded API key, then restart the server.'
+      : error;
+  }
   draw();
 }
-async function refresh(id:string){try{const data=await request('/api/jobs/'+id);showJob(data);if(!terminal.includes(data.status))poll=setTimeout(()=>refresh(id),400);}catch(e){$('message').textContent=e instanceof Error?e.message:String(e);$('create').disabled=false;}}
+async function refresh(id:string){try{const data=await request('/api/jobs/'+id);showJob(data);if(!terminal.includes(data.status))poll=setTimeout(()=>refresh(id),400);else void refreshLibrary();}catch(e){$('message').textContent=e instanceof Error?e.message:String(e);$('create').disabled=false;}}
 $('generate').onsubmit=async (e:SubmitEvent)=>{
   e.preventDefault();clearTimeout(poll);playing=false;time=0;stalls=0;buffering=false;resetAudio();$('create').disabled=true;$('message').textContent='';job=null;scenes=[];transcriptScene=null;$('title').textContent='Preparing your explanation…';$('status').textContent='Submitting';draw();
   try{
@@ -112,4 +129,19 @@ $('demo').onclick=()=>{$('mode').value='fixture';$('mode').dispatchEvent(new Eve
 $('narration').onchange=()=>{$('voice-fields').hidden=!$('narration').checked;};
 const savedJob=new URLSearchParams(location.search).get('job');
 if(savedJob&&/^[a-f0-9-]{36}$/.test(savedJob))void refresh(savedJob);
+async function refreshLibrary(){
+  try{
+    const data=await request('/api/jobs');
+    const items=(data.jobs||[]) as {id:string;title:string;status:string;createdAt:number;scenes:number;availableMs:number;pipeline:string}[];
+    $('library').replaceChildren(...(items.length?items:[]).map(j=>{
+      const li=document.createElement('li'),a=document.createElement('a');
+      const mins=Math.floor((j.availableMs||0)/60000),secs=String(Math.floor((j.availableMs||0)/1000)%60).padStart(2,'0');
+      a.href='/?job='+j.id;a.textContent=`${j.title||j.id.slice(0,8)} · ${j.scenes} scenes · ${mins}:${secs} · ${j.status}`;
+      if(job?.id===j.id)a.className='active';
+      li.appendChild(a);return li;
+    }));
+    if(!items.length)$('library').replaceChildren(Object.assign(document.createElement('li'),{textContent:'No saved videos yet.'}));
+  }catch{/* library is advisory; the player works without it */}
+}
+void refreshLibrary();
 draw();requestAnimationFrame(frame);
