@@ -14,10 +14,10 @@ export function defaultVoiceEngineDir(env:NodeJS.ProcessEnv=process.env):string{
 }
 
 /** Async one-shot bridge: JSON on stdin, result JSON on stdout. Providers stay behind the engine. */
-export function createVoiceEngineRunner(options:{env?:NodeJS.ProcessEnv;engineDir?:string}={}):VoiceEngineRunner{
+export function createVoiceEngineRunner(options:{env?:NodeJS.ProcessEnv;engineDir?:string;signal?:AbortSignal}={}):VoiceEngineRunner{
  const env=options.env??process.env,dir=options.engineDir??defaultVoiceEngineDir(env),cli=join(dir,'dist','cli.js');
  return request=>new Promise((resolvePromise,reject)=>{
-  const child=spawn(process.execPath,[cli],{stdio:['pipe','pipe','pipe'],env:{...env,VOICE_ENGINE_OUT:env.VOICE_ENGINE_OUT??join(dir,'out')}});
+  const child=spawn(process.execPath,[cli],{signal:options.signal,stdio:['pipe','pipe','pipe'],env:{...env,VOICE_ENGINE_OUT:env.VOICE_ENGINE_OUT??join(dir,'out')}});
   let out='',err='';child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
   child.stdout.on('data',chunk=>{out+=chunk;});child.stderr.on('data',chunk=>{err+=chunk;});
   child.on('error',error=>reject(new Error(`voice-engine spawn failed: ${error.message}`)));
@@ -31,7 +31,7 @@ export function createVoiceEngineRunner(options:{env?:NodeJS.ProcessEnv;engineDi
 export function wordsFromDuration(text:string,durationMs:number):Timing{
  const tokens=segmentWords(text);if(!tokens.length)throw new Error('Cannot time empty narration');
  const step=durationMs/tokens.length;
- return {kind:'engine',durationMs,words:tokens.map((word,i)=>({word,startMs:i*step,endMs:(i+1)*step}))};
+ return {kind:'engine',timingSource:'estimated',durationMs,words:tokens.map((word,i)=>({word,startMs:i*step,endMs:(i+1)*step}))};
 }
 
 /** Providers.speech-compatible adapter used by the V1 job runner. */

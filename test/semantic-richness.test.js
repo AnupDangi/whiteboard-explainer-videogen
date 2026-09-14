@@ -9,7 +9,7 @@ import {ASSETS} from '../dist/src/semantic/assets/registry.js';
 import {wordsFromDuration} from '../dist/src/shared/voice-engine-client.js';
 const scene=()=>{const s=JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.scene.json','utf8'));for(const o of s.objects)if(['plant','sunlight','water','carbon_dioxide'].includes(o.id))o.conceptId=o.id;return s;};
 
-test('morph/replace actions are compiled and rendered with a state badge',()=>{
+test('morph/replace actions change visual state without a text badge',()=>{
   const s=scene();
   s.beats[1].actions.push({id:'morph_plant',type:'morph',objectIds:['plant'],relationIds:[],durationMs:1200,leadMs:-180,easing:'linear',toState:'activated'});
   const compiled=compileScene(s,undefined,undefined);
@@ -18,7 +18,8 @@ test('morph/replace actions are compiled and rendered with a state badge',()=>{
   const mid=objectState(compiled,'plant',action.startMs+action.durationMs/2);
   assert.ok(mid.morph&&mid.morph.progress>0&&mid.morph.progress<1);
   const svg=renderSVG(compiled,action.startMs+action.durationMs/2);
-  assert.ok(svg.includes('activated'));
+  assert.ok(!svg.includes('>activated</text>'));
+  assert.notEqual(svg,renderSVG(compiled,action.startMs));
 });
 test('before state renders dimmed illustration strokes',()=>{
   const s=scene();

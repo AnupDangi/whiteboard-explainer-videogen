@@ -1,7 +1,10 @@
+import {stageFailure} from '../repair.js';
+import {resolvedDirectionSchema} from '../identity/runtime-schemas.js';
+import {directionToScene} from '../identity/intent-adapter.js';
 import {visualSceneSchema,type Schema} from '../schemas.js';
 import {validateVisualScene} from './validate.js';
 import {directorPrompt} from './prompt-builder.js';
-import {searchAssets} from '../assets/search.js';
+import {resolveRepresentation,primitiveFallbackNote} from '../identity/representation.js';
 import {getAsset,canonicalAnchor} from '../assets/registry.js';
 import {compileScene} from '../compiler/compile-scene.js';
 import type {ConceptIdentity,SemanticScenePlan,VisualSceneV2,CompiledSceneV2} from '../types.js';
@@ -10,108 +13,60 @@ import type {JsonModel} from './model-adapter.js';
 export interface DirectionDecisions {centralTeachingObject:string;firstFocus:string;illustratedConcepts:string;labelsOnly:string;movingRelations:string;persistentContext:string;stateChanges:string;omit:string}
 const decisionKeys=['centralTeachingObject','firstFocus','illustratedConcepts','labelsOnly','movingRelations','persistentContext','stateChanges','omit'];
 const decisionSchema:Schema={type:'object',additionalProperties:false,required:decisionKeys,properties:Object.fromEntries(decisionKeys.map(k=>[k,{type:'string',minLength:1,maxLength:600}]))};
-const schema:Schema={type:'object',additionalProperties:false,required:['scene','decisions'],properties:{scene:visualSceneSchema,decisions:decisionSchema}};
-export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const found=[concept.canonicalName,...concept.aliases].flatMap(name=>searchAssets({name,semanticType:concept.semanticType,archetype:model.candidateArchetypes[0],styleFamily:'chalk-ink-v2'}));return {conceptId:id,candidates:[...new Set(found.map(c=>c.id))].slice(0,8).map(id=>{const a=getAsset(id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};})};});}
-/** Archetypes whose objects are text/equation primitives rather than curated assets. */
-const PRIMITIVE_ARCHETYPES=['equation_walkthrough','matrix_operation','numbered_steps','timeline','trajectory'];
-/** Deterministic anchor normalization shared by the first direction and its one retry:
- *  canonicalize same-asset aliases; degrade an unknown anchor (e.g. left/right on an
- *  equation primitive, or a concept name carried across assets) to the object's center,
- *  which every asset and primitive exposes. Returns false if a relation targets a
- *  missing object (the caller drops those before validation). */
-function normalizeRelationAnchors(visual:VisualSceneV2):void{
- for(const relation of visual.relations)for(const ref of [relation.from,relation.to]){
-  const object=visual.objects.find(o=>o.id===ref.objectId);if(!object)continue;
+const schema:Schema={type:'object',additionalProperties:false,required:['direction','decisions'],properties:{direction:resolvedDirectionSchema,decisions:decisionSchema}};
+export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},model.candidateArchetypes);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
+export function representationWarnings(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel):string[]{return assetCandidates(scene,registry,model).flatMap(c=>c.warnings);}
+/** Every initial or repaired direction passes this same teaching contract. */
+export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,allowedAssets:Set<string>,previous?:CompiledSceneV2):VisualSceneV2{
+ const visual=validateVisualScene(raw,new Set(registry.map(c=>c.id)),new Set(previous?.objects.map(o=>o.id)));
+ if(visual.id!==scene.id)throw new Error('Director changed scene identity');
+ if(!mentalModel.candidateArchetypes.includes(visual.archetype))throw new Error('Director chose unavailable mental model');
+ if(!visual.objects.some(o=>o.role==='hero'&&o.conceptId===scene.centralConceptId))throw new Error('Director changed central teaching object');
+ for(const o of visual.objects)if(o.representation&&o.assetRef)throw new Error('Object has two representations');
+ for(const o of visual.objects)if(o.assetRef&&!allowedAssets.has(o.assetRef))throw new Error(`Director invented asset ${o.assetRef}`);
+ for(const id of scene.requiredConceptIds)if(!visual.objects.some(o=>o.conceptId===id))throw new Error(`Director omitted concept ${id}`);
+ if(visual.beats.length!==scene.beats.length)throw new Error('Director changed beat count');
+ for(const [i,b] of scene.beats.entries())if(visual.beats[i].id!==b.id||visual.beats[i].narration!==b.narrationDraft)throw new Error(`Director changed narration/beat ${b.id}`);
+ for(const r of visual.relations)for(const ref of [r.from,r.to]){
+  const object=visual.objects.find(o=>o.id===ref.objectId)!;
   if(object.assetRef)ref.anchor=canonicalAnchor(object.assetRef,ref.anchor);
   const anchors=object.assetRef?Object.keys(getAsset(object.assetRef).anchors):['input','output','center','top','bottom'];
-  if(!anchors.includes(ref.anchor))ref.anchor='center';
+  if(!anchors.includes(ref.anchor))throw new Error(`Unavailable semantic anchor ${ref.anchor}`);
  }
-}
-export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
-  const candidates=assetCandidates(scene,registry,mentalModel),allowedAssets=new Set(candidates.flatMap(c=>c.candidates.map(a=>a.id)));
-  const primitiveScene=mentalModel.candidateArchetypes.every(a=>PRIMITIVE_ARCHETYPES.includes(a));
-  // Asset feasibility is required only for asset-based scenes. Math/step/timeline scenes
-  // represent concepts with primitiveRef equation/label, so no curator asset is needed.
-  if(!primitiveScene)for(const id of mentalModel.heroConceptIds)if(!candidates.find(c=>c.conceptId===id)?.candidates.length)throw new Error(`No teaching asset for hero concept ${id}`);
-   const directed=await model.generate('director',directorPrompt({archetype:mentalModel.candidateArchetypes[0],language}),{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,previousContinuity:previous?.scene.continuity??null},schema,value=>{
-  const result=value as {scene:VisualSceneV2;decisions:DirectionDecisions};
-  // Deterministic heal: objects with neither asset nor primitive are stray relation
-  // stand-ins; drop them and every reference before validation.
-  const stray=new Set(result.scene.objects.filter(o=>!o.assetRef&&!o.primitiveRef).map(o=>o.id));
-  if(stray.size)result.scene={...result.scene,objects:result.scene.objects.filter(o=>!stray.has(o.id)),relations:result.scene.relations.filter(r=>!stray.has(r.from.objectId)&&!stray.has(r.to.objectId)),beats:result.scene.beats.map(b=>({...b,actions:b.actions.map(a=>({...a,objectIds:a.objectIds.filter(id=>!stray.has(id)),relationIds:a.relationIds.filter(id=>!result.scene.relations.some(r=>r.id===id))})).filter(a=>a.objectIds.length||a.relationIds.length)}))};
-  const visual=validateVisualScene(result.scene,new Set(registry.map(c=>c.id)),new Set(previous?.objects.map(o=>o.id)));
-  if(visual.id!==scene.id)throw new Error('Director changed scene identity');if(!mentalModel.candidateArchetypes.includes(visual.archetype))throw new Error('Director chose unavailable mental model');
-  if(!visual.objects.some(o=>o.role==='hero'&&mentalModel.heroConceptIds.includes(o.conceptId??'')))throw new Error('Director changed central teaching object');
-  for(const o of visual.objects)if(o.assetRef&&!allowedAssets.has(o.assetRef))throw new Error(`Director invented asset ${o.assetRef}`);
-  normalizeRelationAnchors(visual);
-  const heroObject=visual.objects.find(o=>o.role==='hero'&&mentalModel.heroConceptIds.includes(o.conceptId??''));
-  const heroAnchors=heroObject?.assetRef?Object.keys(getAsset(heroObject.assetRef).anchors):[];
-  const heroAliases=heroObject?.assetRef?Object.keys(getAsset(heroObject.assetRef).anchorAliases??{}):[];
-  for(const id of scene.requiredConceptIds)if(!visual.objects.some(o=>o.conceptId===id)&&!heroAnchors.some(a=>a===id||a.startsWith(id+'.'))&&!heroAliases.includes(id))throw new Error(`Director omitted concept ${id}`);
-  if(visual.beats.length!==scene.beats.length)throw new Error('Director changed beat count');
-  for(const [i,b] of scene.beats.entries())if(visual.beats[i].id!==b.id||visual.beats[i].narration!==b.narrationDraft)throw new Error(`Director changed narration/beat ${b.id}`);
-  const centralObject=visual.objects.find(o=>o.conceptId===scene.centralConceptId);
-  const subpartOfCentral=(objectId:string)=>{const o=visual.objects.find(x=>x.id===objectId);if(!o)return false;let current=o;while(current.parentId){current=visual.objects.find(x=>x.id===current.parentId)!;if(current===centralObject)return true;}return false;};
-  const centralAnchors=centralObject?.assetRef?new Set([...Object.keys(getAsset(centralObject.assetRef).anchors),...Object.keys(getAsset(centralObject.assetRef).anchorAliases??{})]):new Set<string>();
-  for(const required of scene.requiredRelations){
-   const anchorOnCentral=(r:{to:{objectId:string;anchor:string}})=>{
-    if(r.to.objectId!==centralObject?.id)return false;
-    if(required.targetAnchor)return centralAnchors.has(canonicalAnchor(centralObject.assetRef!,required.targetAnchor));
-    // No explicit anchor required: accept when the required target concept is itself a
-    // hero anchor or anchor alias, or names one by prefix (e.g. 'leaf' -> leaf.top).
-    return centralAnchors.has(required.toConceptId)||[...centralAnchors].some(a=>a.startsWith(required.toConceptId+'.'));
-   };
-   const targetAnchors=(objectId:string)=>{const o=visual.objects.find(x=>x.id===objectId);if(!o?.assetRef)return null;const a=getAsset(o.assetRef);return new Set([...Object.keys(a.anchors),...Object.keys(a.anchorAliases??{})]);};
-   let relation=visual.relations.find(r=>{
-    const fromConcept=visual.objects.find(o=>o.id===r.from.objectId)?.conceptId,toConcept=visual.objects.find(o=>o.id===r.to.objectId)?.conceptId;
-    if(fromConcept!==required.fromConceptId||r.relationType!==required.relationType)return false;
-    const conceptMatch=toConcept===required.toConceptId||subpartOfCentral(r.to.objectId)||anchorOnCentral(r);
-    if(!conceptMatch)return false;
-    if(!required.targetAnchor)return true;
-    const anchors=targetAnchors(r.to.objectId);
-    // A required targetAnchor that names no real anchor of the target object (e.g. a
-    // concept name) is advisory; the deterministic compiler resolves a real anchor.
-    if(!anchors||!anchors.has(canonicalAnchor(visual.objects.find(o=>o.id===r.to.objectId)!.assetRef!,required.targetAnchor)))return true;
-    return r.to.anchor===canonicalAnchor(visual.objects.find(o=>o.id===r.to.objectId)!.assetRef!,required.targetAnchor);
-   });
-   if(!relation){
-    // Relaxed match: same concept pair, either direction, any relation type, animated
-    // in one of the requirement's focus beats. The teaching contract is the connected
-    // pair plus its timed reveal; direction/type spelling in the plan is advisory.
-    const relaxed=visual.relations.find(r=>{
-     const fromConcept=visual.objects.find(o=>o.id===r.from.objectId)?.conceptId,toConcept=visual.objects.find(o=>o.id===r.to.objectId)?.conceptId;
-     const forward=fromConcept===required.fromConceptId&&toConcept===required.toConceptId,reverse=fromConcept===required.toConceptId&&toConcept===required.fromConceptId;
-     return forward||reverse;
-    });
-    if(!relaxed)throw new Error(`Missing semantic relation ${required.id}`);
-    relation=relaxed;
-   }
-   const focusBeats=scene.beats.filter(b=>b.relationFocus.includes(required.id));
-   if(focusBeats.length&&!focusBeats.some(b=>visual.beats.find(v=>v.id===b.id)!.actions.some(a=>a.relationIds.includes(relation.id)))){
-    // Deterministic heal: a matched-but-unanimated required relation gets a trace action
-    // in its first focus beat (mirrors the object reveal heal).
-    const vb=visual.beats.find(v=>v.id===focusBeats[0].id)!;
-    vb.actions.push({id:`trace_${relation.id}_healed`,type:'trace',objectIds:[],relationIds:[relation.id],durationMs:900,leadMs:-180,easing:'linear'});
-   }
+ for(const required of scene.requiredRelations){
+  const relation=visual.relations.find(r=>{
+   const from=visual.objects.find(o=>o.id===r.from.objectId)!,to=visual.objects.find(o=>o.id===r.to.objectId)!;
+   if(from.conceptId!==required.fromConceptId||to.conceptId!==required.toConceptId||r.relationType!==required.relationType)return false;
+   if(!required.targetAnchor)return true;
+   const target=to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor):required.targetAnchor;
+   return r.to.anchor===target;
+  });
+  if(!relation)throw new Error(`Missing semantic relation ${required.id}: direction, type and target part are required`);
+  for(const b of scene.beats.filter(b=>b.relationFocus.includes(required.id))){
+   if(!visual.beats.find(v=>v.id===b.id)!.actions.some(a=>a.relationIds.includes(relation.id)))throw new Error(`Untimed semantic relation ${required.id} in ${b.id}`);
   }
-  return {...result,scene:visual};
- }) as {scene:VisualSceneV2;decisions:DirectionDecisions};
- // Geometry repair stays local; an impossible composition never buys another model attempt —
- // except one bounded re-direction when the deterministic compiler proves the chosen
- // anchors/zones cannot route (a director decision, not a validation problem).
- try{compileScene(directed.scene,undefined,previous);}
- catch(e){
-  const message=e instanceof Error?e.message:String(e);
-  if(!/No safe connector route|Illegal overlap|Canvas escape|Invalid semantic anchor/.test(message))throw e;
-  const retry=await model.generate('director',`${directorPrompt({archetype:mentalModel.candidateArchetypes[0],language})}
-The previous composition failed deterministic geometry: ${message}. Choose different preferredZone placements or semantic anchors so every relation has a clear route around the hero.`,{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,previousContinuity:previous?.scene.continuity??null,previousFailure:message},schema,value=>{
-    const result=value as {scene:VisualSceneV2;decisions:DirectionDecisions},visual=validateVisualScene(result.scene,new Set(registry.map(c=>c.id)),new Set(previous?.objects.map(o=>o.id)));
-    if(visual.id!==scene.id)throw new Error('Director changed scene identity');
-    normalizeRelationAnchors(visual);
-    return {...result,scene:visual};
-   }) as {scene:VisualSceneV2;decisions:DirectionDecisions};
-  compileScene(retry.scene,undefined,previous);
-  return retry;
  }
+ return visual;
+}
+export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:{candidates?:ReturnType<typeof assetCandidates>;sourceVisualIds?:string[];repairNotes?:string[]}):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
+ const candidates=resolved?.candidates??assetCandidates(scene,registry,mentalModel),allowedAssets=new Set(candidates.flatMap(c=>c.candidates.map(a=>a.id)));
+ const fallbackNote=primitiveFallbackNote(candidates.filter(c=>!c.candidates.length&&!c.representation).map(c=>c.conceptId));
+ const repairNote=resolved?.repairNotes?.length?`A previous direction failed these visual checks: ${resolved.repairNotes.join('; ')}. Correct exactly those objects, relations, anchors, states or actions and keep narration, beat IDs and concept coverage unchanged.`:'';
+ const directed=await model.generate('director',`${directorPrompt({archetype:mentalModel.candidateArchetypes[0],language})} ${fallbackNote} ${repairNote}`,{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],previousContinuity:previous?.scene.continuity??null},schema,value=>{
+  const response=value as {scene?:VisualSceneV2;direction?:unknown;decisions:DirectionDecisions};
+  const result={scene:response.scene??directionToScene(response.direction,scene),decisions:response.decisions};
+  for(const o of result.scene.objects){
+   if(scene.requiredConceptIds.includes(o.conceptId??''))o.importance='primary';
+   const choice=candidates.find(c=>c.conceptId===o.conceptId);
+   if(choice?.representation&&!o.assetRef){o.representation=o.representation??choice.representation;if(o.representation.family!==choice.representation.family)throw new Error('Representation family changed');o.primitiveRef='rectangle';}
+  }
+  return {...result,scene:validateDirectedScene(result.scene,scene,registry,mentalModel,allowedAssets,previous)};
+ }) as {scene:VisualSceneV2;decisions:DirectionDecisions};
+ // Deterministic geometry repair belongs to the compiler, never another model call.
+ let compiled;try{compiled=compileScene(directed.scene,undefined,previous);}catch(e){throw stageFailure(e,'compile');}
+ validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous);
+ for(const o of directed.scene.objects)if(scene.requiredConceptIds.includes(o.conceptId??'')){const actual=compiled.objects.find(c=>c.id===o.id);if(actual?.assetRef!==o.assetRef||actual?.representation?.family!==o.representation?.family)throw new Error(`Critical representation degraded: ${o.id}`);}
+ const hero=compiled.objects.find(o=>o.role==='hero');
+ if(hero?.primitiveRef==='label'&&!['numbered_steps','timeline','trajectory'].includes(compiled.scene.archetype))throw new Error('Unrepresented structural hero: choose a semantic composition');
  return directed;
 }

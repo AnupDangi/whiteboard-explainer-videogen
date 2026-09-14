@@ -84,7 +84,7 @@ test('A transient failure on the very first content/director call retries in pla
     return reply(result);
   };
   const scenes=[];
-  for await(const p of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1}))scenes.push(...p.scenes);
+  for await(const p of generateChapters(source,{env:{...env,EXPLAIN_AUTO_DIRECT:'0'},fetcher,durationMinutes:1,retryDelayMs:0}))scenes.push(...p.scenes);
   assert.equal(scenes.length,2);
   assert.equal(contentCalls,2,'content retried once in place after its first-call failure');
  assert.equal(directorCalls,2,'director retried once in place after its first-call failure');
@@ -132,7 +132,7 @@ test('Auto-director: mappable labels skip the director LLM call entirely',async(
   assert.equal(directorCalls.length,0,'no LLM director call — compiler composed both scenes');
 });
 
-test('Provider and schema errors stay errors; no fixture fallback',async()=>{ const prev=process.env.EXPLAIN_ANCHOR_HEAL;process.env.EXPLAIN_ANCHOR_HEAL='0';try{ for(const options of [{failure:true},{bad:true}]){const mock=adapter(options);await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env,fetcher:mock.fetcher})){}},options.failure?/429/:/Anchor/);}}finally{if(prev===undefined)delete process.env.EXPLAIN_ANCHOR_HEAL;else process.env.EXPLAIN_ANCHOR_HEAL=prev;}
+test('Provider and schema errors stay errors; no fixture fallback',async()=>{ const prev=process.env.EXPLAIN_ANCHOR_HEAL;process.env.EXPLAIN_ANCHOR_HEAL='0';try{ for(const options of [{failure:true},{bad:true}]){const mock=adapter(options);await assert.rejects(async()=>{for await(const _ of generateChapters(source,{env,fetcher:mock.fetcher,retryDelayMs:0})){}},options.failure?/429/:/Anchor/);}}finally{if(prev===undefined)delete process.env.EXPLAIN_ANCHOR_HEAL;else process.env.EXPLAIN_ANCHOR_HEAL=prev;}
 });
 test('Source text is preserved and fingerprint changes with content',async()=>{
  const a=await ingestSource({kind:'text',text:source.text}),b=await ingestSource({kind:'text',text:source.text.replace('739','831')});assert.equal(a.text,source.text);assert.notEqual(a.sha256,b.sha256);

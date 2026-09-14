@@ -31,3 +31,29 @@ export function renderPrimitive(o:CompiledObject,draw=1):string{
  if(!points.length)return '';const total=length(points);
  return `<path d="${path(points)}" fill="none" stroke="${COLORS.ink}" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="${total}" stroke-dashoffset="${total*(1-draw)}"/>`;
 }
+
+/** Normalized semantic geometry: no topic-specific drawings or model coordinates. */
+export function renderRepresentation(o:CompiledObject,draw=1,state='neutral',transition=1):string{
+ const spec=o.representation;if(!spec)return renderPrimitive(o,draw);
+ const x=o.x+o.w*.08,y=o.y+o.h*.08,w=o.w*.84,h=o.h*.84;
+ const changed=state==='after'||state==='activated';
+ const fraction=changed?transition:0;
+ const value=(spec.value??.75)+((spec.afterValue??spec.value??.75)-(spec.value??.75))*fraction;
+ const phase=(spec.phase??0)+((spec.afterPhase??spec.phase??0)-(spec.phase??0))*fraction;
+ const stroke=COLORS.blue;
+ let geometry='';
+ if(spec.family==='signal'){
+  const samples=Array.from({length:129},(_,i)=>({x:x+w*i/128,y:y+h/2-Math.sin((i/128)*(spec.cycles??2)*Math.PI*2+phase*Math.PI)*h*.4*value}));
+  const total=length(samples);
+  geometry=`<path d="M ${x} ${y+h/2} H ${x+w}" stroke="${COLORS.earth}" opacity=".3"/><path d="${path(samples)}" fill="none" stroke="${stroke}" stroke-width="3" stroke-dasharray="${total}" stroke-dashoffset="${total*(1-draw)}"/>`;
+ }else if(spec.family==='quantity'){
+  geometry=`<rect x="${x}" y="${y+h*.3}" width="${w}" height="${h*.4}" rx="5" fill="none" stroke="${stroke}" stroke-width="2.5"/><rect x="${x+3}" y="${y+h*.3+3}" width="${Math.max(0,w-6)*value*draw}" height="${Math.max(0,h*.4-6)}" fill="${stroke}" opacity=".6"/>`;
+ }else if(spec.family==='component_group'){
+  const count=spec.count??6,columns=Math.ceil(Math.sqrt(count)),rows=Math.ceil(count/columns),cell=Math.min(w/columns,h/rows)*.72;
+  geometry=Array.from({length:Math.ceil(count*draw)},(_,i)=>`<rect x="${x+(i%columns)*w/columns}" y="${y+Math.floor(i/columns)*h/rows}" width="${cell}" height="${cell}" rx="4" fill="${stroke}" fill-opacity=".12" stroke="${stroke}" stroke-width="2"/>`).join('');
+ }else{
+  geometry=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${spec.family==='container'?18:8}" fill="none" stroke="${stroke}" stroke-width="3" opacity="${draw}"/>`;
+  if(spec.family==='system')geometry+=`<path d="M ${o.x} ${y+h/2} H ${x+w*.22} M ${x+w*.78} ${y+h/2} H ${o.x+o.w}" fill="none" stroke="${stroke}" stroke-width="3" opacity="${draw}"/><circle cx="${x+w/2}" cy="${y+h/2}" r="${Math.min(w,h)*.17}" fill="${stroke}" opacity="${changed?.6:.15}"/>`;
+ }
+ return `<g data-representation="${spec.family}">${geometry}</g>`;
+}

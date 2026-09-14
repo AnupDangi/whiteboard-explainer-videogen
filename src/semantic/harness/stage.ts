@@ -1,0 +1,72 @@
+import type {GateResult,HarnessStage,StageEnvelope,StageOwner,StagePolicy} from './contracts.js';
+import {HARNESS_VERSION} from './contracts.js';
+import {stableHash} from './state.js';
+import type {StageJournal} from './journal.js';
+
+/** Bounded, owner-scoped context handed to a stage repair function. */
+export interface StageRepairContext<T>{stage:HarnessStage;owner:StageOwner;attempt:0|1;input:unknown;error:Error;gate:GateResult;output?:T}
+export type StageRepair<T>=(context:StageRepairContext<T>)=>Promise<T>|T;
+
+export const DEFAULT_STAGE_POLICIES:Record<HarnessStage,StagePolicy>={
+ ingest:{owner:'harness',timeoutMs:30000,maxRepairs:0,budgetUsd:0},
+ 'knowledge-compiler':{owner:'knowledge-compiler',timeoutMs:90000,maxRepairs:1,budgetUsd:.2},
+ 'teaching-architect':{owner:'teaching-architect',timeoutMs:90000,maxRepairs:1,budgetUsd:.35},
+ 'whiteboard-planner':{owner:'whiteboard-planner',timeoutMs:90000,maxRepairs:1,budgetUsd:.25},
+ 'representation-guide':{owner:'representation-guide',timeoutMs:10000,maxRepairs:0,budgetUsd:0},
+ 'source-visual-grounding':{owner:'source-visual-grounding',timeoutMs:30000,maxRepairs:1,budgetUsd:.1},
+ 'visual-director':{owner:'visual-director',timeoutMs:90000,maxRepairs:1,budgetUsd:.3},
+ compiler:{owner:'compiler',timeoutMs:30000,maxRepairs:0,budgetUsd:0},
+ 'tts-alignment':{owner:'speech-layer',timeoutMs:120000,maxRepairs:1,budgetUsd:.2},
+ 'pedagogy-critic':{owner:'pedagogy-critic',timeoutMs:90000,maxRepairs:1,budgetUsd:.2},
+ render:{owner:'renderer',timeoutMs:30000,maxRepairs:0,budgetUsd:0}
+};
+
+export interface StageExecuteOptions<T>{stage:HarnessStage;input:unknown;run:()=>Promise<T>|T;gate:(output:T)=>GateResult;journal?:StageJournal;policy?:StagePolicy;attempt?:0|1;model?:string|(()=>string|undefined);promptHash?:string;skillHash?:string;usage?:()=>{costUsd:number;promptTokens:number;completionTokens:number};repair?:StageRepair<T>}
+
+const emptyGate=(stage:HarnessStage):GateResult=>({stage,passed:false,findings:[]});
+const gateError=(stage:HarnessStage,gate:GateResult)=>Object.assign(new Error(`${stage} gate failed: ${gate.findings.filter(f=>f.severity==='hard').map(f=>f.code).join(', ')}`),{gate});
+
+/**
+ * Runs one stage under its policy. A supplied `repair` grants at most one
+ * owner-scoped retry (`policy.maxRepairs`): the failed attempt is journaled, the
+ * owner repairs its own output, and the repaired output is re-validated before
+ * downstream work continues. Without `repair` behavior is a single attempt.
+ */
+export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{output:T;envelope:StageEnvelope<T>}>{
+ const policy=options.policy??DEFAULT_STAGE_POLICIES[options.stage];
+ const maxRepairs=options.repair?policy.maxRepairs:0;
+ const inputHash=stableHash(options.input);
+ await options.journal?.persistInput?.(options.stage,options.attempt??0,inputHash,options.input);
+ const model=()=>typeof options.model==='function'?options.model():options.model;
+ const appendFailure=async(attempt:0|1,startedAt:string,started:number,gate:GateResult,error:Error)=>{
+  await options.journal?.append({harnessVersion:HARNESS_VERSION,stage:options.stage,owner:policy.owner,attempt,startedAt,finishedAt:new Date().toISOString(),elapsedMs:performance.now()-started,inputHash,status:'FAIL',model:model(),promptHash:options.promptHash,skillHash:options.skillHash,gate,error:{name:error.name,message:error.message}});
+ };
+ let attempt:0|1=options.attempt??0,hasProduced=false,produced:T|undefined;
+ for(;;){
+  const startedAt=new Date().toISOString(),started=performance.now();
+  let output:T;
+  if(hasProduced)output=produced as T;
+  else{
+   let timer:NodeJS.Timeout|undefined;
+   try{output=await Promise.race([Promise.resolve().then(options.run),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error(`${options.stage} exceeded ${policy.timeoutMs}ms`)),policy.timeoutMs);timer.unref?.();})]);}
+   catch(error){
+    if(timer)clearTimeout(timer);
+    const value=error instanceof Error?error:new Error(String(error)),gate=(error as {gate?:GateResult})?.gate??emptyGate(options.stage);
+    await appendFailure(attempt,startedAt,started,gate,value);
+    if(attempt<maxRepairs){produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt,input:options.input,error:value,gate});hasProduced=true;attempt=1;continue;}
+    throw error;
+   }
+   if(timer)clearTimeout(timer);
+  }
+  const gate=options.gate(output);
+  if(!gate.passed){
+   const error=gateError(options.stage,gate);
+   await appendFailure(attempt,startedAt,started,gate,error);
+   if(attempt<maxRepairs){produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt,input:options.input,error,gate,output});hasProduced=true;attempt=1;continue;}
+   throw error;
+  }
+  const usage=options.usage?.()??{costUsd:0,promptTokens:0,completionTokens:0};
+  const envelope:StageEnvelope<T>={harnessVersion:HARNESS_VERSION,stage:options.stage,owner:policy.owner,attempt,startedAt,finishedAt:new Date().toISOString(),elapsedMs:performance.now()-started,inputHash,outputHash:stableHash(output),model:model(),promptHash:options.promptHash,skillHash:options.skillHash,costUsd:usage.costUsd,promptTokens:usage.promptTokens,completionTokens:usage.completionTokens,gate,output};
+  await options.journal?.append(envelope as StageEnvelope<unknown>);return {output,envelope};
+ }
+}

@@ -1,18 +1,24 @@
 import {log,logContext} from '../shared/logger.js';
 import {randomUUID} from 'node:crypto';
-import {mkdir,writeFile,rename,readFile} from 'node:fs/promises';
+import {mkdir,writeFile,rename,readFile,stat} from 'node:fs/promises';
 import {join} from 'node:path';
+import {spawn} from 'node:child_process';
 import type {CompiledSceneV2} from './types.js';
 import type {JsonModel} from './planning/model-adapter.js';
 import type {VisionJudge} from './vision-judge.js';
 import type {V2Speech} from './speech.js';
 import {generateV2} from './planning/generate.js';
 import type {TeachingInput} from './planning/teaching-planner.js';
+import {ingestSource} from '../explainer/sources.js';
+import type {SourceInput} from '../shared/types.js';
+import {FileStageJournal} from './harness/journal.js';
+import {HARNESS_VERSION,type GateResult,type HarnessRunManifest,type LearnerProfile,type StageOwner} from './harness/contracts.js';
+import {DEFAULT_STAGE_POLICIES} from './harness/stage.js';
 
-export interface SemanticJobOptions {prompt:string;sourceText?:string;sourceId?:string;maxScenes?:number;allowedArchetypes:string[];language?:string;narration:boolean;maxCostUsd?:number}
-export interface SemanticSceneSnapshot {id:string;title:string;durationMs:number;timingKind:string;svg:string;audioUrl?:string;metrics:Record<string,number|undefined>;diagnostics:string[]}
-export interface SemanticJobSnapshot {id:string;status:'queued'|'planning'|'streaming'|'complete'|'partial'|'error'|'cancelled';revision:number;createdAt:number;prompt:string;language:string;scenes:SemanticSceneSnapshot[];availableMs:number;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;error?:string;errorKind?:string;costUsd:number;calls:number;narration:boolean}
-interface InternalSemanticJob extends SemanticJobSnapshot {controller?:AbortController;task?:Promise<void>;model?:JsonModel;judge?:VisionJudge;input?:TeachingInput;speech?:V2Speech}
+export interface SemanticJobOptions {prompt:string;sourceText?:string;sourceId?:string;source?:SourceInput;maxScenes?:number;allowedArchetypes:string[];language?:string;narration:boolean;maxCostUsd?:number;autoMp4?:boolean;learnerProfile?:Partial<LearnerProfile>;groundingPolicy?:'source-only'|'source-plus-verified';targetMinutes?:number;harnessVersion?:string}
+export interface SemanticSceneSnapshot {id:string;title:string;durationMs:number;timingKind:string;svg:string;compiledUrl?:string;audioUrl?:string;metrics:Record<string,number|undefined>;diagnostics:string[]}
+export interface SemanticJobSnapshot {id:string;status:'queued'|'planning'|'streaming'|'complete'|'partial'|'error'|'cancelled';revision:number;createdAt:number;prompt:string;language:string;scenes:SemanticSceneSnapshot[];availableMs:number;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;error?:string;errorKind?:string;costUsd:number;calls:number;narration:boolean;autoMp4?:boolean;mp4Status?:'pending'|'ready'|'failed'|'withheld';mp4Url?:string;mp4Error?:string;harnessVersion:string;finalGate:'PENDING'|'PASS'|'FAIL'|'PARTIAL';publishable:boolean;currentStage?:string;stageOwner?:StageOwner;gates:GateResult[];manifestUrl?:string;learnerProgression?:{establishedConcepts:string[];checkpoints:number};continuityDecisions?:number;modelRoutes?:string[];groundingPolicy:'source-only'|'source-plus-verified';targetMinutes?:number}
+interface InternalSemanticJob extends SemanticJobSnapshot {controller?:AbortController;task?:Promise<void>;model?:JsonModel;judge?:VisionJudge;input?:TeachingInput;speech?:V2Speech;learnerProfile?:LearnerProfile;manifest?:HarnessRunManifest}
 
 /** Failure taxonomy mirrors explainer/jobs.ts classifyError for the V2 stages. */
 export function classifySemanticError(message:string):string{
@@ -33,12 +39,13 @@ const MAX_ACTIVE=2,ARCHETYPE_PATTERN=/^[a-z_]+$/;
 /** Local single-process V2 job worker: durable snapshots, one scene pushed per
  *  generateV2 yield so the client can start playing before later scenes finish. */
 export class SemanticJobStore {
-  root:string; factories:{model:(env:NodeJS.ProcessEnv)=>JsonModel;judge?:(env:NodeJS.ProcessEnv)=>VisionJudge;speech?:(language:string)=>V2Speech|Promise<V2Speech>};
+  root:string; factories:{model:(env:NodeJS.ProcessEnv,options?:{jobId:string;maxCostUsd?:number;signal:AbortSignal})=>JsonModel;judge?:(env:NodeJS.ProcessEnv)=>VisionJudge;speech?:(language:string,signal?:AbortSignal)=>V2Speech|Promise<V2Speech>};
   jobs=new Map<string,InternalSemanticJob>();
-  constructor(root:string,factories:{model:(env:NodeJS.ProcessEnv)=>JsonModel;judge?:(env:NodeJS.ProcessEnv)=>VisionJudge;speech?:(language:string)=>V2Speech|Promise<V2Speech>}){
-    this.root=root;this.factories=factories;
+  outputDir:string;
+  constructor(root:string,factories:{model:(env:NodeJS.ProcessEnv,options?:{jobId:string;maxCostUsd?:number;signal:AbortSignal})=>JsonModel;judge?:(env:NodeJS.ProcessEnv)=>VisionJudge;speech?:(language:string,signal?:AbortSignal)=>V2Speech|Promise<V2Speech>},outputDir?:string){
+    this.root=root;this.factories=factories;this.outputDir=outputDir??join(process.cwd(),'output');
   }
-  snapshot(job:InternalSemanticJob):SemanticJobSnapshot{const {controller,task,model,judge,input,speech,...data}=job;return structuredClone(data);}
+  snapshot(job:InternalSemanticJob):SemanticJobSnapshot{const {controller,task,model,judge,input,speech,learnerProfile,manifest,...data}=job;return structuredClone(data);}
   async save(job:InternalSemanticJob,type:string){
     job.revision++;
     const path=join(this.root,job.id,'job.json');
@@ -46,47 +53,106 @@ export class SemanticJobStore {
     log('semantic-job.'+type,{jobId:job.id,status:job.status,revision:job.revision,readyScenes:job.scenes.length,availableMs:job.availableMs,error:job.error},job.status==='error'?'error':'info');
   }
   async create(options:SemanticJobOptions){
-    if(!options.prompt?.trim()||options.prompt.length>4000||(options.sourceText?.length??0)>32000)throw new Error('V2 prompt/source bounds exceeded');
-    const maxScenes=options.maxScenes??1;if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>8)throw new Error('V2 scene limit must be 1–8');
+    const controller=new AbortController();
+    let sourceText=options.sourceText,sourceId=options.sourceId,sourceFigures;
+    if(options.source){
+      if(sourceText!==undefined)throw new Error('Provide source or sourceText, not both');
+      const doc=await ingestSource(options.source,controller.signal);
+      sourceText=doc.text.length>120000?doc.text.slice(0,120000).replace(/\s+\S*$/,''):doc.text;
+      sourceId=`src_${doc.sha256.slice(0,28)}`;
+      sourceFigures=doc.figures;
+      if(doc.text.length>120000)log('semantic-job.source-truncated',{chars:doc.text.length,kept:sourceText.length});
+    }
+    if(!options.prompt?.trim()||options.prompt.length>4000||(sourceText?.length??0)>120000)throw new Error('V2 prompt/source bounds exceeded');
+    const maxScenes=options.maxScenes??Math.min(24,Math.max(1,Math.ceil((options.targetMinutes??.5)*2)));if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>24)throw new Error('V2 scene limit must be 1–24');
     if(!Array.isArray(options.allowedArchetypes)||!options.allowedArchetypes.length||options.allowedArchetypes.some(a=>!ARCHETYPE_PATTERN.test(a)))throw new Error('allowedArchetypes required');
     if(typeof options.narration!=='boolean')throw new Error('Invalid narration option');
-    if(options.maxCostUsd!==undefined&&(!Number.isFinite(options.maxCostUsd)||options.maxCostUsd<=0||options.maxCostUsd>2))throw new Error('Budget must be above $0 and at most $2');
+    if(options.autoMp4!==undefined&&typeof options.autoMp4!=='boolean')throw new Error('Invalid autoMp4 option');
+    if(options.harnessVersion!==undefined&&options.harnessVersion!==HARNESS_VERSION)throw new Error(`Unsupported harness version: ${options.harnessVersion}`);
+    if(options.groundingPolicy!==undefined&&!['source-only','source-plus-verified'].includes(options.groundingPolicy))throw new Error('Invalid grounding policy');
+    if(options.targetMinutes!==undefined&&(!Number.isFinite(options.targetMinutes)||options.targetMinutes<1||options.targetMinutes>60))throw new Error('Target minutes must be 1–60');
+    const configuredCostCeiling=Number(process.env.V2_MAX_JOB_COST_USD??2);if(!Number.isFinite(configuredCostCeiling)||configuredCostCeiling<=0||configuredCostCeiling>100)throw new Error('Invalid V2_MAX_JOB_COST_USD');
+    if(options.maxCostUsd!==undefined&&(!Number.isFinite(options.maxCostUsd)||options.maxCostUsd<=0||options.maxCostUsd>configuredCostCeiling))throw new Error(`Budget must be above $0 and at most $${configuredCostCeiling}`);
     const language=options.language??'en';if(!/^[a-zA-Z-]{2,16}$/.test(language))throw new Error('Invalid language');
+    if(options.learnerProfile?.level&&!['novice','beginner','intermediate','advanced'].includes(options.learnerProfile.level))throw new Error('Invalid learner level');
+    for(const values of [options.learnerProfile?.goals,options.learnerProfile?.assumedKnowledge,options.learnerProfile?.constraints])if(values!==undefined&&(!Array.isArray(values)||values.length>32||values.some(value=>typeof value!=='string'||!value.trim()||value.length>200)))throw new Error('Invalid learner profile');
     const active=[...this.jobs.values()].filter(j=>['queued','planning','streaming'].includes(j.status));
     if(active.length>=MAX_ACTIVE)throw new Error(`${MAX_ACTIVE} semantic jobs already active; wait or cancel one.`);
-    const job:InternalSemanticJob={id:randomUUID(),status:'queued',revision:0,createdAt:Date.now(),prompt:options.prompt,language,scenes:[],availableMs:0,costUsd:0,calls:0,narration:options.narration};
-    this.jobs.set(job.id,job);await mkdir(join(this.root,job.id),{recursive:true});
-    const env=process.env;job.model=this.factories.model(env);job.judge=env.V2_CRITIC==='on'?this.factories.judge?.(env):undefined;
-    job.speech=options.narration?await this.factories.speech?.(language):undefined;
-    job.input={prompt:options.prompt,sourceText:options.sourceText,sourceId:options.sourceId,maxScenes,allowedArchetypes:options.allowedArchetypes as TeachingInput['allowedArchetypes'],language};
-    const controller=new AbortController();job.controller=controller;
-    log('semantic-job.created',{jobId:job.id,language,maxScenes,narration:options.narration,archetypes:options.allowedArchetypes.length});
+    const profile: LearnerProfile={level:options.learnerProfile?.level??'beginner',goals:options.learnerProfile?.goals??[],language:options.learnerProfile?.language??language,assumedKnowledge:options.learnerProfile?.assumedKnowledge??[],constraints:options.learnerProfile?.constraints};
+    const job:InternalSemanticJob={id:randomUUID(),status:'queued',revision:0,createdAt:Date.now(),prompt:options.prompt,language,scenes:[],availableMs:0,costUsd:0,calls:0,narration:options.narration,harnessVersion:HARNESS_VERSION,finalGate:'PENDING',publishable:false,gates:[],groundingPolicy:options.groundingPolicy??'source-only',targetMinutes:options.targetMinutes,learnerProfile:profile,...(options.autoMp4?{autoMp4:true}:{})};
+    job.controller=controller;
+    const env=process.env;job.model=this.factories.model(env,{jobId:job.id,maxCostUsd:options.maxCostUsd,signal:controller.signal});job.judge=env.V2_CRITIC==='on'?this.factories.judge?.(env):undefined;
+    job.speech=options.narration?await this.factories.speech?.(language,controller.signal):undefined;
+    job.input={prompt:options.prompt,sourceText,sourceId,sourceFigures,maxScenes,allowedArchetypes:options.allowedArchetypes as TeachingInput['allowedArchetypes'],language,targetMinutes:options.targetMinutes,groundingPolicy:options.groundingPolicy??'source-only'};
+    if(options.narration&&!job.speech)throw new Error('Speech provider unavailable');
+    await mkdir(join(this.root,job.id),{recursive:true});this.jobs.set(job.id,job);
+    log('semantic-job.created',{jobId:job.id,language,maxScenes,narration:options.narration,archetypes:options.allowedArchetypes.length,...(options.source?{sourceKind:options.source.kind}:{}),...(sourceText!==undefined?{sourceChars:sourceText.length}:{})});
     job.task=logContext.run({...logContext.getStore(),jobId:job.id},()=>this.run(job,controller.signal));
     return this.snapshot(job);
   }
-  private persistScene(job:InternalSemanticJob,scene:CompiledSceneV2,audio?:Buffer,format?:string):SemanticSceneSnapshot{
+  private async persistScene(job:InternalSemanticJob,scene:CompiledSceneV2,audio?:Buffer,format?:string):Promise<SemanticSceneSnapshot>{
     const audioUrl=audio?`/media/semantic/${job.id}/${scene.scene.id}.${format??'wav'}`:undefined;
-    if(audio)writeFile(join(this.root,job.id,`${scene.scene.id}.${format??'wav'}`),audio).catch(e=>log('semantic-job.audio-write-failed',{error:String(e)},'warn'));
-    writeFile(join(this.root,job.id,`${scene.scene.id}.json`),JSON.stringify(scene,null,2)).catch(e=>log('semantic-job.scene-write-failed',{error:String(e)},'warn'));
-    return {id:scene.scene.id,title:scene.scene.title,durationMs:scene.durationMs,timingKind:scene.timing.kind,svg:scene.scene.id,audioUrl,metrics:{teachingMs:undefined,...scene.scene?{}:{}},diagnostics:scene.diagnostics};
+    if(audio)await this.writeArtifact(join(this.root,job.id,`${scene.scene.id}.${format??'wav'}`),audio);
+    await this.writeArtifact(join(this.root,job.id,`${scene.scene.id}.json`),JSON.stringify(scene,null,2));
+    return {id:scene.scene.id,title:scene.scene.title,durationMs:scene.durationMs,timingKind:scene.timing.kind,svg:scene.scene.id,compiledUrl:`/media/semantic/${job.id}/${scene.scene.id}.json`,audioUrl,metrics:{teachingMs:undefined,...scene.scene?{}:{}},diagnostics:scene.diagnostics};
+  }
+  async writeArtifact(path:string,content:string|Buffer){await writeFile(path+'.tmp',content);await rename(path+'.tmp',path);}
+  /** Render the finished job to a single MP4. Loud on failure; callers record it. */
+  async exportMp4(id:string):Promise<{output:string;size:string}>{
+    const job=await this.get(id);
+    if(!job)throw new Error('Job not found');
+    if(job.status!=='complete'||job.finalGate!=='PASS'||!job.publishable||!job.scenes.length)throw new Error(`Job ${id} is not publishable; only complete PASS jobs export`);
+    const outputPath=join(this.outputDir,`${id}.mp4`);
+    await mkdir(this.outputDir,{recursive:true});
+    await new Promise<void>((resolve,reject)=>{
+      const proc=spawn('node',['dist/scripts/export-semantic-job.js','--job',id,'--out',outputPath,'--fps','12','--data-root',this.root],{stdio:'pipe',cwd:process.cwd()});
+      let err='';
+      proc.stderr.on('data',d=>err+=d.toString());
+      proc.on('error',e=>reject(e instanceof Error?e:new Error(String(e))));
+      proc.on('close',code=>code===0?resolve():reject(new Error(`Semantic export exited ${code}: ${err}`.trim())));
+    });
+    const size=Math.round((await stat(outputPath)).size/1024)+' KB';
+    return {output:`/output/${id}.mp4`,size};
+  }
+  /** Best-effort background assembly after playable scenes commit. Never fails the job. */
+  private async autoAssemble(job:InternalSemanticJob):Promise<void>{
+    job.mp4Status='pending';delete job.mp4Url;delete job.mp4Error;
+    await this.save(job,'mp4-pending').catch(e=>log('semantic-job.mp4-pending-failed',{jobId:job.id,error:String(e)},'error'));
+    try{
+      const result=await this.exportMp4(job.id);
+      job.mp4Status='ready';job.mp4Url=result.output;
+      log('semantic-job.mp4-ready',{jobId:job.id,...result});
+    }catch(e){
+      job.mp4Status='failed';job.mp4Error=e instanceof Error?e.message:String(e);
+      log('semantic-job.mp4-failed',{jobId:job.id,error:job.mp4Error},'error');
+    }
+    await this.save(job,'mp4-'+job.mp4Status!).catch(e=>log('semantic-job.persistence-failed',{jobId:job.id,error:String(e)},'error'));
   }
   async run(job:InternalSemanticJob,signal:AbortSignal){
     try{
       job.status='planning';await this.save(job,'planning');
-      for await(const result of generateV2(job.input!,job.model!,{speech:job.speech?(text:string)=>job.speech!(text):undefined,signal,judge:job.judge,criticEnv:process.env})){
+      const journal=new FileStageJournal(join(this.root,job.id,'stage-journal.ndjson'));
+      const stageMap={teaching:'knowledge-compiler','visual-model':'representation-guide',representation:'source-visual-grounding',director:'visual-director','narration-finalize':'whiteboard-planner',tts:'tts-alignment',compile:'compiler',critic:'pedagogy-critic'} as const;
+      for await(const result of generateV2(job.input!,job.model!,{speech:job.speech?(text:string)=>job.speech!(text):undefined,signal,judge:job.judge,criticEnv:process.env,journal,runId:job.id,learnerProfile:job.learnerProfile,onTelemetry:event=>{const stage=(event.details?.harnessStage as keyof typeof DEFAULT_STAGE_POLICIES|undefined)??stageMap[event.stage];job.currentStage=stage;job.stageOwner=DEFAULT_STAGE_POLICIES[stage].owner;}})){
         signal.throwIfAborted();
         const scene=result.compiled;
         let audio:Buffer|undefined,format:string|undefined;
         if(result.speech){audio=result.speech.audio;format=result.speech.format;}
-        const snapshot=this.persistScene(job,scene,audio,format);
+        const snapshot=await this.persistScene(job,scene,audio,format);
         snapshot.metrics={teachingMs:result.metrics.teachingMs,visualModelMs:result.metrics.visualModelMs,directorMs:result.metrics.directorMs,narrationFinalizeMs:result.metrics.narrationFinalizeMs,ttsMs:result.metrics.ttsMs,compileMs:result.metrics.compileMs,sceneReadyMs:result.metrics.sceneReadyMs,criticMs:result.metrics.criticMs,criticRepairs:result.metrics.criticRepairs};
+        signal.throwIfAborted();
         job.scenes.push(snapshot);job.availableMs+=scene.durationMs;
-        job.costUsd=Number((job.costUsd+job.model!.calls.reduce((s,c)=>s+c.costUsd,0)).toFixed(6));job.calls=job.model!.calls.length;
+        job.costUsd=Number((job.model!.calls.reduce((s,c)=>s+(c.costUsd??0),0)).toFixed(6));job.calls=job.model!.calls.length;
         if(!job.firstPlayableMs){job.firstPlayableMs=Date.now()-job.createdAt;log('semantic-job.first-playable',{jobId:job.id,firstPlayableMs:job.firstPlayableMs,sceneId:scene.scene.id});}
-        if(!job.totalScenes)job.totalScenes=job.input!.maxScenes;
+        job.totalScenes=result.plan.scenes.length;
+        job.gates=result.gates;job.manifest=result.manifest;job.manifestUrl=`/media/semantic/${job.id}/harness-manifest.json`;job.learnerProgression={establishedConcepts:result.learnerAfter.establishedConcepts,checkpoints:result.learnerAfter.checkpoints.length};job.continuityDecisions=result.compiled.scene.continuity.transitions?.length??result.compiled.scene.continuity.keepFromPrevious.length;job.modelRoutes=[...new Set(job.model!.calls.map(c=>c.model))];
+        await this.writeArtifact(join(this.root,job.id,'harness-manifest.json'),JSON.stringify(result.manifest,null,2));
         job.status='streaming';await this.save(job,'scene-ready');
       }
-      job.status='complete';job.completedMs=Date.now()-job.createdAt;
+      const targetMs=job.targetMinutes?job.targetMinutes*60000:undefined,ratio=targetMs?job.availableMs/targetMs:1;
+      if(targetMs){const passed=ratio>=.85&&ratio<=1.15,durationGate:GateResult={stage:'tts-alignment',passed,findings:passed?[]:[{stage:'tts-alignment',code:'TIMING',severity:'hard',message:`Prepared duration ${Math.round(job.availableMs/1000)}s is outside the requested ${job.targetMinutes} minute window`,context:{targetMs,actualMs:job.availableMs,acceptedRatio:[.85,1.15]}}]};job.gates.push(durationGate);if(job.manifest){job.manifest.gates.push(durationGate);job.manifest.status=passed?'PASS':'FAIL';await this.writeArtifact(join(this.root,job.id,'harness-manifest.json'),JSON.stringify(job.manifest,null,2));}}
+      const durationPassed=!targetMs||(ratio>=.85&&ratio<=1.15);job.status=durationPassed?'complete':'partial';job.finalGate=durationPassed?'PASS':'FAIL';job.publishable=durationPassed;job.completedMs=Date.now()-job.createdAt;job.currentStage='render';job.stageOwner='renderer';
+      if(!durationPassed){job.error=`Prepared duration ${Math.round(job.availableMs/1000)}s did not satisfy the requested ${job.targetMinutes} minute duration gate.`;job.errorKind='timing';job.mp4Status='withheld';job.mp4Error='Final duration gate did not pass; MP4 publication withheld.';}
       log('semantic-job.summary',{jobId:job.id,status:job.status,wallMs:job.completedMs,firstPlayableMs:job.firstPlayableMs,scenes:job.scenes.length,costUsd:job.costUsd,calls:job.calls});
       await this.save(job,'complete');
     }catch(error){
@@ -94,8 +160,13 @@ export class SemanticJobStore {
       job.status=signal.aborted?'cancelled':(partial?'partial':'error');
       job.error=signal.aborted?'Cancelled by user':(error instanceof Error?error.message:String(error));
       job.errorKind=signal.aborted?'cancel':classifySemanticError(job.error);
+      job.finalGate=signal.aborted?'PARTIAL':'FAIL';job.publishable=false;job.mp4Status=job.scenes.length?'withheld':job.mp4Status;job.mp4Error=job.scenes.length?'Final teaching gate did not pass; MP4 publication withheld.':job.mp4Error;
       log('semantic-job.failure',{jobId:job.id,errorKind:job.errorKind,error:job.error},signal.aborted?'warn':'error');
-      await this.save(job,job.status);
+      job.costUsd=Number((job.model?.calls.reduce((s,c)=>s+(c.costUsd??0),0)??0).toFixed(6));job.calls=job.model?.calls.length??0;
+      await this.save(job,job.status).catch(e=>log('semantic-job.persistence-failed',{jobId:job.id,error:String(e)},'error'));
+    }
+    if(job.autoMp4&&job.status==='complete'&&job.finalGate==='PASS'&&job.publishable&&job.scenes.length&&!signal.aborted){
+      await this.autoAssemble(job);
     }
   }
   async get(id:string):Promise<SemanticJobSnapshot|null>{

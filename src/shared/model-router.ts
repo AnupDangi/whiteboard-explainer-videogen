@@ -9,6 +9,16 @@
 
 export type ModelTask='outline'|'content'|'director'|'critic'|'vision'|'embed';
 
+/** Current three-model shortlist. Every model supports the structured output
+ * contract used by the planner; the first two are the normal fast path and the
+ * third is the low-cost long-document fallback. */
+export const MODEL_SHORTLIST=[
+  'google/gemini-3-flash-preview',
+  'qwen/qwen3.5-27b',
+  'deepseek/deepseek-v3.2',
+] as const;
+export const DEFAULT_FAST_MODEL=MODEL_SHORTLIST[0];
+
 export interface ModelRouterConfig {
   outline:string;
   content:string;
@@ -42,4 +52,13 @@ export function loadModelRouter(env:NodeJS.ProcessEnv,base:string):ModelRouterCo
     vision:pick('vision',env.OPENROUTER_VISION_MODEL),
     embed:pick('embed',env.EMBEDDINGS_MODEL),
   };
+}
+
+/** Parse an operator-supplied ordered fallback list without allowing blank or
+ * malformed entries into provider requests. This is intentionally additive:
+ * existing per-stage model variables remain the source of truth until an
+ * operator opts into fallback routing. */
+export function loadModelFallbacks(env:NodeJS.ProcessEnv):string[] {
+  const configured=(env.OPENROUTER_MODEL_FALLBACKS||'').split(',').map(v=>v.trim()).filter(Boolean);
+  return [...new Set(configured.length?configured:MODEL_SHORTLIST)];
 }

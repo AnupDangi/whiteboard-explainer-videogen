@@ -6,7 +6,7 @@ import type {CriticContext,CriticImage,VisionJudge} from './vision-judge.js';
 import type {JsonModel} from './planning/model-adapter.js';
 import {visualSceneSchema,type Schema} from './schemas.js';
 import {validateVisualScene} from './planning/validate.js';
-import {directVisual} from './planning/visual-director.js';
+import {directVisual,validateDirectedScene,assetCandidates} from './planning/visual-director.js';
 import {compileScene} from './compiler/compile-scene.js';
 import type {ConceptIdentity,SemanticScenePlan,VisualSceneV2} from './types.js';
 import type {VisualModel} from './planning/visual-model.js';
@@ -55,7 +55,8 @@ export async function criticRepair(candidate:CompiledSceneV2,deps:CriticRepairDe
     if(visual.id!==candidate.scene.id)throw new Error('Repair changed scene identity');
     if(visual.beats.length!==candidate.scene.beats.length)throw new Error('Repair changed beat count');
     for(const [i,b] of candidate.scene.beats.entries())if(visual.beats[i].id!==b.id||visual.beats[i].narration!==b.narration)throw new Error(`Repair changed narration/beat ${b.id}`);
-    return {scene:visual};
+    const allowed=new Set(assetCandidates(deps.semantic,deps.registry,deps.mentalModel).flatMap(c=>c.candidates.map(a=>a.id)));
+    return {scene:validateDirectedScene(visual,deps.semantic,deps.registry,deps.mentalModel,allowed,deps.previous)};
   }) as {scene:VisualSceneV2};
   const scene=compileScene(repaired.scene,candidate.timing,deps.previous);
   const findingsAfter=lintCompiledScene(scene);

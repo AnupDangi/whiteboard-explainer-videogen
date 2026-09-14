@@ -196,7 +196,7 @@ export class JobStore {
         });
         for(let i=0;i<sceneTasks.length;i++){
           const scene=await sceneTasks[i];
-          signal.throwIfAborted();if(job.availableMs+scene.durationMs>30*60000)throw new Error('Generated narration exceeds the 30-minute maximum; reduce target length or revise pacing');job.scenes.push(scene);job.availableMs=durationOf(job.scenes);
+          signal.throwIfAborted();if(job.availableMs+scene.durationMs>60*60000)throw new Error('Generated narration exceeds the 60-minute maximum; reduce target length or revise pacing');job.scenes.push(scene);job.availableMs=durationOf(job.scenes);
           if(!job.firstPlayableMs)job.firstPlayableMs=Date.now()-job.createdAt;
           await queueSave('scene-ready');
         }

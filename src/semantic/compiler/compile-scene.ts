@@ -2,14 +2,17 @@ import {archetypePlacements} from './archetypes.js';
 import type {CompiledObject,CompiledSceneV2,VisualTiming,LayoutZone} from '../types.js';
 import {validateVisualScene} from '../planning/validate.js';
 import {getAsset,canonicalAnchor} from '../assets/registry.js';
+import {applyCompositionFallbacks} from './fallback.js';
 import {BOARD,zoneRect,supportedArchetype} from './zones.js';
-import {wrapLabel,visualBounds} from './text.js';
+import {fitLabel,visualBounds} from './text.js';
 import {findCollisions,contains} from './collisions.js';
 import {routeRelation} from './routing.js';
 import {occupancy} from './occupancy.js';
 import {compileTimeline,estimatedTiming,staticIntervals} from './timeline.js';
 export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:CompiledSceneV2):CompiledSceneV2{
- const scene=validateVisualScene(input,undefined,new Set(previous?.objects.map(o=>o.id))),diagnostics:string[]=[];
+ const validated=validateVisualScene(input,undefined,new Set(previous?.objects.map(o=>o.id))),diagnostics:string[]=[];
+ const {scene,warnings:fallbackWarnings}=applyCompositionFallbacks(validated);
+ for(const w of fallbackWarnings)diagnostics.push(w);
   for(const action of scene.beats.flatMap(b=>b.actions))if(!['draw','reveal','trace','flow','fill','highlight','pulse','fade','morph','replace'].includes(action.type))throw new Error(`Motion not implemented: ${action.type}`);
  for(const r of scene.relations)for(const ref of [r.from,r.to]){const o=scene.objects.find(o=>o.id===ref.objectId)!;if(o.assetRef)ref.anchor=canonicalAnchor(o.assetRef,ref.anchor);}
  if(!supportedArchetype(scene.archetype))throw new Error(`Archetype not implemented: ${scene.archetype}`);
@@ -25,7 +28,11 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   if(parent){const cw=Math.min(w,parent.w*.4),ch=Math.min(h,parent.h*.35);const px=zone.includes('left')?.2:zone.includes('right')?.8:.5,py=zone.includes('upper')?.2:zone.includes('lower')?.54:.5;rect={x:parent.x+(parent.w-cw)*px,y:parent.y+(parent.h-ch)*py,w:cw,h:ch};if(o.collisionPolicy==='touch')rect.x=parent.x+parent.w;}
   const old=scene.continuity.keepFromPrevious.includes(o.id)?previous?.objects.find(x=>x.id===o.id):undefined;
   if(old){if(old.conceptId!==o.conceptId||old.assetRef!==o.assetRef)throw new Error('Persistent identity changed');rect={x:old.x,y:old.y,w:old.w,h:old.h};}
-  const fontSize=scene.archetype==='numbered_steps'?24:scene.archetype==='equation_walkthrough'?24:labelOnly?22:20,lines=wrapLabel(o.label,labelOnly?rect.w:Math.max(rect.w,180),fontSize);
+  const baseFontSize=scene.archetype==='numbered_steps'?24:scene.archetype==='equation_walkthrough'?24:labelOnly?22:20;
+  const fitted=fitLabel(o.label,labelOnly?rect.w:Math.max(rect.w,180),baseFontSize);
+  if(fitted.truncated&&o.importance==='primary')throw new Error(`Critical label would be truncated: ${o.id}`);
+  if(fitted.fitted||fitted.truncated)diagnostics.push(`representation fallback: label "${o.label}" ${fitted.truncated?'truncated to three lines':'shrunk to '+fitted.fontSize+'px'} to fit (${o.id})`);
+  const fontSize=fitted.fontSize,lines=fitted.lines;
   const compiled:CompiledObject={...o,...rect,anchors:{},fontSize,lines,zIndex:parent?parent.zIndex+1:hero?1:2};
   objects.push(compiled);
  }
@@ -78,16 +85,31 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  for(const o of objects)if(!contains(BOARD.safe,visualBounds(o)))throw new Error(`Canvas escape: ${o.id}`);
  resolveAnchors();
  // Non-directional symbols expose facing flow ports; physical subpart anchors stay fixed.
- for(const o of objects){if(!o.assetRef||getAsset(o.assetRef).flowPortPolicy!=='facing')continue;const ports={input:{...o.anchors.input},output:{...o.anchors.output}};
-  for(const name of ['input','output']){const outgoing=scene.relations.filter(r=>r.from.objectId===o.id&&r.from.anchor===name&&r.relationType==='flows_to');if(!outgoing.length)continue;
-   const targets=outgoing.map(r=>objects.find(t=>t.id===r.to.objectId)!.anchors[r.to.anchor]);if(targets.some(p=>!p))throw new Error('Invalid flow target anchor');const meanX=targets.reduce((n,p)=>n+p.x,0)/targets.length;o.anchors[name]=meanX<o.x+o.w/2?ports.input:ports.output;
+  for(const o of objects){if(!o.assetRef||getAsset(o.assetRef).flowPortPolicy!=='facing')continue;const ports={input:{...o.anchors.input},output:{...o.anchors.output}};
+   for(const name of ['input','output']){const outgoing=scene.relations.filter(r=>r.from.objectId===o.id&&r.from.anchor===name&&r.relationType==='flows_to');if(!outgoing.length)continue;
+    for(const r of outgoing)if(!objects.find(t=>t.id===r.to.objectId)!.anchors[r.to.anchor]){diagnostics.push(`representation fallback: anchor ${r.to.anchor} unavailable; degraded to center (${r.id})`);r.to.anchor='center';}
+    const targets=outgoing.map(r=>objects.find(t=>t.id===r.to.objectId)!.anchors[r.to.anchor]);const meanX=targets.reduce((n,p)=>n+p.x,0)/targets.length;o.anchors[name]=meanX<o.x+o.w/2?ports.input:ports.output;
+   }
   }
- }
  // A simple cycle has one incoming/outgoing port per node. Face each port toward its neighbor.
  if(scene.archetype==='cycle')for(const r of scene.relations){const from=objects.find(o=>o.id===r.from.objectId)!,to=objects.find(o=>o.id===r.to.objectId)!;
   for(const [o,target,name] of [[from,to,r.from.anchor],[to,from,r.to.anchor]] as const){if(!['input','output'].includes(name))continue;const b=visualBounds(o),cx=b.x+b.w/2,cy=b.y+b.h/2,dx=target.x+target.w/2-cx,dy=target.y+target.h/2-cy,scale=1/Math.max(Math.abs(dx)/(b.w/2+10),Math.abs(dy)/(b.h/2+10));o.anchors[name]={x:cx+dx*scale,y:cy+dy*scale};}
  }
- const relations=scene.relations.map(r=>routeRelation(['hierarchy','equation_walkthrough'].includes(scene.archetype)?{...r,from:{...r.from,anchor:'bottom'},to:{...r.to,anchor:'top'}}:r,objects,{direct:scene.archetype==='equation_walkthrough'})),timing=structuredClone(timingInput??estimatedTiming(scene)),actions=compileTimeline(scene,timing);
+  // Final safety net (Wave 3): an unroutable connector degrades to a direct line
+  // with a visible diagnostic instead of failing the scene. The bounded
+  // re-direction in the director still gets first attempt at better geometry for
+  // overlap/escape failures; routing alone never kills a job.
+  const relations=scene.relations.map(r=>{
+   const routed={...r};
+   if(['hierarchy','equation_walkthrough'].includes(scene.archetype)){routed.from={...r.from,anchor:'bottom'};routed.to={...r.to,anchor:'top'};}
+   try{return routeRelation(routed,objects,{direct:scene.archetype==='equation_walkthrough'});}
+   catch{
+    const from=objects.find(o=>o.id===r.from.objectId)!,to=objects.find(o=>o.id===r.to.objectId)!;
+    const a=from.anchors[r.from.anchor]??from.anchors.center,b=to.anchors[r.to.anchor]??to.anchors.center;
+    diagnostics.push(`representation fallback: no safe connector route for ${r.id}; using direct line`);
+    return {...r,points:[a,b]};
+   }
+  }),timing=structuredClone(timingInput??estimatedTiming(scene)),actions=compileTimeline(scene,timing);
  if(['structural_diagram','convergence','cross_section','spatial_process'].includes(scene.archetype)){const metrics=occupancy(objects);if(metrics.heroRatio<.3)diagnostics.push('Weak hero salience');if(metrics.areaRatio<.2)diagnostics.push('Low structural occupancy');}
  const gaps=staticIntervals(scene,timing,actions);if(gaps.some(g=>g.endMs-g.startMs>3500))diagnostics.push('Narrated static interval exceeds 3500ms');
  return {version:2,scene,objects,relations,actions,timing,durationMs:timing.durationMs+650,diagnostics};

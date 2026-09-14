@@ -1,0 +1,127 @@
+{
+  "generatedAt": "2026-09-13T16:44:13.442Z",
+  "configHash": "1867f76f89b18a0f",
+  "totalCases": 1,
+  "totalRuns": 1,
+  "stageSuccess": {
+    "sourceUnderstandingSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "teachingPlanSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "storyboardSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "mentalModelSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "representationResolutionSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "visualDirectionSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "sceneGraphSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "compileSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "timelineSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "ttsSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    },
+    "fullJobSuccess": {
+      "pass": 0,
+      "fail": 1,
+      "rate": 0
+    }
+  },
+  "byCategory": {
+    "structural": {
+      "runs": 1,
+      "fullJobSuccess": 0,
+      "rate": 0
+    }
+  },
+  "byArchetype": {
+    "unknown": {
+      "runs": 1,
+      "fullJobSuccess": 0,
+      "rate": 0
+    }
+  },
+  "repairs": {},
+  "failureTaxonomy": {
+    "provider": 1
+  },
+  "latency": {
+    "firstAVPlayableMs": {
+      "P50": 0,
+      "P95": 0,
+      "mean": 0,
+      "unit": "ms"
+    },
+    "fullPlayableMs": {
+      "P50": 0,
+      "P95": 0,
+      "mean": 0,
+      "unit": "ms"
+    }
+  },
+  "cost": {
+    "P50": 0,
+    "P95": 0,
+    "mean": 0,
+    "total": 0
+  },
+  "caseResults": [
+    {
+      "caseId": "photosynthesis_inputs",
+      "category": "structural",
+      "runs": 1,
+      "fullJobSuccess": 0,
+      "partialJob": 0,
+      "error": 1,
+      "meanCostUsd": 0,
+      "meanFirstAVPlayableMs": null,
+      "meanFullPlayableMs": null
+    }
+  ],
+  "regressions": [
+    {
+      "caseId": "photosynthesis_inputs",
+      "runIndex": 0,
+      "reason": "OPENROUTER_API_KEY required for V2 automatic planning"
+    }
+  ],
+  "limitations": [
+    "Timing source depends on configured speech provider; estimated timing is labeled.",
+    "firstAVPlayableMs is null when narration is disabled or TTS fails.",
+    "Repair counts rely on emitted telemetry and diagnostic strings.",
+    "Teaching quality is not judged; only structural success/failure is measured."
+  ]
+}

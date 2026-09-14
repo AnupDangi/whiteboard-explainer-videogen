@@ -2,16 +2,16 @@ import type {VisualSceneV2,Rect} from '../types.js';
 /** Each family owns its composition. Physical systems never pass through graph layout. */
 export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
  const placements=new Map<string,Rect>(),roots=scene.objects.filter(o=>!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support');
- if(scene.archetype==='flow'){
-  if(roots.length<2||roots.length>8)throw new Error('Flow requires 2–8 primary representations');
-  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!['labels','compares_with'].includes(r.relationType));
+  if(scene.archetype==='flow'){
+   if(roots.length<2||roots.length>8)throw new Error('Flow requires 2–8 primary representations');
+   const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!['labels','compares_with'].includes(r.relationType)&&r.visualForm!=='none'&&!r.layoutFeedback);
   const rank=new Map<string,number>(),pending=new Set(ids);
   while(pending.size){const ready=[...pending].filter(id=>edges.filter(e=>e.to.objectId===id).every(e=>rank.has(e.from.objectId))).sort();if(!ready.length)throw new Error('Flow contains a cycle; choose the cycle archetype');for(const id of ready){rank.set(id,Math.max(0,...edges.filter(e=>e.to.objectId===id).map(e=>rank.get(e.from.objectId)!+1)));pending.delete(id);}}
   const count=Math.max(...rank.values())+1;if(count>5)throw new Error('Flow exceeds five readable stages');
   for(let column=0;column<count;column++){const group=roots.filter(o=>rank.get(o.id)===column).sort((a,b)=>a.id.localeCompare(b.id));if(group.length>3)throw new Error('Flow column exceeds three readable branches');group.forEach((o,row)=>placements.set(o.id,{x:100+(column+.5)*1080/count-65,y:150+(row+.5)*440/group.length-70,w:130,h:110}));}
  }else if(scene.archetype==='cycle'){
   if(roots.length<3||roots.length>6)throw new Error('Cycle requires 3–6 primary representations');
-  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'),order:string[]=[];let id=[...ids].sort()[0];
+  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback),order:string[]=[];let id=[...ids].sort()[0];
   for(let i=0;i<roots.length;i++){if(order.includes(id))throw new Error('Cycle must visit every primary representation');order.push(id);const next=edges.filter(e=>e.from.objectId===id);if(next.length!==1)throw new Error('Cycle requires one outgoing relation per primary representation');id=next[0].to.objectId;}
   if(id!==order[0])throw new Error('Cycle must close');order.forEach((id,i)=>{const a=-Math.PI/2+i*Math.PI*2/order.length;placements.set(id,{x:640+380*Math.cos(a)-60,y:340+155*Math.sin(a)-45,w:120,h:90});});
  }else if(scene.archetype==='transformation'||scene.archetype==='comparison'){
@@ -48,7 +48,7 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
    group.forEach((o,row)=>placements.set(o.id,{x:120+(layer+.5)*(1040/ranks)-70,y:170+(row+.5)*400/group.length-55,w:140,h:110}));}
  }else if(scene.archetype==='hierarchy'){
   if(roots.length<2||roots.length>12)throw new Error('Hierarchy requires 2–12 nodes');
-  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'&&['contains','part_of','depends_on','causes'].includes(r.relationType));
+  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback&&['contains','part_of','depends_on','causes'].includes(r.relationType));
   const children=new Map<string,string[]>(roots.map(o=>[o.id,[]])),indegree=new Map<string,number>(roots.map(o=>[o.id,0]));
   for(const r of edges){const [parent,child]=r.relationType==='part_of'?[r.to.objectId,r.from.objectId]:[r.from.objectId,r.to.objectId],list=children.get(parent)!;if(!list.includes(child))list.push(child);indegree.set(child,indegree.get(child)!+1);}
   const rootIds=roots.filter(o=>indegree.get(o.id)===0).map(o=>o.id);if(rootIds.length!==1)throw new Error('Hierarchy requires exactly one root');

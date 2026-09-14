@@ -9,7 +9,7 @@ import {lintCompiledScene} from './evaluation.js';
 /** Immutable per-scene review artifacts, rendered through the exact browser renderer. */
 export async function writeV2Artifacts(scene:CompiledSceneV2,out:string,options:{video?:boolean;audio?:{data:Buffer;format:'wav'|'mp3'};signal?:AbortSignal}={}){
  const findings=lintCompiledScene(scene);if(findings.some(f=>f.severity==='hard'))throw new Error('Cannot export a scene that fails deterministic preflight');
- await mkdir(out);const sharp=(await import('sharp')).default;
+ await mkdir(out,{recursive:true});const sharp=(await import('sharp')).default;
  const eventTimes=[0,...scene.scene.beats.map(b=>Math.max(...scene.actions.filter(a=>a.beatId===b.id).map(a=>a.startMs+a.durationMs))),scene.durationMs],fixedTimes=[0,.25,.5,.75,1].map(p=>p*scene.durationMs);
  for(const [family,times] of Object.entries({events:eventTimes,fixed:fixedTimes})){
   const tiles=[];for(const [i,time] of times.entries()){options.signal?.throwIfAborted();const svg=renderSVG(scene,time,{cursor:true});await writeFile(join(out,`${family}-${i}.svg`),svg);const png=await sharp(Buffer.from(svg)).resize(640,360).png().toBuffer();await writeFile(join(out,`${family}-${i}.png`),png);tiles.push({input:png,left:i%2*640,top:Math.floor(i/2)*360});}

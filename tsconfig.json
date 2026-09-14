@@ -17,7 +17,8 @@
   "include": [
     "src/**/*.ts",
     "public/**/*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "eval/**/*.ts"
   ],
   "exclude": [
     "scripts/publish-github.ts"

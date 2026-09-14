@@ -7,16 +7,16 @@ import {getOutputBudget,getRetrievalBudget,getInputBudget,getCostBudget,getLaten
 import {canAutoDirect,autoDirect,unmappedLabels} from './auto-director.js';
 import {embedEnabled,getOrBuildChunkVectors,embedTexts} from './embeddings.js';
 import {renderMapForOutline} from './document-map.js';
-import {loadModelRouter} from '../shared/model-router.js';
+import {DEFAULT_FAST_MODEL,loadModelRouter} from '../shared/model-router.js';
 import {NODE_KINDS,LAYOUTS} from '../shared/vocabulary.js';
 import {hasIllustration} from './illustrations.js';
 import {hasIcon} from './icons.js';
 import {progressionFrames,staticIntervalMs,connectorThroughNode} from './progression.js';
 import {segmentWords,segmentWordsWithIndex,segmentSentencesWithIndex,countWords,languageLabel} from '../shared/language.js';
 import type {Plan,Scene,SourceDocument,Usage} from '../shared/types.js';
-export const DURATIONS=[1,5,10,30] as const;
-export function validateDuration(value:number):number {if(!DURATIONS.includes(value as any))throw new Error('Duration must be 1, 5, 10 or 30 minutes');return value;}
-interface PlannerOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;durationMinutes?:number;maxCostUsd?:number;visualCritic?:boolean;sessionId?:string;cachePrompts?:boolean;language?:string;onUsage?:(usage:Usage)=>void;onResponse?:(value:unknown,index:number)=>Promise<void>;onContentReady?:(chapter:number,scenes:Array<{id:string;narration:string}>)=>void;cacheDir?:string}
+export const DURATIONS=[1,5,10,30,60] as const;
+export function validateDuration(value:number):number {if(!DURATIONS.includes(value as any))throw new Error('Duration must be 1, 5, 10, 30 or 60 minutes');return value;}
+interface PlannerOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;durationMinutes?:number;maxCostUsd?:number;visualCritic?:boolean;sessionId?:string;cachePrompts?:boolean;language?:string;onUsage?:(usage:Usage)=>void;onResponse?:(value:unknown,index:number)=>Promise<void>;onContentReady?:(chapter:number,scenes:Array<{id:string;narration:string}>)=>void;cacheDir?:string;retryDelayMs?:number}
 // Optional Stage 3 — Visual Critic (openai/gpt-5.6-luna): reviews a rendered scene thumbnail
 // and may request one bounded repair pass. Off by default (extra cost/latency); never fails
 // the chapter itself — any critic-path error is swallowed and the un-repaired scene is kept.
@@ -483,15 +483,15 @@ export function checkConceptBudget(scenes:LooseScene[]):string[] {
   }
   return failures;
 }
-export async function* generateChapters(source:SourceDocument,{env=process.env,fetcher=fetch,signal,durationMinutes=1,maxCostUsd=1,visualCritic=false,sessionId,cachePrompts=true,language='en',onUsage,onResponse,onContentReady,cacheDir}:PlannerOptions={}):AsyncGenerator<Plan>{
+export async function* generateChapters(source:SourceDocument,{env=process.env,fetcher=fetch,signal,durationMinutes=1,maxCostUsd=1,visualCritic=false,sessionId,cachePrompts=true,language='en',onUsage,onResponse,onContentReady,cacheDir,retryDelayMs}:PlannerOptions={}):AsyncGenerator<Plan>{
   fetcher=loggedFetch('openrouter',fetcher);
-  log('planner.started',{durationMinutes,maxCostUsd,language,model:env.OPENROUTER_MODEL||'google/gemini-3.8-flash'});
+  log('planner.started',{durationMinutes,maxCostUsd,language,model:env.OPENROUTER_MODEL||DEFAULT_FAST_MODEL});
   const languageName=languageLabel(language);
   const languageNote=language==='en'?'':`\n\nLANGUAGE RULE (overrides any English wording elsewhere in this prompt): write EVERY human-readable string — the title, scene titles, narration, node labels, note, edge labels, visualIntent and keyPoint — in ${languageName}. The narration must be natural ${languageName} speech a teacher would say, never English. Write in the language's own script and normal punctuation. Keep numbers, quantities, ids, JSON keys and schema field names unchanged.`;
   validateDuration(durationMinutes);
   if(!env.OPENROUTER_API_KEY)throw new Error('Configure OPENROUTER_API_KEY');
   getCostBudget(maxCostUsd);
-  const model=env.OPENROUTER_MODEL||'google/gemini-3.8-flash';
+  const model=env.OPENROUTER_MODEL||DEFAULT_FAST_MODEL;
   // Unlike call()'s per-request timeout, this catalog fetch previously had no deadline at all
   // and runs before any chapter task starts — a hung request here silently blocked the whole
   // generator with no error and no way for a caller-supplied AbortSignal-free timeout to help.
@@ -531,12 +531,24 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
     // endpoints reject provider.require_parameters. The old guard keyed on `callModel`
     // truthiness, which the model router made always-true — so the pin was silently dropped
     // for every model, including gemini, weakening schema enforcement.
-    const strictSchema=!['qwen/','inclusionai/','deepseek/'].some(p=>resolved.startsWith(p));
+    // Google accepts the bounded scene schemas, but its providers reject the 30/60-item
+    // outline schema as INVALID_ARGUMENT. For long outlines request a JSON object and
+    // keep the same local schema + semantic validation/repair gates. This changes only
+    // provider enforcement, never what the pipeline accepts.
+    const longOutline=label.startsWith('outline')&&durationMinutes>10;
+    const strictSchema=!longOutline&&!['qwen/','inclusionai/','deepseek/'].some(p=>resolved.startsWith(p));
     const cachedOf=(u:any)=>Number(u?.cached_tokens??u?.prompt_tokens_details?.cached_tokens??0)||0;
     // Phase 3 caching: one explicit breakpoint closing the stable system prompt (OpenRouter
     // translates it per provider and strips it where unsupported). session_id pins provider
     // routing per job so concurrent chapters and repair retries re-read warm cache.
-    const systemContent=cachePrompts===false?system:[{type:'text',text:system,cache_control:{type:'ephemeral'}}];
+    // Google AI Studio intermittently rejects OpenRouter's translated Anthropic-style
+    // cache_control content parts as INVALID_ARGUMENT, especially on large strict-schema
+    // outline requests. Send a plain string to Google; retain the explicit cache
+    // breakpoint for providers that accept it.
+    const providerCacheSupported=!resolved.startsWith('google/');
+    const systemContent=cachePrompts===false||!providerCacheSupported
+      ?system
+      :[{type:'text',text:system,cache_control:{type:'ephemeral'}}];
     const callStarted=performance.now();
     let budget=maxTokens;
     let reasonMax=1200;
@@ -563,13 +575,20 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
         // burning the caller's retry budget or failing the chapter.
         let response:Response|null=null;
         for(let throttle=0;;throttle++){
-          response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(getLatencyBudget('model'))]):AbortSignal.timeout(getLatencyBudget('model')),headers:{Authorization:`Bearer ${env.OPENROUTER_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:resolved,temperature:0.3,max_tokens:budget,reasoning:{max_tokens:reasonMax},response_format:{type:'json_schema',json_schema:{name:'explanation',strict:true,schema}},...(strictSchema?{provider:{require_parameters:true}}:{}),...(sessionId?{session_id:sessionId}:{}),messages:[{role:'system',content:systemContent},{role:'user',content:prompt}]})});
+          response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(getLatencyBudget('model'))]):AbortSignal.timeout(getLatencyBudget('model')),headers:{Authorization:`Bearer ${env.OPENROUTER_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:resolved,temperature:0.3,max_tokens:budget,reasoning:{max_tokens:reasonMax},response_format:strictSchema?{type:'json_schema',json_schema:{name:'explanation',strict:true,schema}}:{type:'json_object'},...(strictSchema?{provider:{require_parameters:true}}:{}),...(sessionId?{session_id:sessionId}:{}),messages:[{role:'system',content:systemContent},{role:'user',content:prompt}]})});
           if(response.status!==429||throttle>=2)break;
-          const wait=Number(response.headers.get('retry-after'))||[15,30][throttle]||30;
+          const wait=retryDelayMs===undefined
+            ? Number(response.headers.get('retry-after'))||[15,30][throttle]||30
+            : Math.max(0,retryDelayMs)/1000;
           log('planner.rate-limited',{label,waitSeconds:wait},'warn');
           try{await new Promise<void>((r,j)=>{const t=setTimeout(r,wait*1000);signal?.addEventListener('abort',()=>{clearTimeout(t);j(signal.reason);},{once:true});});}catch{/* abort propagates on next fetch */}
         }
-        if(!response||!response.ok){settle(0);if(response)log('planner.call-failed',{label,status:response.status},response.status===429?'warn':'error');throw new Error(`OpenRouter HTTP ${response?.status}; check key, quota or model access`);}
+        if(!response||!response.ok){
+          settle(0);
+          const detail=response?((await response.text()).slice(0,1200)):'';
+          if(response)log('planner.call-failed',{label,status:response.status,detail},response.status===429?'warn':'error');
+          throw new Error(`OpenRouter HTTP ${response?.status}; ${detail||'check key, quota or model access'}`);
+        }
         const data=await response.json();
         const finishReason=data.choices?.[0]?.finish_reason;
         if(finishReason==='length'&&lengthRetry===0){
@@ -584,7 +603,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
         usage.promptTokens+=data.usage?.prompt_tokens||0;usage.completionTokens+=data.usage?.completion_tokens||0;
         const cached=cachedOf(data.usage);usage.cachedTokens+=cached;
         // P5 call ledger: one line per model call with everything evaluation needs later.
-        log('planner.call',{label,attempt:isRepair?'repair':'first',finishReason,strictSchema,promptTokens:data.usage?.prompt_tokens,completionTokens:data.usage?.completion_tokens,cachedTokens:cached,costUsd:data.usage?.cost,model:resolved,elapsedMs:Math.round(performance.now()-callStarted)});
+        log('planner.call',{label,attempt:isRepair?'repair':'first',finishReason,strictSchema,providerCacheSupported,promptTokens:data.usage?.prompt_tokens,completionTokens:data.usage?.completion_tokens,cachedTokens:cached,costUsd:data.usage?.cost,model:resolved,elapsedMs:Math.round(performance.now()-callStarted)});
         settle(Number.isFinite(data.usage?.cost)?data.usage.cost:reservation);onUsage?.({...usage});
         if(finishReason==='content_filter')throw new Error('Provider content filter blocked this request');
         if(finishReason!=='stop')throw new Error(`Provider returned no completion (finish_reason=${finishReason??'missing'})`);
