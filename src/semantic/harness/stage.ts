@@ -62,9 +62,12 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
  /** Repair failures are journaled like any other failed attempt; without this
   *  wrapper a throwing repair propagated unjournaled and looked like a
   *  single-attempt stage failure, hiding that a repair was attempted. */
- const runRepair=async(error:Error,gate:GateResult,at:0|1,signal:AbortSignal)=>{
+ const runRepair=async(error:Error,gate:GateResult,at:0|1)=>{
   const repairStartedAt=new Date().toISOString(),repairStarted=performance.now();
-  try{produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt:at,input:options.input,error,gate,output:hasProduced?produced:undefined,signal});}
+  /** A fresh signal: the failed attempt's controller was aborted before the
+   *  repair ran, so reusing it made every thrown-error repair fail instantly. */
+  const repairController=new AbortController();
+  try{produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt:at,input:options.input,error,gate,output:hasProduced?produced:undefined,signal:repairController.signal});}
   catch(repairError){
    const value=repairError instanceof Error?repairError:new Error(String(repairError));
    await appendFailure(1,repairStartedAt,repairStarted,(repairError as {gate?:GateResult})?.gate??gate,value);
@@ -85,7 +88,7 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
     controller.abort(error);
     const value=error instanceof Error?error:new Error(String(error)),gate=(error as {gate?:GateResult})?.gate??emptyGate(options.stage);
     await appendFailure(attempt,startedAt,started,gate,value);
-    if(attempt<maxRepairs){await runRepair(value,gate,attempt,controller.signal);continue;}
+    if(attempt<maxRepairs){await runRepair(value,gate,attempt);continue;}
     throw error;
    }
    if(timer)clearTimeout(timer);
@@ -94,7 +97,7 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
   if(!gate.passed){
    const error=gateError(options.stage,gate);
    await appendFailure(attempt,startedAt,started,gate,error);
-   if(attempt<maxRepairs){await runRepair(error,gate,attempt,controller.signal);continue;}
+   if(attempt<maxRepairs){await runRepair(error,gate,attempt);continue;}
    throw error;
   }
   const usage=options.usage?.()??{costUsd:0,promptTokens:0,completionTokens:0};

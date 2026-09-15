@@ -91,3 +91,11 @@ test('a throwing stage repair is journaled as attempt 1 and does not hide the re
  assert.equal(fails[1].attempt,1,'the repair failure is recorded as attempt 1');
  assert.match(fails[1].error.message,/Cycle requires/);
 });
+
+test('a thrown-error repair receives a live signal so it can actually run',async()=>{
+ const journal=new MemoryStageJournal();
+ let repairSignalAborted=null;
+ const result=await executeStage({stage:'knowledge-compiler',input:{prompt:'x'},run:()=>{throw new Error('first attempt exploded');},gate:()=>ok('knowledge-compiler'),journal,repair:({signal})=>{repairSignalAborted=signal.aborted;return {plan:'repaired'};}});
+ assert.strictEqual(repairSignalAborted,false,'the repair signal must not be pre-aborted');
+ assert.deepEqual(result.output,{plan:'repaired'});
+});
