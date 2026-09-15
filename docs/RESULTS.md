@@ -1,3 +1,13 @@
+# 2026-09-15 — Source-visual-grounding selection + declared gaps
+
+- Figure selection is deterministic (caption names a required concept), with
+  per-figure rejection reasons and an advisory when nothing matches.
+- Declared, not coded: source-plus-verified policy = source-only fallback
+  (needs a verified-external-claims channel); legacy scene passthrough in the
+  director remains behind the semantic direction contract.
+- Verification: typecheck clean; `npm test` **312/312**; `git diff --check`
+  clean.
+
 # 2026-09-15 — Full check pass
 
 - Cold-build suite **311/311**, typecheck clean, diff-check clean.

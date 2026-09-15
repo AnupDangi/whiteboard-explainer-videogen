@@ -1,3 +1,19 @@
+# Grounding selection implemented; remaining gaps declared, 2026-09-15
+
+Plan-gap audit against PLAN_TO_IMPLEMENT.md found one actionable stub and one
+policy decision. Fixed: source-visual-grounding now deterministically selects
+source figures by caption-to-concept match against the scene's required
+concepts, records rejection reasons per figure, and advisories when nothing
+matches; groundedSourceVisualIds no longer blanket-passes every figure.
+Declared, awaiting user decision: `groundingPolicy:source-plus-verified`
+currently behaves as source-only because there is no verified-external-claims
+channel; the director path keeps a legacy full-scene fallback behind the
+required semantic `direction` contract. The deterministic pedagogy gates cover
+every plan category; the calibrated VLM judge remains optional (V2_CRITIC).
+
+Verification: `npm run typecheck` clean; `npm test` **312/312 pass, 0 fail**;
+`git diff --check` clean.
+
 # Full check pass, 2026-09-15
 
 Cold-build verification from the working tree: `git status` clean of code

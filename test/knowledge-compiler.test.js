@@ -9,6 +9,7 @@ import {validateKnowledge,compileKnowledge,chapterWindows,mergeGroundedPlans,kno
 import {conceptGraphFromPlan,contractsFromScene,stableHash} from '../dist/src/semantic/harness/state.js';
 import {planTeaching} from '../dist/src/semantic/planning/teaching-planner.js';
 import {generateV2} from '../dist/src/semantic/planning/generate.js';
+import {selectSourceVisuals} from '../dist/src/semantic/planning/knowledge-compiler.js';
 import {createVoiceEngineSpeech} from '../dist/src/semantic/speech.js';
 
 const SOURCE='Plants make food using sunlight, water and carbon dioxide. Leaves capture sunlight for energy. Roots absorb water from the soil. Leaves take in carbon dioxide from the air. Inputs enable plant food production.';
@@ -196,4 +197,18 @@ test('long grounded documents plan one global graph with bounded chapter windows
  assert.equal(new Set(plan.requiredClaims.map(claim=>claim.id)).size,plan.requiredClaims.length);
  assert.equal(plan.requiredClaims.length,3);
  assert.equal(plan.scenes[1].continuity.keepFromPrevious[0],'plant');
+});
+
+test('source-visual-grounding selects figures whose captions name required concepts',()=>{
+  const graph={...conceptGraphFromPlan(fixturePlan()),sourceVisuals:[
+  {id:'source-visual:1',sourceId:'src',caption:'A plant with visible leaves and roots',provenance:'source-image'},
+  {id:'source-visual:2',sourceId:'src',caption:'A diagram of unrelated machinery',provenance:'source-image'},
+  {id:'source-visual:3',sourceId:'src',caption:'',provenance:'source-table'}]};
+ const semantic={id:'scene',requiredConceptIds:['plant','sunlight','water','carbon_dioxide']};
+ const selection=selectSourceVisuals(semantic,graph);
+ assert.deepEqual(selection.selected.map(entry=>entry.id),['source-visual:1']);
+ assert.deepEqual(selection.rejected.map(entry=>entry.id),['source-visual:2','source-visual:3']);
+ assert.match(selection.rejected[1].reason,/no caption/);
+ const none=selectSourceVisuals(semantic,{...graph,sourceVisuals:[]});
+ assert.deepEqual(none.selected,[]);assert.deepEqual(none.rejected,[]);
 });

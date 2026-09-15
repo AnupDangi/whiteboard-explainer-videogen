@@ -20,7 +20,7 @@ import {gateBoardAlignment,gateCompiled,gateConceptGraph,gateLesson,gateTeaching
 import {HARNESS_VERSION,type LearnerProfile} from '../harness/contracts.js';
 import type {GateResult,HarnessStage} from '../harness/contracts.js';
 import {renderSVG} from '../renderer/render-svg.js';
-import {compileKnowledge,chapterWindows,mergeGroundedPlans,attachSourceVisuals} from './knowledge-compiler.js';
+import {compileKnowledge,chapterWindows,mergeGroundedPlans,attachSourceVisuals,selectSourceVisuals} from './knowledge-compiler.js';
 import {architectContracts} from './teaching-architect.js';
 import {narratedSpeech} from '../semantic-timing.js';
 import {skillContract} from '../skills.js';
@@ -124,7 +124,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   try{
    const representationStage=await harness.execute({resume:options.resume,stage:'representation-guide',input:{semantic,mentalModel},run:()=>assetCandidates(semantic,plan.conceptRegistry,mentalModel),gate:value=>({stage:'representation-guide',passed:value.every(candidate=>candidate.candidates.length>0||Boolean(candidate.representation)),findings:value.filter(candidate=>!candidate.candidates.length&&!candidate.representation).map(candidate=>({stage:'representation-guide',code:'REPRESENTATION_DEGRADATION' as const,severity:'hard' as const,message:`No representation for ${candidate.conceptId}`}))})});candidates=representationStage.output;
    const warnings=candidates.flatMap(candidate=>candidate.warnings);
-   const groundingStage=await harness.execute({resume:options.resume,stage:'source-visual-grounding',input:{semantic,conceptGraph,representationWarnings:warnings,groundingPolicy:input.groundingPolicy??'source-only'},run:()=>({policy:input.groundingPolicy??'source-only',sourceVisualIds:conceptGraph.sourceVisuals.map(v=>v.id)}),gate:()=>passGate('source-visual-grounding')});groundedSourceVisualIds=groundingStage.output.sourceVisualIds;
+    const groundingStage=await harness.execute({resume:options.resume,stage:'source-visual-grounding',input:{semantic,conceptGraph,representationWarnings:warnings,groundingPolicy:input.groundingPolicy??'source-only'},run:()=>{const selection=selectSourceVisuals(semantic,conceptGraph);return {policy:input.groundingPolicy??'source-only',sourceVisualIds:selection.selected.map(entry=>entry.id),selection};},gate:value=>({stage:'source-visual-grounding',passed:value.policy==='source-only'||Boolean(value.sourceVisualIds.length)||value.selection.rejected.length===0,findings:value.selection.rejected.length===0||value.sourceVisualIds.length?[]:[{stage:'source-visual-grounding' as const,code:'GROUNDING' as const,severity:'advisory' as const,message:'No source figure matched a required concept'}]})});groundedSourceVisualIds=groundingStage.output.sourceVisualIds;
    telemetry('representation','success',{elapsedMs:performance.now()-at,details:{warnings,fallbackCount:warnings.length}});
   }catch(e){telemetry('representation','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-at});throw stageFailure(e,'representation');}
   at=performance.now();

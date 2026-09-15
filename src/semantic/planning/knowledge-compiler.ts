@@ -118,6 +118,23 @@ export function attachSourceVisuals(graph:ConceptGraph,figures:SourceFigure[]|un
  return graph;
 }
 
+/** Deterministic source-visual selection (source-visual-grounding skill):
+ *  a figure is offered only when its caption names a concept this scene requires;
+ *  everything else is rejected with a recorded reason. No renderer coupling. */
+export interface SourceVisualSelection {selected:{id:string;concept:string}[];rejected:{id:string;reason:string}[]}
+export function selectSourceVisuals(semantic:{id:string;requiredConceptIds:string[]},graph:ConceptGraph):SourceVisualSelection{
+ if(!graph.sourceVisuals.length)return {selected:[],rejected:[]};
+ const wanted=graph.concepts.filter(concept=>semantic.requiredConceptIds.includes(concept.id));
+ const selected:SourceVisualSelection['selected']=[],rejected:SourceVisualSelection['rejected']=[];
+ for(const visual of graph.sourceVisuals){
+  const caption=(visual.caption??'').toLowerCase();
+  const match=wanted.find(concept=>caption.includes(concept.canonicalName.toLowerCase())||concept.aliases.some(alias=>alias.length>2&&caption.includes(alias.toLowerCase())));
+  if(match)selected.push({id:visual.id,concept:match.id});
+  else rejected.push({id:visual.id,reason:caption?'caption does not name a required concept':'figure has no caption'});
+ }
+ return {selected,rejected};
+}
+
 /** The real knowledge-compiler stage: one source-grounded model call, validated deterministically. */
 export async function compileKnowledge(input:KnowledgeInput,model:JsonModel,promptOptions:KnowledgePromptOptions={}):Promise<ConceptGraph>{
  if(!input.sourceText?.trim())throw new Error('Knowledge compilation requires source text');
