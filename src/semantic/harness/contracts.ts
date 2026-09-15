@@ -1,5 +1,4 @@
 import type {ConceptIdentity,EvidenceRef,ObjectState,SemanticRelationRequirement,VisualArchetype,VisualSceneV2,CompiledSceneV2} from '../types.js';
-import type {RepresentationResolution} from '../representation.js';
 
 export const HARNESS_VERSION='teaching-compiler-v1' as const;
 export type HarnessStage='ingest'|'knowledge-compiler'|'teaching-architect'|'whiteboard-planner'|'representation-guide'|'source-visual-grounding'|'visual-director'|'compiler'|'tts-alignment'|'pedagogy-critic'|'render';
@@ -76,7 +75,6 @@ export interface HarnessRunManifest {
   stages:StageEnvelope<unknown>[];gates:GateResult[];costUsd:number;status:'PASS'|'FAIL'|'PARTIAL';
 }
 
-export interface RepresentationBundle {sceneId:string;resolutions:RepresentationResolution[]}
 export interface HarnessSceneResult {
   conceptGraph:ConceptGraph;learnerBefore:LearnerState;learnerAfter:LearnerState;
   teachingContracts:TeachingContract[];whiteboardPlan:WhiteboardPlan;registry:SemanticRegistrySnapshot;

@@ -18,12 +18,12 @@ export function joinWav(buffers:Buffer[]):Buffer{
  return buildWav(parsed[0].fmt,data);
 }
 function buildWav(fmt:Buffer,data:Buffer):Buffer{
+ // Copy the source fmt payload verbatim (audioFormat, channels, sampleRate,
+ // byteRate, blockAlign, bitsPerSample) instead of re-deriving any field.
  const header=Buffer.alloc(44);
  header.write('RIFF',0,'ascii');header.writeUInt32LE(36+data.length,4);header.write('WAVE',8,'ascii');
  header.write('fmt ',12,'ascii');header.writeUInt32LE(16,16);
- header.writeUInt16LE(1,20);header.writeUInt16LE(1,22);
- header.writeUInt32LE(fmt.readUInt32LE(4),24);header.writeUInt32LE(fmt.readUInt32LE(8),28);
- header.writeUInt16LE(fmt.readUInt16LE(6),32);header.writeUInt16LE(fmt.readUInt16LE(14),34);
+ Buffer.from(fmt).subarray(0,16).copy(header,20);
  header.write('data',36,'ascii');header.writeUInt32LE(data.length,40);
  return Buffer.concat([header,data]);
 }

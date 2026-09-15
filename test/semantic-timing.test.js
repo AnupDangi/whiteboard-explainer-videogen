@@ -66,3 +66,36 @@ test('narratedSpeech keeps the single-call path for one-beat narration and fails
  await assert.rejects(()=>narratedSpeech({text:'a b',beats:[{id:'b1',text:'a'},{id:'b2',text:'b'}]},async()=>{throw new Error('tts exploded')}),/tts exploded/);
  await assert.rejects(()=>narratedSpeech({text:'a b',beats:[{id:'b1',text:'a'},{id:'b2',text:'b'}]},async text=>({timing:wordsFromDuration(text,500),audio:Buffer.from('RIFFxxxx'),format:text==='a'?'wav':'mp3',timingSource:'estimated'})),/mixed formats/);
 });
+
+test('joined WAV copies channels and blockAlign correctly (unit)',()=>{
+ const joined=joinWav([wav(100),wav(50)]);
+ assert.equal(joined.readUInt16LE(22),1,'channels copied from fmt');
+ assert.equal(joined.readUInt32LE(24),440,'sampleRate copied');
+ assert.equal(joined.readUInt32LE(28),880,'byteRate copied');
+ assert.equal(joined.readUInt16LE(32),2,'blockAlign copied from fmt offset 12');
+ assert.equal(joined.readUInt16LE(34),16,'bitsPerSample copied');
+});
+
+test('joined WAV passes ffprobe with correct codec, channels and duration',async()=>{
+ const {execFileSync}=await import('node:child_process');
+ const {mkdtempSync,writeFileSync,rmSync}=await import('node:fs');
+ const {tmpdir}=await import('node:os');
+ const {join}=await import('node:path');
+ let ffprobe=true;
+ try{execFileSync('ffprobe',['-version'],{stdio:'ignore'});}catch{ffprobe=false;}
+ if(!ffprobe){console.log('ffprobe not installed; skipping media validation (not a silent pass)');return;}
+ const rate=16000,bytesPerSample=2,seconds=data=>data/(rate*bytesPerSample);
+ const first=wav(rate*bytesPerSample,rate),second=wav(rate*bytesPerSample/2,rate);
+ const joined=joinWav([first,second]);
+ const dir=mkdtempSync(join(tmpdir(),'wav-join-')),file=join(dir,'out.wav');
+ writeFileSync(file,joined);
+ try{
+  const probed=JSON.parse(execFileSync('ffprobe',['-v','error','-print_format','json','-show_format','-show_streams',file],{encoding:'utf8'}));
+  const stream=probed.streams[0];
+  assert.equal(stream.codec_name,'pcm_s16le');
+  assert.equal(stream.channels,1);
+  assert.equal(Number(stream.sample_rate),rate);
+  const actual=Number(probed.format.duration),expected=seconds(first.length-44+second.length-44);
+  assert.ok(Math.abs(actual-expected)<0.05,`duration ${actual} vs ${expected}`);
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
