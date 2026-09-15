@@ -91,6 +91,33 @@ smoke: 13/18 full success. Metrics count `representationFallbackCount` from
 diagnostics + telemetry. Teaching quality and aesthetics are human-judged, not
 metered. Fixture throughput is never reported as model/TTS performance.
 
+## Logging and telemetry ledger
+
+One durable append-only JSONL ledger, written by `src/shared/logger.ts`:
+
+- **Path**: `app.log` in the repo root (override with `APP_LOG_PATH`); rotated
+  once past 20 MB to `app.<timestamp>.log`. Never delete it — rotate or
+  truncate only, it is the cost/prefill/scene-generation record.
+- **Per-job mirror**: every line also lands in `.data/<jobId>/log.jsonl` when a
+  job context is active.
+- **What it records**:
+  - `provider.request` / `provider.response` / `provider.failure` — host, path,
+    HTTP status, latency, request id (never headers, bodies, or query strings);
+  - `v2.planner.call` — model, latency, **prompt (prefill) tokens**, completion
+    tokens, cost, attempt;
+  - `v2.stage` — per-stage OK/FAIL with owner, attempt, latency, model, cost,
+    prompt/completion tokens, skill hash, gate codes;
+  - `v2.scene` — per generated scene: archetype, object/relation/beat counts,
+    duration, timing kind and provenance, narrated flag, word count, scene-ready
+    latency, cost and calls so far, diagnostics;
+  - `semantic-job.created` / `first-playable` / `status` / `summary` — lifecycle,
+    `firstPlayableMs`, wall time, aggregate cost, calls, prompt/completion
+    tokens, model routes, final gate, MP4 status.
+- **Redaction**: values matching key/token/secret/password/credential, plus
+  prompt, narration, sourceText and base64 payloads, are replaced with
+  `[REDACTED]` before writing; the ledger never contains provider secrets.
+- Logging is best-effort: a ledger write failure must never break the pipeline.
+
 ## Hard constraints
 
 No generated executable code or Manim; no model coordinates or raw SVG; renderer

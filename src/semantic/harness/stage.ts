@@ -1,6 +1,7 @@
 import type {GateResult,HarnessStage,StageEnvelope,StageOwner,StagePolicy} from './contracts.js';
 import {HARNESS_VERSION} from './contracts.js';
 import {stableHash} from './state.js';
+import {log} from '../../shared/logger.js';
 import type {StageJournal} from './journal.js';
 
 /** Bounded, owner-scoped context handed to a stage repair function. */
@@ -54,6 +55,7 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
  const maxRepairs=options.repair?policy.maxRepairs:0;
  const model=()=>typeof options.model==='function'?options.model():options.model;
  const appendFailure=async(attempt:0|1,startedAt:string,started:number,gate:GateResult,error:Error)=>{
+  log('v2.stage',{stage:options.stage,owner:policy.owner,attempt,status:'FAIL',elapsedMs:Math.round(performance.now()-started),model:model(),gateCodes:gate.findings.map(finding=>finding.code),error:error.message.slice(0,200)},'warn');
   await options.journal?.append({harnessVersion:HARNESS_VERSION,stage:options.stage,owner:policy.owner,attempt,startedAt,finishedAt:new Date().toISOString(),elapsedMs:performance.now()-started,inputHash,status:'FAIL',model:model(),promptHash:options.promptHash,skillHash:options.skillHash,gate,error:{name:error.name,message:error.message}});
  };
  let attempt:0|1=options.attempt??0,hasProduced=false,produced:T|undefined;
@@ -82,6 +84,7 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
   }
   const usage=options.usage?.()??{costUsd:0,promptTokens:0,completionTokens:0};
   const envelope:StageEnvelope<T>={harnessVersion:HARNESS_VERSION,stage:options.stage,owner:policy.owner,attempt,startedAt,finishedAt:new Date().toISOString(),elapsedMs:performance.now()-started,inputHash,outputHash:stableHash(output),model:model(),promptHash:options.promptHash,skillHash:options.skillHash,costUsd:usage.costUsd,promptTokens:usage.promptTokens,completionTokens:usage.completionTokens,gate,output};
+  log('v2.stage',{stage:options.stage,owner:policy.owner,attempt,status:'OK',elapsedMs:Math.round(envelope.elapsedMs),model:envelope.model,costUsd:usage.costUsd,promptTokens:usage.promptTokens,completionTokens:usage.completionTokens,skillHash:options.skillHash?.slice(0,12)});
   await options.journal?.append(envelope as StageEnvelope<unknown>);return {output,envelope};
  }
 }

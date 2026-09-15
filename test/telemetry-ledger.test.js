@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {readFileSync} from 'node:fs';
+import {makeWav} from './wav.js';
+
+test('app.log records every job call, prefill tokens, cost and scene generation',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'ledger-'));
+ const logPath=join(dir,'app.log');
+ process.env.APP_LOG_PATH=logPath;
+ const {generateV2}=await import('../dist/src/semantic/planning/generate.js?ledger='+Date.now());
+ const planJson=JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.teaching.json','utf8'));
+ const scene=()=>{const value=JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.scene.json','utf8'));for(const object of value.objects)if(['plant','sunlight','water','carbon_dioxide'].includes(object.id))object.conceptId=object.id;return value;};
+ const model={calls:[],events:[],async generate(stage,_instructions,_input,_schema,validate){
+  this.calls.push({stage,model:'test/model',elapsedMs:5,promptTokens:120,completionTokens:80,costUsd:0.0021,attempt:0});
+  return validate(stage==='teaching'?planJson:{scene:scene(),decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'plant and inputs',labelsOnly:'labels',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'decoration'}});
+ }};
+ const speech=async text=>({timing:{kind:'engine',timingSource:'estimated',durationMs:1000,words:[{word:'a',startMs:0,endMs:500},{word:'b',startMs:500,endMs:1000}]},audio:makeWav(40),format:'wav'});
+ const results=[];
+ for await(const result of generateV2({prompt:'Teach plant inputs',allowedArchetypes:['structural_diagram','convergence'],maxScenes:1},model,{speech}))results.push(result);
+ assert.equal(results.length,1);
+ const lines=(await readFile(logPath,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+ const stages=lines.filter(line=>line.event==='v2.stage');
+ assert.ok(stages.length>=5,`expected per-stage ledger lines, got ${stages.length}`);
+ const knowledgeStage=stages.find(line=>line.stage==='knowledge-compiler');
+ assert.equal(knowledgeStage.promptTokens,120,'prefill tokens logged');
+ assert.equal(knowledgeStage.completionTokens,80);
+ assert.equal(knowledgeStage.costUsd,0.0021);
+ assert.ok(stages.some(line=>line.stage==='visual-director'&&line.status==='OK'));
+ const sceneLine=lines.find(line=>line.event==='v2.scene');
+ assert.ok(sceneLine,'scene generation logged');
+ assert.equal(sceneLine.sceneId,results[0].compiled.scene.id);
+ assert.equal(sceneLine.narrated,true);
+ assert.ok(sceneLine.durationMs>0&&sceneLine.costUsdSoFar>=0.002);
+ assert.ok(lines.every(line=>typeof line.at==='string'),'every line timestamped');
+ await rm(dir,{recursive:true,force:true});
+ delete process.env.APP_LOG_PATH;
+});
