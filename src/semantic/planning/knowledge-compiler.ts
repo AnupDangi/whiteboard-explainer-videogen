@@ -1,5 +1,6 @@
 import {assertSchema,type Schema} from '../schemas.js';
 import {normalizeSemanticKey} from '../identity/types.js';
+import {log} from '../../shared/logger.js';
 import type {ConceptGraph,KnowledgeClaim} from '../harness/contracts.js';
 import type {TeachingPlanV2} from '../types.js';
 import {validateTeachingPlan} from './validate.js';
@@ -87,12 +88,29 @@ export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
  assertSchema(raw,knowledgeGraphSchema);
  const value=structuredClone(raw) as {concepts:{key:string;canonicalName:string;aliases:string[];semanticType:ConceptGraph['concepts'][number]['semanticType'];visualFamily?:string;evidenceRefs:string[]}[];prerequisites:{before:string;after:string;reason:string}[];mechanisms:ConceptGraph['mechanisms'];claims:{id:string;statement:string;critical:boolean;evidenceRefs:string[]}[];quantities:{conceptKey:string;value:string;evidenceRefs:string[]}[];terminology:{key:string;definition:string}[];evidence:{id:string;sourceId?:string;quote:string;section?:string}[]};
  const concepts:ConceptGraph['concepts']=value.concepts.map(c=>({id:c.key,canonicalName:c.canonicalName,aliases:[...(c.aliases??[])],semanticType:c.semanticType,evidenceRefs:[...new Set(c.evidenceRefs)],...(c.visualFamily?{visualFamily:c.visualFamily}:{})}));
- const aliases:Record<string,string>={};
- for(const concept of concepts)for(const alias of [concept.id,concept.canonicalName,...(concept.aliases??[])]){
-  const normalized=normalizeSemanticKey(alias),existing=aliases[normalized];
-  if(existing&&existing!==concept.id)throw new Error(`Alias fork: "${alias}" maps to both ${existing} and ${concept.id}`);
-  aliases[normalized]=concept.id;
+ // Canonical identity (key/canonicalName) must never fork — that rejects.
+ // Optional surface aliases that collide across concepts are dropped
+ // deterministically (each concept keeps its own canonical identity).
+ const canonical:Record<string,string>={};
+ for(const concept of concepts)for(const name of [concept.id,concept.canonicalName]){
+  const normalized=normalizeSemanticKey(name),existing=canonical[normalized];
+  if(existing&&existing!==concept.id)throw new Error(`Canonical identity conflict: "${name}" maps to both ${existing} and ${concept.id}`);
+  canonical[normalized]=concept.id;
  }
+ const aliasOwners:Record<string,string>={},conflicted=new Set<string>();
+ for(const concept of concepts)for(const alias of concept.aliases??[]){
+  const normalized=normalizeSemanticKey(alias);
+  if(!normalized)continue;
+  const canonicalOwner=canonical[normalized];
+  if(canonicalOwner&&canonicalOwner!==concept.id){conflicted.add(normalized);continue;}
+  const owner=aliasOwners[normalized];
+  if(owner&&owner!==concept.id){conflicted.add(normalized);continue;}
+  aliasOwners[normalized]=concept.id;
+ }
+ if(conflicted.size)for(const concept of concepts)concept.aliases=(concept.aliases??[]).filter(alias=>!conflicted.has(normalizeSemanticKey(alias)));
+ const aliases:Record<string,string>={...canonical};
+ for(const [normalized,owner] of Object.entries(aliasOwners))if(!(normalized in canonical)&&!conflicted.has(normalized))aliases[normalized]=owner;
+ if(conflicted.size)log('v2.knowledge.aliases-dropped',{count:conflicted.size,aliases:[...conflicted].slice(0,8)});
  const keys=new Set(concepts.map(c=>c.id));
  for(const edge of value.prerequisites)if(!keys.has(edge.before)||!keys.has(edge.after)||edge.before===edge.after)throw new Error(`Invalid prerequisite edge: ${JSON.stringify(edge)}`);
  const outgoing=new Map<string,string[]>();
@@ -106,9 +124,11 @@ export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
  for(const item of [...value.claims,...value.mechanisms,...value.quantities])for(const ref of item.evidenceRefs)if(!evidenceIds.has(ref))throw new Error(`Unknown evidence ${ref}`);
  for(const mechanism of value.mechanisms)for(const conceptId of mechanism.conceptIds)if(!keys.has(conceptId))throw new Error(`Unknown concept in mechanism ${mechanism.id}: ${conceptId}`);
  for(const quantity of value.quantities)if(!keys.has(quantity.conceptKey))throw new Error(`Unknown quantity concept: ${quantity.conceptKey}`);
- for(const term of value.terminology)if(!keys.has(term.key))throw new Error(`Unknown terminology key: ${term.key}`);
- for(const item of value.evidence)if(sourceText&&!sourceText.includes(item.quote))throw new Error(`Fabricated evidence: ${item.id}`);
- const graph:ConceptGraph={version:1,concepts,aliases,prerequisites:value.prerequisites.filter((edge,index,all)=>all.findIndex(other=>other.before===edge.before&&other.after===edge.after)===index),mechanisms:value.mechanisms.map(m=>({...m,conceptIds:[...new Set(m.conceptIds)],evidenceRefs:[...new Set(m.evidenceRefs)]})),claims:value.claims.map(c=>({id:c.id,statement:c.statement,critical:c.critical,evidenceRefs:[...new Set(c.evidenceRefs)]})) satisfies KnowledgeClaim[] as KnowledgeClaim[],terminology:Object.fromEntries(value.terminology.map(t=>[t.key,{definition:t.definition}])),quantities:value.quantities.map(q=>({conceptId:q.conceptKey,value:q.value,evidenceRefs:[...new Set(q.evidenceRefs)]})),evidence:value.evidence.map(e=>({id:e.id,sourceId:e.sourceId??'source',quote:e.quote,section:e.section})),sourceVisuals:[]};
+ // Deterministic heal: models compile terminology for entities mentioned in
+ // claims without emitting them as concepts; unknown-key entries drop (recorded).
+ const knownTerminology=value.terminology.filter(term=>keys.has(term.key));
+ const droppedTerminology=value.terminology.length-knownTerminology.length; for(const item of value.evidence)if(sourceText&&!sourceText.includes(item.quote))throw new Error(`Fabricated evidence: ${item.id}`);
+ const graph:ConceptGraph={version:1,concepts,aliases,prerequisites:value.prerequisites.filter((edge,index,all)=>all.findIndex(other=>other.before===edge.before&&other.after===edge.after)===index),mechanisms:value.mechanisms.map(m=>({...m,conceptIds:[...new Set(m.conceptIds)],evidenceRefs:[...new Set(m.evidenceRefs)]})),claims:value.claims.map(c=>({id:c.id,statement:c.statement,critical:c.critical,evidenceRefs:[...new Set(c.evidenceRefs)]})) satisfies KnowledgeClaim[] as KnowledgeClaim[],terminology:Object.fromEntries(knownTerminology.map(t=>[t.key,{definition:t.definition}])),quantities:value.quantities.map(q=>({conceptId:q.conceptKey,value:q.value,evidenceRefs:[...new Set(q.evidenceRefs)]})),evidence:value.evidence.map(e=>({id:e.id,sourceId:e.sourceId??'source',quote:e.quote,section:e.section})),sourceVisuals:[]};
  return graph;
 }
 

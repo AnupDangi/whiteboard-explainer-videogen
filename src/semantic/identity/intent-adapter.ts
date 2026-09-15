@@ -11,7 +11,11 @@ export function teachingIntentToPlan(value:any):TeachingPlanV2{
  beats:beats.map(({key,transform,...b}:any)=>({...b,id:key,transform:transform.map(({conceptKey,...t}:any)=>({...t,conceptId:conceptKey}))}))}))};
 }
 export function directionToScene(direction:any,semantic:SemanticScenePlan):VisualSceneV2{
- const objects=direction.objects.map(({conceptKey,parentConceptKey,...o}:any)=>({...o,id:`object_${conceptKey}`,conceptId:conceptKey,children:[],...(parentConceptKey?{parentId:`object_${parentConceptKey}`}:{})}));
+ const objects=direction.objects.map(({conceptKey,parentConceptKey,children,...o}:any)=>({...o,id:`object_${conceptKey}`,conceptId:conceptKey,children:[],...(parentConceptKey?{parentId:`object_${parentConceptKey}`}:{})}));
+ for(const declared of direction.objects)for(const childKey of (declared.children??[]).filter((k:any)=>k!==declared.conceptKey)){
+  const parent=objects.find((o:any)=>o.conceptId===declared.conceptKey),child=objects.find((o:any)=>o.conceptId===childKey);
+  if(parent&&child&&!child.parentId)child.parentId=parent.id;
+ }
  const objectFor=(key:string)=>{const found=objects.filter((o:any)=>o.conceptId===key);if(found.length!==1)throw new Error(`Ambiguous or missing concept ${key}`);return found[0];};
  for(const o of objects)if(o.parentId){const parent=objects.find((p:any)=>p.id===o.parentId);if(!parent)throw new Error(`Missing parent ${o.parentId}`);parent.children.push(o.id);}
  const form=(type:string)=>['contains','part_of'].includes(type)?'containment':type==='flows_to'?'flow':type==='labels'?'leader':type==='compares_with'?'brace':'arrow';

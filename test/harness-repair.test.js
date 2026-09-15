@@ -58,3 +58,16 @@ test('repair prompts carry bounded findings and forbid upstream regeneration',()
  assert.match(repaired,/PREREQUISITE_ORDER/);
  assert.match(repaired,/Do not regenerate unrelated content/);
 });
+
+test('a thrown stage error is offered to the owner repair with the error message as the hint',async()=>{
+ const {repairHints}=await import('../dist/src/semantic/repair.js');
+ const hints=repairHints({error:new Error('V2 knowledge validation exhausted: Canonical identity conflict: "x" maps to both a and b'),gate:{findings:[]}});
+ assert.deepEqual(hints,['Canonical identity conflict: "x" maps to both a and b']);
+ const gateHints=repairHints({error:new Error('stage gate failed'),gate:{findings:[{severity:'hard',code:'VISUAL_SUPPORT',message:'missing'}]}});
+ assert.deepEqual(gateHints,['VISUAL_SUPPORT: missing']);
+ assert.deepEqual(repairHints({error:new Error('   '),gate:{findings:[]}}),[]);
+ const {executeStage}=await import('../dist/src/semantic/harness/stage.js');
+ let attempts=0;
+ const {output,envelope}=await executeStage({stage:'visual-director',input:{},run:()=>{attempts++;if(attempts===1)throw new Error('Cycle requires 3-6 primary representations');return {ok:true};},gate:()=>ok('visual-director'),repair:async({error,gate})=>{const hints=repairHints({error,gate});assert.deepEqual(hints,['Cycle requires 3-6 primary representations']);return {ok:true};},journal:new MemoryStageJournal()});
+ assert.equal(attempts,1);assert.deepEqual(output,{ok:true});assert.equal(envelope.attempt,1);
+});

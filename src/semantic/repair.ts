@@ -38,3 +38,14 @@ export function toRepairFailure(error:unknown,stage:string):RepairFailure{
  const base={class:failure.failureClass,stage:failure.stage,code:failure.code,message:failure.message,context:failure.context,before:failure.before,after:failure.after};
  return {...base,provenance:{attempt:0,owner:repairOwnerForStage(base)}};
 }
+
+/** Actionable repair hints: hard gate findings first, else the thrown error's
+ *  own message. A stage that threw (compiler/validation error) is still a
+ *  failed stage the owner may repair once. */
+export function repairHints(context:{error:Error;gate:{findings:{severity:string;code:string;message:string}[]}}):string[]{
+ const hard=context.gate.findings.filter(finding=>finding.severity==='hard').map(finding=>`${finding.code}: ${finding.message}`);
+ if(hard.length)return hard;
+ const message=context.error.message.trim();
+ const actionable=message.replace(/^(V2\s+\w+\s+validation exhausted:\s*|.*gate failed:\s*)/,'').trim();
+ return actionable?[actionable.slice(0,300)]:[];
+}

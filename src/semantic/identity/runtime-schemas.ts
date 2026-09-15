@@ -23,7 +23,8 @@ sp.requiredRelations.items=rename(sp.requiredRelations.items!,{id:'key',fromConc
 const op=structuredClone(visualObjectSchema.properties!);
 for(const k of ['id','conceptId','parentId','children'])delete op[k];
 op.conceptKey=key;op.parentConceptKey=key;
-export const semanticObjectSchema=object(op,['representation','assetRef','primitiveRef','preferredZone','parentConceptKey']);
+op.children=array(key,32);
+export const semanticObjectSchema=object(op,['representation','assetRef','primitiveRef','preferredZone','parentConceptKey','children']);
 const ap=structuredClone(visualActionSchema.properties!);
 for(const k of ['id','objectIds','relationIds'])delete ap[k];
 ap.conceptKeys=array(key,32);ap.relationRefs=array(relationRefSchema);

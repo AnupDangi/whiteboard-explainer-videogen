@@ -53,7 +53,12 @@ test('skill eval:alias-collapse merges spelling variants into one key',()=>{
 
 test('skill invariants: alias forks, cycles, orphan claims and fabricated evidence reject',()=>{
  const fork=validKnowledge();fork.concepts.push({...CONCEPT('light_ray','Light ray',['light'])});
- assert.throws(()=>validateKnowledge(fork,SOURCE),/Alias fork/);
+ const healed=validateKnowledge(fork,SOURCE);
+ assert.equal(healed.aliases['light'],undefined,'ambiguous surface alias drops');
+ assert.equal(healed.concepts.find(c=>c.id==='sunlight').aliases.includes('light'),false,'conflicting alias removed');
+ assert.equal(healed.concepts.find(c=>c.id==='light_ray').aliases.includes('light'),false);
+ const canonicalFork=validKnowledge();canonicalFork.concepts.push({...CONCEPT('water_two','Water',[])});
+ assert.throws(()=>validateKnowledge(canonicalFork,SOURCE),/Canonical identity conflict/);
  const cycle=validKnowledge();cycle.prerequisites=[{before:'plant',after:'sunlight',reason:'x'},{before:'sunlight',after:'plant',reason:'y'}];
  assert.throws(()=>validateKnowledge(cycle,SOURCE),/cycle/);
  const orphan=validKnowledge();orphan.claims[0].evidenceRefs=[];
