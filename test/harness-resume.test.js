@@ -81,3 +81,13 @@ test('resume replay refuses a stage whose skill or prompt hash changed',async()=
  const changedPrompt=await executeStage({stage:'knowledge-compiler',input:{prompt:'x'},run:()=>{runs++;return {plan:'fourth'};},gate:()=>ok('knowledge-compiler'),journal,resume:true,skillHash:'skill-A',promptHash:'prompt-B'});
  assert.equal(runs,2,'changed prompt hash must not replay');
 });
+
+test('a throwing stage repair is journaled as attempt 1 and does not hide the retry',async()=>{
+ const journal=new MemoryStageJournal();
+ await assert.rejects(executeStage({stage:'knowledge-compiler',input:{prompt:'x'},run:()=>{throw new Error('Cycle requires 3–6 primary representations');},gate:()=>ok('knowledge-compiler'),journal,repair:()=>{throw new Error('Cycle requires 3–6 primary representations');}}),/Cycle requires/);
+ const entries=await journal.read();
+ const fails=entries.filter(entry=>entry.status==='FAIL');
+ assert.equal(fails.length,2,'both the stage failure and the repair failure are journaled');
+ assert.equal(fails[1].attempt,1,'the repair failure is recorded as attempt 1');
+ assert.match(fails[1].error.message,/Cycle requires/);
+});
