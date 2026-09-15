@@ -1,3 +1,35 @@
+# Root-cause pass on the live blocker, 2026-09-15
+
+The "provider bimodality" was decomposed into concrete causes with data:
+1. **Request timeout was cutting off healthy calls.** Observed gemini
+   successes ran 13–127 s; the 120 s request timeout aborted slow-but-valid
+   responses mid-flight (the 127 s knowledge success would have died).
+   Request timeout raised to 150 s; visual-director stage deadline 300 s.
+2. **Mode hypothesis disproven**: the earlier "standalone probe vs job"
+   difference was not `V2_JSON_MODE` — both contexts use the same .env
+   object mode; 2/2 object-mode probes succeeded.
+3. **Resume proven at full scale**: after one run journaled knowledge (127 s)
+   + architect (12 s) + board + representation + grounding OK, the retry
+   replayed all five stages at 0 ms with zero model calls and spent $0.012
+   total, running only the failed director.
+4. What remains is genuinely provider-side: gemini alternates between
+   compact valid JSON (~2-8k tokens, 13-130 s) and verbose truncation
+   chains (>12k tokens at a 12k/18k budget) across time windows; qwen and
+   deepseek hang to the request timeout. Route health correctly deprioritizes
+   hung routes on the next stage; the director then failed twice at 150 s
+   each in the final attempt. No narrated scene completed today; total
+   provider spend today ~$0.55, program < $1. Recorded as the
+   infrastructure baseline for the 48×3 benchmark.
+
+Recommended next lever (not implemented): route the knowledge/director calls
+to whichever provider currently answers fastest, learned per-window from
+route-health telemetry, or run the benchmark when OpenRouter routes recover;
+`SemanticJobStore.retry` now makes such retries cheap because completed
+stages replay for free.
+
+Verification: `npm run typecheck` clean; `npm test` **303/303 pass, 0 fail**;
+`git diff --check` clean.
+
 # Provider resilience: verbosity caps and route health, 2026-09-15
 
 Two bounded changes target today's observed provider failure modes:

@@ -1,3 +1,14 @@
+# 2026-09-15 — Root-cause pass: timeouts were killing healthy calls
+
+- Request timeout 120 s aborted healthy gemini responses observed at up to
+  127 s; raised to 150 s, director stage deadline 300 s.
+- Resume proven at full scale: 5-stage grounded prefix replayed at 0 ms,
+  $0.012 spent, only the failed director re-run.
+- Remaining blocker confirmed provider-side (gemini verbose/truncate chains
+  per time window; qwen/deepseek hangs). Today's spend ~$0.55.
+- Verification: typecheck clean; `npm test` **303/303**; `git diff --check`
+  clean.
+
 # 2026-09-15 — Provider resilience: verbosity caps + route health
 
 - Knowledge/architect contracts cap verbosity at schema level; live probe:

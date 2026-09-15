@@ -14,7 +14,7 @@ export const DEFAULT_STAGE_POLICIES:Record<HarnessStage,StagePolicy>={
  'whiteboard-planner':{owner:'whiteboard-planner',timeoutMs:90000,maxRepairs:1,budgetUsd:.25},
  'representation-guide':{owner:'representation-guide',timeoutMs:10000,maxRepairs:0,budgetUsd:0},
  'source-visual-grounding':{owner:'source-visual-grounding',timeoutMs:30000,maxRepairs:1,budgetUsd:.1},
- 'visual-director':{owner:'visual-director',timeoutMs:180000,maxRepairs:1,budgetUsd:.3},
+ 'visual-director':{owner:'visual-director',timeoutMs:300000,maxRepairs:1,budgetUsd:.3},
  compiler:{owner:'compiler',timeoutMs:30000,maxRepairs:0,budgetUsd:0},
  'tts-alignment':{owner:'speech-layer',timeoutMs:120000,maxRepairs:1,budgetUsd:.2},
  'pedagogy-critic':{owner:'pedagogy-critic',timeoutMs:90000,maxRepairs:1,budgetUsd:.2},
