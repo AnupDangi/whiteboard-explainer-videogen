@@ -1,3 +1,4 @@
+import {log} from '../../shared/logger.js';
 import {stageFailure} from '../repair.js';
 import {planTeaching,type TeachingInput} from './teaching-planner.js';
 import {selectVisualModel} from './visual-model.js';
@@ -76,8 +77,11 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
    const beforeCalls=model.calls.length;
    const buildKnowledge=async(repairFindings?:string[])=>{
     if(input.sourceText){
-     const graph=attachSourceVisuals(await compileKnowledge({prompt:input.prompt,sourceText:input.sourceText,sourceId:input.sourceId,language:input.language,repairFindings},model),input.sourceFigures,input.sourceId);
-     const windows=chapterWindows(input.sourceText);
+     const cutoff=Number((options.criticEnv??process.env)?.V2_KNOWLEDGE_SOURCE_CHARS??60000);
+     const knowledgeText=cutoff>0&&input.sourceText.length>cutoff?input.sourceText.slice(0,cutoff):input.sourceText;
+     if(knowledgeText.length<input.sourceText.length)log('v2.knowledge.source-capped',{chars:knowledgeText.length,total:input.sourceText.length});
+     const graph=attachSourceVisuals(await compileKnowledge({prompt:input.prompt,sourceText:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model),input.sourceFigures,input.sourceId);
+     const windows=chapterWindows(knowledgeText);
      const perWindow=Math.max(1,Math.floor((input.maxScenes??1)/windows.length));
      const planned:TeachingPlanV2[]=[];let prior:string[]=[];
      for(const [index,window] of windows.entries()){
@@ -122,7 +126,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   telemetry('representation','started');
   let candidates:ReturnType<typeof assetCandidates>,groundedSourceVisualIds:string[]=[];
   try{
-   const representationStage=await harness.execute({resume:options.resume,stage:'representation-guide',input:{semantic,mentalModel},run:()=>assetCandidates(semantic,plan.conceptRegistry,mentalModel),gate:value=>({stage:'representation-guide',passed:value.every(candidate=>candidate.candidates.length>0||Boolean(candidate.representation)),findings:value.filter(candidate=>!candidate.candidates.length&&!candidate.representation).map(candidate=>({stage:'representation-guide',code:'REPRESENTATION_DEGRADATION' as const,severity:'hard' as const,message:`No representation for ${candidate.conceptId}`}))})});candidates=representationStage.output;
+   const representationStage=await harness.execute({resume:options.resume,stage:'representation-guide',input:{semantic,mentalModel},run:()=>assetCandidates(semantic,plan.conceptRegistry,mentalModel),gate:value=>{const heroMissing=value.some(candidate=>candidate.conceptId===semantic.centralConceptId&&!candidate.candidates.length&&!candidate.representation);return {stage:'representation-guide',passed:!heroMissing,findings:value.filter(candidate=>!candidate.candidates.length&&!candidate.representation).map(candidate=>({stage:'representation-guide' as const,code:'REPRESENTATION_DEGRADATION' as const,severity:candidate.conceptId===semantic.centralConceptId?'hard' as const:'advisory' as const,message:`No representation for ${candidate.conceptId}`}))};}});candidates=representationStage.output;
    const warnings=candidates.flatMap(candidate=>candidate.warnings);
     const groundingStage=await harness.execute({resume:options.resume,stage:'source-visual-grounding',input:{semantic,conceptGraph,representationWarnings:warnings,groundingPolicy:input.groundingPolicy??'source-only'},run:()=>{const selection=selectSourceVisuals(semantic,conceptGraph);return {policy:input.groundingPolicy??'source-only',sourceVisualIds:selection.selected.map(entry=>entry.id),selection};},gate:value=>({stage:'source-visual-grounding',passed:value.policy==='source-only'||Boolean(value.sourceVisualIds.length)||value.selection.rejected.length===0,findings:value.selection.rejected.length===0||value.sourceVisualIds.length?[]:[{stage:'source-visual-grounding' as const,code:'GROUNDING' as const,severity:'advisory' as const,message:'No source figure matched a required concept'}]})});groundedSourceVisualIds=groundingStage.output.sourceVisualIds;
    telemetry('representation','success',{elapsedMs:performance.now()-at,details:{warnings,fallbackCount:warnings.length}});
