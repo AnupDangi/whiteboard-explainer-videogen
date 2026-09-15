@@ -1,4 +1,23 @@
 import type {ConceptIdentity,SemanticScenePlan,VisualArchetype,SceneContinuity} from '../types.js';
+/** True when the plan's required relations form exactly one closed ring over
+ *  every concept the scene must represent: each concept has one outgoing
+ *  relation within the set and the walk returns to its start after visiting
+ *  all of them. */
+function cycleRelationsClose(scene:SemanticScenePlan):boolean{
+ const ids=new Set(scene.requiredConceptIds);
+ const arcs=scene.requiredRelations.filter(relation=>ids.has(relation.fromConceptId)&&ids.has(relation.toConceptId)&&relation.fromConceptId!==relation.toConceptId);
+ if(ids.size<3)return false;
+ const outgoing=(id:string)=>arcs.filter(arc=>arc.fromConceptId===id);
+ const start=[...ids].sort()[0];const visited=new Set<string>();let current=start;
+ for(let step=0;step<ids.size;step++){
+  if(visited.has(current))return false;
+  visited.add(current);
+  const next=outgoing(current);
+  if(next.length!==1)return false;
+  current=next[0].toConceptId;
+ }
+ return current===start;
+}
 import {archetypeFits} from '../compiler/archetypes.js';
 export interface VisualModel {mentalModel:string;candidateArchetypes:VisualArchetype[];heroConceptIds:string[];supportConceptIds:string[];relationStrategy:string[];requiredObjectStates:{conceptId:string;fromState:string;toState:string}[]}
 /** Scene semantics and benchmark constraints determine eligibility, never topic regexes. */
@@ -8,7 +27,12 @@ export function selectVisualModel(scene:SemanticScenePlan,registry:ConceptIdenti
    *  primary representation first, so a scene is never sent to a family whose
    *  compiler will reject its object count. */
   const count=scene.requiredConceptIds.length;
-  const ordered=[...candidates.filter(a=>archetypeFits(a,count)),...candidates.filter(a=>!archetypeFits(a,count))];
+  /** A cycle must close: if the plan's own relations cannot express one
+   *  outgoing arc per concept in a single ring, choosing cycle guarantees a
+   *  compile failure, so the family is deprioritised (never invented). */
+  const closes=cycleRelationsClose(scene);
+  const ranked=(a:VisualArchetype)=>archetypeFits(a,count)&&(a!=='cycle'||closes);
+  const ordered=[...candidates.filter(ranked),...candidates.filter(a=>!ranked(a))];
   if(!candidates.length)throw new Error(`No feasible archetype for ${scene.id}`);
   const concepts=scene.requiredConceptIds.map(id=>{const c=registry.find(c=>c.id===id);if(!c)throw new Error(`Unknown concept: ${id}`);return c;});
   for(const id of scene.continuity.keepFromPrevious)if(!previous.prepareForNext.includes(id))throw new Error(`Continuity unavailable: ${id}`);

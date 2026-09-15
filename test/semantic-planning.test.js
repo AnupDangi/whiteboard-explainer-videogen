@@ -83,6 +83,23 @@ test('archetype selection prefers a family that can hold the scene concept count
  const registry=[...plan().conceptRegistry,...['extra1','extra2','extra3'].map(id=>({id,canonicalName:id,aliases:[],semanticType:'entity'}))];
  const model=selectVisualModel(scene,registry,{keepFromPrevious:[],prepareForNext:[]},['cycle','flow']);
  assert.equal(model.candidateArchetypes[0],'flow','flow (2-8) precedes cycle (3-6) for seven concepts');
- const small=selectVisualModel({...scene,requiredConceptIds:['plant','sunlight','water']},registry,{keepFromPrevious:[],prepareForNext:[]},['cycle','flow']);
- assert.equal(small.candidateArchetypes[0],'cycle','cycle stays first when it fits');
+ const small=selectVisualModel({...scene,requiredConceptIds:['plant','sunlight','water'],requiredRelations:[
+  {id:'r1',fromConceptId:'plant',toConceptId:'sunlight',relationType:'flows_to'},
+  {id:'r2',fromConceptId:'sunlight',toConceptId:'water',relationType:'flows_to'},
+  {id:'r3',fromConceptId:'water',toConceptId:'plant',relationType:'flows_to'}]},registry,{keepFromPrevious:[],prepareForNext:[]},['cycle','flow']);
+ assert.equal(small.candidateArchetypes[0],'cycle','cycle stays first when it fits and closes');
+});
+
+test('a cycle candidate is deprioritised when the plan relations cannot close a ring',async()=>{
+ const base=plan().scenes[0];
+ const registry=plan().conceptRegistry;
+ const ring={...base,candidateArchetypes:['cycle','flow'],requiredConceptIds:['plant','sunlight','water'],requiredRelations:[
+  {id:'r1',fromConceptId:'plant',toConceptId:'sunlight',relationType:'flows_to'},
+  {id:'r2',fromConceptId:'sunlight',toConceptId:'water',relationType:'flows_to'},
+  {id:'r3',fromConceptId:'water',toConceptId:'plant',relationType:'flows_to'}]};
+ const closed=selectVisualModel(ring,registry,{keepFromPrevious:[],prepareForNext:[]},['cycle','flow']);
+ assert.equal(closed.candidateArchetypes[0],'cycle','a closing ring keeps cycle first');
+ const broken={...ring,requiredRelations:[...ring.requiredRelations,{id:'r4',fromConceptId:'plant',toConceptId:'water',relationType:'causes'}]};
+ const open=selectVisualModel(broken,registry,{keepFromPrevious:[],prepareForNext:[]},['cycle','flow']);
+ assert.equal(open.candidateArchetypes[0],'flow','a non-closing relation set no longer leads with cycle');
 });
