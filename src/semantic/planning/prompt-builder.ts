@@ -46,6 +46,7 @@ export function teachingPrompt(options:TeachingPromptOptions):string{
     `Plan a coherent teaching arc and semantic beats, not a node/edge diagram. A scene keeps one central mental model on one board.`,
     `Explicitly identify centralConceptId: the whole system being taught, not whichever subpart receives the most relations.`,
     `Each beat teaches one conceptual change. Use at most ${options.maxScenes} scenes, 4–7 short beats per scene, approximately 12–20 words per beat.`,
+    `A beat's introduce list may hold at most three concepts; spread later concepts across the following beats (reinforce or transform them there) so no single beat carries more than three new concepts.`,
     options.targetMinutes?`Build one causally connected lesson for approximately ${options.targetMinutes} minutes. Spend time on mechanisms and worked examples rather than repeating definitions. Keep canonical concept identity stable across the full lesson.`:'',
     `Write for ${level}.`,
     `Keep the JSON compact: narration drafts of 12-20 words each, statements under 20 words, no repeated evidence text, no explanations outside the schema fields.`,
