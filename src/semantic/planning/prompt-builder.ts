@@ -114,6 +114,8 @@ export function architectPrompt(options:ArchitectPromptOptions={}):string{
 
 export interface DirectorPromptOptions {archetype?:string;learnerLevel?:string;language?:string;whiteboard?:boolean}
 const PRIMITIVE_DIRECTIONS:Record<string,string>={
+ cycle:'This is a cycle: the primary objects form exactly one closed loop. Give every primary object exactly ONE outgoing relation to another primary object, and no other relations between primary objects, so the walk from any primary returns to it after visiting all of them. A feedback or side relation breaks the cycle and is rejected.',
+ flow:'This is a flow: relations between primary objects must form a DAG with 2-8 stages and no cycle; order the stages so materials move in one direction.',
  equation_walkthrough:'This is an equation walkthrough: every primary object MUST use primitiveRef "equation" (never assetRef) and its label is one full derivation line; only the objects that personify steps may use primitiveRef "label".',
  matrix_operation:'This is a matrix/vector operation: use the matrix/vector assets when a candidate matches, and primitiveRef "equation" for operator/equals tokens (never both on one object).',
  numbered_steps:'Every primary object uses primitiveRef "label" with a short step title (never assetRef).',

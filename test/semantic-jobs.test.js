@@ -37,7 +37,7 @@ test('semantic job lifecycle: create → scenes pushed in order → complete sna
     assert.ok(done.availableMs>0);
     assert.equal(done.narration,true);
     assert.equal(done.finalGate,'PASS');assert.equal(done.publishable,true);assert.equal(done.harnessVersion,'teaching-compiler-v1');
-    const persisted=JSON.parse(await readFile(join(root,snapshot.id,'job.json'),'utf8'));
+    const persisted=await waitFor(()=>readFile(join(root,snapshot.id,'job.json'),'utf8').then(JSON.parse).catch(()=>null),j=>j&&['complete','partial','error'].includes(j.status));
     assert.equal(persisted.status,'complete');
     const manifest=JSON.parse(await readFile(join(root,snapshot.id,'harness-manifest.json'),'utf8'));
     assert.equal(manifest.status,'PASS');assert.ok(manifest.stages.some(stage=>stage.stage==='render'));
