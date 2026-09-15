@@ -1,6 +1,7 @@
 # 2026-09-15 (late) — Batch 5: evidence snapping + route cooldown (fixture-verified, live partial)
 
-- Commit `209b24d`. `npm run typecheck` clean; `npm test` **335/335 pass**.
+- Commits `209b24d`, `540a432`. `npm run typecheck` clean; `npm test`
+  **336/336 pass**.
 - New fixture tests: teaching evidence validates against the full source scope
   (cross-window verbatim accepted, mild paraphrase snapped, fabricated quote
   rejected); math-symbol normalization (`∗∙·−≤≥` → ASCII) covered in
@@ -10,9 +11,12 @@
   paraphrase-snapped quotes; gemini route healthy 2–13 s/call. Route cooldown
   and sourceVisual-evidence-id paths compiled and unit-tested but not
   exercised live.
-- NOT established: no MP4 from batch 5; A1 acceptance still open. Residual:
-  formula-verbatim evidence fabrication (k(b) = k0 exp(-(b - bmin)/tau) style
-  quotes) still rejects; next bounded task.
+- NOT established: no MP4 from batch 5; A1 acceptance still open; next bounded
+  task is the A1 live run. Residual formula-evidence issue CLOSED (`540a432`):
+  root cause was Mathematical Alphanumeric Symbols in PDF-extracted formulas;
+  NFKD normalization + raw-sentence snap verified against the live
+  DeepSeek-V4.1 report source for both recorded failure quotes
+  (`ev_first_order`, `ev_penalty_formula`) — fixture-level, not yet live-run.
 - Timing note: batch-5 run durations were measured, not estimated; the killed
   runner's journal is preserved in `.data/video-jobs-20260915/`. One hung-route
   knowledge attempt took 346 s before the cooldown fix existed.

@@ -1,7 +1,8 @@
 # 2026-09-15 (late) handoff — batch 5: cross-window evidence, math normalization, route cooldown
 
-- Commit `209b24d`. Working tree was left dirty after the previous session's
-  batch-5 edits; this session verified and committed them.
+- Commits `209b24d`, `540a432`, `6b31407`. Working tree was left dirty after
+  the previous session's batch-5 edits; this session verified and committed
+  them, then closed the formula-evidence residual.
 - Fixes committed:
   1. **Cross-window evidence snapping** — teaching validation validates
      `evidenceRefs` against `evidenceScope` (the whole ingested source) instead
@@ -18,7 +19,7 @@
   4. **Route cooldown** — model-adapter skips routes with ≥2 recorded timeouts
      for the rest of the process, so one hung route cannot burn its 150 s
      timeout on every stage (`healthyEnough`).
-- Verification: `npm run typecheck` clean; `npm test` **335/335 pass, 0 fail**;
+- Verification: `npm run typecheck` clean; `npm test` **336/336 pass, 0 fail**;
   `git diff --check` clean.
 - Live partial evidence (killed run, PID 70351, aborted on user request at
   ~8 min elapsed to save API spend): detached runner was in the knowledge
@@ -29,12 +30,18 @@
   ev_bottleneck` (teaching stage, 17:36 UTC) — the sourceVisuals-id fix targets
   exactly this but is **not yet live-verified**.
 - Live run NOT completed: no MP4 from batch 5. Do not claim A1 acceptance.
-- Known residual issue (next bounded task): **formula-verbatim evidence** —
-  the model still writes formula quotes like
-  `The effort-dependent token-penalty coefficient is k(b) = k0 exp(-(b - bmin)/tau)`
-  that are not present verbatim in the PDF source (notation differs). Options:
-  extend normalization, or snap formula-shaped quotes to the neighbouring
-  plain-language sentence per the new prompt rule.
+- Known residual issue, CLOSED (commit `540a432`): **formula-verbatim evidence**.
+  The live failure quotes (`k(b) = k0 exp(-(b - bmin)/tau)`,
+  `p'(l*) = k(b)/Lnorm`) failed because the PDF renders formulas with
+  Mathematical Alphanumeric Symbols (`𝑘(𝑏) = 𝑘0 exp(−(𝑏 − 𝑏min)/𝜏)`). Fix:
+  `normalizeEvidence` NFKD-decomposes and strips combining marks (plus PDF
+  extraction control chars), and `snapQuoteToSource` now returns the raw
+  source sentence — it splits the raw text in parallel (normalization keeps
+  sentence-boundary punctuation, so indices align) instead of the normalized
+  copy, preserving the character-for-character verbatim guarantee, and refuses
+  the snap if the mapping is not exact. Both live failure quotes verified to
+  snap to real source passages. Not yet re-exercised in a live video run —
+  that is the next bounded task (A1 acceptance run).
 - Repo: published to the existing private repository
   **https://github.com/AnupDangi/Lamina-Labs-Clone.git** — branch
   `v4-optimization`, fast-forward `94bb43e..53c591b` (35 commits). No new repo
