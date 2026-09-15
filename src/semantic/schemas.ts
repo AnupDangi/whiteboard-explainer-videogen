@@ -116,5 +116,11 @@ export function healSchema(value:unknown,schema:Schema,path='$'):unknown{
   const alias=MOTION_ALIASES[value as string];
   if(alias)return alias;
  }
+ if(schema.type==='string'&&Array.isArray(value)){
+  // Models often emit a list where the contract wants one display string
+  // (e.g. director decisions). Join deterministically; never invent content.
+  const joined=value.filter(item=>typeof item==='string'&&item.trim()).map(item=>(item as string).trim()).join(', ');
+  return joined.slice(0,(schema.maxLength??1000));
+ }
  return value;
 }

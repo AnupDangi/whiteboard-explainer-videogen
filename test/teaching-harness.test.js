@@ -52,3 +52,32 @@ test('generateV2 returns a PASS harness manifest without changing renderer contr
  assert.equal(results.length,1);assert.equal(results[0].manifest.status,'PASS');assert.equal(results[0].manifest.version,'teaching-compiler-v1');assert.equal(results[0].gates.every(g=>g.passed),true);assert.equal(gateVisual(results[0].directed.scene,results[0].registry).passed,true);assert.ok(results[0].teachingContracts.length>0);
  assert.deepEqual(results[0].manifest.stages.map(stage=>stage.stage),['ingest','knowledge-compiler','teaching-architect','whiteboard-planner','representation-guide','source-visual-grounding','visual-director','compiler','tts-alignment','pedagogy-critic','render']);
 });
+
+test('a representation-family critical object is compliant, a bare primitive is degradation',async()=>{
+ const {gateVisual}=await import('../dist/src/semantic/harness/gates.js');
+ const registry={version:1,entries:[{semanticKey:'plant',canonicalName:'Plant',aliases:[],persistentId:'concept:plant',sceneInstances:[]}]};
+ const base={version:2,id:'s',title:'t',teachingGoal:'g',mentalModel:'m',archetype:'structural_diagram',objects:[],relations:[],beats:[],continuity:{keepFromPrevious:[],prepareForNext:[]}};
+ const representationHero={...base,objects:[{id:'o1',conceptId:'plant',label:'Plant',role:'hero',primitiveRef:'rectangle',representation:{family:'system'},state:'neutral',allowedStates:['neutral'],importance:'primary',children:[],collisionPolicy:'forbid'}]};
+ assert.equal(gateVisual(representationHero,registry).passed,true,'representation family with rectangle primitive is the mandated shape');
+ const assetHero={...base,objects:[{id:'o1',conceptId:'plant',label:'Plant',role:'hero',assetRef:'biology.plant.v1',state:'neutral',allowedStates:['neutral'],importance:'primary',children:[],collisionPolicy:'forbid'}]};
+ assert.equal(gateVisual(assetHero,registry).passed,true);
+ const bareHero={...base,objects:[{id:'o1',conceptId:'plant',label:'Plant',role:'hero',primitiveRef:'rectangle',state:'neutral',allowedStates:['neutral'],importance:'primary',children:[],collisionPolicy:'forbid'}]};
+ const degraded=gateVisual(bareHero,registry);
+ assert.equal(degraded.passed,false);
+ assert.equal(degraded.findings[0].code,'REPRESENTATION_DEGRADATION');
+ const labelFriendlyHero={...base,archetype:'numbered_steps',objects:[{id:'o1',conceptId:'plant',label:'Step one',role:'hero',primitiveRef:'label',state:'neutral',allowedStates:['neutral'],importance:'primary',children:[],collisionPolicy:'forbid'}]};
+ assert.equal(gateVisual(labelFriendlyHero,registry).passed,true);
+});
+
+test('director decision lists heal into display strings instead of failing validation',async()=>{
+ const {healSchema,assertSchema}=await import('../dist/src/semantic/schemas.js');
+ const decisionSchema={type:'object',additionalProperties:false,required:['firstFocus','movingRelations'],properties:{firstFocus:{type:'string',minLength:1,maxLength:600},movingRelations:{type:'string',minLength:1,maxLength:600}}};
+ const healed=healSchema({firstFocus:['plant','leaf'],movingRelations:['flows','in']},decisionSchema);
+ assert.deepEqual(healed,{firstFocus:'plant, leaf',movingRelations:'flows, in'});
+ assert.doesNotThrow(()=>assertSchema(healed,decisionSchema));
+ const long=healSchema({firstFocus:['a'.repeat(700)],movingRelations:'x'},decisionSchema);
+ assert.equal(long.firstFocus.length,600);
+ const empty=healSchema({firstFocus:[],movingRelations:'x'},decisionSchema);
+ assert.equal(empty.firstFocus,'');
+ assert.throws(()=>assertSchema(empty,decisionSchema),/invalid string/);
+});

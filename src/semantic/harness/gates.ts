@@ -37,7 +37,13 @@ export function gateWhiteboard(plan:WhiteboardPlan,semantic:SemanticScenePlan):G
 export function gateVisual(scene:VisualSceneV2,registry:SemanticRegistrySnapshot):GateResult{
  const findings:GateFinding[]=[],keys=new Set(registry.entries.map(e=>e.semanticKey));
  const labelFriendly=new Set(['numbered_steps','timeline','trajectory','hierarchy','simple_explanation']);
- for(const object of scene.objects){if(object.role==='decorative_support')findings.push(finding('COGNITIVE_LOAD','visual-director',`Decorative object ${object.id} is not permitted`,{},'advisory'));if(object.conceptId&&!keys.has(object.conceptId))findings.push(finding('VISUAL_SUPPORT','visual-director',`Object ${object.id} has unknown concept identity`));if(object.importance==='primary'&&['rectangle','label'].includes(object.primitiveRef??'')&&!labelFriendly.has(scene.archetype))findings.push(finding('REPRESENTATION_DEGRADATION','visual-director',`Critical object ${object.id} degraded to a generic primitive`));}
+ for(const object of scene.objects){if(object.role==='decorative_support')findings.push(finding('COGNITIVE_LOAD','visual-director',`Decorative object ${object.id} is not permitted`,{},'advisory'));if(object.conceptId&&!keys.has(object.conceptId))findings.push(finding('VISUAL_SUPPORT','visual-director',`Object ${object.id} has unknown concept identity`));
+  // Degradation means a critical concept dropped to a bare primitive. A
+  // representation-family object legitimately draws as `rectangle` (the
+  // director contract mandates that) and an asset keeps its illustration.
+  const representationFamily=object.representation?.family??null;
+  if(object.importance==='primary'&&!representationFamily&&!object.assetRef&&['rectangle','label'].includes(object.primitiveRef??'')&&!labelFriendly.has(scene.archetype))findings.push(finding('REPRESENTATION_DEGRADATION','visual-director',`Critical object ${object.id} degraded to a generic primitive`));
+ }
  return result('visual-director',findings);
 }
 /** WhiteboardPlan canvas diffs must be realized by the directed scene, beat for beat. */
