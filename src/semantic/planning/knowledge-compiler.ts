@@ -8,7 +8,7 @@ import type {JsonModel} from './model-adapter.js';
 import type {KnowledgePromptOptions} from './prompt-builder.js';
 import {knowledgePrompt} from './prompt-builder.js';
 import type {SourceFigure} from '../../shared/types.js';
-import {skillInstruction} from '../skills.js';
+import {skillDocInstruction} from '../skills.js';
 
 /** Model-facing knowledge contract. No beats, narration, geometry, IDs, code. */
 const str=(maxLength:number):Schema=>({type:'string',minLength:1,maxLength,pattern:'\\S'});
@@ -169,7 +169,7 @@ export function selectSourceVisuals(semantic:{id:string;requiredConceptIds:strin
 /** The real knowledge-compiler stage: one source-grounded model call, validated deterministically. */
 export async function compileKnowledge(input:KnowledgeInput,model:JsonModel,promptOptions:KnowledgePromptOptions={},signal?:AbortSignal):Promise<ConceptGraph>{
  if(!input.sourceText?.trim())throw new Error('Knowledge compilation requires source text');
- const instructions=[knowledgePrompt({language:input.language,repairNotes:input.repairFindings,...promptOptions}),skillInstruction('knowledge-compiler')].filter(Boolean).join(' ');
+ const instructions=[knowledgePrompt({language:input.language,repairNotes:input.repairFindings,...promptOptions}),skillDocInstruction('teaching-architect/references/knowledge-compiler.md')].filter(Boolean).join(' ');
  const value=await model.generate('knowledge',instructions,{prompt:input.prompt,sourceId:input.sourceId??'source',sourceText:input.sourceText},knowledgeGraphSchema,raw=>validateKnowledge(raw,input.sourceText),{signal});
  return value as ConceptGraph;
 }

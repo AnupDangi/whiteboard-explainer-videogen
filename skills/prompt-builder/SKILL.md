@@ -5,6 +5,11 @@ description: >
   a rich brief before teaching-architect. No LLM call, no visual decisions.
 ---
 
+# Language
+
+Target-language expression is owned by `multilingual-teacher`; this skill
+applies its policy but never defines a second one.
+
 # Purpose
 
 Pure-function enrichment (`detectDomain`, `extractHeadings`,

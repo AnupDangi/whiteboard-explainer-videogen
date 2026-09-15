@@ -1,7 +1,8 @@
 # Skills manifest
 
-Physical folders stay flat: `skills/<name>/SKILL.md`. No nested groups —
-discovery is flat and untested for recursion. Grouping below is logical only.
+Physical folders stay flat: `skills/<name>/SKILL.md`. Overflow contract detail
+lives in `skills/<name>/references/` (progressive disclosure). Grouping below is
+logical only.
 
 ## Pipeline order
 
@@ -11,17 +12,20 @@ canvas
 prompt-builder
 pdf-extraction
 
-KNOWLEDGE
-knowledge-compiler
+KNOWLEDGE (owned by teaching-architect)
+teaching-architect
+  references/knowledge-compiler.md
+  references/knowledge-compiler-evaluation.md
+  references/source-visual-grounding.md
+  references/source-visual-grounding-evaluation.md
 
 TEACHING
 teaching-architect
 whiteboard-planner
-multilingual-teacher        (stub — promotes after pedagogy ~8/10)
+multilingual-teacher
 
 VISUAL
 representation-guide
-source-visual-grounding
 visual-director
 
 EVALUATION
@@ -44,12 +48,10 @@ skill-writer
 | representation-guide | reference | Lookup map; emits no scenes |
 | prompt-builder | reference | Deterministic enrich; no LLM call |
 | pdf-extraction | reference | Conditional fallback; not auto-loaded |
-| knowledge-compiler | agent | May invoke model; emits knowledge JSON |
-| teaching-architect | agent | May invoke model; emits TeachingContract |
+| teaching-architect | agent | May invoke model; owns knowledge compilation + source grounding references; emits TeachingContract |
 | whiteboard-planner | agent | May invoke model; emits scene content |
-| multilingual-teacher | agent (stub) | Reroute to base pipeline until promoted |
+| multilingual-teacher | agent | Language policy owner; applies target-language adaptation |
 | visual-director | agent | May invoke model; emits direction |
-| source-visual-grounding | agent | May invoke model; emits grounding JSON |
 | pedagogy-critic | critic | Validates artifacts; binary PASS/FAIL |
 | eval-builder | harness | Run-level gates and reports |
 | eval-audit | harness | Generic pipeline-hygiene audit |
@@ -59,5 +61,16 @@ skill-writer
 Harness rules: reference → knowledge only; agent → may invoke model;
 orchestrator → controls sequence; critic → validates artifacts.
 
-No new skills beyond these 15 unless an eval trace exposes a repeated
-failure with no clear existing owner.
+## Ownership rule
+
+Every responsibility has exactly one owner. Knowledge compilation and source
+grounding are contract sections inside `teaching-architect/references/`, not
+separate skills; language policy lives only in `multilingual-teacher`. If two
+skills decide the same thing, merge them or make the authority explicit.
+
+## Runtime loading
+
+`skillContract(name)` loads `skills/<name>/SKILL.md`; `skillDoc(relativePath)`
+loads any document under `skills/` (used for the relocated references above).
+Both hash the exact file content into stage envelopes and expose the document's
+Hard invariants as bounded, non-executable prompt instructions.

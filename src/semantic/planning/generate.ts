@@ -24,7 +24,7 @@ import {renderSVG} from '../renderer/render-svg.js';
 import {compileKnowledge,chapterWindows,mergeGroundedPlans,attachSourceVisuals,selectSourceVisuals,capAtBoundary} from './knowledge-compiler.js';
 import {architectContracts} from './teaching-architect.js';
 import {narratedSpeech} from '../semantic-timing.js';
-import {skillContract} from '../skills.js';
+import {skillContract,skillDoc} from '../skills.js';
 import type {TeachingPlanV2} from '../types.js';
 
 export interface StageMetrics {
@@ -94,7 +94,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
     const sourceVisuals=(input.sourceFigures??[]).map((figure,index)=>({id:`source-visual:${index+1}`,sourceId:input.sourceId??'source',page:figure.page,caption:figure.caption,provenance:`source-${figure.kind}`}));
     return {plan:generated,conceptGraph:conceptGraphFromPlan(generated,sourceVisuals)};
    };
-   const stage=await harness.execute({resume:options.resume,stage:'knowledge-compiler',input,run:(signal)=>buildKnowledge(undefined,signal),repair:async({error,gate,signal})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return buildKnowledge(findings,signal);},gate:value=>gateConceptGraph(value.conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'knowledge-compiler',version:HARNESS_VERSION}),skillHash:skillContract('knowledge-compiler').hash,usage:()=>{const calls=model.calls.slice(beforeCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
+   const stage=await harness.execute({resume:options.resume,stage:'knowledge-compiler',input,run:(signal)=>buildKnowledge(undefined,signal),repair:async({error,gate,signal})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return buildKnowledge(findings,signal);},gate:value=>gateConceptGraph(value.conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'knowledge-compiler',version:HARNESS_VERSION}),skillHash:skillDoc('teaching-architect/references/knowledge-compiler.md').hash,usage:()=>{const calls=model.calls.slice(beforeCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
   plan=stage.output.plan;conceptGraph=stage.output.conceptGraph;
   telemetry('teaching','success',{elapsedMs:performance.now()-teachingStart,details:{harnessStage:'knowledge-compiler',harnessVersion:HARNESS_VERSION}});
  }catch(e){telemetry('teaching','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-teachingStart});throw stageFailure(e,'teaching');}

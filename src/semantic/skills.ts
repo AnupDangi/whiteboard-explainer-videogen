@@ -43,3 +43,30 @@ export function skillInstruction(name:string):string{
  if(!contract.invariants.length)return '';
  return `Hard invariants from the ${name} skill: ${contract.invariants.join('; ')}.`;
 }
+
+/** Loads any skill document by its path relative to `skills/` (for example
+ *  `teaching-architect/references/knowledge-compiler.md`). Used after overflow
+ *  documents move under the owning skill's references/. */
+export function skillDoc(relativePath:string):SkillContract{
+ const cached=cache.get(relativePath);
+ if(cached)return cached;
+ const here=dirname(fileURLToPath(import.meta.url));
+ const candidates=[
+  join(here,'..','..','..','skills',relativePath),
+  join(here,'..','..','skills',relativePath),
+  join(here,'..','skills',relativePath)
+ ];
+ const path=candidates.find(candidate=>{try{readFileSync(candidate);return true;}catch{return false;}});
+ if(!path)throw new Error(`Skill document ${relativePath} not found in ${candidates.join(', ')}`);
+ const content=readFileSync(path,'utf8');
+ const name=(relativePath.split('/').pop()??relativePath).replace(/\.md$/,'');
+ const contract:SkillContract={name,content,hash:createHash('sha256').update(content).digest('hex'),invariants:extractInvariants(content)};
+ cache.set(relativePath,contract);
+ return contract;
+}
+
+export function skillDocInstruction(relativePath:string):string{
+ const contract=skillDoc(relativePath);
+ if(!contract.invariants.length)return '';
+ return `Hard invariants from the ${contract.name} skill: ${contract.invariants.join('; ')}.`;
+}

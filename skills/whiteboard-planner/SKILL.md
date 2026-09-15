@@ -6,6 +6,11 @@ description: >
   anchors, edges). Never decides layout, kind, shape, or geometry.
 ---
 
+# Language
+
+Target-language expression is owned by `multilingual-teacher`; this skill
+applies its policy but never defines a second one.
+
 # Purpose
 
 Convert TeachingContract beats into `contentSchema` scenes the director can

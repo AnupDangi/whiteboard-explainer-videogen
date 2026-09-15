@@ -6,6 +6,21 @@ description: >
   Never writes narration, nodes, layouts, or code.
 ---
 
+# Language
+
+Target-language expression is owned by `multilingual-teacher`; this skill
+applies its policy but never defines a second one.
+
+# References
+
+Overflow contract detail lives in `references/` (progressive disclosure):
+
+- `knowledge-compiler.md` — source→concept compilation invariants (aliases,
+  DAG, evidence, terminology, quantities) that must hold before this skill runs.
+- `source-visual-grounding.md` — how source figures are selected or rejected
+  for a scene (caption-to-concept match, provenance, advisory when none match).
+- `examples.md`, `evaluation.md`, `implementation`-level checks.
+
 # Purpose
 
 Determine the smallest coherent learner-model change for one chapter and its

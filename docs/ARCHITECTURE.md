@@ -5,6 +5,12 @@ the main UI. `src/semantic/` is the V2 teaching pipeline (plan → direct → co
 `src/shared/` is used by both. `VISUAL_PIPELINE=explainer|semantic` selects the
 landing page only; both APIs are always served.
 
+## Target architecture
+
+`docs/mermaid-diagram.png` is the target architecture diagram for the
+harness-controlled teaching compiler (this document describes the implemented
+state; the diagram describes the system the plan builds toward).
+
 ## Request flows
 
 ```
@@ -85,11 +91,22 @@ distinct states; `/?job=<uuid>` reopens saved work.
 
 ## Evaluation
 
-`eval/live/` (48-case manifest, smoke subset of 6): stage success rates, repair
-histogram, failure taxonomy (`plan/asset/provider/…`), cost/latency. Latest live
-smoke: 13/18 full success. Metrics count `representationFallbackCount` from
-diagnostics + telemetry. Teaching quality and aesthetics are human-judged, not
-metered. Fixture throughput is never reported as model/TTS performance.
+Three separate trees, one role each (never blended):
+
+- `eval/live/` — **coherent teaching** on live providers: 48-case manifest plus
+  the long-form `deepseek_mla_report` document case, smoke subset of 6, stage
+  success rates, repair histogram, failure taxonomy, per-stage cost/latency,
+  eight separate quality dimensions, and the machine-evaluated migration gates
+  (`eval/live/gates.ts`). Run with `npm run test:live:v2[:smoke]`.
+- `eval/semantic/cases/` — **fixture compile bench**: fixed scene JSON compiled
+  through the deterministic pipeline (`npm run bench:semantic:archetypes`),
+  measuring compiler/archetype coverage with zero provider calls.
+- `eval/visual-bench/cases/` — **renderer generalization**: fixed scene cases
+  rendered through the pure renderer (`npm run bench:visual`).
+
+Metrics count `representationFallbackCount` from diagnostics + telemetry.
+Teaching quality and aesthetics are human-judged, not metered. Fixture
+throughput is never reported as model/TTS performance.
 
 ## Logging and telemetry ledger
 
