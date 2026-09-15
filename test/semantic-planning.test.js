@@ -118,3 +118,26 @@ test('spreadExcessIntroductions heals a beat that introduces more than three con
  assert.deepEqual(beats[0].introduce,['a','b','c'],'the earliest concepts stay in the first beat');
  assert.deepEqual(beats[1].introduce,['d','e','f'],'overflow moves into the next beat ahead of its own concepts');
 });
+
+test('healStateMechanisms injects a neutral→activated transform for a forgotten state mechanism',async()=>{
+ const {healStateMechanisms}=await import('../dist/src/semantic/planning/teaching-planner.js');
+ const value=intent();
+ value.requiredMechanisms=[...value.requiredMechanisms,{id:'mech_state_test',statement:'The plant activates photosynthesis under light.',critical:true,conceptKeys:['plant','sunlight'],requiresStateChange:true,evidenceRefs:[]}];
+ healStateMechanisms(value);
+ const transformed=value.scenes.flatMap(scene=>scene.beats.flatMap(beat=>beat.transform??[]));
+ assert.ok(transformed.some(t=>['plant','sunlight'].includes(t.conceptKey)&&t.fromState==='neutral'&&t.toState==='activated'),'a transform was injected for the mechanism concept');
+ // idempotent: no duplicate transforms
+ healStateMechanisms(value);
+ const transforms=value.scenes.flatMap(scene=>scene.beats.flatMap(beat=>beat.transform??[]));
+ assert.equal(transforms.filter(t=>t.conceptKey==='plant').length,1,'the heal does not duplicate');
+});
+
+test('healPreservedRedraws converts a PRESERVED concept re-draw into a highlight',async()=>{
+ const {healPreservedRedraws}=await import('../dist/src/semantic/planning/visual-director.js');
+ const board={sceneId:'s1',archetypes:['structural_diagram'],beats:[{contractId:'c1',narration:'keep',semanticKeys:['plant'],relations:[],diffs:[{operation:'PRESERVE',semanticKeys:['plant'],toState:undefined}]}]};
+ const scene={...plan().scenes[0],id:'s1',beats:[{id:'b1',narration:'keep',actions:[{id:'a1',type:'draw',objectIds:['obj_plant'],relationIds:[],durationMs:500,leadMs:0,easing:'linear'}],intentionalPause:undefined}],objects:[{id:'obj_plant',conceptId:'plant',role:'hero'}]};
+ const healed=healPreservedRedraws(scene,board);
+ assert.equal(healed,1);
+ assert.equal(scene.beats[0].actions[0].type,'highlight');
+ assert.equal(healPreservedRedraws(scene,board),0,'already healed');
+});

@@ -32,6 +32,32 @@ export function spreadExcessIntroductions(value:unknown):void{
   if(carry.length&&scene.beats.length)scene.beats[scene.beats.length-1].introduce!.push(...carry);
  }
 }
+/** Deterministic state-mechanism heal: a mechanism marked requiresStateChange
+ *  must transform one of its concepts on screen. If the model forgot, inject
+ *  neutral→activated into the beat that teaches one of those concepts
+ *  (recorded), instead of failing the whole plan. */
+export function healStateMechanisms(value:unknown):void{
+ const plan=value as {requiredMechanisms?:{id:string;requiresStateChange?:boolean;conceptKeys?:string[]}[];scenes?:{beats?:{introduce?:string[];reinforce?:string[];transform?:{conceptKey:string;fromState?:string;toState:string}[]}[]}[]};
+ if(!plan?.requiredMechanisms||!Array.isArray(plan.scenes))return;
+ const transformed=new Set<string>();
+ for(const scene of plan.scenes)for(const beat of scene.beats??[])for(const t of beat.transform??[])transformed.add(t.conceptKey);
+ for(const mechanism of plan.requiredMechanisms){
+  if(!mechanism.requiresStateChange)continue;
+  if((mechanism.conceptKeys??[]).some(key=>transformed.has(key)))continue;
+  for(const scene of plan.scenes){
+   for(const beat of scene.beats??[]){
+    const target=(mechanism.conceptKeys??[]).find(key=>beat.introduce?.includes(key)||beat.reinforce?.includes(key));
+    if(!target)continue;
+    beat.transform=beat.transform??[];
+    beat.transform.push({conceptKey:target,fromState:'neutral',toState:'activated'});
+    log('v2.plan.state-heal',{mechanism:mechanism.id,concept:target});
+    transformed.add(target);
+    break;
+   }
+   if((mechanism.conceptKeys??[]).some(key=>transformed.has(key)))break;
+  }
+ }
+}
 export async function planTeaching(input:TeachingInput,model:JsonModel,options:{repairFindings?:string[];conceptGraph?:ConceptGraph;chapter?:{index:number;count:number;priorConcepts:string[];maxScenes:number};signal?:AbortSignal}={}):Promise<TeachingPlanV2>{
  if(!input.prompt.trim()||input.prompt.length>4000||(input.sourceText?.length??0)>120000)throw new Error('V2 prompt/source bounds exceeded');
  const maxScenes=options.chapter?.maxScenes??input.maxScenes??1;if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>24)throw new Error('V2 scene limit must be 1–24');
@@ -39,7 +65,7 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
  const knowledge=graph?{keys:graph.concepts.map(c=>c.id),terminology:Object.entries(graph.terminology).map(([key,term])=>`${key}: ${term.definition}`),requirements:[...graph.claims.map(c=>c.id),...graph.mechanisms.map(m=>m.id)],evidence:[...graph.evidence.map(e=>e.id),...graph.sourceVisuals.map(v=>v.id)]}:undefined;
  const chapter=options.chapter?`This is chapter ${options.chapter.index} of ${options.chapter.count} of one longer lesson. Plan scenes for this chapter only, on one shared mental model. Prefix every scene id with ch${options.chapter.index}_. These concepts are already established in earlier chapters and may be reused as continuity: ${options.chapter.priorConcepts.join(', ')||'none'}. Keep canonical identity, terminology and representation vocabulary stable with those earlier scenes.`:'';
   return await model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes:options.repairFindings,knowledge,chapter}),input,teachingIntentSchema,value=>{
-   spreadExcessIntroductions(value);
+   spreadExcessIntroductions(value);healStateMechanisms(value);
    const {plan}=validateTeachingPlan(teachingIntentToPlan(value),new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
   for(const s of plan.scenes)if(s.candidateArchetypes.some(a=>!input.allowedArchetypes.includes(a)))throw new Error('Unavailable archetype');
   for(const s of plan.scenes){

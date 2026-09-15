@@ -18,7 +18,7 @@ import {finalizeNarration} from './narration.js';
 import {compileScene} from '../compiler/compile-scene.js';
 import {criticRepair} from '../critic-repair.js';
 import {canonicalizeVisualScene} from '../identity/canonicalize.js';
-import {assetCandidates} from './visual-director.js';
+import {assetCandidates,healPreservedRedraws} from './visual-director.js';
 import type {JsonModel} from './model-adapter.js';
 import type {CompiledSceneV2,VisualTiming} from '../types.js';
 import type {VisionJudge} from '../vision-judge.js';
@@ -173,6 +173,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   telemetry('director','started');
   let directed:Awaited<ReturnType<typeof directVisual>>;
   try{const beforeDirectorCalls=model.calls.length;const buildDirected=async(repairNotes?:string[],signal?:AbortSignal)=>{const value=await directVisual(semantic,plan.conceptRegistry,mentalModel,model,previous,input.language,{candidates,sourceVisualIds:groundedSourceVisualIds,repairNotes,whiteboardPlan:board,signal});value.scene=canonicalizeVisualScene(semantic.id,value.scene,plan.conceptRegistry);
+    const preservedHealed=healPreservedRedraws(value.scene,board);if(preservedHealed)log('v2.continuity.preserve-heal',{scene:semantic.id,count:preservedHealed});
     // Bridge semantic continuity (concept keys) to runtime continuity (object ids).
     // Per-scene canonical ids differ, so resolve each kept concept to the current
     // object with the same appearance; the compiler then reuses previous geometry

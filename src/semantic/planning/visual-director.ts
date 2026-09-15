@@ -17,6 +17,26 @@ export interface DirectionDecisions {centralTeachingObject:string;firstFocus:str
 const decisionKeys=['centralTeachingObject','firstFocus','illustratedConcepts','labelsOnly','movingRelations','persistentContext','stateChanges','omit'];
 const decisionSchema:Schema={type:'object',additionalProperties:false,required:decisionKeys,properties:Object.fromEntries(decisionKeys.map(k=>[k,{type:'string',maxLength:600}]))};
 const schema:Schema={type:'object',additionalProperties:false,required:['direction','decisions'],properties:{direction:resolvedDirectionSchema,decisions:decisionSchema}};
+/** Deterministic continuity heal: a PRESERVE diff whose visual re-draws the
+ *  concept is converted to a highlight, so the preserved object is emphasized
+ *  instead of re-introduced (recorded by the caller). */
+export function healPreservedRedraws(scene:VisualSceneV2,board:WhiteboardPlan):number{
+ if(board.beats.length!==scene.beats.length)return 0;
+ let healed=0;
+ for(const [index,boardBeat] of board.beats.entries()){
+  const visual=scene.beats[index];
+  const conceptOf=(objectId:string)=>scene.objects.find(object=>object.id===objectId)?.conceptId;
+  for(const diff of boardBeat.diffs){
+   if(diff.operation!=='PRESERVE')continue;
+   for(const key of diff.semanticKeys)for(const action of visual.actions){
+    if(action.type!=='draw')continue;
+    if(!action.objectIds.some(id=>conceptOf(id)===key))continue;
+    action.type='highlight';action.id=`${action.id}_preserved`;healed++;
+   }
+  }
+ }
+ return healed;
+}
 export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},model.candidateArchetypes);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
 export function representationWarnings(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel):string[]{return assetCandidates(scene,registry,model).flatMap(c=>c.warnings);}
 /** Every initial or repaired direction passes this same teaching contract. */
