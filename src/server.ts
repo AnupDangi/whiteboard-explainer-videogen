@@ -73,6 +73,16 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
           return json(res,job?200:404,job||{error:'Job not found'});
         }
       }
+      const semanticRetryMatch=url.pathname.match(/^\/api\/semantic\/jobs\/([a-f0-9-]{36})\/retry$/);
+      if(semanticRetryMatch&&req.method==='POST'){
+        try{
+          const retried=await semanticStore.retry(semanticRetryMatch[1]);
+          return json(res,202,retried);
+        }catch(e){
+          const message=e instanceof Error?e.message:String(e);
+          return json(res,/not found/.test(message)?404:400,{error:message});
+        }
+      }
       // Single-MP4 download for a semantic job: renders every scene through the
       // canonical renderer, muxes narration, concatenates. Same /output/<id>.mp4
       // delivery as the explainer export.

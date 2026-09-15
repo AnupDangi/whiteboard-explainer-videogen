@@ -13,7 +13,7 @@ export function lintTeacherVoice(text:string,id:string):void{
   const words=wordsOf(text);
   if(words.length<6)throw new Error(`Narration too short to teach: ${id}`);
 }
-export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warnings:string[]}{
+export function validateTeachingPlan(input:unknown,priorConcepts:ReadonlySet<string>=new Set()):{plan:TeachingPlanV2;warnings:string[]}{
   const plan=parseTeachingPlan(input),warnings:string[]=[];
   const concepts=uniqueIds(plan.conceptRegistry,'concept'),evidence=uniqueIds(plan.evidenceRefs,'evidence');
   uniqueIds(plan.scenes,'scene');
@@ -25,8 +25,16 @@ export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warning
   const prior=new Set<string>();
   for(const scene of plan.scenes){
     uniqueIds(scene.beats,'beat');const relations=uniqueIds(scene.requiredRelations,'relation');
-    refs(scene.requiredConceptIds,concepts,'concept');refs([scene.centralConceptId],new Set(scene.requiredConceptIds),'central concept');refs(scene.continuity.keepFromPrevious,prior,'previous concept');refs(scene.continuity.prepareForNext,concepts,'next concept');
+    refs(scene.requiredConceptIds,concepts,'concept');refs([scene.centralConceptId],new Set(scene.requiredConceptIds),'central concept');refs(scene.continuity.keepFromPrevious,new Set([...priorConcepts,...prior]),'previous concept');refs(scene.continuity.prepareForNext,concepts,'next concept');
     for(const r of scene.requiredRelations)refs([r.fromConceptId,r.toConceptId],new Set(scene.requiredConceptIds),'relation concept');
+    // Deterministic heal: models smuggle requirement ids into relationFocus; drop those,
+    // then attach any untaught required relation to a beat that covers both endpoints.
+    for(const b of scene.beats){const kept=b.relationFocus.filter(id=>relations.has(id));if(kept.length!==b.relationFocus.length){warnings.push(`${scene.id}/${b.id}: relation-focus healed, non-relation ids dropped`);b.relationFocus=kept;}}
+    for(const r of scene.requiredRelations)if(!scene.beats.some(beat=>beat.relationFocus.includes(r.id))){
+      const beat=scene.beats.find(b=>{const covered=new Set([...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)]);return covered.has(r.fromConceptId)&&covered.has(r.toConceptId);});
+      if(!beat)throw new Error(`Untaught relation: ${r.id}`);
+      beat.relationFocus.push(r.id);warnings.push(`${scene.id}: relation ${r.id} attached to ${beat.id} (relation-focus healed)`);
+    }
     const signatures=new Set<string>(),seen=new Set<string>();
     for(const b of scene.beats){
       lintTeacherVoice(b.narrationDraft,b.id);
@@ -40,7 +48,6 @@ export function validateTeachingPlan(input:unknown):{plan:TeachingPlanV2;warning
       if(plan.evidenceRefs.length&&b.requirementIds.some(r=>requirements.find(x=>x.id===r)!.critical)&&!b.evidenceRefs.length)throw new Error(`Critical beat lacks evidence: ${b.id}`);
     }
     refs(scene.requiredConceptIds,seen,'unrepresented scene concept');
-    for(const r of scene.requiredRelations)if(!scene.beats.some(b=>b.relationFocus.includes(r.id)))throw new Error(`Untaught relation: ${r.id}`);
     scene.requiredConceptIds.forEach(c=>prior.add(c));
   }
   for(const r of requirements)if(r.critical&&!covered.has(r.id))throw new Error(`Uncovered critical requirement: ${r.id}`);

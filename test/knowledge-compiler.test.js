@@ -4,7 +4,7 @@ import {writeFile,mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {readFileSync} from 'node:fs';
-import {validateKnowledge,compileKnowledge,knowledgeGraphSchema} from '../dist/src/semantic/planning/knowledge-compiler.js';
+import {validateKnowledge,compileKnowledge,chapterWindows,mergeGroundedPlans,knowledgeGraphSchema} from '../dist/src/semantic/planning/knowledge-compiler.js';
 import {conceptGraphFromPlan,stableHash} from '../dist/src/semantic/harness/state.js';
 import {planTeaching} from '../dist/src/semantic/planning/teaching-planner.js';
 import {generateV2} from '../dist/src/semantic/planning/generate.js';
@@ -131,4 +131,63 @@ test('grounded narration flows through the bundled voice engine',async()=>{
  assert.equal(narrated.speech.provider,'supertonic');
  assert.equal(narrated.compiled.timing.kind,'engine');
  assert.equal(narrated.compiled.timing.timingSource,'estimated');
+});
+
+const filler=(marker,chars=580)=>`${'lorem ipsum dolor sit amet '.repeat(22).slice(0,chars-30).trim()} ${marker}`;
+
+test('chapter windows split long documents deterministically on paragraph bounds',()=>{
+ const text=[filler('a'),filler('b'),filler('c'),filler('d')].join('\n\n');
+ const windows=chapterWindows(text,700);
+ assert.equal(windows.length,4);
+ assert.deepEqual(windows.map(w=>w.id),['chapter:1','chapter:2','chapter:3','chapter:4']);
+ assert.deepEqual(windows.flatMap(w=>w.text.match(/[a-d](?=\s|$)/g)),['a','b','c','d']);
+ assert.deepEqual(chapterWindows('short',700).length,1);
+ assert.deepEqual(windows.flatMap(w=>w.text.match(/[a-d](?=\s|$)/g)).sort(),['a','b','c','d']);
+});
+
+test('mergeGroundedPlans dedupes identical meaning and renames colliding ids deterministically',()=>{
+ const graph=conceptGraphFromPlan(fixturePlan());
+ const base=fixturePlan();
+ const first={...base,scenes:[{...base.scenes[0]}]};
+ const revisited=structuredClone(base);
+ revisited.requiredClaims=revisited.requiredClaims.map(claim=>({...claim,statement:`${claim.statement} (revisited)`}));
+ revisited.requiredMechanisms=revisited.requiredMechanisms.map(mechanism=>({...mechanism,statement:`${mechanism.statement} (revisited)`}));
+ revisited.scenes[0].continuity.keepFromPrevious=['plant'];
+ const merged=mergeGroundedPlans(graph,[{window:{id:'chapter:1',index:1,text:SOURCE},plan:first},{window:{id:'chapter:2',index:2,text:SOURCE},plan:revisited}]);
+ assert.deepEqual(merged.scenes.map(scene=>scene.id),['photosynthesis_plant','photosynthesis_plant_ch2']);
+ assert.deepEqual([...new Set(merged.requiredClaims.map(claim=>claim.id))].sort(),['carbon_claim','carbon_claim_ch2','light_claim','light_claim_ch2','water_claim','water_claim_ch2'].sort());
+ assert.equal(merged.scenes[1].beats.some(beat=>beat.requirementIds.includes('light_claim_ch2')),true);
+ assert.deepEqual([...new Set(merged.evidenceRefs.map(item=>item.id))].length,merged.evidenceRefs.length);
+ assert.equal(merged.scenes[1].continuity.keepFromPrevious[0],'plant');
+});
+
+const pad=(text,paragraphs=26)=>{const filler='photosynthesis biology '.repeat(26).slice(0,520).trim();return Array.from({length:paragraphs},()=>`${filler} ${text}`).join('\n\n');};
+
+test('long grounded documents plan one global graph with bounded chapter windows',async()=>{
+ const source=pad('Leaves capture sunlight. Roots absorb water. Leaves take in carbon dioxide. Inputs enable plant food production.');
+ const model={calls:[],events:[],async generate(stage,_instructions,input,_schema,validate){
+  this.calls.push({stage});
+  if(stage==='knowledge')return validate(validKnowledge());
+  if(stage==='teaching'){
+   const callIndex=this.calls.filter(call=>call.stage==='teaching').length;
+   const plan=fixturePlan();
+   if(callIndex===2){plan.scenes[0].continuity.keepFromPrevious=['plant'];for(const scene of plan.scenes)for(const beat of scene.beats)beat.narrationDraft=`${beat.narrationDraft} Chapter two revisits these inputs from the soil and canopy perspective with fresh worked detail.`;}
+   return validate(plan);
+  }
+  const s=sceneJson();s.id=input.semanticScene.id;
+  input.semanticScene.beats.forEach((beat,index)=>{s.beats[index].narration=beat.narrationDraft;});
+  if(input.semanticScene.continuity.keepFromPrevious.includes('plant'))for(const beat of s.beats)for(const action of beat.actions)if(action.type==='draw'&&action.objectIds.includes('plant')){action.type='highlight';action.id=`${action.id}_preserved`;}
+  return validate({scene:s,decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'plant and inputs',labelsOnly:'labels',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'decoration'}});
+ }};
+ const results=[];
+ for await(const result of generateV2({prompt:'Teach the full report',sourceText:source,sourceId:'src_test',allowedArchetypes:['structural_diagram','convergence'],maxScenes:2},model))results.push(result);
+ assert.equal(results.length,2);assert.ok(results.every(result=>result.manifest.status==='PASS'));
+ const teachingCalls=model.calls.filter(call=>call.stage==='teaching');
+ assert.equal(teachingCalls.length,2);
+ const plan=results[0].plan;
+ assert.equal(plan.scenes.length,2);
+ assert.equal(new Set(plan.scenes.map(scene=>scene.id)).size,plan.scenes.length);
+ assert.equal(new Set(plan.requiredClaims.map(claim=>claim.id)).size,plan.requiredClaims.length);
+ assert.equal(plan.requiredClaims.length,3);
+ assert.equal(plan.scenes[1].continuity.keepFromPrevious[0],'plant');
 });

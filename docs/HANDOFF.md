@@ -1,3 +1,43 @@
+# Live grounding baseline, chapter windows, and journal resume, 2026-09-15
+
+Chapter windows for long grounded documents are implemented: `chapterWindows`
+splits the source on paragraph bounds (~12k chars), one global ConceptGraph is
+compiled once, then each window is planned against shared state with
+`priorConcepts` continuity; `mergeGroundedPlans` deterministically unifies the
+per-window plans (identical requirement/evidence meaning keeps one id; colliding
+ids rename with a chapter suffix; colliding scene ids rename). Long-doc e2e
+covered by tests (2 teaching calls, unique scene ids, cross-chapter keep).
+
+Resume from the last validated journal boundary is implemented (Phase 9):
+`executeStage(resume:true)` replays a prior validated journal entry with a
+matching stage/input hash instead of re-running it (elapsedMs 0, appended to
+the journal, re-gated); `SemanticJobStore.retry(id)` rebuilds options from the
+persisted ingest artifact, copies the old journal into the new job, and
+generateV2 replays the completed prefix. New API: `POST
+/api/semantic/jobs/:id/retry`. Tests prove replay-without-rerun, mismatch
+handling, and a full two-job resume (teaching stage 0 calls on retry).
+
+Live provider baseline (photosynthesis text source, real OpenRouter + real
+Supertonic narration attempts): code fixes landed during this work —
+`c.aliases` non-optional spread crash, empty `section` rejection, same-model
+length-retry at 1.5x completion budget (12000), knowledge hard caps
+(≤32 concepts/24 claims/24 evidence), compactness rules, `relationFocus`
+deterministic heal (drop mechanism ids, attach untaught relations to a
+covering beat), knowledge-compiler stage timeout 420s, request timeout 120s,
+and timeout-aborts now route to model fallbacks. One run produced a fully
+valid grounded knowledge graph (alias collapse live: `plants→green_plants`,
+`green_pigment→chlorophyll`) and a fully valid grounded teaching plan;
+provider instability (gemini verbose >12k-token outputs hitting length,
+qwen/deepseek 120s hangs) prevented a complete narrated PASS today. Final
+state: `status error, calls 4, $0.066, 0 scenes` on job
+`4ce5ec64-b94a-4739-90a6-b120b2740301` — recorded as a provider-infrastructure
+baseline, not a quality result. Migration gates remain unevaluated.
+
+Verification: `npm run typecheck` clean; `npm test` **292/292 pass, 0 fail**
+(289 + 3 new in `test/harness-resume.test.js`); `git diff --check` clean.
+Known flake: `semantic job lifecycle` occasionally fails under full-suite
+parallel load and passes on rerun; needs a follow-up isolation fix.
+
 # Phase 2 real source-grounded knowledge compiler, 2026-09-14
 
 Grounded sources (PDF/text) now run a real knowledge-compiler model stage

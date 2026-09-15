@@ -1,3 +1,24 @@
+# 2026-09-15 — Chapter windows, journal resume, live provider baseline
+
+- Phase 2 long-doc: `chapterWindows` + per-window planning against one global
+  ConceptGraph with prior-concept continuity; `mergeGroundedPlans` unifies
+  plans deterministically (meaning-preserving dedupe, suffix renames).
+- Phase 9 resume: journal replay of validated stages by stage/input hash,
+  `SemanticJobStore.retry(id)`, `POST /api/semantic/jobs/:id/retry`; tests
+  prove no re-run of completed model stages.
+- Live grounding baseline (real providers): knowledge graph + grounded teaching
+  plan both produced valid outputs in-run (live alias collapse verified);
+  `finish_reason:length` at 12k completion tokens on gemini and 120s hangs on
+  qwen/deepseek blocked a complete narrated PASS. Recorded honestly: 1 job
+  error, 4 calls, $0.066, 0 scenes. Code fixes landed (see HANDOFF).
+- Verification: typecheck clean; `npm test` **292/292** (3 new resume tests);
+  `git diff --check` clean. Voice engine unaffected (earlier real Supertonic
+  synthesis verified at RTF 0.477).
+- Remaining plan work: teaching-architect as a real model stage (currently
+  deterministic projection), per-semantic-segment TTS timing, interrupted-job
+  resume auto-trigger from the viewer, and the 48×3 narrated benchmark +
+  migration gates (provider stability required).
+
 # 2026-09-14 — Phase 2 source-grounded knowledge compiler
 
 - New `knowledge` model stage (`knowledge-compiler.ts`) aligned to the

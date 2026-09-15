@@ -9,7 +9,7 @@ export type StageRepair<T>=(context:StageRepairContext<T>)=>Promise<T>|T;
 
 export const DEFAULT_STAGE_POLICIES:Record<HarnessStage,StagePolicy>={
  ingest:{owner:'harness',timeoutMs:30000,maxRepairs:0,budgetUsd:0},
- 'knowledge-compiler':{owner:'knowledge-compiler',timeoutMs:90000,maxRepairs:1,budgetUsd:.2},
+ 'knowledge-compiler':{owner:'knowledge-compiler',timeoutMs:420000,maxRepairs:1,budgetUsd:.2},
  'teaching-architect':{owner:'teaching-architect',timeoutMs:90000,maxRepairs:1,budgetUsd:.35},
  'whiteboard-planner':{owner:'whiteboard-planner',timeoutMs:90000,maxRepairs:1,budgetUsd:.25},
  'representation-guide':{owner:'representation-guide',timeoutMs:10000,maxRepairs:0,budgetUsd:0},
@@ -21,7 +21,7 @@ export const DEFAULT_STAGE_POLICIES:Record<HarnessStage,StagePolicy>={
  render:{owner:'renderer',timeoutMs:30000,maxRepairs:0,budgetUsd:0}
 };
 
-export interface StageExecuteOptions<T>{stage:HarnessStage;input:unknown;run:()=>Promise<T>|T;gate:(output:T)=>GateResult;journal?:StageJournal;policy?:StagePolicy;attempt?:0|1;model?:string|(()=>string|undefined);promptHash?:string;skillHash?:string;usage?:()=>{costUsd:number;promptTokens:number;completionTokens:number};repair?:StageRepair<T>}
+export interface StageExecuteOptions<T>{stage:HarnessStage;input:unknown;run:()=>Promise<T>|T;gate:(output:T)=>GateResult;journal?:StageJournal;policy?:StagePolicy;attempt?:0|1;model?:string|(()=>string|undefined);promptHash?:string;skillHash?:string;usage?:()=>{costUsd:number;promptTokens:number;completionTokens:number};repair?:StageRepair<T>;resume?:boolean}
 
 const emptyGate=(stage:HarnessStage):GateResult=>({stage,passed:false,findings:[]});
 const gateError=(stage:HarnessStage,gate:GateResult)=>Object.assign(new Error(`${stage} gate failed: ${gate.findings.filter(f=>f.severity==='hard').map(f=>f.code).join(', ')}`),{gate});
@@ -31,12 +31,27 @@ const gateError=(stage:HarnessStage,gate:GateResult)=>Object.assign(new Error(`$
  * owner-scoped retry (`policy.maxRepairs`): the failed attempt is journaled, the
  * owner repairs its own output, and the repaired output is re-validated before
  * downstream work continues. Without `repair` behavior is a single attempt.
+ * With `resume`, a prior validated journal entry for this exact stage input
+ * replays instead of re-running the stage (elapsedMs 0, marked in the journal).
  */
 export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{output:T;envelope:StageEnvelope<T>}>{
  const policy=options.policy??DEFAULT_STAGE_POLICIES[options.stage];
- const maxRepairs=options.repair?policy.maxRepairs:0;
  const inputHash=stableHash(options.input);
  await options.journal?.persistInput?.(options.stage,options.attempt??0,inputHash,options.input);
+ if(options.resume&&options.journal?.read){
+  const prior=await options.journal.read();
+  const match=prior.find(entry=>!('status' in entry)&&entry.stage===options.stage&&entry.inputHash===inputHash&&entry.harnessVersion===HARNESS_VERSION) as StageEnvelope<T>|undefined;
+  if(match){
+   const output=structuredClone(match.output);
+   const gate=options.gate(output);
+   if(gate.passed){
+    const envelope:StageEnvelope<T>={...structuredClone(match),startedAt:new Date().toISOString(),finishedAt:new Date().toISOString(),elapsedMs:0,gate};
+    await options.journal?.append(envelope as StageEnvelope<unknown>);
+    return {output,envelope};
+   }
+  }
+ }
+ const maxRepairs=options.repair?policy.maxRepairs:0;
  const model=()=>typeof options.model==='function'?options.model():options.model;
  const appendFailure=async(attempt:0|1,startedAt:string,started:number,gate:GateResult,error:Error)=>{
   await options.journal?.append({harnessVersion:HARNESS_VERSION,stage:options.stage,owner:policy.owner,attempt,startedAt,finishedAt:new Date().toISOString(),elapsedMs:performance.now()-started,inputHash,status:'FAIL',model:model(),promptHash:options.promptHash,skillHash:options.skillHash,gate,error:{name:error.name,message:error.message}});

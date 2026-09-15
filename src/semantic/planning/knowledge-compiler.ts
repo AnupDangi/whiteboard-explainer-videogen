@@ -1,6 +1,8 @@
 import {assertSchema,type Schema} from '../schemas.js';
 import {normalizeSemanticKey} from '../identity/types.js';
 import type {ConceptGraph,KnowledgeClaim} from '../harness/contracts.js';
+import type {TeachingPlanV2} from '../types.js';
+import {validateTeachingPlan} from './validate.js';
 import type {JsonModel} from './model-adapter.js';
 import type {KnowledgePromptOptions} from './prompt-builder.js';
 import {knowledgePrompt} from './prompt-builder.js';
@@ -19,27 +21,73 @@ const mechanism=obj({id,statement:str(1000),conceptIds:arr(id,16,1),requiresStat
 const claim=obj({id,statement:str(1000),critical:{type:'boolean'},evidenceRefs:arr(id)});
 const quantity=obj({conceptKey:id,value:str(120),evidenceRefs:arr(id)});
 const terminologyEntry=obj({key:id,definition:str(600)});
-const evidence=obj({id,sourceId:str(120),quote:str(3000),section:str(120)},['sourceId','section']);
+const evidence=obj({id,sourceId:str(120),quote:str(3000),section:{type:'string',maxLength:120}},['sourceId','section']);
 export const knowledgeGraphSchema=obj({
  version:{type:'integer',enum:[1]},
- concepts:arr(concept,64,1),
- prerequisites:arr(prerequisite,120),
- mechanisms:arr(mechanism,32),
- claims:arr(claim,64),
- quantities:arr(quantity,48),
- terminology:arr(terminologyEntry,64),
- evidence:arr(evidence,100)
+ concepts:arr(concept,32,1),
+ prerequisites:arr(prerequisite,48),
+ mechanisms:arr(mechanism,16),
+ claims:arr(claim,24),
+ quantities:arr(quantity,12),
+ terminology:arr(terminologyEntry,24),
+ evidence:arr(evidence,24)
 });
 
 export interface KnowledgeInput {prompt:string;sourceText:string;sourceId?:string;language?:string;repairFindings?:string[]}
+
+/** Long documents: one global graph, then bounded chapter windows against shared state. */
+export interface ChapterWindow {id:string;index:number;text:string}
+export function chapterWindows(sourceText:string,maxChars=12000):ChapterWindow[]{
+ if(sourceText.length<=maxChars)return [{id:'chapter:1',index:1,text:sourceText}];
+ const windows:ChapterWindow[]=[];let buffer='';
+ const push=()=>{if(buffer.trim())windows.push({id:`chapter:${windows.length+1}`,index:windows.length+1,text:buffer});buffer='';};
+ for(const paragraph of sourceText.split(/\n\s*\n/)){
+  if(buffer&&(buffer+'\n\n'+paragraph).length>maxChars)push();
+  buffer=buffer?`${buffer}\n\n${paragraph}`:paragraph;
+ }
+ push();
+ return windows.length?windows:[{id:'chapter:1',index:1,text:sourceText}];
+}
+
+/** Deterministic union of per-window plans. Identical requirement/evidence meaning keeps one id;
+ *  a colliding id with different meaning renames with a chapter suffix. */
+export function mergeGroundedPlans(graph:ConceptGraph,windows:{window:ChapterWindow;plan:TeachingPlanV2}[]):TeachingPlanV2{
+ if(windows.length===1)return windows[0].plan;
+ const claims:TeachingPlanV2['requiredClaims']=[],mechanisms:TeachingPlanV2['requiredMechanisms']=[],scenes:TeachingPlanV2['scenes']=[],evidence:TeachingPlanV2['evidenceRefs']=[],misconceptions:TeachingPlanV2['misconceptions']=[];
+ const seenRequirement=new Map<string,string>(),seenEvidence=new Map<string,string>();
+ for(const [index,entry] of windows.entries()){
+  const requirementFinal=new Map<string,string>(),evidenceFinal=new Map<string,string>();
+  const resolve=(id:string,fingerprint:string,seen:Map<string,string>)=>{
+   if(seen.get(id)===fingerprint)return {id,duplicate:true};
+   if(!seen.has(id)){seen.set(id,fingerprint);return {id,duplicate:false};}
+   let suffix=index+1,candidate=`${id}_ch${suffix}`;
+   while(seen.has(candidate)&&seen.get(candidate)!==fingerprint){suffix++;candidate=`${id}_ch${suffix}`;}
+   const duplicate=seen.has(candidate);
+   if(!duplicate)seen.set(candidate,fingerprint);
+   return {id:candidate,duplicate};
+  };
+  for(const claim of entry.plan.requiredClaims){const {id,duplicate}=resolve(claim.id,`claim|${claim.statement}`,seenRequirement);requirementFinal.set(claim.id,id);if(!duplicate)claims.push({...claim,id});}
+  for(const mechanism of entry.plan.requiredMechanisms){const {id,duplicate}=resolve(mechanism.id,`mechanism|${mechanism.statement}|${mechanism.conceptIds.join(',')}`,seenRequirement);requirementFinal.set(mechanism.id,id);if(!duplicate)mechanisms.push({...mechanism,id});}
+  for(const item of entry.plan.evidenceRefs){const {id,duplicate}=resolve(item.id,`evidence|${item.quote}`,seenEvidence);evidenceFinal.set(item.id,id);if(!duplicate)evidence.push({...item,id});}
+  for(const scene of entry.plan.scenes){
+   const id=scenes.some(existing=>existing.id===scene.id)?`${scene.id}_ch${index+1}`:scene.id;
+   scenes.push({...scene,id,beats:scene.beats.map(beat=>({...beat,requirementIds:beat.requirementIds.map(id=>requirementFinal.get(id)??id),evidenceRefs:beat.evidenceRefs.map(id=>evidenceFinal.get(id)??id)}))});
+  }
+  misconceptions.push(...entry.plan.misconceptions);
+ }
+ const first=windows[0].plan;
+ const merged:TeachingPlanV2={version:2,lessonGoal:first.lessonGoal,learnerAssumption:first.learnerAssumption,centralQuestion:first.centralQuestion,requiredClaims:claims,requiredMechanisms:mechanisms,conceptRegistry:structuredClone(graph.concepts),scenes,misconceptions,evidenceRefs:evidence};
+ validateTeachingPlan(merged);
+ return merged;
+}
 
 /** Deterministic alias merge first; ambiguity, cycles, orphans and fabricated evidence reject. */
 export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
  assertSchema(raw,knowledgeGraphSchema);
  const value=structuredClone(raw) as {concepts:{key:string;canonicalName:string;aliases:string[];semanticType:ConceptGraph['concepts'][number]['semanticType'];visualFamily?:string;evidenceRefs:string[]}[];prerequisites:{before:string;after:string;reason:string}[];mechanisms:ConceptGraph['mechanisms'];claims:{id:string;statement:string;critical:boolean;evidenceRefs:string[]}[];quantities:{conceptKey:string;value:string;evidenceRefs:string[]}[];terminology:{key:string;definition:string}[];evidence:{id:string;sourceId?:string;quote:string;section?:string}[]};
- const concepts:ConceptGraph['concepts']=value.concepts.map(c=>({id:c.key,canonicalName:c.canonicalName,aliases:[...c.aliases],semanticType:c.semanticType,visualFamily:c.visualFamily,preferredColorRole:undefined,evidenceRefs:[...new Set(c.evidenceRefs)]}));
+ const concepts:ConceptGraph['concepts']=value.concepts.map(c=>({id:c.key,canonicalName:c.canonicalName,aliases:[...(c.aliases??[])],semanticType:c.semanticType,evidenceRefs:[...new Set(c.evidenceRefs)],...(c.visualFamily?{visualFamily:c.visualFamily}:{})}));
  const aliases:Record<string,string>={};
- for(const concept of concepts)for(const alias of [concept.id,concept.canonicalName,...concept.aliases]){
+ for(const concept of concepts)for(const alias of [concept.id,concept.canonicalName,...(concept.aliases??[])]){
   const normalized=normalizeSemanticKey(alias),existing=aliases[normalized];
   if(existing&&existing!==concept.id)throw new Error(`Alias fork: "${alias}" maps to both ${existing} and ${concept.id}`);
   aliases[normalized]=concept.id;
