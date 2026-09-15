@@ -1,0 +1,323 @@
+{
+ "stage": "teaching",
+ "error": "Unknown concept: prefill_activation",
+ "payload": {
+  "version": 2,
+  "lessonGoal": "Explain why KV cache dominates long-context serving costs and how CED architecture plus CSA2 compression reduce this footprint.",
+  "learnerAssumption": "Student understands basic Transformer attention but not specific cache management bottlenecks or DeepSeek-V4.1-Flash optimizations.",
+  "centralQuestion": "How do architectural changes in DeepSeek-V4.1-Flash drastically shrink the KV cache footprint compared to previous models?",
+  "requiredClaims": [
+   {
+    "id": "kv_bottleneck",
+    "statement": "Large KV caches strain HBM and SSD capacity, creating a primary bottleneck for long-context deployment costs.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "id": "global_cache_reduction",
+    "statement": "CSA2 and FP4 caching reduce global KV cache footprint to roughly one-quarter of DeepSeek-V4-Flash.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "id": "persistent_cache_reduction",
+    "statement": "SWA Bounded Replay reduces persistent KV cache footprint to roughly one-eighth of DeepSeek-V4-Flash.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "id": "ced_prefill_reduction",
+    "statement": "CED architecture activates fewer parameters during prefill than decode, improving cost efficiency for input-heavy workloads.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   }
+  ],
+  "requiredMechanisms": [
+   {
+    "id": "mech_cache_reuse",
+    "statement": "CSA2 shares main KV and indexer K across layers, reducing duplicated cache storage through cross-layer reuse modes.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ],
+    "conceptKeys": [
+     "csa2",
+     "global_kv_cache"
+    ],
+    "requiresStateChange": false
+   },
+   {
+    "id": "swa_replay_opt",
+    "statement": "SWA Bounded Replay reconstructs missing sliding window states by replaying only recent tokens instead of full context.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ],
+    "conceptKeys": [
+     "sliding_window_attention",
+     "persistent_kv_cache"
+    ],
+    "requiresStateChange": false
+   },
+   {
+    "id": "ced_efficiency",
+    "statement": "Causal Encoder-Decoder projects decoder global KV from encoder outputs, halving prefill computation.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ],
+    "conceptKeys": [
+     "ced_architecture",
+     "prefill_activation"
+    ],
+    "requiresStateChange": false
+   }
+  ],
+  "conceptRegistry": [
+   {
+    "key": "deepseek_v41_flash",
+    "canonicalName": "DeepSeek-V4.1-Flash Model System",
+    "aliases": [
+     "V4.1-Flash",
+     "model system"
+    ],
+    "semanticType": "entity",
+    "visualFamily": "system",
+    "preferredColorRole": "primary",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "global_kv_cache",
+    "canonicalName": "Global KV Cache",
+    "aliases": [
+     "runtime KV",
+     "HBM cache"
+    ],
+    "semanticType": "material",
+    "visualFamily": "quantity",
+    "preferredColorRole": "secondary",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "persistent_kv_cache",
+    "canonicalName": "Persistent KV Cache",
+    "aliases": [
+     "SSD cache",
+     "prefix cache"
+    ],
+    "semanticType": "material",
+    "visualFamily": "quantity",
+    "preferredColorRole": "tertiary",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "ced_architecture",
+    "canonicalName": "Causal Encoder-Decoder Architecture",
+    "aliases": [
+     "CED",
+     "encoder-decoder design"
+    ],
+    "semanticType": "process",
+    "visualFamily": "structural_diagram",
+    "preferredColorRole": "accent",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "csa2",
+    "canonicalName": "Compressed Sparse Attention 2",
+    "aliases": [
+     "CSA2",
+     "sparse attention"
+    ],
+    "semanticType": "process",
+    "visualFamily": "component_group",
+    "preferredColorRole": "highlight",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "sliding_window_attention",
+    "canonicalName": "Sliding Window Attention",
+    "aliases": [
+     "SWA",
+     "local attention"
+    ],
+    "semanticType": "process",
+    "visualFamily": "component_group",
+    "preferredColorRole": "neutral",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   }
+  ],
+  "scenes": [
+   {
+    "key": "ch1_kv_compression_mechanism",
+    "centralConceptKey": "deepseek_v41_flash",
+    "teachingGoal": "Demonstrate how CED and CSA2 mechanisms compress KV cache footprints to alleviate HBM and SSD bottlenecks.",
+    "learnerShouldUnderstand": "KV cache size drives deployment costs; CED halves prefill compute while CSA2 and SWA replay cut storage needs.",
+    "mentalModel": "The model is a factory where memory (KV cache) is expensive inventory; new designs reduce inventory needs without losing output quality.",
+    "beats": [
+     {
+      "key": "beat_setup_bottleneck",
+      "purpose": "Establish the central problem: large KV caches strain hardware capacity and increase costs.",
+      "narrationDraft": "Long-context agents create massive KV caches that strain HBM and SSD capacity, becoming the primary bottleneck for deployment costs.",
+      "requirementIds": [
+       "kv_bottleneck"
+      ],
+      "introduce": [
+       "deepseek_v41_flash",
+       "global_kv_cache",
+       "persistent_kv_cache"
+      ],
+      "reinforce": [],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     },
+     {
+      "key": "beat_introduce_ced",
+      "purpose": "Introduce CED architecture as the first mechanism to reduce prefill computational load.",
+      "narrationDraft": "The Causal Encoder-Decoder architecture projects decoder global KV from encoder outputs, activating only eight billion parameters during prefill.",
+      "requirementIds": [
+       "ced_prefill_reduction",
+       "ced_efficiency"
+      ],
+      "introduce": [
+       "ced_architecture"
+      ],
+      "reinforce": [
+       "deepseek_v41_flash"
+      ],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     },
+     {
+      "key": "beat_explain_csa2",
+      "purpose": "Explain how CSA2 reduces global cache storage through cross-layer sharing.",
+      "narrationDraft": "Compressed Sparse Attention two shares main KV and indexer keys across layers, cutting global cache storage to roughly one quarter.",
+      "requirementIds": [
+       "global_cache_reduction",
+       "mech_cache_reuse"
+      ],
+      "introduce": [
+       "csa2"
+      ],
+      "reinforce": [
+       "global_kv_cache"
+      ],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     },
+     {
+      "key": "beat_explain_swa_replay",
+      "purpose": "Describe SWA Bounded Replay's role in minimizing persistent cache requirements.",
+      "narrationDraft": "Sliding Window Attention bounded replay reconstructs local states by reprocessing only recent tokens, avoiding full persistent storage.",
+      "requirementIds": [
+       "persistent_cache_reduction",
+       "swa_replay_opt"
+      ],
+      "introduce": [
+       "sliding_window_attention"
+      ],
+      "reinforce": [
+       "persistent_kv_cache"
+      ],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     },
+     {
+      "key": "beat_combine_results",
+      "purpose": "Synthesize the combined impact of all mechanisms on total cache footprint reduction.",
+      "narrationDraft": "Together these designs reduce global cache to eighty-nine zero bytes per token and persistent cache to one eighth of previous versions.",
+      "requirementIds": [
+       "global_cache_reduction",
+       "persistent_cache_reduction",
+       "mech_cache_reuse",
+       "swa_replay_opt",
+       "ced_efficiency"
+      ],
+      "introduce": [],
+      "reinforce": [
+       "deepseek_v41_flash",
+       "global_kv_cache",
+       "persistent_kv_cache"
+      ],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     }
+    ],
+    "requiredConceptKeys": [
+     "deepseek_v41_flash",
+     "global_kv_cache",
+     "persistent_kv_cache",
+     "ced_architecture",
+     "csa2",
+     "sliding_window_attention"
+    ],
+    "requiredRelations": [],
+    "candidateArchetypes": [
+     "structural_diagram",
+     "cause_effect",
+     "flow"
+    ],
+    "continuity": {
+     "keepFromPrevious": [],
+     "prepareForNext": [
+      "fp4_quantization",
+      "hbm_capacity_relief"
+     ],
+     "transitions": []
+    }
+   }
+  ],
+  "misconceptions": [
+   {
+    "claim": "Reducing KV cache size always degrades model performance significantly.",
+    "correction": "DeepSeek-V4.1-Flash achieves smaller cache footprints while delivering substantially better overall performance than the baseline."
+   },
+   {
+    "claim": "All attention layers must store their own unique KV cache entries.",
+    "correction": "CSA2 allows layers to share main KV and indexer K across multiple layers, reducing duplicated storage."
+   }
+  ],
+  "evidenceRefs": [
+   {
+    "id": "src_dc9a790964b67d2b85361fbfb6a4",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "DeepSeek-V4.1-Flash combines cross-layer KV cache reuse in Compressed Sparse Attention 2 (CSA2) with FP4 KV caching. These designs reduce its global KV cache footprint (always in HBM) to 890 bytes per token, roughly 1/4 of the corresponding footprint of DeepSeek-V4-Flash. Further, through a dedicated deployment optimization known as SWA Bounded Replay, DeepSeek-V4.1-Flash reduces its persistent KV cache footprint (always on SSD or in host memory) to roughly 1/8 of that of DeepSeek-V4-Flash."
+   }
+  ]
+ }
+}

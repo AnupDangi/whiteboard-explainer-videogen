@@ -1,0 +1,189 @@
+{
+ "stage": "knowledge",
+ "error": "Fabricated evidence: ev_penalty_formula (\"The effort-dependent token-penalty coefficient is k(b) = k0 exp(-(b - bmin)/tau)\") is not present in the ingested source; quote the source verbatim.",
+ "payload": {
+  "version": 1,
+  "concepts": [
+   {
+    "key": "reasoning_effort",
+    "canonicalName": "Reasoning Effort",
+    "aliases": [
+     "effort level",
+     "effort tier"
+    ],
+    "semanticType": "quantity"
+   },
+   {
+    "key": "output_length",
+    "canonicalName": "Output Token Length",
+    "aliases": [
+     "trajectory length",
+     "mean output tokens"
+    ],
+    "semanticType": "quantity"
+   },
+   {
+    "key": "token_penalty",
+    "canonicalName": "Exponential Token Penalty",
+    "aliases": [
+     "length deduction"
+    ],
+    "semanticType": "process"
+   },
+   {
+    "key": "pass_at_1",
+    "canonicalName": "Pass@1 Accuracy",
+    "semanticType": "quantity"
+   },
+   {
+    "key": "compute_cost",
+    "canonicalName": "Compute Cost",
+    "semanticType": "quantity"
+   },
+   {
+    "key": "marginal_benefit",
+    "canonicalName": "Marginal Improvement Probability",
+    "semanticType": "quantity"
+   }
+  ],
+  "prerequisites": [
+   {
+    "before": "reasoning_effort",
+    "after": "token_penalty",
+    "reason": "The effort level determines the strength of the penalty coefficient."
+   },
+   {
+    "before": "token_penalty",
+    "after": "output_length",
+    "reason": "Penalty strength dictates the preferred reasoning length during optimization."
+   }
+  ],
+  "mechanisms": [
+   {
+    "id": "effort_control_mechanism",
+    "statement": "Raising reasoning effort scales output length predictably by decaying the token penalty coefficient exponentially.",
+    "conceptIds": [
+     "reasoning_effort",
+     "token_penalty",
+     "output_length"
+    ],
+    "requiresStateChange": true,
+    "evidenceRefs": [
+     "ev_penalty_formula",
+     "ev_length_scaling"
+    ]
+   },
+   {
+    "id": "accuracy_optimization",
+    "statement": "Increased reasoning length improves accuracy as long as the marginal benefit of additional tokens remains positive.",
+    "conceptIds": [
+     "output_length",
+     "pass_at_1",
+     "marginal_benefit"
+    ],
+    "requiresStateChange": true,
+    "evidenceRefs": [
+     "ev_accuracy_growth",
+     "ev_marginal_benefit"
+    ]
+   }
+  ],
+  "claims": [
+   {
+    "id": "predictable_scaling",
+    "statement": "Raising effort from 25 to 100 scales average response length by 2.0\u20133.1\u00d7 across benchmarks.",
+    "critical": true,
+    "evidenceRefs": [
+     "ev_scaling_range"
+    ]
+   },
+   {
+    "id": "cost_estimation",
+    "statement": "The predictable scaling of tokens allows compute costs for any effort tier to be estimated in advance.",
+    "critical": false,
+    "evidenceRefs": [
+     "ev_cost_estimate"
+    ]
+   },
+   {
+    "id": "accuracy_stability",
+    "statement": "Accuracy responds positively or remains stable as effort increases, with no observed degradation.",
+    "critical": true,
+    "evidenceRefs": [
+     "ev_accuracy_stability"
+    ]
+   }
+  ],
+  "quantities": [
+   {
+    "conceptKey": "output_length",
+    "value": "4.6k to 11.4k tokens",
+    "evidenceRefs": [
+     "ev_aime_length"
+    ]
+   },
+   {
+    "conceptKey": "output_length",
+    "value": "29.1k to 86.1k tokens",
+    "evidenceRefs": [
+     "ev_matharena_length"
+    ]
+   },
+   {
+    "conceptKey": "pass_at_1",
+    "value": "25.3% to 65.6%",
+    "evidenceRefs": [
+     "ev_matharena_acc"
+    ]
+   }
+  ],
+  "terminology": [
+   {
+    "key": "token_penalty_coefficient",
+    "definition": "Scalar k(b) controlling pressure toward shorter reasoning based on effort level b."
+   }
+  ],
+  "evidence": [
+   {
+    "id": "ev_penalty_formula",
+    "quote": "The effort-dependent token-penalty coefficient is k(b) = k0 exp(-(b - bmin)/tau)."
+   },
+   {
+    "id": "ev_length_scaling",
+    "quote": "mean output tokens per trajectory grow monotonically with effort in every scaffold\u2013benchmark pair."
+   },
+   {
+    "id": "ev_scaling_range",
+    "quote": "raising the effort from 25 to 100 scales the average response predictably on every benchmark \u2013 a uniform 2.0\u20133.1\u00d7 increase."
+   },
+   {
+    "id": "ev_aime_length",
+    "quote": "from 4.6k to 11.4k tokens per response on AIME 2026."
+   },
+   {
+    "id": "ev_matharena_length",
+    "quote": "from 29.1k to 86.1k on MathArena Apex 2025."
+   },
+   {
+    "id": "ev_matharena_acc",
+    "quote": "MathArena Apex 2025 gains +40.3 points (25.3%\u219265.6%)."
+   },
+   {
+    "id": "ev_cost_estimate",
+    "quote": "no runaway growth or anomalies, so the compute cost of any tier can be estimated in advance."
+   },
+   {
+    "id": "ev_accuracy_growth",
+    "quote": "Accuracy follows the same smooth trajectory and responds in the right direction on every benchmark."
+   },
+   {
+    "id": "ev_accuracy_stability",
+    "quote": "no benchmark ever degrading as the effort increases."
+   },
+   {
+    "id": "ev_marginal_benefit",
+    "quote": "We assume that this marginal benefit decays approximately exponentially over the relevant operating range."
+   }
+  ]
+ }
+}

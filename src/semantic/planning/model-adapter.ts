@@ -70,8 +70,8 @@ export function createJsonModel(options:{env?:NodeJS.ProcessEnv;fetcher?:typeof 
      emit({stage,attempt,kind:'provider-failure',model,elapsedMs,promptTokens,completionTokens,costUsd,finishReason,payload:{providerFailure:response},error:`finish_reason=${finishReason}`});
      await options.onOutput?.(stage,attempt,{providerFailure:response});
      throw new Error(`V2 ${stage} response incomplete or refused: ${finishReason??'missing finish reason'} ${JSON.stringify(response.error??response.choices?.[0]?.error??'')}`);}
-    try{
-     const raw=JSON.parse(response.choices[0].message.content);
+    let raw:unknown;try{
+     raw=JSON.parse(response.choices[0].message.content);
      emit({stage,attempt,kind:'raw',model,elapsedMs,promptTokens,completionTokens,costUsd,finishReason,payload:raw});
      const healed=healSchema(raw,schema);
      if(JSON.stringify(raw)!==JSON.stringify(healed))emit({stage,attempt,kind:'healed',model,elapsedMs,promptTokens,completionTokens,costUsd,finishReason,payload:healed});
@@ -82,6 +82,7 @@ export function createJsonModel(options:{env?:NodeJS.ProcessEnv;fetcher?:typeof 
     }catch(e){
      error=e instanceof Error?e.message:String(e);if(!firstActionable)firstActionable=error;
       emit({stage,attempt,kind:'failure',model,elapsedMs,promptTokens,completionTokens,costUsd,finishReason,payload:{schema:schema?{type:schema.type,required:schema.required}:undefined},error});
+      if(env.V2_REPLAY_DIR){try{const {mkdir,writeFile}=await import('node:fs/promises');await mkdir(env.V2_REPLAY_DIR,{recursive:true});await writeFile(`${env.V2_REPLAY_DIR}/${Date.now()}-${stage}.json`,JSON.stringify({stage,error,model,payload:raw},null,1));}catch{/* recording must never break the pipeline */}}
 
      if(attempt===maxAttempts-1)throw new Error(`V2 ${stage} validation exhausted: ${firstActionable||error}`);
     }

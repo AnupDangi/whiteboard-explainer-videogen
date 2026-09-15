@@ -1,0 +1,374 @@
+{
+ "stage": "teaching",
+ "error": "Unknown evidence: ev_csa2_reduction",
+ "payload": {
+  "version": 2,
+  "lessonGoal": "Explain why KV cache dominates long-context serving costs and how CED plus CSA2 reduce that footprint to 890 bytes per token.",
+  "learnerAssumption": "Student understands basic Transformer attention but not specific cache compression techniques or HBM constraints.",
+  "centralQuestion": "How do architectural changes shrink the massive memory footprint of long-context models?",
+  "requiredClaims": [
+   {
+    "id": "claim_kv_bottleneck",
+    "statement": "Global KV cache storage dominates runtime memory usage for sufficiently long sequences.",
+    "critical": true,
+    "evidenceRefs": [
+     "ev_kv_bottleneck"
+    ]
+   },
+   {
+    "id": "claim_ced_efficiency",
+    "statement": "Causal Encoder-Decoder architecture halves prefill computation by projecting decoder KV from encoder states.",
+    "critical": true,
+    "evidenceRefs": [
+     "ev_ced_def",
+     "ev_ced_mech"
+    ]
+   },
+   {
+    "id": "claim_footprint_reduction",
+    "statement": "CSA2 cross-layer reuse and FP4 caching reduce global KV footprint to roughly one quarter of baseline.",
+    "critical": true,
+    "evidenceRefs": [
+     "ev_footprint_val",
+     "ev_csa2_reduction"
+    ]
+   }
+  ],
+  "requiredMechanisms": [
+   {
+    "id": "mech_ced_projection",
+    "statement": "Decoder global KV is projected directly from final encoder hidden states rather than computed layer-wise.",
+    "critical": true,
+    "evidenceRefs": [
+     "ev_ced_projection"
+    ],
+    "conceptKeys": [
+     "ced_architecture",
+     "global_kv"
+    ],
+    "requiresStateChange": false
+   },
+   {
+    "id": "mech_csa2_reuse",
+    "statement": "CSA2 shares main KV and indexer K across layers, allowing Reuse modes to skip generation entirely.",
+    "critical": true,
+    "evidenceRefs": [
+     "ev_csa2_reuse"
+    ],
+    "conceptKeys": [
+     "csa2",
+     "global_kv"
+    ],
+    "requiresStateChange": false
+   }
+  ],
+  "conceptRegistry": [
+   {
+    "key": "global_kv",
+    "canonicalName": "Global Key-Value Cache",
+    "aliases": [
+     "runtime KV",
+     "HBM cache"
+    ],
+    "semanticType": "material",
+    "visualFamily": "quantity",
+    "preferredColorRole": "red",
+    "evidenceRefs": [
+     "ev_kv_bottleneck"
+    ]
+   },
+   {
+    "key": "ced_architecture",
+    "canonicalName": "Causal Encoder-Decoder",
+    "aliases": [
+     "CED"
+    ],
+    "semanticType": "entity",
+    "visualFamily": "system",
+    "preferredColorRole": "blue",
+    "evidenceRefs": [
+     "ev_ced_def"
+    ]
+   },
+   {
+    "key": "csa2",
+    "canonicalName": "Compressed Sparse Attention 2",
+    "aliases": [
+     "CSA2"
+    ],
+    "semanticType": "process",
+    "visualFamily": "component_group",
+    "preferredColorRole": "green",
+    "evidenceRefs": [
+     "ev_csa2_def"
+    ]
+   },
+   {
+    "key": "fp4_quantization",
+    "canonicalName": "FP4 Quantization",
+    "aliases": [
+     "FP4 caching"
+    ],
+    "semanticType": "process",
+    "visualFamily": "transformation",
+    "preferredColorRole": "yellow",
+    "evidenceRefs": [
+     "ev_fp4_halving"
+    ]
+   }
+  ],
+  "scenes": [
+   {
+    "key": "ch1_kv_compression_arc",
+    "centralConceptKey": "global_kv",
+    "teachingGoal": "Demonstrate how CED projection and CSA2 reuse mechanisms combine to drastically reduce global KV cache size.",
+    "learnerShouldUnderstand": "The global KV cache is the bottleneck; CED reduces its generation cost while CSA2 reduces its storage size via sharing.",
+    "mentalModel": "A large reservoir (KV cache) filling up as context grows, with two valves (CED, CSA2) controlling inflow and volume.",
+    "beats": [
+     {
+      "key": "beat_setup_bottleneck",
+      "purpose": "Establish global KV cache as the primary memory constraint in long contexts.",
+      "narrationDraft": "As context length grows, the global key-value cache fills your high-bandwidth memory until it becomes the dominant bottleneck.",
+      "requirementIds": [
+       "claim_kv_bottleneck"
+      ],
+      "introduce": [
+       "global_kv"
+      ],
+      "reinforce": [],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [
+       "ev_kv_bottleneck"
+      ]
+     },
+     {
+      "key": "beat_introduce_ced",
+      "purpose": "Introduce Causal Encoder-Decoder as a mechanism to reduce KV generation cost.",
+      "narrationDraft": "The Causal Encoder-Decoder architecture projects decoder keys and values directly from the final encoder hidden states.",
+      "requirementIds": [
+       "claim_ced_efficiency",
+       "mech_ced_projection"
+      ],
+      "introduce": [
+       "ced_architecture"
+      ],
+      "reinforce": [
+       "global_kv"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_ced_to_kv"
+      ],
+      "evidenceRefs": [
+       "ev_ced_def",
+       "ev_ced_projection"
+      ]
+     },
+     {
+      "key": "beat_explain_ced_mechanism",
+      "purpose": "Clarify how CED avoids redundant computation during prefill phase.",
+      "narrationDraft": "This projection allows the model to activate only half the parameters during prefill, cutting computational overhead significantly.",
+      "requirementIds": [
+       "mech_ced_projection"
+      ],
+      "introduce": [],
+      "reinforce": [
+       "ced_architecture",
+       "global_kv"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_ced_to_kv"
+      ],
+      "evidenceRefs": [
+       "ev_ced_mech"
+      ]
+     },
+     {
+      "key": "beat_introduce_csa2",
+      "purpose": "Introduce CSA2 as the mechanism for reducing stored cache volume through layer sharing.",
+      "narrationDraft": "Compressed Sparse Attention 2 further shrinks storage by sharing main key-value pairs and indexers across multiple transformer layers.",
+      "requirementIds": [
+       "claim_footprint_reduction",
+       "mech_csa2_reuse"
+      ],
+      "introduce": [
+       "csa2"
+      ],
+      "reinforce": [
+       "global_kv"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_csa2_to_kv"
+      ],
+      "evidenceRefs": [
+       "ev_csa2_def",
+       "ev_csa2_reuse"
+      ]
+     },
+     {
+      "key": "beat_explain_csa2_modes",
+      "purpose": "Explain how Reuse modes skip generation entirely to save space.",
+      "narrationDraft": "In Reuse mode, layers simply borrow existing keys and indices from previous layers instead of generating new ones.",
+      "requirementIds": [
+       "mech_csa2_reuse"
+      ],
+      "introduce": [],
+      "reinforce": [
+       "csa2",
+       "global_kv"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_csa2_to_kv"
+      ],
+      "evidenceRefs": [
+       "ev_csa2_reuse"
+      ]
+     },
+     {
+      "key": "beat_add_fp4",
+      "purpose": "Add FP4 quantization as a final multiplier to reduce byte count.",
+      "narrationDraft": "Finally, storing these shared caches in four-bit precision halves the remaining storage requirement without losing accuracy.",
+      "requirementIds": [
+       "claim_footprint_reduction"
+      ],
+      "introduce": [
+       "fp4_quantization"
+      ],
+      "reinforce": [
+       "global_kv",
+       "csa2"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_fp4_to_kv"
+      ],
+      "evidenceRefs": [
+       "ev_fp4_halving"
+      ]
+     },
+     {
+      "key": "beat_conclude_footprint",
+      "purpose": "Summarize the combined effect on total cache footprint.",
+      "narrationDraft": "Together, these optimizations shrink the global cache footprint to eight hundred ninety bytes per token, roughly one quarter of before.",
+      "requirementIds": [
+       "claim_footprint_reduction",
+       "mech_ced_projection",
+       "mech_csa2_reuse"
+      ],
+      "introduce": [],
+      "reinforce": [
+       "global_kv",
+       "ced_architecture",
+       "csa2",
+       "fp4_quantization"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_ced_to_kv",
+       "rel_csa2_to_kv",
+       "rel_fp4_to_kv"
+      ],
+      "evidenceRefs": [
+       "ev_footprint_val"
+      ]
+     }
+    ],
+    "requiredConceptKeys": [
+     "global_kv",
+     "ced_architecture",
+     "csa2",
+     "fp4_quantization"
+    ],
+    "requiredRelations": [
+     {
+      "key": "rel_ced_to_kv",
+      "fromConcept": "ced_architecture",
+      "toConcept": "global_kv",
+      "relation": "causes"
+     },
+     {
+      "key": "rel_csa2_to_kv",
+      "fromConcept": "csa2",
+      "toConcept": "global_kv",
+      "relation": "causes"
+     },
+     {
+      "key": "rel_fp4_to_kv",
+      "fromConcept": "fp4_quantization",
+      "toConcept": "global_kv",
+      "relation": "causes"
+     }
+    ],
+    "candidateArchetypes": [
+     "structural_diagram",
+     "convergence",
+     "flow"
+    ],
+    "continuity": {
+     "keepFromPrevious": [],
+     "prepareForNext": [
+      "swa_bounded_replay",
+      "persistent_kv_cache"
+     ],
+     "transitions": []
+    }
+   }
+  ],
+  "misconceptions": [
+   {
+    "claim": "KV cache reduction only affects inference speed, not memory capacity.",
+    "correction": "Reducing KV cache size directly lowers High Bandwidth Memory requirements, enabling longer contexts on existing hardware."
+   },
+   {
+    "claim": "CED removes all decoder computation during prefill.",
+    "correction": "CED still computes sliding window attention locally in the decoder, but skips global KV generation."
+   }
+  ],
+  "evidenceRefs": [
+   {
+    "id": "ev_kv_bottleneck",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "For sufficiently long sequences, global KV therefore dominates the runtime KV footprint, which is constrained by HBM capacity."
+   },
+   {
+    "id": "ev_ced_def",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "We adopt a Causal Encoder-Decoder (CED) architecture, in which decoder global KV is projected from the final encoder hidden states."
+   },
+   {
+    "id": "ev_ced_projection",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "Instead, they are projected directly from the hidden state of the (L/2)-th layer... using layer-dependent projection weights."
+   },
+   {
+    "id": "ev_ced_mech",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "This design enables the model to activate 16B parameters per token during decode but only 8B parameters during prefill."
+   },
+   {
+    "id": "ev_csa2_def",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "CSA2 applies cross-layer reuse to global KV (including main KV and indexer K) and Top-K indices to substantially reduce KV cache storage."
+   },
+   {
+    "id": "ev_csa2_reuse",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "Reuse Mode reuses both global KV and the Top-K indices in a preceding layer, and directly performs sparse attention."
+   },
+   {
+    "id": "ev_fp4_halving",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "Compared with the FP8 main KV cache in DeepSeek-V4, this format nearly halves the storage footprint, both in HBM and when offloaded to SSD."
+   },
+   {
+    "id": "ev_footprint_val",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "These designs reduce its global KV cache footprint (always in HBM) to 890 bytes per token, roughly 1/4 of the corresponding footprint of DeepSeek-V4-Flash."
+   }
+  ]
+ }
+}

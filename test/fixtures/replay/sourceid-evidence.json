@@ -1,0 +1,296 @@
+{
+ "stage": "teaching",
+ "error": "Evidence outside knowledge inventory: src_dc9a790964b67d2b85361fbfb6a4",
+ "payload": {
+  "version": 2,
+  "lessonGoal": "Explain how DeepSeek-V4.1-Flash overcomes the KV cache bottleneck in long-context serving using CED and CSA2 architectures.",
+  "learnerAssumption": "A curious student with basic knowledge of LLM inference and the role of the Key-Value cache.",
+  "centralQuestion": "How does DeepSeek-V4.1-Flash drastically reduce memory and compute costs for million-token contexts?",
+  "requiredClaims": [
+   {
+    "id": "kv_bottleneck",
+    "statement": "Large KV caches strain HBM and SSD capacity, constituting the primary bottleneck for long-context deployment costs.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "id": "cache_reduction_total",
+    "statement": "DeepSeek-V4.1-Flash reduces global KV cache footprint to 1/4 and persistent footprint to 1/8 of its predecessor.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "id": "prefill_efficiency",
+    "statement": "The Causal Encoder-Decoder architecture activates only 8B parameters during prefill compared to 16B during decode.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   }
+  ],
+  "requiredMechanisms": [
+   {
+    "id": "ced_efficiency",
+    "statement": "CED projects decoder global KV from encoder hidden states, halving prefill computation for long sequences.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ],
+    "conceptKeys": [
+     "ced_architecture",
+     "global_kv_cache"
+    ],
+    "requiresStateChange": false
+   },
+   {
+    "id": "csa2_reuse",
+    "statement": "CSA2 utilizes cross-layer KV cache reuse to eliminate redundant storage across Transformer layers.",
+    "critical": true,
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ],
+    "conceptKeys": [
+     "csa2",
+     "global_kv_cache"
+    ],
+    "requiresStateChange": false
+   }
+  ],
+  "conceptRegistry": [
+   {
+    "key": "global_kv_cache",
+    "canonicalName": "Global KV Cache",
+    "aliases": [
+     "runtime KV footprint"
+    ],
+    "semanticType": "material",
+    "visualFamily": "container",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "ced_architecture",
+    "canonicalName": "Causal Encoder-Decoder",
+    "aliases": [
+     "CED"
+    ],
+    "semanticType": "entity",
+    "visualFamily": "system",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "csa2",
+    "canonicalName": "Compressed Sparse Attention 2",
+    "aliases": [
+     "CSA2"
+    ],
+    "semanticType": "process",
+    "visualFamily": "flow",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "fp4_quantization",
+    "canonicalName": "FP4 Quantization",
+    "aliases": [
+     "FP4 KV caching"
+    ],
+    "semanticType": "process",
+    "visualFamily": "transformation",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   },
+   {
+    "key": "persistent_kv_cache",
+    "canonicalName": "Persistent KV Cache",
+    "aliases": [
+     "SSD cache"
+    ],
+    "semanticType": "material",
+    "visualFamily": "container",
+    "evidenceRefs": [
+     "src_dc9a790964b67d2b85361fbfb6a4"
+    ]
+   }
+  ],
+  "scenes": [
+   {
+    "key": "ch1_kv_compression_main",
+    "centralConceptKey": "ced_architecture",
+    "teachingGoal": "Explain the multi-layered approach to KV cache reduction in DeepSeek-V4.1-Flash.",
+    "learnerShouldUnderstand": "How CED, CSA2, and FP4 quantization work together to shrink the memory footprint.",
+    "mentalModel": "A high-efficiency pipeline where data is projected, shared across layers, and compressed to fit in limited memory.",
+    "beats": [
+     {
+      "key": "beat_intro_bottleneck",
+      "purpose": "Establish the problem of KV cache scaling.",
+      "narrationDraft": "In long-context AI, the KV cache becomes a massive bottleneck, straining hardware memory and slowing down response times.",
+      "requirementIds": [
+       "kv_bottleneck"
+      ],
+      "introduce": [
+       "ced_architecture"
+      ],
+      "reinforce": [],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     },
+     {
+      "key": "beat_ced_prefill",
+      "purpose": "Explain the CED prefill efficiency.",
+      "narrationDraft": "The Causal Encoder-Decoder architecture activates only 8B parameters during prefill by projecting decoder KV states from encoder outputs.",
+      "requirementIds": [
+       "prefill_efficiency",
+       "ced_efficiency"
+      ],
+      "introduce": [
+       "global_kv_cache"
+      ],
+      "reinforce": [
+       "ced_architecture"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "ced_to_global"
+      ],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     },
+     {
+      "key": "beat_csa2_reuse",
+      "purpose": "Explain cross-layer reuse.",
+      "narrationDraft": "Compressed Sparse Attention 2 further slashes storage by sharing these global KV entries across multiple Transformer layers.",
+      "requirementIds": [
+       "csa2_reuse"
+      ],
+      "introduce": [
+       "csa2"
+      ],
+      "reinforce": [
+       "global_kv_cache"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "csa2_to_global"
+      ],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     },
+     {
+      "key": "beat_fp4_quantization",
+      "purpose": "Introduce precision-based compression.",
+      "narrationDraft": "By quantizing the global cache to FP4 precision, the model fits four times more context into the same memory.",
+      "requirementIds": [],
+      "introduce": [
+       "fp4_quantization"
+      ],
+      "reinforce": [
+       "global_kv_cache"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "fp4_to_global"
+      ],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     },
+     {
+      "key": "beat_persistent_reduction",
+      "purpose": "Explain the impact on persistent storage.",
+      "narrationDraft": "These optimizations combine to reduce the persistent cache footprint to just one-eighth of previous generation models.",
+      "requirementIds": [
+       "cache_reduction_total"
+      ],
+      "introduce": [
+       "persistent_kv_cache"
+      ],
+      "reinforce": [
+       "fp4_quantization",
+       "csa2"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "global_to_persistent"
+      ],
+      "evidenceRefs": [
+       "src_dc9a790964b67d2b85361fbfb6a4"
+      ]
+     }
+    ],
+    "requiredConceptKeys": [
+     "ced_architecture",
+     "global_kv_cache",
+     "csa2",
+     "fp4_quantization",
+     "persistent_kv_cache"
+    ],
+    "requiredRelations": [
+     {
+      "key": "ced_to_global",
+      "fromConcept": "ced_architecture",
+      "toConcept": "global_kv_cache",
+      "relation": "causes"
+     },
+     {
+      "key": "csa2_to_global",
+      "fromConcept": "csa2",
+      "toConcept": "global_kv_cache",
+      "relation": "activates"
+     },
+     {
+      "key": "fp4_to_global",
+      "fromConcept": "fp4_quantization",
+      "toConcept": "global_kv_cache",
+      "relation": "transforms_to"
+     },
+     {
+      "key": "global_to_persistent",
+      "fromConcept": "global_kv_cache",
+      "toConcept": "persistent_kv_cache",
+      "relation": "flows_to"
+     }
+    ],
+    "candidateArchetypes": [
+     "cause_effect",
+     "flow",
+     "structural_diagram"
+    ],
+    "continuity": {
+     "keepFromPrevious": [],
+     "prepareForNext": [
+      "ced_architecture",
+      "global_kv_cache"
+     ]
+    }
+   }
+  ],
+  "misconceptions": [
+   {
+    "claim": "Sparse attention only reduces computation, not memory.",
+    "correction": "DeepSeek-V4.1-Flash uses CSA2 and FP4 specifically to reduce the memory footprint of the KV cache."
+   }
+  ],
+  "evidenceRefs": [
+   {
+    "id": "src_dc9a790964b67d2b85361fbfb6a4",
+    "sourceId": "src_dc9a790964b67d2b85361fbfb6a4",
+    "quote": "DeepSeek-V4.1-Flash combines cross-layer KV cache reuse in Compressed Sparse Attention 2 (CSA2) with FP4 KV caching. These designs reduce its global KV cache footprint to 890 bytes per token, roughly 1/4 of the corresponding footprint of DeepSeek-V4-Flash."
+   }
+  ]
+ }
+}

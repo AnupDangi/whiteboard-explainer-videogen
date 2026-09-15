@@ -1,0 +1,173 @@
+{
+ "stage": "teaching",
+ "error": "$: expected object",
+ "payload": [
+  {
+   "key": "ch1_kv_compression_mechanisms",
+   "centralConceptKey": "kv_cache",
+   "teachingGoal": "Explain how DeepSeek-V4.1-Flash reduces KV cache bottlenecks through architectural and precision co-optimization.",
+   "learnerShouldUnderstand": "The KV cache is the primary bottleneck for long-context agents, and it can be shrunk by reducing parameter activation, sharing data across layers, and lowering numerical precision.",
+   "mentalModel": "A high-speed library where storage space is limited; we save room by using thinner books, sharing one copy of a book across multiple floors, and only reading the most relevant pages.",
+   "beats": [
+    {
+     "key": "beat_bottleneck_intro",
+     "purpose": "Establish the KV cache as the primary bottleneck in long-context serving.",
+     "narrationDraft": "In long-context AI, the KV cache stores past token states, but its massive size strains memory and bandwidth.",
+     "requirementIds": [
+      "claim_kv_bottleneck"
+     ],
+     "introduce": [
+      "kv_cache"
+     ],
+     "reinforce": [],
+     "transform": [],
+     "relationFocus": [],
+     "evidenceRefs": [
+      "src_dc9a790964b67d2b85361fbfb6a4"
+     ],
+     "intentionalPause": "Short pause to visualize memory pressure."
+    },
+    {
+     "key": "beat_ced_asymmetry",
+     "purpose": "Explain how the Causal Encoder-Decoder reduces prefill computation.",
+     "narrationDraft": "The Causal Encoder-Decoder architecture activates only 8B parameters during prefill, halving the initial computation cost for new inputs.",
+     "requirementIds": [
+      "claim_ced_efficiency",
+      "mech_ced_asymmetry"
+     ],
+     "introduce": [
+      "causal_encoder_decoder"
+     ],
+     "reinforce": [
+      "kv_cache"
+     ],
+     "transform": [],
+     "relationFocus": [],
+     "evidenceRefs": [
+      "src_dc9a790964b67d2b85361fbfb6a4"
+     ],
+     "intentionalPause": "Brief pause to emphasize the 8B vs 16B parameter split."
+    },
+    {
+     "key": "beat_csa2_reuse",
+     "purpose": "Describe the cross-layer reuse mechanism of CSA2.",
+     "narrationDraft": "Compressed Sparse Attention 2 shares KV data across layers, eliminating redundant storage while maintaining high performance through sparse selection.",
+     "requirementIds": [
+      "mech_csa2_reuse",
+      "mech_csa_reduction"
+     ],
+     "introduce": [
+      "compressed_sparse_attention"
+     ],
+     "reinforce": [
+      "kv_cache"
+     ],
+     "transform": [],
+     "relationFocus": [],
+     "evidenceRefs": [
+      "src_dc9a790964b67d2b85361fbfb6a4"
+     ],
+     "intentionalPause": "Pause to visualize layers sharing a single cache."
+    },
+    {
+     "key": "beat_fp4_quantization",
+     "purpose": "Explain the impact of FP4 quantization on the cache footprint.",
+     "narrationDraft": "By quantizing the global KV cache to FP4 precision, the model shrinks its memory footprint to 890 bytes per token.",
+     "requirementIds": [
+      "fp4_quantization",
+      "claim_footprint_reduction"
+     ],
+     "introduce": [
+      "fp4_kv_cache",
+      "global_kv"
+     ],
+     "reinforce": [
+      "kv_cache"
+     ],
+     "transform": [],
+     "relationFocus": [],
+     "evidenceRefs": [
+      "src_dc9a790964b67d2b85361fbfb6a4"
+     ],
+     "intentionalPause": "Pause on the 890 bytes per token figure."
+    },
+    {
+     "key": "beat_swa_bounded_replay",
+     "purpose": "Explain how SWA Bounded Replay reduces persistent storage needs.",
+     "narrationDraft": "SWA Bounded Replay avoids storing local states on SSD by approximately reconstructing them through a small, efficient recomputation.",
+     "requirementIds": [
+      "swa_eviction",
+      "cl_swa_reduction"
+     ],
+     "introduce": [
+      "swa_kv"
+     ],
+     "reinforce": [
+      "kv_cache"
+     ],
+     "transform": [],
+     "relationFocus": [],
+     "evidenceRefs": [
+      "src_dc9a790964b67d2b85361fbfb6a4"
+     ],
+     "intentionalPause": "Pause to consider the SSD storage savings."
+    },
+    {
+     "key": "beat_summary_efficiency",
+     "purpose": "Summarize the total reduction in cache footprint.",
+     "narrationDraft": "Together, these mechanisms reduce the persistent cache to 1/8th the size of previous models, enabling massive context horizons.",
+     "requirementIds": [
+      "claim_persistent_reduction",
+      "mech_kv_compression"
+     ],
+     "introduce": [],
+     "reinforce": [
+      "kv_cache",
+      "causal_encoder_decoder",
+      "compressed_sparse_attention"
+     ],
+     "transform": [],
+     "relationFocus": [],
+     "evidenceRefs": [
+      "src_dc9a790964b67d2b85361fbfb6a4"
+     ],
+     "intentionalPause": "Final pause for the 1/8th reduction claim."
+    }
+   ],
+   "requiredConceptKeys": [
+    "kv_cache",
+    "causal_encoder_decoder",
+    "compressed_sparse_attention",
+    "fp4_kv_cache",
+    "global_kv",
+    "swa_kv"
+   ],
+   "requiredRelations": [
+    {
+     "key": "rel_ced_to_kv",
+     "fromConcept": "causal_encoder_decoder",
+     "toConcept": "kv_cache",
+     "relation": "causes"
+    },
+    {
+     "key": "rel_csa_to_kv",
+     "fromConcept": "compressed_sparse_attention",
+     "toConcept": "kv_cache",
+     "relation": "causes"
+    }
+   ],
+   "candidateArchetypes": [
+    "structural_diagram",
+    "cause_effect",
+    "flow"
+   ],
+   "continuity": {
+    "keepFromPrevious": [],
+    "prepareForNext": [
+     "kv_cache",
+     "reasoning_effort"
+    ]
+   }
+  }
+ ]
+}

@@ -60,6 +60,10 @@ export function healSchema(value:unknown,schema:Schema,path='$'):unknown{
  if(schema.type==='object'&&value&&typeof value==='object'&&!Array.isArray(value)){
   const record=value as Record<string,unknown>,out:Record<string,unknown>={};
   for(const key of Object.keys(record))if(Object.hasOwn(schema.properties!,key))out[key]=healSchema(record[key],schema.properties![key],`${path}.${key}`);
+  // Models emit "" for "not applicable" on optional fields (intentionalPause,
+  // decisions): an empty string carries no meaning, so non-required fields
+  // holding one are omitted instead of failing the whole call.
+  for(const key of Object.keys(out))if(typeof out[key]==='string'&&!(out[key] as string).trim()&&!(schema.required??[]).includes(key))delete out[key];
   // Subpart concepts arrive typed 'part_of' (a relation, not a type); they are entities.
   if(typeof out.semanticType==='string'&&!SEMANTIC_TYPES.includes(out.semanticType))out.semanticType='entity';
   // Missing required array fields default to empty arrays (never missing required scalars).

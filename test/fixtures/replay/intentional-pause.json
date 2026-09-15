@@ -1,0 +1,344 @@
+{
+ "stage": "teaching",
+ "error": "$.scenes[0].beats[0].intentionalPause: invalid string",
+ "payload": {
+  "version": 2,
+  "lessonGoal": "Explain why KV cache dominates long-context serving costs and how CED plus CSA2 reduce global and persistent footprints to one-quarter and one-eighth respectively.",
+  "learnerAssumption": "Student understands basic Transformer attention but not specific cache compression techniques or DeepSeek architecture details.",
+  "centralQuestion": "How do architectural changes shrink the massive memory footprint required for million-token context serving?",
+  "requiredClaims": [
+   {
+    "id": "claim_kv_bottleneck",
+    "statement": "Large KV caches strain HBM and SSD capacity, creating primary bottlenecks for deployment costs.",
+    "critical": true,
+    "evidenceRefs": []
+   },
+   {
+    "id": "claim_ced_efficiency",
+    "statement": "Causal Encoder-Decoder activates only 8B parameters during prefill versus 16B during decode.",
+    "critical": true,
+    "evidenceRefs": []
+   },
+   {
+    "id": "claim_footprint_reduction",
+    "statement": "CSA2 and FP4 caching reduce global KV cache footprint to roughly one-quarter of previous models.",
+    "critical": true,
+    "evidenceRefs": []
+   },
+   {
+    "id": "claim_persistent_reduction",
+    "statement": "SWA Bounded Replay reduces persistent KV cache footprint to roughly one-eighth of previous models.",
+    "critical": true,
+    "evidenceRefs": []
+   }
+  ],
+  "requiredMechanisms": [
+   {
+    "id": "mech_ced_projection",
+    "statement": "Decoder global KV is projected from final encoder hidden states, bypassing full decoder computation during prefill.",
+    "critical": true,
+    "evidenceRefs": [],
+    "conceptKeys": [
+     "causal_encoder_decoder",
+     "kv_cache"
+    ],
+    "requiresStateChange": false
+   },
+   {
+    "id": "mech_csa2_reuse",
+    "statement": "Compressed Sparse Attention 2 shares main KV and indexer K across layers to reduce duplicated storage.",
+    "critical": true,
+    "evidenceRefs": [],
+    "conceptKeys": [
+     "compressed_sparse_attention_2",
+     "kv_cache"
+    ],
+    "requiresStateChange": false
+   },
+   {
+    "id": "m_swa_replay",
+    "statement": "SWA Bounded Replay reconstructs missing sliding window states by replaying only recent tokens instead of persisting them.",
+    "critical": true,
+    "evidenceRefs": [],
+    "conceptKeys": [
+     "swa_bounded_replay",
+     "persistent_kv_cache"
+    ],
+    "requiresStateChange": false
+   }
+  ],
+  "conceptRegistry": [
+   {
+    "key": "kv_cache",
+    "canonicalName": "Key-Value Cache",
+    "aliases": [
+     "KV cache",
+     "runtime cache"
+    ],
+    "semanticType": "entity",
+    "visualFamily": "container",
+    "preferredColorRole": "primary",
+    "evidenceRefs": []
+   },
+   {
+    "key": "causal_encoder_decoder",
+    "canonicalName": "Causal Encoder-Decoder",
+    "aliases": [
+     "CED architecture"
+    ],
+    "semanticType": "process",
+    "visualFamily": "system",
+    "preferredColorRole": "secondary",
+    "evidenceRefs": []
+   },
+   {
+    "key": "compressed_sparse_attention_2",
+    "canonicalName": "Compressed Sparse Attention 2",
+    "aliases": [
+     "CSA2"
+    ],
+    "semanticType": "process",
+    "visualFamily": "component_group",
+    "preferredColorRole": "tertiary",
+    "evidenceRefs": []
+   },
+   {
+    "key": "swa_bounded_replay",
+    "canonicalName": "SWA Bounded Replay",
+    "aliases": [
+     "bounded replay"
+    ],
+    "semanticType": "process",
+    "visualFamily": "transformation",
+    "preferredColorRole": "accent",
+    "evidenceRefs": []
+   },
+   {
+    "key": "global_kv",
+    "canonicalName": "Global Key-Value Entries",
+    "aliases": [
+     "global KV"
+    ],
+    "semanticType": "material",
+    "visualFamily": "quantity",
+    "preferredColorRole": "neutral",
+    "evidenceRefs": []
+   },
+   {
+    "key": "persistent_kv_cache",
+    "canonicalName": "Persistent KV Cache",
+    "aliases": [
+     "SSD cache",
+     "host memory cache"
+    ],
+    "semanticType": "entity",
+    "visualFamily": "container",
+    "preferredColorRole": "warning",
+    "evidenceRefs": []
+   }
+  ],
+  "scenes": [
+   {
+    "key": "ch1_kv_compression_arc",
+    "centralConceptKey": "kv_cache",
+    "teachingGoal": "Demonstrate how CED projection and CSA2 reuse shrink runtime cache, while SWA replay shrinks persistent storage.",
+    "learnerShouldUnderstand": "The system compresses memory usage through architectural sharing and approximate reconstruction rather than just quantization.",
+    "mentalModel": "A multi-layered storage system where data flows from encoder to decoder, gets shared across layers, and is selectively reconstructed on demand.",
+    "beats": [
+     {
+      "key": "beat_setup_bottleneck",
+      "purpose": "Establish the problem: large KV caches dominate memory costs in long-context serving.",
+      "narrationDraft": "Long-context agents generate massive key-value caches that strain high-bandwidth memory and solid-state drive capacity simultaneously.",
+      "requirementIds": [
+       "claim_kv_bottleneck"
+      ],
+      "introduce": [
+       "kv_cache",
+       "global_kv"
+      ],
+      "reinforce": [],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [],
+      "intentionalPause": ""
+     },
+     {
+      "key": "beat_introduce_ced",
+      "purpose": "Introduce Causal Encoder-Decoder as the first mechanism reducing prefill compute and cache generation.",
+      "narrationDraft": "The causal encoder-decoder projects decoder keys directly from encoder outputs, halving active parameters during input processing.",
+      "requirementIds": [
+       "claim_ced_efficiency",
+       "mech_ced_projection"
+      ],
+      "introduce": [
+       "causal_encoder_decoder"
+      ],
+      "reinforce": [
+       "kv_cache"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_ced_to_kv"
+      ],
+      "evidenceRefs": [],
+      "intentionalPause": ""
+     },
+     {
+      "key": "beat_explain_csa2",
+      "purpose": "Explain how CSA2 shares KV entries across layers to reduce duplicated storage significantly.",
+      "narrationDraft": "Compressed sparse attention shares main key-value vectors across multiple layers, eliminating redundant storage within the network.",
+      "requirementIds": [
+       "claim_footprint_reduction",
+       "mech_csa2_reuse"
+      ],
+      "introduce": [
+       "compressed_sparse_attention_2"
+      ],
+      "reinforce": [
+       "kv_cache",
+       "global_kv"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_csa2_to_kv"
+      ],
+      "evidenceRefs": [],
+      "intentionalPause": ""
+     },
+     {
+      "key": "beat_quantify_global",
+      "purpose": "Quantify the global cache reduction achieved by combining CED, CSA2, and FP4 precision.",
+      "narrationDraft": "These architectural choices shrink the global cache footprint to eight hundred ninety bytes per token, roughly one quarter of before.",
+      "requirementIds": [
+       "claim_footprint_reduction"
+      ],
+      "introduce": [],
+      "reinforce": [
+       "kv_cache",
+       "global_kv"
+      ],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [],
+      "intentionalPause": ""
+     },
+     {
+      "key": "beat_introduce_swa",
+      "purpose": "Introduce SWA Bounded Replay as the solution for persistent cache storage on slower media.",
+      "narrationDraft": "Sliding window attention bounded replay avoids storing local states permanently by reconstructing them from recent tokens only.",
+      "requirementIds": [
+       "claim_persistent_reduction",
+       "m_swa_replay"
+      ],
+      "introduce": [
+       "swa_bounded_replay",
+       "persistent_kv_cache"
+      ],
+      "reinforce": [
+       "kv_cache"
+      ],
+      "transform": [],
+      "relationFocus": [
+       "rel_swa_to_persistent"
+      ],
+      "evidenceRefs": [],
+      "intentionalPause": ""
+     },
+     {
+      "key": "beat_quantify_persistent",
+      "purpose": "Quantify the persistent cache reduction achieved by removing SWA storage requirements.",
+      "narrationDraft": "Removing sliding window storage from persistent memory reduces the total disk footprint to roughly one eighth of the baseline model.",
+      "requirementIds": [
+       "claim_persistent_reduction"
+      ],
+      "introduce": [],
+      "reinforce": [
+       "persistent_kv_cache"
+      ],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [],
+      "intentionalPause": ""
+     },
+     {
+      "key": "beat_synthesize_impact",
+      "purpose": "Synthesize the combined impact of all mechanisms on deployment cost and performance.",
+      "narrationDraft": "Together these optimizations ease pressure on hardware capacity while delivering better overall performance than the larger predecessor model.",
+      "requirementIds": [
+       "claim_kv_bottleneck",
+       "claim_ced_efficiency",
+       "claim_footprint_reduction",
+       "claim_persistent_reduction",
+       "mech_ced_projection",
+       "mech_csa2_reuse",
+       "m_swa_replay"
+      ],
+      "introduce": [],
+      "reinforce": [
+       "kv_cache",
+       "causal_encoder_decoder",
+       "compressed_sparse_attention_2",
+       "swa_bounded_replay"
+      ],
+      "transform": [],
+      "relationFocus": [],
+      "evidenceRefs": [],
+      "intentionalPause": ""
+     }
+    ],
+    "requiredConceptKeys": [
+     "kv_cache",
+     "causal_encoder_decoder",
+     "compressed_sparse_attention_2",
+     "swa_bounded_replay",
+     "global_kv",
+     "persistent_kv_cache"
+    ],
+    "requiredRelations": [
+     {
+      "key": "rel_ced_to_kv",
+      "fromConcept": "causal_encoder_decoder",
+      "toConcept": "kv_cache",
+      "relation": "activates"
+     },
+     {
+      "key": "rel_csa2_to_kv",
+      "fromConcept": "compressed_sparse_attention_2",
+      "toConcept": "kv_cache",
+      "relation": "contains"
+     },
+     {
+      "key": "rel_swa_to_persistent",
+      "fromConcept": "swa_bounded_replay",
+      "toConcept": "persistent_kv_cache",
+      "relation": "inhibits"
+     }
+    ],
+    "candidateArchetypes": [
+     "structural_diagram",
+     "flow",
+     "cause_effect"
+    ],
+    "continuity": {
+     "keepFromPrevious": [],
+     "prepareForNext": [
+      "fp4_kv_caching",
+      "hierarchical_sparse_indexer"
+     ],
+     "transitions": []
+    }
+   }
+  ],
+  "misconceptions": [
+   {
+    "claim": "KV cache compression relies solely on lower precision formats like FP4.",
+    "correction": "Compression primarily comes from architectural sharing via CSA2 and CED projection, with FP4 providing secondary gains."
+   },
+   {
+    "claim": "Persistent cache stores all attention states indefinitely.",
+    "correction": "Persistent cache excludes sliding window states, which are reconstructed on demand using bounded replay."
+   }
+  ],
+  "evidenceRefs": []
+ }
+}
