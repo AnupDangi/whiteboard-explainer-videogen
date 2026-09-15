@@ -65,14 +65,19 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
  const runRepair=async(error:Error,gate:GateResult,at:0|1)=>{
   const repairStartedAt=new Date().toISOString(),repairStarted=performance.now();
   /** A fresh signal: the failed attempt's controller was aborted before the
-   *  repair ran, so reusing it made every thrown-error repair fail instantly. */
+   *  repair ran, so reusing it made every thrown-error repair fail instantly.
+   *  The repair still runs under the stage deadline — an unbounded repair is
+   *  exactly how one hung stage consumed the whole job. */
   const repairController=new AbortController();
+  const timer=setTimeout(()=>repairController.abort(new Error(`${options.stage} repair exceeded ${policy.timeoutMs}ms`)),policy.timeoutMs);
+  timer.unref?.();
   try{produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt:at,input:options.input,error,gate,output:hasProduced?produced:undefined,signal:repairController.signal});}
   catch(repairError){
    const value=repairError instanceof Error?repairError:new Error(String(repairError));
    await appendFailure(1,repairStartedAt,repairStarted,(repairError as {gate?:GateResult})?.gate??gate,value);
    throw value;
   }
+  finally{clearTimeout(timer);}
   hasProduced=true;attempt=1;
  };
  for(;;){

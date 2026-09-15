@@ -71,3 +71,15 @@ test('a thrown stage error is offered to the owner repair with the error message
  const {output,envelope}=await executeStage({stage:'visual-director',input:{},run:()=>{attempts++;if(attempts===1)throw new Error('Cycle requires 3-6 primary representations');return {ok:true};},gate:()=>ok('visual-director'),repair:async({error,gate})=>{const hints=repairHints({error,gate});assert.deepEqual(hints,['Cycle requires 3-6 primary representations']);return {ok:true};},journal:new MemoryStageJournal()});
  assert.equal(attempts,1);assert.deepEqual(output,{ok:true});assert.equal(envelope.attempt,1);
 });
+
+test('a hanging stage repair is bounded by the stage deadline',async()=>{
+ const journal=new MemoryStageJournal();
+ const policy={owner:'knowledge-compiler',timeoutMs:60,maxRepairs:1,budgetUsd:.2};
+ await assert.rejects(
+  executeStage({stage:'knowledge-compiler',input:{prompt:'x'},run:()=>{throw new Error('first attempt exploded');},gate:()=>ok('knowledge-compiler'),journal,repair:({signal})=>new Promise((_resolve,reject)=>{signal.addEventListener('abort',()=>reject(signal.reason??new Error('repair aborted')),{once:true});}),policy}),
+  /repair exceeded/);
+ const entries=await journal.read();
+ const fails=entries.filter(entry=>entry.status==='FAIL');
+ assert.equal(fails.length,2,'the deadline hit is journaled as the repair attempt');
+ assert.match(fails[1].error.message,/repair exceeded/);
+});
