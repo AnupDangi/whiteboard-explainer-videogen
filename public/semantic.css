@@ -18,6 +18,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:24px;max-width:1
 .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}
 .panel-head h1{font-size:clamp(25px,3vw,40px);line-height:1.05;margin:6px 0 0;max-width:12ch}
 .eyebrow{font-size:10px;letter-spacing:1.6px;font-weight:700;color:var(--muted);text-transform:uppercase}
+.section-heading{margin-top:1rem}
 h2{font-size:18px;margin:10px 0 0}
 .status{font-size:12px;font-weight:600;color:var(--green);background:var(--green-soft);border:1px solid #d3e2d4;border-radius:999px;padding:7px 13px;white-space:nowrap}
 #board{aspect-ratio:16/9;display:grid;place-items:center;background:#faf9f3;border:1px solid var(--line);border-radius:12px;overflow:hidden}

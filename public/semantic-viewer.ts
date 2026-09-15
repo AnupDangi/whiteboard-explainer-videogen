@@ -19,6 +19,7 @@ let jobAudio:Record<string,HTMLAudioElement>={};
 let currentJobId:string|null=null;
 const mp4Button=el<HTMLButtonElement>('download-mp4');
 const generateButton=el<HTMLButtonElement>('generate'),cancelButton=el<HTMLButtonElement>('cancel-job');
+const resumeButton=el<HTMLButtonElement>('resume-job');
 mp4Button.onclick=async()=>{
   if(!currentJobId)return;
   mp4Button.disabled=true;el('jobstatus').textContent='Exporting job MP4…';
@@ -63,6 +64,7 @@ function applySnapshot(job:JobSnapshot){
   el('run-note').textContent=job.publishable?'All critical gates passed. This run is publishable.':job.finalGate==='FAIL'?'Debug artifacts are retained. MP4 publication is blocked by a critical gate.':'The final MP4 is available only after every critical teaching gate passes.';
   mp4Button.hidden=!(job.publishable&&job.finalGate==='PASS');
   const terminal=['complete','partial','error','cancelled','interrupted'].includes(job.status);generateButton.disabled=!terminal;cancelButton.hidden=terminal;
+  resumeButton.hidden=!(terminal&&job.status!=='complete'&&job.harnessVersion==='teaching-compiler-v1');
   if(job.scenes.length&&!scene)void showScene(job.scenes[0],currentJobId);
 }
 function streamJob(id:string,from:number){
@@ -84,5 +86,18 @@ async function fallbackPoll(id:string){
   }
 }
 cancelButton.onclick=async()=>{if(!currentJobId)return;cancelButton.disabled=true;await fetch(`/api/semantic/jobs/${currentJobId}/cancel`,{method:'POST'}).catch(()=>null);cancelButton.disabled=false;};
+resumeButton.onclick=async()=>{
+  if(!currentJobId)return;
+  resumeButton.disabled=true;el('jobstatus').textContent='Resuming from last validated checkpoint…';
+  try{
+    const response=await fetch(`/api/semantic/jobs/${currentJobId}/retry`,{method:'POST'});
+    const job=await response.json();
+    if(!response.ok||!job.id)throw new Error(job.error||'Resume failed');
+    generated.length=0;mp4Button.hidden=true;resumeButton.hidden=true;cancelButton.hidden=false;
+    currentJobId=job.id;
+    streamJob(job.id,0);
+  }catch(e){el('jobstatus').textContent=e instanceof Error?e.message:String(e);}
+  resumeButton.disabled=false;
+};
 generateButton.onclick=()=>void createJob().catch(e=>{generateButton.disabled=false;el('status').textContent=e instanceof Error?e.message:String(e);});
 fetch('/api/semantic/golden').then(load).catch(e=>{el('status').textContent=e.message;});

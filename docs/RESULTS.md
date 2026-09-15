@@ -1,3 +1,18 @@
+# 2026-09-15 — Viewer resume UI, hash stability, live baseline
+
+- Semantic Lab: "Resume from last checkpoint" button wired to
+  `POST /api/semantic/jobs/:id/retry`; page console errors fixed (CSP inline
+  style, favicon); browser QA clean.
+- `stableHash` made JSON-round-trip-stable (undefined-valued keys skipped) —
+  journal replay now matches its own entries.
+- Live baseline (4 grounded runs, ~$0.18): full grounded prefix (knowledge →
+  architect → board → representation → grounding) journaled OK in the best
+  run; resume replayed knowledge at 0 ms with 0 model calls. Director remains
+  blocked by provider latency (qwen/deepseek 120 s hangs; gemini verbose
+  truncations). No narrated scene completed today; spend < $1 program total.
+- Verification: typecheck clean; `npm test` **302/302**; `git diff --check`
+  clean.
+
 # 2026-09-15 — Phase 7 per-semantic-segment TTS timing
 
 - TTS per teaching beat: exact real segment durations, deterministic WAV

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Semantic visual teaching lab</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/semantic.css">
 </head>
 <body>
@@ -58,6 +59,7 @@
       <button id="generate" class="primary" type="button">Generate lesson video</button>
       <button id="cancel-job" type="button" hidden>Cancel active run</button>
       <output id="jobstatus" role="status">idle</output>
+      <button id="resume-job" type="button" hidden>⟳ Resume from last checkpoint</button>
       <button id="download-mp4" type="button" hidden>↓ Download job MP4</button>
     </div>
     <section id="run-summary" class="run-summary" aria-label="Teaching compiler status" hidden>
@@ -68,7 +70,7 @@
       <p id="run-note">The final MP4 is available only after every critical teaching gate passes.</p>
     </section>
     <p class="hint">Scenes stream over SSE as soon as they are ready. Preview artifacts remain inspectable after failure, but final MP4 publication requires a complete PASS.</p>
-    <p class="eyebrow" style="margin-top:1rem">SCENE DATA</p>
+    <p class="eyebrow section-heading">SCENE DATA</p>
     <div class="controls stacked">
       <label class="file">Load scene JSON <input id="file" type="file" accept=".json,application/json"></label>
       <button id="download" type="button">↓ Download compiled JSON</button>

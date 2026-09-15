@@ -25,6 +25,8 @@ test('job library lists saved videos as metadata',async()=>{
  try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});const base=`http://127.0.0.1:${server.address().port}`;
   const empty=await (await fetch(base+'/api/jobs')).json();assert.deepEqual(empty.jobs,[]);
   assert.equal(await (await fetch(base+'/api/semantic/jobs/00000000-0000-4000-8000-000000000000/export')).status,404);
+  const unknownRetry=await fetch(base+'/api/semantic/jobs/00000000-0000-4000-8000-000000000000/retry',{method:'POST'});assert.equal(unknownRetry.status,404);
+  const malformedRetry=await fetch(base+'/api/semantic/jobs/not-a-uuid/retry',{method:'POST'});assert.ok([400,404,405].includes(malformedRetry.status),`expected rejected status, got ${malformedRetry.status}`);
  }finally{await store.close();await new Promise(resolve=>server.close(resolve));await rm(root,{recursive:true,force:true});}
 });
 test('semantic scene snapshots load through the versioned media route',async()=>{

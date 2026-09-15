@@ -1,3 +1,35 @@
+# Viewer resume UI, hash stability fix, live provider baseline, 2026-09-15
+
+The Semantic Lab now offers "Resume from last checkpoint" for
+error/interrupted/partial/cancelled teaching-compiler jobs (`POST
+/api/semantic/jobs/:id/retry`, shown only for `teaching-compiler-v1` runs);
+route and malformed-id behavior pinned by tests. Fixed two console errors on
+the Semantic Lab page (CSP inline-style moved to a `.section-heading` class;
+favicon request suppressed). Verified in-browser: resume button renders
+hidden on a fresh page, zero console errors.
+
+Root-caused and fixed a resume-critical defect: `stableHash` was not stable
+across JSON round-trips — explicit `undefined`-valued keys survived in live
+stage inputs but were dropped by journal serialization, so replayed stages
+never matched their own journal entries. `stableJson` now skips undefined
+object values and undefined array items, making input hashes round-trip
+stable (proven by the 302-test suite; journal entries written after this fix
+resume exactly).
+
+Live provider baseline (4 grounded runs today, ~$0.18 total, all failures
+preserved): the full grounded prefix — knowledge-compiler, teaching-architect,
+whiteboard-planner, representation-guide, source-visual-grounding — completed
+and journaled OK in the best run (gemini knowledge 43 s, architect 12 s);
+journal resume replayed a completed knowledge stage at 0 ms cost with zero
+model calls. Remaining blocker is provider throughput/latency, not contracts:
+gemini intermittently emits verbose >12k-token knowledge JSONs that truncate
+even at the 1.5x retry budget, and the qwen/deepseek fallbacks hang to the
+120 s request timeout. No narrated scene completed; migration gates remain
+unevaluated. Total provider spend remains under $1 for the whole program.
+
+Verification: `npm run typecheck` clean; `npm test` **302/302 pass, 0 fail**;
+`git diff --check` clean; browser QA at 127.0.0.1 with zero console errors.
+
 # Phase 7 per-semantic-segment TTS timing, 2026-09-15
 
 Narration is now synthesized per teaching beat (`src/semantic/
