@@ -1,3 +1,43 @@
+# 2026-09-15 (late) handoff — batch 5: cross-window evidence, math normalization, route cooldown
+
+- Commit `209b24d`. Working tree was left dirty after the previous session's
+  batch-5 edits; this session verified and committed them.
+- Fixes committed:
+  1. **Cross-window evidence snapping** — teaching validation validates
+     `evidenceRefs` against `evidenceScope` (the whole ingested source) instead
+     of the chapter window: verbatim quotes from other windows are accepted,
+     mild paraphrases snap to real source text via `snapQuoteToSource`
+     (logged as `v2.evidence.snapped`), and unsnappable quotes still throw
+     `Fabricated evidence`. `generate.ts` passes `evidenceScope: knowledgeText`.
+  2. **Knowledge evidence inventory widened** — `sourceVisuals` ids count as
+     valid evidence targets (visual citations).
+  3. **Math-symbol normalization** — knowledge compiler maps `∗ ∙ · ∙ − ‐ ‑ ≤ ≥`
+     to ASCII before quote matching; the knowledge prompt now forbids rewriting
+     formula notation and tells the model to quote the neighbouring
+     plain-language sentence instead.
+  4. **Route cooldown** — model-adapter skips routes with ≥2 recorded timeouts
+     for the rest of the process, so one hung route cannot burn its 150 s
+     timeout on every stage (`healthyEnough`).
+- Verification: `npm run typecheck` clean; `npm test` **335/335 pass, 0 fail**;
+  `git diff --check` clean.
+- Live partial evidence (killed run, PID 70351, aborted on user request at
+  ~8 min elapsed to save API spend): detached runner was in the knowledge
+  stage of `c8dd391d-50d1-4314-8970-ec1beeeb7006` (pdf-deepseek-v41); gemini
+  route healthy at 2–13 s per call; `v2.evidence.snapped` events confirmed
+  firing for cross-window and mildly-paraphrased quotes. Failure visible in
+  the journal: prior attempt failed `Evidence outside knowledge inventory:
+  ev_bottleneck` (teaching stage, 17:36 UTC) — the sourceVisuals-id fix targets
+  exactly this but is **not yet live-verified**.
+- Live run NOT completed: no MP4 from batch 5. Do not claim A1 acceptance.
+- Known residual issue (next bounded task): **formula-verbatim evidence** —
+  the model still writes formula quotes like
+  `The effort-dependent token-penalty coefficient is k(b) = k0 exp(-(b - bmin)/tau)`
+  that are not present verbatim in the PDF source (notation differs). Options:
+  extend normalization, or snap formula-shaped quotes to the neighbouring
+  plain-language sentence per the new prompt rule.
+- Repo: private GitHub repository — URL recorded below once created/published
+  (pending in this session).
+
 # Tracked multi-video run, 2026-09-15 (afternoon)
 
 Three narrated one-minute jobs were run with full tracking (prompt topics,

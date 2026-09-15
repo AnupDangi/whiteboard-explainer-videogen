@@ -1,3 +1,22 @@
+# 2026-09-15 (late) — Batch 5: evidence snapping + route cooldown (fixture-verified, live partial)
+
+- Commit `209b24d`. `npm run typecheck` clean; `npm test` **335/335 pass**.
+- New fixture tests: teaching evidence validates against the full source scope
+  (cross-window verbatim accepted, mild paraphrase snapped, fabricated quote
+  rejected); math-symbol normalization (`∗∙·−≤≥` → ASCII) covered in
+  knowledge-compiler tests.
+- Live, partial (run intentionally killed at ~8 min, knowledge stage of
+  pdf-deepseek-v41): `v2.evidence.snapped` fired for cross-window and
+  paraphrase-snapped quotes; gemini route healthy 2–13 s/call. Route cooldown
+  and sourceVisual-evidence-id paths compiled and unit-tested but not
+  exercised live.
+- NOT established: no MP4 from batch 5; A1 acceptance still open. Residual:
+  formula-verbatim evidence fabrication (k(b) = k0 exp(-(b - bmin)/tau) style
+  quotes) still rejects; next bounded task.
+- Timing note: batch-5 run durations were measured, not estimated; the killed
+  runner's journal is preserved in `.data/video-jobs-20260915/`. One hung-route
+  knowledge attempt took 346 s before the cooldown fix existed.
+
 # 2026-09-15 — Tracked video runs (afternoon)
 
 - Fixes: unknown-key terminology heals; declared `children` honored in the
