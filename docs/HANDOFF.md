@@ -1,3 +1,18 @@
+# G2/G3 closed: policy provenance and instrumented legacy path, 2026-09-15
+
+- `groundingPolicy` is now recorded verbatim in every harness run manifest
+  (`config` field, additive) alongside its hash, and the Semantic Lab labels
+  the source-plus-verified option as currently behaving like source-only
+  until a verified-external-claims channel exists. The policy itself stays
+  safely strict: external factual claims remain rejected.
+- The director's legacy scene passthrough stays for model compatibility and
+  is instrumented (`v2.director.legacy-scene-passthrough`, "not silent" in
+  source, pinned by test) so a future removal decision has data, per the
+  plan's instrument-heals-before-deleting rule.
+
+Verification: `npm run typecheck` clean; `npm test` **314/314 pass, 0 fail**;
+`git diff --check` clean.
+
 # Grounding selection implemented; remaining gaps declared, 2026-09-15
 
 Plan-gap audit against PLAN_TO_IMPLEMENT.md found one actionable stub and one

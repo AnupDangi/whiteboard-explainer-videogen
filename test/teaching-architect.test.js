@@ -45,3 +45,21 @@ test('the architect contract forbids narration, geometry and unknown fields',()=
  const coords=allContracts();coords.contracts[0].layout={x:1,y:2};
  assert.throws(()=>validateArchitectOutput(coords,{scene:scenePlan,learnerState,conceptGraph:graph}),/additional property/);
 });
+
+test('the manifest config records the grounding policy verbatim',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const {generateV2}=await import('../dist/src/semantic/planning/generate.js');
+ const planJson=JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.teaching.json','utf8'));
+ const scene=()=>{const value=JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.scene.json','utf8'));for(const object of value.objects)if(['plant','sunlight','water','carbon_dioxide'].includes(object.id))object.conceptId=object.id;return value;};
+ const model={calls:[],events:[],async generate(stage,_instructions,_input,_schema,validate){return validate(stage==='teaching'?planJson:{scene:scene(),decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'plant and inputs',labelsOnly:'labels',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'decoration'}});}};
+ let manifest;
+ for await(const result of generateV2({prompt:'Teach plant inputs',allowedArchetypes:['structural_diagram','convergence'],maxScenes:1,groundingPolicy:'source-plus-verified'},model))manifest=result.manifest;
+ assert.equal(manifest.config.groundingPolicy,'source-plus-verified');
+});
+
+test('the legacy director scene passthrough still works and its instrumentation is pinned in source',()=>{
+ const source=readFileSync('src/semantic/planning/visual-director.ts','utf8');
+ assert.match(source,/v2\.director\.legacy-scene-passthrough/);
+ assert.match(source,/Not silent\./);
+ assert.match(source,/directionToScene\(response\.direction,scene\)/);
+});

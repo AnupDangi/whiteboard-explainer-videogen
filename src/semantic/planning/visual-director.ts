@@ -1,4 +1,5 @@
 import {stageFailure} from '../repair.js';
+import {log} from '../../shared/logger.js';
 import {resolvedDirectionSchema} from '../identity/runtime-schemas.js';
 import {directionToScene} from '../identity/intent-adapter.js';
 import {visualSceneSchema,type Schema} from '../schemas.js';
@@ -55,9 +56,14 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
  const fallbackNote=primitiveFallbackNote(candidates.filter(c=>!c.candidates.length&&!c.representation).map(c=>c.conceptId));
  const repairNote=resolved?.repairNotes?.length?`A previous direction failed these visual checks: ${resolved.repairNotes.join('; ')}. Correct exactly those objects, relations, anchors, states or actions and keep narration, beat IDs and concept coverage unchanged.`:'';
  const instructions=[directorPrompt({archetype:mentalModel.candidateArchetypes[0],language,whiteboard:Boolean(resolved?.whiteboardPlan)}),fallbackNote,repairNote,skillInstruction('visual-director')].filter(Boolean).join(' ');
- const directed=await model.generate('director',instructions,{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},schema,value=>{
-  const response=value as {scene?:VisualSceneV2;direction?:unknown;decisions:DirectionDecisions};
-  const result={scene:response.scene??directionToScene(response.direction,scene),decisions:response.decisions};
+  const directed=await model.generate('director',instructions,{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},schema,value=>{
+   const response=value as {scene?:VisualSceneV2;direction?:unknown;decisions:DirectionDecisions};
+   if(response.scene){
+    // Instrumented legacy passthrough (plan heal rule 24): kept for model
+    // compatibility, recorded here so removal has data. Not silent.
+    log('v2.director.legacy-scene-passthrough',{scene:scene.id,hasDirection:'direction' in response});
+   }
+   const result={scene:response.scene??directionToScene(response.direction,scene),decisions:response.decisions};
   for(const o of result.scene.objects){
    if(scene.requiredConceptIds.includes(o.conceptId??''))o.importance='primary';
    const choice=candidates.find(c=>c.conceptId===o.conceptId);

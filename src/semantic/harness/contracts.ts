@@ -72,6 +72,7 @@ export type StageJournalEntry=StageEnvelope<unknown>|StageFailureRecord;
 export interface HarnessRunManifest {
   version:typeof HARNESS_VERSION;runId:string;createdAt:string;inputHash:string;
   configHash:string;schemaHash:string;assetHash:string;promptSkillHash:string;
+  config:unknown;
   stages:StageEnvelope<unknown>[];gates:GateResult[];costUsd:number;status:'PASS'|'FAIL'|'PARTIAL';
 }
 

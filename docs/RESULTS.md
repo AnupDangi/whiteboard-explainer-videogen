@@ -1,3 +1,12 @@
+# 2026-09-15 — G2/G3 closed
+
+- Manifest carries raw `config` (policy, learner profile, critic flag) next to
+  its hash; UI labels the source-plus-verified option's current behavior.
+- Legacy director scene passthrough instrumented (logged, source-pinned);
+  semantic direction contract unchanged.
+- Verification: typecheck clean; `npm test` **314/314**; `git diff --check`
+  clean.
+
 # 2026-09-15 — Source-visual-grounding selection + declared gaps
 
 - Figure selection is deterministic (caption names a required concept), with

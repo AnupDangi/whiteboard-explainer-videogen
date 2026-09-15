@@ -17,7 +17,7 @@ export class TeachingHarness {
   const completed=await executeStage({...options,journal:this.journal});this.stages.push(completed.envelope as StageEnvelope<unknown>);this.gates.push(completed.envelope.gate);return completed;
  }
  recordGate(gate:GateResult){this.gates.push(gate);return gate;}
- manifest(metadata:{config:unknown;schema:unknown;assets:unknown;promptSkills:unknown;costUsd?:number;status?:HarnessRunManifest['status']}):HarnessRunManifest{
-  return {version:HARNESS_VERSION,runId:this.runId,createdAt:this.createdAt,inputHash:this.inputHash,configHash:stableHash(metadata.config),schemaHash:stableHash(metadata.schema),assetHash:stableHash(metadata.assets),promptSkillHash:stableHash(metadata.promptSkills),stages:[...this.stages],gates:[...this.gates],costUsd:Number((metadata.costUsd??this.stages.reduce((sum,stage)=>sum+stage.costUsd,0)).toFixed(6)),status:metadata.status??(this.gates.every(gate=>gate.passed)?'PASS':'FAIL')};
- }
+  manifest(metadata:{config:unknown;schema:unknown;assets:unknown;promptSkills:unknown;costUsd?:number;status?:HarnessRunManifest['status']}):HarnessRunManifest{
+   return {version:HARNESS_VERSION,runId:this.runId,createdAt:this.createdAt,inputHash:this.inputHash,configHash:stableHash(metadata.config),schemaHash:stableHash(metadata.schema),assetHash:stableHash(metadata.assets),promptSkillHash:stableHash(metadata.promptSkills),config:structuredClone(metadata.config),stages:[...this.stages],gates:[...this.gates],costUsd:Number((metadata.costUsd??this.stages.reduce((sum,stage)=>sum+stage.costUsd,0)).toFixed(6)),status:metadata.status??(this.gates.every(gate=>gate.passed)?'PASS':'FAIL')};
+  }
 }

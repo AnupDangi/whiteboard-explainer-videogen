@@ -52,7 +52,7 @@
         <summary>Run constraints</summary>
         <div class="advanced-fields">
           <label class="file">Generation budget (USD) <input id="budget" type="number" min="0.01" max="100" step="0.01" value="2.00"></label>
-          <label class="file">Grounding <select id="grounding"><option value="source-only">Source only</option><option value="source-plus-verified">Source + verified references</option></select></label>
+          <label class="file">Grounding <select id="grounding"><option value="source-only">Source only</option><option value="source-plus-verified">Source + verified references (behaves as source-only until verified external sources exist)</option></select></label>
           <label class="file">Learning goals <input id="learner-goals" type="text" maxlength="300" placeholder="Mechanism, tradeoffs, practical intuition"></label>
         </div>
       </details>
