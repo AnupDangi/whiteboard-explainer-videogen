@@ -1,3 +1,16 @@
+# 2026-09-15 — Provider resilience: verbosity caps + route health
+
+- Knowledge/architect contracts cap verbosity at schema level; live probe:
+  gemini knowledge graph valid in 20.5 s (7 concepts) vs >12k-token
+  truncation chains before the caps.
+- Route health: hung-to-timeout models retried last; successes clear debt;
+  ordering pinned by test.
+- In-job gemini remains bimodal (2 truncation chains today); no narrated PASS
+  yet — provider-infra baseline, ~$0.25 today. Grounded prefix already proven
+  live; director is the last unproven stage.
+- Verification: typecheck clean; `npm test` **303/303**; `git diff --check`
+  clean.
+
 # 2026-09-15 — Viewer resume UI, hash stability, live baseline
 
 - Semantic Lab: "Resume from last checkpoint" button wired to

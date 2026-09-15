@@ -16,14 +16,14 @@ const obj=(properties:Record<string,Schema>,optional:string[]=[]):Schema=>({type
 const STRATEGIES=['intuition','analogy','worked-example','comparison','derivation','demonstration','causal-explanation','prediction','retrieval'] as const;
 const contract=obj({
  beatKey:id,
- objective:str(300),
- motivation:str(300),
+ objective:str(160),
+ motivation:str(160),
  prerequisites:arr(id),
- learnerDelta:obj({before:str(300),after:str(300),newConcepts:arr(id,8),reinforcedConcepts:arr(id,8)}),
+ learnerDelta:obj({before:str(160),after:str(160),newConcepts:arr(id,8),reinforcedConcepts:arr(id,8)}),
  strategy:en(STRATEGIES),
  mechanismIds:arr(id,8),
- misconception:obj({claim:str(300),correction:str(300)}),
- checkpoint:obj({prompt:str(300),expectedUnderstanding:str(300),kind:en(['prediction','retrieval','explanation'])}),
+ misconception:obj({claim:str(200),correction:str(200)}),
+ checkpoint:obj({prompt:str(200),expectedUnderstanding:str(200),kind:en(['prediction','retrieval','explanation'])}),
  evidenceRefs:arr(id,16)
 },['misconception','checkpoint']);
 export const architectSchema=obj({contracts:arr(contract,24,1)});

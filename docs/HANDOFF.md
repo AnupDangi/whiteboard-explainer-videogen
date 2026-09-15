@@ -1,3 +1,28 @@
+# Provider resilience: verbosity caps and route health, 2026-09-15
+
+Two bounded changes target today's observed provider failure modes:
+- Knowledge/architect schemas now cap verbosity at the contract level
+  (prerequisite reasons 160 chars, mechanism/claim statements 400,
+  terminology definitions 200, evidence quotes 600; architect
+  objective/motivation 160, misconception/checkpoint 200). A standalone live
+  probe confirmed the effect: gemini compiled a valid 7-concept graph in
+  20.5 s (previously the same call emitted >12k completion tokens and
+  truncated twice at the 1.5x retry budget).
+- `createJsonModel` now keeps process-level route health: a model that hung
+  to the request timeout is retried last (successes clear the debt). Test
+  pins the ordering across two stage calls with a mock provider.
+
+Live check after the fixes: gemini remains bimodal in-job (one standalone
+success, two in-job length-truncation chains; one qwen 120 s hang caught by
+route health on the following attempt). No narrated scene completed; recorded
+as provider-infrastructure baseline, ~$0.25 spend today. The grounded
+knowledge → teaching → architect → board → representation → grounding prefix
+has already been journaled OK live (2026-09-15 entries below); the director
+remains the only unproven stage, awaiting stable provider routes.
+
+Verification: `npm run typecheck` clean; `npm test` **303/303 pass, 0 fail**
+(one new route-health test); `git diff --check` clean.
+
 # Viewer resume UI, hash stability fix, live provider baseline, 2026-09-15
 
 The Semantic Lab now offers "Resume from last checkpoint" for

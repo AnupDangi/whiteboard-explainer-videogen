@@ -16,12 +16,12 @@ const en=(values:readonly string[]):Schema=>({type:'string',enum:values});
 const obj=(properties:Record<string,Schema>,optional:string[]=[]):Schema=>({type:'object',properties,required:Object.keys(properties).filter(k=>!optional.includes(k)),additionalProperties:false});
 const SEMANTIC_TYPES=['entity','material','process','state','quantity','equation','location','role'] as const;
 const concept=obj({key:id,canonicalName:str(120),aliases:arr(str(120),12),semanticType:en(SEMANTIC_TYPES),visualFamily:str(80),evidenceRefs:arr(id)},['visualFamily','evidenceRefs','aliases']);
-const prerequisite=obj({before:id,after:id,reason:str(300)});
-const mechanism=obj({id,statement:str(1000),conceptIds:arr(id,16,1),requiresStateChange:{type:'boolean'},evidenceRefs:arr(id)});
-const claim=obj({id,statement:str(1000),critical:{type:'boolean'},evidenceRefs:arr(id)});
+const prerequisite=obj({before:id,after:id,reason:str(160)});
+const mechanism=obj({id,statement:str(400),conceptIds:arr(id,16,1),requiresStateChange:{type:'boolean'},evidenceRefs:arr(id)});
+const claim=obj({id,statement:str(400),critical:{type:'boolean'},evidenceRefs:arr(id)});
 const quantity=obj({conceptKey:id,value:str(120),evidenceRefs:arr(id)});
-const terminologyEntry=obj({key:id,definition:str(600)});
-const evidence=obj({id,sourceId:str(120),quote:str(3000),section:{type:'string',maxLength:120}},['sourceId','section']);
+const terminologyEntry=obj({key:id,definition:str(200)});
+const evidence=obj({id,sourceId:str(120),quote:str(600),section:{type:'string',maxLength:120}},['sourceId','section']);
 export const knowledgeGraphSchema=obj({
  version:{type:'integer',enum:[1]},
  concepts:arr(concept,32,1),

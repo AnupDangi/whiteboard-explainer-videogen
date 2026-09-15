@@ -33,3 +33,22 @@ test('typed repair failures route to the owning subsystem',()=>{
   assert.equal(repairOwner({class:'TIMING'}),'timeline');
 });
 test('V2 provider refuses an unpriced or unaffordable model before generation',async()=>{let posts=0;const m=createJsonModel({env:{OPENROUTER_API_KEY:'test',OPENROUTER_MODEL:'expensive'},maxCostUsd:.001,fetcher:async url=>{if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:[{id:'expensive',pricing:{prompt:'1',completion:'1'}}]}));posts++;throw new Error('Unexpected request');}});await assert.rejects(planTeaching(input,m),/budget/);assert.equal(posts,0);});
+
+test('V2 route health retries models that hung to the request timeout last',async()=>{
+ const asked=[];
+ const respond=init=>{const model=JSON.parse(init.body).model;
+  if(model==='test/c')return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(intent())}}],usage:{prompt_tokens:100,completion_tokens:200,cost:.00003}}));
+  throw new Error(`The operation was aborted due to timeout`);};
+ const fetcher=async(url,init)=>{if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:['test/a','test/b','test/c'].map(id=>({id,pricing:{prompt:'0.0000001',completion:'0.0000001'}}))}));
+  asked.push({model:JSON.parse(init.body).model});
+  return respond(init);};
+ const m=createJsonModel({env:{OPENROUTER_API_KEY:'test',OPENROUTER_MODEL:'test/a',OPENROUTER_MODEL_FALLBACKS:'test/b,test/c'},maxCostUsd:1,fetcher});
+ await planTeaching(input,m);
+ const second=await planTeaching(input,m);
+ assert.equal(m.calls.length,2);
+ const sequence=asked.map(entry=>entry.model);
+ assert.deepEqual(sequence.slice(0,3),['test/a','test/b','test/c']);
+ assert.ok(sequence.at(-1)!=='test/b',`hung model must not be retried before a healthy route: ${sequence.join(',')}`);
+ assert.equal(sequence.at(-1),'test/c');
+ void second;
+});
