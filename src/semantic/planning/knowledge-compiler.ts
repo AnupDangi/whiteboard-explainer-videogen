@@ -65,7 +65,16 @@ export function snapQuoteToSource(sourceText:string,quote:string):string|null{
 }
 /** Whitespace/unicode-normalized form for verbatim-quote matching. */
 const normalizeEvidence=(text:string)=>text.replace(/[\u2018\u2019\u201A\u201B]/g,"'").replace(/[\u201C\u201D\u201E]/g,'"').replace(/[\u2013\u2014]/g,'-').replace(/\u2026/g,'...').replace(/\u00A0/g,' ').replace(/[\u2217\u22C5\u00B7\u2219]/g,'*').replace(/[\u2212\u2010\u2011]/g,'-').replace(/\u2264/g,'<=').replace(/\u2265/g,'>=').replace(/[\u0000-\u0008\u000B\u000E-\u001F]/g,'').normalize('NFKD').replace(/[\u0300-\u036F]/g,'').replace(/\s+/g,' ').trim();
-export const evidenceSupported=(sourceText:string,quote:string):boolean=>sourceText.includes(quote)||normalizeEvidence(sourceText).includes(normalizeEvidence(quote));
+export const evidenceSupported=(sourceText:string,quote:string):boolean=>{
+ if(sourceText.includes(quote)||normalizeEvidence(sourceText).includes(normalizeEvidence(quote)))return true;
+ /** PDF extraction can drop inter-word spaces entirely (kerned arXiv text:
+  *  "backbonewithalightweightsequentialmodule"). A contiguous match with all
+  *  whitespace removed still proves the quote is copied from the source, but
+  *  only above a length floor so short quotes cannot cross word boundaries. */
+ const packed=normalizeEvidence(sourceText).replace(/\s+/g,'');
+ const packedQuote=normalizeEvidence(quote).replace(/\s+/g,'');
+ return packedQuote.length>=30&&packed.includes(packedQuote);
+};
 
 /** Bounded source slice that never cuts mid-sentence when a boundary exists. */
 export function capAtBoundary(text:string,limit:number):string{

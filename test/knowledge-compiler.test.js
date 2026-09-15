@@ -317,3 +317,12 @@ test('snapQuoteToSource survives math-italic unicode formulas in the PDF source'
  assert.ok(snapped.includes('penalty coefficient'),'snapped sentence is the formula passage');
  assert.equal(snapQuoteToSource(source,'k(b) = 42.'),null,'a formula with no matching source sentence stays rejected');
 });
+
+test('evidenceSupported accepts quotes through PDF whitespace-collapse artifacts and still rejects fabrications',async()=>{
+ const {evidenceSupported}=await import('../dist/src/semantic/planning/knowledge-compiler.js');
+ const source='maintain draft quality, DSpark utilizes a semi-autoregressive architecture—coupling a parallel\nbackbonewithalightweightsequentialmodule—tointroduceintra-blockdependencymodeling\nand mitigate suffix decay.';
+ const quote='DSpark utilizes a semi-autoregressive architecture—coupling a parallel backbone with a lightweight sequential module—to introduce intra-block dependency modeling and mitigate suffix decay.';
+ assert.ok(evidenceSupported(source,quote),'kerned extraction with dropped spaces still supports the verbatim quote');
+ assert.ok(!evidenceSupported(source,'DSpark renders drafts on a GPU cluster.'),'paraphrase stays rejected');
+ assert.ok(!evidenceSupported('graph ranking and layered layout','rankin gand'),'short quotes cannot cross word boundaries');
+});
