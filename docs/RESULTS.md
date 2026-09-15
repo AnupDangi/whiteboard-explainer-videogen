@@ -1,3 +1,14 @@
+# 2026-09-15 — Tracked video runs (afternoon)
+
+- Fixes: unknown-key terminology heals; declared `children` honored in the
+  semantic direction adapter; representation gate severity corrected.
+- Prompt-only job: full grounded prefix OK on attempt 1 (knowledge 15.2 s);
+  director hung 2x150 s (gemini) and again via deepseek route — provider wall.
+- Tracking persisted: per-job wall/first-playable/cost/calls/routes in
+  .data/video-runs-summary-20260915.json; failures preserved; spend ~$1.10.
+- Verification: typecheck clean; `npm test` **314/314**; `git diff --check`
+  clean.
+
 # 2026-09-15 — G2/G3 closed
 
 - Manifest carries raw `config` (policy, learner profile, critic flag) next to

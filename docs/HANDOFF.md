@@ -1,3 +1,35 @@
+# Tracked multi-video run, 2026-09-15 (afternoon)
+
+Three narrated one-minute jobs were run with full tracking (prompt topics,
+the DeepSeek-V4.1-Flash tech-report PDF URL, and an arXiv paper link). Three
+real contract fixes landed from the live failure taxonomy before the runs:
+knowledge terminology entries with keys outside the emitted concepts now drop
+deterministically (recorded) instead of rejecting; the semantic director
+schema accepts declared `children` (concept-key parenting intent) and the
+intent adapter honors them; and the representation-guide gate now hard-fails
+only on the central concept (supports are advisory).
+
+Measured outcome, all failures preserved:
+- prompt-refrigeration (prompt topic): knowledge 15.2 s live, architect,
+  board, representation and grounding all journaled OK on the first attempt;
+  the visual-director then hung its whole 300 s budget (2 x 150 s request
+  timeouts) across gemini, and again on a director-rerouted attempt
+  (deepseek) - calls 4, $0.047 across attempts.
+- pdf-deepseek-v41 (PDF URL source): knowledge timed out on the 120k-char
+  input during the 12:44 window (knowledge was 15 s in the healthy window),
+  then succeeded at 127 s on a later attempt before the director wall.
+- link-dspark (arXiv URL): same director wall.
+- Journal resume made every retry cost only the failed stage (observed
+  $0.011-0.013 retry spends). Today's provider spend ~$1.10 program total;
+  no scene rendered today because every run reached the director while
+  OpenRouter routes were hanging on director-shaped completions. The 1/5/10
+  minute export pipeline itself remains ffprobe-verified from the earlier
+  soak; generation cost/latency tracking is now machine-persisted
+  (.data/video-runs-20260915.md, .data/video-runs-summary-20260915.json).
+
+Verification: `npm run typecheck` clean; `npm test` **314/314 pass, 0 fail**;
+`git diff --check` clean.
+
 # G2/G3 closed: policy provenance and instrumented legacy path, 2026-09-15
 
 - `groundingPolicy` is now recorded verbatim in every harness run manifest
