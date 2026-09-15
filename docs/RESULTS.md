@@ -1,3 +1,15 @@
+# 2026-09-15 — Phase 10 local completion
+
+- Comprehension protocol: fixed factual/mechanism/transfer questions on all
+  smoke cases + the long-form case; `expectedLearnerCoverage` is a structural
+  probe (not a comprehension claim).
+- Long-form fixed case `deepseek_mla_report`: 12.4 KB, 3 chapters, >=2 chapter
+  windows, canonical identity + continuity expectations, maxScenes 4.
+- Migration gates: eleven plan gates machine-evaluated in every aggregate
+  report (JSON + Markdown); human gates fail closed until their protocols run.
+- Verification: typecheck clean; `npm test` **308/308** (5 new); `git diff
+  --check` clean. Benchmark itself still awaits provider stability.
+
 # 2026-09-15 — Root-cause pass: timeouts were killing healthy calls
 
 - Request timeout 120 s aborted healthy gemini responses observed at up to

@@ -1,7 +1,8 @@
 import type {StageMetrics,TelemetryEvent} from '../../src/semantic/planning/generate.js';
 import type {StageCall,StageEvent} from '../../src/semantic/planning/model-adapter.js';
 import type {CompiledSceneV2} from '../../src/semantic/types.js';
-import type {LiveEvalCase} from './manifest.js';
+import {normalizeSemanticKey} from '../../src/semantic/identity/types.js';
+import type {ComprehensionQuestion,LiveEvalCase} from './manifest.js';
 import type {HarnessRunManifest} from '../../src/semantic/harness/contracts.js';
 
 export interface StageSuccessFlags {
@@ -58,7 +59,7 @@ export interface SemanticCoverage {
   criticalAssetRoleCoverage:number;
 }
 
-export interface LiveRunMetrics extends StageSuccessFlags, RepairCounts, PerformanceMetrics, SemanticCoverage {normalizationCount:number;staticIntervalCount:number;continuityPreservationRate:number;unexplainedResetCount:number;teachingFailureCount:number}
+export interface LiveRunMetrics extends StageSuccessFlags, RepairCounts, PerformanceMetrics, SemanticCoverage {normalizationCount:number;staticIntervalCount:number;continuityPreservationRate:number;unexplainedResetCount:number;teachingFailureCount:number;expectedLearnerCoverage?:number}
 
 export interface CaseTelemetry {
   caseId: string;
@@ -148,6 +149,16 @@ const normalize=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/[
 function objectMatches(objects:CompiledSceneV2['objects'], concept:string) {
   const wanted=normalize(concept);
   return objects.filter(o=>[o.conceptId??'',o.label,o.assetRef??''].some(value=>normalize(value).includes(wanted)));
+}
+
+/** Structural probe: comprehension questions whose expected concepts are all
+ *  established in the final expected learner state. NOT a comprehension claim. */
+export function expectedLearnerCoverage(questions:ComprehensionQuestion[]|undefined,establishedConcepts:string[]|undefined):number|undefined{
+ if(!questions?.length)return undefined;
+ if(!establishedConcepts?.length)return 0;
+ const established=new Set(establishedConcepts.map(key=>normalizeSemanticKey(key)));
+ const covered=questions.filter(question=>question.expectedConcepts.every(concept=>established.has(normalizeSemanticKey(concept)))).length;
+ return Number((covered/questions.length).toFixed(3));
 }
 
 export function evaluateCaseSemantics(c:LiveEvalCase, scenes:CompiledSceneV2[]):SemanticCoverage {

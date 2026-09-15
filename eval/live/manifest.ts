@@ -1,4 +1,7 @@
 import type {VisualArchetype} from '../../src/semantic/types.js';
+import {readFileSync} from 'node:fs';
+import {join,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 export interface SemanticRelationRequirement {
   id: string;
@@ -6,6 +9,16 @@ export interface SemanticRelationRequirement {
   relation: string;
   toConcept: string;
   targetPart?: string;
+}
+
+/** Comprehension protocol questions asked OUTSIDE generation (plan Phase 10).
+ *  expectedConcepts are structural probes against the learner state; real
+ *  comprehension needs independent evaluator + human results. */
+export interface ComprehensionQuestion {
+  id: string;
+  kind: 'factual'|'mechanism'|'transfer';
+  question: string;
+  expectedConcepts: string[];
 }
 
 export interface LiveEvalCase {
@@ -18,18 +31,44 @@ export interface LiveEvalCase {
   preferredArchetypes?: VisualArchetype[];
   forbiddenPatterns?: string[];
   criticalAssetRoles?: string[];
+  comprehension?: ComprehensionQuestion[];
+  /** Fixed source document (relative to eval/live/cases/) for grounded runs. */
+  sourceFixture?: string;
+  maxScenes?: number;
 }
 
 export const LIVE_EVAL_CATEGORIES = [
   'structural','spatial_process','transformation','flow','cause_effect','cycle',
   'comparison','hierarchy','timeline','equation','matrix','trajectory',
-  'list_facts','network'
+  'list_facts','network','long_document'
 ] as const;
+
+/** Reads a fixed case fixture from the repo source tree; missing files fail loudly. */
+export function caseSource(caseItem: LiveEvalCase): string|undefined {
+  if (!caseItem.sourceFixture) return undefined;
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(here, 'cases', caseItem.sourceFixture),
+    join(here, '..', 'cases', caseItem.sourceFixture),
+    join(here, '..', '..', '..', 'eval', 'live', 'cases', caseItem.sourceFixture),
+    join(here, '..', '..', 'eval', 'live', 'cases', caseItem.sourceFixture)
+  ];
+  const path = candidates.find(candidate => { try { readFileSync(candidate); return true; } catch { return false; } });
+  if (!path) throw new Error(`Case fixture ${caseItem.sourceFixture} not found in ${candidates.join(', ')}`);
+  const text = readFileSync(path, 'utf8');
+  if (text.length < 200) throw new Error(`Case fixture ${caseItem.sourceFixture} is too short`);
+  return text;
+}
 
 export const LIVE_EVAL_CASES: LiveEvalCase[] = [
   // Structural / spatial process
   {
     id: 'photosynthesis_inputs',
+    comprehension: [
+      {id:'pic_f1',kind:'factual',question:'Which three inputs does a plant use to make food?',expectedConcepts:['sunlight','water','carbon_dioxide']},
+      {id:'pic_m1',kind:'mechanism',question:'Explain how each input reaches the plant system.',expectedConcepts:['plant','leaf','roots']},
+      {id:'pic_t1',kind:'transfer',question:'If one input were missing, what would happen to the system?',expectedConcepts:['plant','photosynthesis']}
+    ],
     category: 'structural',
     prompt: 'Explain how plants make food to a middle-school student. For this first scene, teach the three inputs: sunlight arriving at leaves, water arriving at roots, and carbon dioxide entering leaves. Establish a plant as the central system, introduce each input, and restate how they enable food production.',
     mustExplain: ['plant is central system', 'sunlight reaches leaves', 'water reaches roots', 'carbon dioxide enters leaves'],
@@ -68,6 +107,11 @@ export const LIVE_EVAL_CASES: LiveEvalCase[] = [
   },
   {
     id: 'dna_replication',
+    comprehension: [
+      {id:'dna_f1',kind:'factual',question:'What are the two strands separated into during replication?',expectedConcepts:['dna','strand']},
+      {id:'dna_m1',kind:'mechanism',question:'What role does the replication fork play?',expectedConcepts:['dna','replication_fork']},
+      {id:'dna_t1',kind:'transfer',question:'What would happen if base pairing were random?',expectedConcepts:['dna','base_pair']}
+    ],
     category: 'spatial_process',
     prompt: 'Explain DNA replication. Show the double helix unwinding at a replication fork, strands separating, and new complementary bases pairing. Emphasize that each new DNA molecule keeps one original strand.',
     mustExplain: ['double helix unwinds', 'replication fork forms', 'strands separate', 'complementary bases pair', 'semiconservative result'],
@@ -119,6 +163,11 @@ export const LIVE_EVAL_CASES: LiveEvalCase[] = [
   // Equation / math
   {
     id: 'linear_equation',
+    comprehension: [
+      {id:'lin_f1',kind:'factual',question:'What does it mean to isolate the variable?',expectedConcepts:['variable','equation']},
+      {id:'lin_m1',kind:'mechanism',question:'Why is the same operation applied to both sides?',expectedConcepts:['equation','balance']},
+      {id:'lin_t1',kind:'transfer',question:'How would you solve a similar equation with a larger coefficient?',expectedConcepts:['equation','solve']}
+    ],
     category: 'equation',
     prompt: 'Teach how to solve a linear equation step by step. Use 2x + 5 = 13. Show subtracting 5 from both sides, then dividing by 2.',
     mustExplain: ['subtract 5 from both sides', 'divide both sides by 2', 'solution is x = 4'],
@@ -135,6 +184,11 @@ export const LIVE_EVAL_CASES: LiveEvalCase[] = [
   },
   {
     id: 'matrix_multiplication',
+    comprehension: [
+      {id:'mat_f1',kind:'factual',question:'What must match between two matrices for multiplication to be defined?',expectedConcepts:['matrix','dimension']},
+      {id:'mat_m1',kind:'mechanism',question:'How is one output entry computed?',expectedConcepts:['matrix','row','column']},
+      {id:'mat_t1',kind:'transfer',question:'Why is matrix multiplication not commutative?',expectedConcepts:['matrix','operation']}
+    ],
     category: 'matrix',
     prompt: 'Explain matrix multiplication using a 2x2 example. Show how each entry in the result is the dot product of a row from the first matrix and a column from the second.',
     mustExplain: ['row from first matrix', 'column from second matrix', 'dot product gives entry', 'result has same row/column shape'],
@@ -177,6 +231,11 @@ export const LIVE_EVAL_CASES: LiveEvalCase[] = [
   },
   {
     id: 'deepseek_mla',
+    comprehension: [
+      {id:'mla_f1',kind:'factual',question:'What does MLA store instead of the full key/value cache?',expectedConcepts:['latent','compression']},
+      {id:'mla_m1',kind:'mechanism',question:'How does the latent vector reconstruct keys and values?',expectedConcepts:['latent','key','value']},
+      {id:'mla_t1',kind:'transfer',question:'Why does this matter more for long contexts?',expectedConcepts:['cache','memory']}
+    ],
     category: 'comparison',
     prompt: 'Explain DeepSeek Multi-head Latent Attention. Compare standard attention which stores large key/value caches with MLA which compresses them into a latent vector and reconstructs them.',
     mustExplain: ['standard attention stores large K/V cache', 'MLA compresses to latent vector', 'latent vector reconstructs K/V', 'compression reduces memory'],
@@ -205,6 +264,11 @@ export const LIVE_EVAL_CASES: LiveEvalCase[] = [
   },
   {
     id: 'http_lifecycle',
+    comprehension: [
+      {id:'http_f1',kind:'factual',question:'What does the browser do first when a request is made?',expectedConcepts:['client','request']},
+      {id:'http_m1',kind:'mechanism',question:'Walk the request from the browser to the database and back.',expectedConcepts:['client','server','response']},
+      {id:'http_t1',kind:'transfer',question:'Where could the lifecycle fail silently, and why?',expectedConcepts:['cache','server']}
+    ],
     category: 'flow',
     prompt: 'Explain the lifecycle of an HTTP GET request. Show the browser sending a request, DNS lookup, server receiving it, server querying a database, and the response returning.',
     mustExplain: ['browser sends request', 'DNS resolves name', 'server receives request', 'server queries database', 'response returns to browser'],
@@ -466,6 +530,34 @@ export const SMOKE_CASE_IDS = [
   'matrix_multiplication',
   'http_lifecycle',
   'deepseek_mla'
+];
+
+/** Fixed long-form document cases (plan Phase 10): one global graph, bounded
+ *  chapter windows, canonical identity and continuity across chapters. */
+export const LONG_FORM_CASES: LiveEvalCase[] = [
+  {
+    id: 'deepseek_mla_report',
+    category: 'long_document',
+    prompt: 'Teach the full document to an advanced learner: why autoregressive attention needs a memory, how multi-head latent attention compresses the cache, and what trade-offs follow. Keep one canonical mental model across all chapters.',
+    mustExplain: [
+      'attention keeps a growing key-value cache',
+      'cache size caps concurrent users',
+      'MLA compresses key-value material into a latent vector at write time',
+      'attention reconstructs keys and values from the latent at read time',
+      'the trade-off is measured jointly as compression ratio and reconstruction error'
+    ],
+    expectedConcepts: ['token','embedding','query','key','value','cache','latent','compression','reconstruction','attention'],
+    comprehension: [
+      {id:'doc_f1',kind:'factual',question:'What does the serving system store for every historical token under MLA?',expectedConcepts:['latent']},
+      {id:'doc_f2',kind:'factual',question:'What grows linearly but without bound during generation?',expectedConcepts:['cache']},
+      {id:'doc_m1',kind:'mechanism',question:'Describe the write-time and read-time halves of the compression pipeline.',expectedConcepts:['compression','reconstruction']},
+      {id:'doc_m2',kind:'mechanism',question:'Why is the cache, not attention arithmetic, the serving bottleneck?',expectedConcepts:['cache','memory']},
+      {id:'doc_t1',kind:'transfer',question:'When would compression be the wrong tool for a workload?',expectedConcepts:['compression','reconstruction']}
+    ],
+    preferredArchetypes: ['flow','cause_effect'],
+    sourceFixture: 'deepseek-report-excerpt.md',
+    maxScenes: 4
+  }
 ];
 
 export function getCase(id: string): LiveEvalCase {

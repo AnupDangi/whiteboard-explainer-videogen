@@ -1,3 +1,27 @@
+# Phase 10 local completion: comprehension protocol, long-form case, migration gates, 2026-09-15
+
+- Comprehension protocol fixtures (plan Phase 10): every smoke case plus the
+  new long-form case carries fixed factual/mechanism/transfer questions.
+  `expectedLearnerCoverage` scores them structurally against the final
+  expected learner state — explicitly NOT a comprehension claim; real
+  comprehension still requires the independent evaluator + human protocol.
+- Fixed long-form document case: `deepseek_mla_report`
+  (`eval/live/cases/deepseek-report-excerpt.md`, 12.4 KB, 3 chapters) drives
+  the chapter-window pipeline (fixture exceeds the 12k window threshold;
+  verified ≥2 windows), testing global lesson structure, canonical identity
+  and cross-chapter continuity with `maxScenes:4`.
+- Machine-readable migration gates (`eval/live/gates.ts`): the eleven plan
+  gates (compile ≥99%, full job ≥95%, critical coverage 100%, prerequisite
+  violations 0, unexplained resets 0, continuity >90%, first-AV P50 ≤12 s,
+  representation degradation, determinism, blind preference ≥70%, comprehension
+  gain) evaluate automatically in every aggregated report JSON and Markdown.
+  Human-dependent gates report `pass:null` and fail closed.
+- The 48×3 narrated benchmark itself remains gated on provider stability;
+  when it runs, the gates evaluate automatically.
+
+Verification: `npm run typecheck` clean; `npm test` **308/308 pass, 0 fail**
+(5 new in `test/eval-gates.test.js`); `git diff --check` clean.
+
 # Root-cause pass on the live blocker, 2026-09-15
 
 The "provider bimodality" was decomposed into concrete causes with data:

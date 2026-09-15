@@ -10,8 +10,8 @@ import {writeV2Artifacts} from '../../src/semantic/artifacts.js';
 import {classifySemanticError} from '../../src/semantic/jobs.js';
 import type {TeachingInput} from '../../src/semantic/planning/teaching-planner.js';
 import type {CompiledSceneV2} from '../../src/semantic/types.js';
-import {LIVE_EVAL_CASES, SMOKE_CASE_IDS, type LiveEvalCase} from './manifest.js';
-import {computeRunMetrics, evaluateCaseSemantics, sceneTelemetry, type CaseTelemetry} from './metrics.js';
+import {LIVE_EVAL_CASES, SMOKE_CASE_IDS, caseSource, type LiveEvalCase} from './manifest.js';
+import {computeRunMetrics, evaluateCaseSemantics, expectedLearnerCoverage, sceneTelemetry, type CaseTelemetry} from './metrics.js';
 import {aggregateReport, reportToMarkdown, type AggregateReport} from './compare.js';
 
 export interface RunnerOptions {
@@ -74,11 +74,13 @@ export async function runCase(
   let errorKind: string | undefined;
   let model: JsonModel | undefined;
 
+  const fixtureText = caseSource(c);
   const input: TeachingInput = {
     prompt: c.prompt,
-    maxScenes: 1,
+    maxScenes: c.maxScenes ?? 1,
     allowedArchetypes: c.preferredArchetypes ?? ['simple_explanation'],
-    language: 'en'
+    language: 'en',
+    ...(fixtureText ? {sourceText: fixtureText, sourceId: `case:${c.id}`} : {})
   };
   const metadata = {
     version: 1,
@@ -126,12 +128,14 @@ export async function runCase(
     generateOptions.speech = createVoiceEngineSpeech({env, language: 'en'});
   }
 
+  let lastLearner:{establishedConcepts:string[]}|undefined;
   try {
     for await (const result of generateV2(input, model, generateOptions)) {
       const compiled = result.compiled;
       const findings = lintCompiledScene(compiled);
       compiledScenes.push(compiled);
       harnessManifests.push(result.manifest);
+      lastLearner = result.learnerAfter;
       const scene = sceneTelemetry(compiled, result.metrics);
       scene.compileFindings = findings;
       scenes.push(scene);
@@ -158,6 +162,7 @@ export async function runCase(
   const finishedAt = new Date().toISOString();
   const metrics = computeRunMetrics(telemetry, model.events, model.calls, scenes, status, error, harnessManifests);
   Object.assign(metrics, evaluateCaseSemantics(c, compiledScenes));
+  metrics.expectedLearnerCoverage = expectedLearnerCoverage(c.comprehension, lastLearner?.establishedConcepts);
 
   return {
     caseId: c.id,

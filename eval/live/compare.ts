@@ -1,6 +1,7 @@
 import type {CaseTelemetry, LiveRunMetrics} from './metrics.js';
 import {percent, percentile, mean} from './metrics.js';
 import type {LiveEvalCase} from './manifest.js';
+import {evaluateMigrationGates,type MigrationGate} from './gates.js';
 
 export interface AggregateReport {
   generatedAt: string;
@@ -16,6 +17,7 @@ export interface AggregateReport {
   cost: {P50: number; P95: number; mean: number; total: number};
   stageAccounting:Record<string,{runs:number;costUsd:number;promptTokens:number;completionTokens:number;latencyP50Ms:number;latencyP95Ms:number}>;
   dimensions:{truth:number;teaching:number;visual:number;timing:number;continuity:number;reliability:number;performance:{firstAVP50Ms:number};cost:{meanUsd:number}};
+  migrationGates:MigrationGate[];
   caseResults: CaseResult[];
   regressions: Regression[];
   limitations: string[];
@@ -142,7 +144,7 @@ export function aggregateReport(
   const average=(key:keyof Pick<LiveRunMetrics,'criticalClaimCoverage'|'conceptCoverage'|'relationshipCoverage'|'criticalAssetRoleCoverage'|'continuityPreservationRate'>)=>Number(mean(runs.map(run=>run.metrics[key] as number)).toFixed(3));
   const rate=(predicate:(run:CaseTelemetry)=>boolean)=>Number((runs.length?runs.filter(predicate).length/runs.length:0).toFixed(3));
 
-  return {
+  const report:AggregateReport={
     generatedAt: new Date().toISOString(),
     configHash,
     totalCases: new Set(runs.map(r => r.caseId)).size,
@@ -159,6 +161,7 @@ export function aggregateReport(
     cost: {P50: percentile(costAll, 50), P95: percentile(costAll, 95), mean: Number(mean(costAll).toFixed(6)), total: Number(costAll.reduce((a, b) => a + b, 0).toFixed(6))},
     stageAccounting,
     dimensions:{truth:average('criticalClaimCoverage'),teaching:rate(run=>run.metrics.teachingPlanSuccess&&run.metrics.teachingFailureCount===0),visual:Number(mean(runs.map(run=>(run.metrics.conceptCoverage+run.metrics.relationshipCoverage+run.metrics.criticalAssetRoleCoverage)/3)).toFixed(3)),timing:rate(run=>run.metrics.timelineSuccess&&run.metrics.staticIntervalCount===0),continuity:average('continuityPreservationRate'),reliability:rate(run=>run.metrics.fullJobSuccess),performance:{firstAVP50Ms:percentile(firstAvAll,50)},cost:{meanUsd:Number(mean(costAll).toFixed(6))}},
+    migrationGates:[],
     caseResults,
     regressions,
     limitations: [
@@ -168,6 +171,8 @@ export function aggregateReport(
       'Teaching gates are structural; real comprehension still requires independent evaluator and human results.'
     ]
   };
+  report.migrationGates=evaluateMigrationGates(report,runs).gates;
+  return report;
 }
 
 function row(values: (string | number)[]): string {
@@ -241,6 +246,12 @@ export function reportToMarkdown(report: AggregateReport): string {
   lines.push(row(['Truth', 'Teaching', 'Visual', 'Timing', 'Continuity', 'Reliability', 'First AV P50 ms', 'Mean cost USD']));
   lines.push(row(['---', '---', '---', '---', '---', '---', '---', '---']));
   lines.push(row([report.dimensions.truth,report.dimensions.teaching,report.dimensions.visual,report.dimensions.timing,report.dimensions.continuity,report.dimensions.reliability,report.dimensions.performance.firstAVP50Ms,report.dimensions.cost.meanUsd]));
+  lines.push('');
+
+  lines.push('## Migration gates (machine-evaluated)');
+  lines.push(row(['Gate', 'Target', 'Value', 'Pass']));
+  lines.push(row(['---', '---', '---', '---']));
+  for (const gate of report.migrationGates) lines.push(row([gate.id, gate.target, gate.value === null ? 'pending' : String(gate.value), gate.pass === null ? 'PENDING-HUMAN' : String(gate.pass)]));
   lines.push('');
 
   lines.push('## Per-stage accounting');
