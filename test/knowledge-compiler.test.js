@@ -4,6 +4,7 @@ import {writeFile,mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {readFileSync} from 'node:fs';
+import {makeWav} from './wav.js';
 import {validateKnowledge,compileKnowledge,chapterWindows,mergeGroundedPlans,knowledgeGraphSchema} from '../dist/src/semantic/planning/knowledge-compiler.js';
 import {conceptGraphFromPlan,contractsFromScene,stableHash} from '../dist/src/semantic/harness/state.js';
 import {planTeaching} from '../dist/src/semantic/planning/teaching-planner.js';
@@ -125,14 +126,15 @@ test('generateV2 runs the real knowledge stage before teaching on grounded sourc
 
 test('grounded narration flows through the bundled voice engine',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'knowledge-ve-')),audioPath=join(dir,'scene.wav');
- await writeFile(audioPath,Buffer.from('RIFF'));
+ await writeFile(audioPath,makeWav(60));
  const speech=createVoiceEngineSpeech({run:async()=>({audioPath,provider:'supertonic',language:'en',voice:'F3',generationMs:10,audioDurationMs:2000,rtf:0.005})});
  let narrated;
  for await(const result of generateV2({prompt:'Teach plant inputs',sourceText:SOURCE,sourceId:'src_test',allowedArchetypes:['structural_diagram','convergence'],maxScenes:1},groundedModel(validKnowledge(),fixturePlan()),{speech}))narrated=result;
- assert.equal(narrated.speech.audio.toString(),'RIFF');
+ assert.equal(narrated.speech.audio.toString('ascii',0,4),'RIFF');
  assert.equal(narrated.speech.provider,'supertonic');
  assert.equal(narrated.compiled.timing.kind,'engine');
- assert.equal(narrated.compiled.timing.timingSource,'estimated');
+ assert.equal(narrated.compiled.timing.timingSource,'semantic-segment');
+ assert.equal(narrated.compiled.timing.durationMs,2000*narrated.teachingContracts.length);
 });
 
 const filler=(marker,chars=580)=>`${'lorem ipsum dolor sit amet '.repeat(22).slice(0,chars-30).trim()} ${marker}`;

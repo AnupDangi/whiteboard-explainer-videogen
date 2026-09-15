@@ -1,3 +1,26 @@
+# Phase 7 per-semantic-segment TTS timing, 2026-09-15
+
+Narration is now synthesized per teaching beat (`src/semantic/
+semantic-timing.ts`): each beat segment gets an exact real duration from TTS,
+scene audio is concatenated deterministically (`joinWav`, strict RIFF/fmt
+validation — mismatched formats refuse loudly), and the composed timeline gets
+`timingSource:'semantic-segment'` with exact segment starts and proportional
+word boundaries inside each segment. When a provider returns real word
+timestamps (provider/aligner), those win verbatim, offset per segment.
+Single-beat narration keeps the previous single-call path. Any segment
+failure, mixed format, or invalid WAV propagates — a speech failure never
+becomes silence. Existing buffered Supertonic/Piper providers and the optional
+streaming adapter are untouched; `TimingSource`/`SpeechTimingSource` gained
+`semantic-segment` additively.
+
+Verification: `npm run typecheck` clean; `npm test` **302/302 pass, 0 fail**
+(296 + 6 new in `test/semantic-timing.test.js`; fake speech mocks updated to
+valid minimal WAVs via `test/wav.js`); `git diff --check` clean. Real bundled
+voice-engine check: two-beat per-segment synthesis joined into one valid
+RIFF/WAVE (4876 ms audio, 430 KB, 10 words, exact segment starts) in 2.5 s
+wall time. The scene timeline now equals summed real segment durations
+instead of one estimated whole-scene estimate.
+
 # Phase 3 real teaching-architect model stage, 2026-09-15
 
 Grounded runs now execute a real `architect` model stage per scene

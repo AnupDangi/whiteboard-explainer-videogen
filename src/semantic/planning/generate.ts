@@ -22,6 +22,7 @@ import type {GateResult,HarnessStage} from '../harness/contracts.js';
 import {renderSVG} from '../renderer/render-svg.js';
 import {compileKnowledge,chapterWindows,mergeGroundedPlans,attachSourceVisuals} from './knowledge-compiler.js';
 import {architectContracts} from './teaching-architect.js';
+import {narratedSpeech} from '../semantic-timing.js';
 import type {TeachingPlanV2} from '../types.js';
 
 export interface StageMetrics {
@@ -158,7 +159,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   options.signal?.throwIfAborted();
   telemetry('tts','started');telemetry('compile','started');
   const ttsStart=performance.now(),compileStart=performance.now();
-  const ttsPromise=(async()=>{try{const s=options.speech?await options.speech(narration.text):undefined;telemetry('tts','success',{elapsedMs:performance.now()-ttsStart,timingKind:s?.timing.kind});return s;}catch(e){telemetry('tts','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-ttsStart});throw stageFailure(e,'tts');}})();
+  const ttsPromise=(async()=>{try{const s=options.speech?await narratedSpeech(narration,options.speech,options.signal):undefined;telemetry('tts','success',{elapsedMs:performance.now()-ttsStart,timingKind:s?.timing.kind,timingSource:s?.timingSource});return s;}catch(e){telemetry('tts','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-ttsStart});throw stageFailure(e,'tts');}})();
   const visualPromise=(async()=>{try{const c=compileScene(directed.scene,undefined,previous);telemetry('compile','success',{elapsedMs:performance.now()-compileStart,diagnostics:c.diagnostics,preliminary:true});return c;}catch(e){telemetry('compile','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-compileStart});throw stageFailure(e,'compile');}})();
   let speech:Awaited<typeof ttsPromise>,compiled:Awaited<typeof visualPromise>;
   try{[speech,compiled]=await Promise.all([ttsPromise,visualPromise]);}catch(e){options.signal?.throwIfAborted();throw e;}

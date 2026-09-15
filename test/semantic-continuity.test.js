@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { makeWav } from './wav.js';
 import { generateV2 } from '../dist/src/semantic/planning/generate.js';
 import { wordsFromDuration } from '../dist/src/shared/voice-engine-client.js';
 import { compileScene } from '../dist/src/semantic/compiler/compile-scene.js';
@@ -84,7 +85,7 @@ test('visual compile lands before slow TTS; final timeline uses speech timing', 
   const events = [];
   const speech = async text => {
     await new Promise(r => setTimeout(r, 150));
-    return { timing: wordsFromDuration(text, 2000), audio: Buffer.from('wav-audio'), format: 'wav' };
+    return { timing: wordsFromDuration(text, 2000), audio: makeWav(40), format: 'wav' };
   };
   let compiled;
   for await (const result of generateV2({ prompt: 'Teach plant inputs', allowedArchetypes: ['structural_diagram', 'convergence'] }, model, { speech, onTelemetry: e => events.push(e) })) compiled = result.compiled;

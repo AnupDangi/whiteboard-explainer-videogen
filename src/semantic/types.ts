@@ -37,6 +37,6 @@ export interface CompiledVisualAction extends VisualAction {beatId:string;startM
 export interface CompiledObject extends VisualObject,Rect {anchors:Record<string,Point>;fontSize:number;lines:string[];zIndex:number}
 export interface CompiledRelation extends VisualRelation {points:Point[]}
 export interface WordTiming {word:string;startMs:number;endMs:number}
-export type TimingSource = 'provider'|'aligner'|'estimated';
+export type TimingSource = 'provider'|'aligner'|'semantic-segment'|'estimated';
 export interface VisualTiming {kind:string;words:WordTiming[];durationMs:number;timingSource?:TimingSource}
 export interface CompiledSceneV2 {version:2;scene:VisualSceneV2;objects:CompiledObject[];relations:CompiledRelation[];actions:CompiledVisualAction[];timing:VisualTiming;durationMs:number;diagnostics:string[]}

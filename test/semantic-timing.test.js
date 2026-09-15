@@ -1,0 +1,68 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {joinWav,timingFromSegments,narratedSpeech} from '../dist/src/semantic/semantic-timing.js';
+import {wordsFromDuration} from '../dist/src/shared/voice-engine-client.js';
+
+const wav=(dataLength,frequency=440)=>{
+ const header=Buffer.alloc(44),data=Buffer.alloc(dataLength,7);
+ header.write('RIFF',0,'ascii');header.writeUInt32LE(36+dataLength,4);header.write('WAVE',8,'ascii');
+ header.write('fmt ',12,'ascii');header.writeUInt32LE(16,16);header.writeUInt16LE(1,20);header.writeUInt16LE(1,22);
+ header.writeUInt32LE(frequency,24);header.writeUInt32LE(frequency*2,28);header.writeUInt16LE(2,32);header.writeUInt16LE(16,34);
+ header.write('data',36,'ascii');header.writeUInt32LE(dataLength,40);
+ return Buffer.concat([header,data]);
+};
+
+test('joinWav concatenates same-format PCM and rewrites the RIFF sizes',()=>{
+ const joined=joinWav([wav(100),wav(50),wav(30)]);
+ assert.equal(joined.toString('ascii',0,4),'RIFF');
+ assert.equal(joined.readUInt32LE(4),36+180);
+ assert.equal(joined.toString('ascii',36,40),'data');
+ assert.equal(joined.readUInt32LE(40),180);
+ assert.equal(joined.length,44+180);
+});
+
+test('joinWav refuses mismatched formats and invalid inputs',()=>{
+ assert.throws(()=>joinWav([Buffer.from('not a wav')]),/not a RIFF\/WAVE/);
+ assert.throws(()=>joinWav([]),/zero audio/);
+ const good=joinWav([wav(20)]);
+ assert.throws(()=>joinWav([good,wav(20,8000)]),/formats differ/);
+});
+
+test('timingFromSegments gives exact segment starts and semantic-segment provenance',()=>{
+ const timing=timingFromSegments([
+  {beatId:'b1',text:'one two three',durationMs:600,timingSource:'estimated'},
+  {beatId:'b2',text:'four five',durationMs:1000,timingSource:'estimated'}]);
+ assert.equal(timing.durationMs,1600);
+ assert.equal(timing.timingSource,'semantic-segment');
+ assert.equal(timing.words.length,5);
+ assert.equal(timing.words[0].word,'one');assert.equal(timing.words[0].startMs,0);
+ assert.equal(timing.words[3].word,'four');assert.equal(timing.words[3].startMs,600);
+ assert.ok(timing.words.every((word,index)=>index===0||word.startMs>=timing.words[index-1].endMs));
+ assert.throws(()=>timingFromSegments([{beatId:'b1',text:'one',durationMs:0,timingSource:'estimated'}]),/Invalid segment duration/);
+});
+
+test('provider word timestamps win over proportional estimates when every segment has them',()=>{
+ const timing=timingFromSegments([
+  {beatId:'b1',text:'alpha beta',durationMs:800,timingSource:'provider',words:[{word:'alpha',startMs:10,endMs:400},{word:'beta',startMs:400,endMs:790}]},
+  {beatId:'b2',text:'gamma',durationMs:400,timingSource:'provider',words:[{word:'gamma',startMs:5,endMs:395}]}]);
+ assert.equal(timing.timingSource,'provider');
+ assert.deepEqual([timing.words[0].startMs,timing.words[2].startMs],[10,805]);
+});
+
+test('narratedSpeech synthesizes per beat and joins audio deterministically',async()=>{
+ const speech=async text=>({timing:wordsFromDuration(text,500),audio:wav(40),format:'wav',provider:'supertonic',timingSource:'estimated'});
+ const result=await narratedSpeech({text:'a b c',beats:[{id:'b1',text:'a b'},{id:'b2',text:'c'}]},speech);
+ assert.equal(result.timing.durationMs,1000);
+ assert.equal(result.timing.timingSource,'semantic-segment');
+ assert.equal(result.format,'wav');
+ assert.equal(result.audio.length,44+80);
+ assert.equal(result.provider,'supertonic');
+});
+
+test('narratedSpeech keeps the single-call path for one-beat narration and fails loudly',async()=>{
+ const speech=async text=>({timing:wordsFromDuration(text,900),audio:Buffer.from('RIFFxxxx'),format:'wav',timingSource:'estimated'});
+ const single=await narratedSpeech({text:'only',beats:[{id:'b1',text:'only'}]},speech);
+ assert.equal(single.timing.durationMs,900);
+ await assert.rejects(()=>narratedSpeech({text:'a b',beats:[{id:'b1',text:'a'},{id:'b2',text:'b'}]},async()=>{throw new Error('tts exploded')}),/tts exploded/);
+ await assert.rejects(()=>narratedSpeech({text:'a b',beats:[{id:'b1',text:'a'},{id:'b2',text:'b'}]},async text=>({timing:wordsFromDuration(text,500),audio:Buffer.from('RIFFxxxx'),format:text==='a'?'wav':'mp3',timingSource:'estimated'})),/mixed formats/);
+});

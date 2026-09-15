@@ -3,7 +3,7 @@ import {log} from '../shared/logger.js';
 import {createVoiceEngineRunner,wordsFromDuration,type VoiceEngineRequest,type VoiceEngineRunner} from '../shared/voice-engine-client.js';
 import type {VisualTiming} from './types.js';
 
-export type SpeechTimingSource='provider'|'aligner'|'estimated';
+export type SpeechTimingSource='provider'|'aligner'|'semantic-segment'|'estimated';
 export interface SpeechResult {timing:VisualTiming;audio:Buffer;format:'wav'|'mp3';provider?:string;timingSource:SpeechTimingSource;firstAudioByteMs?:number}
 export type V2Speech=(text:string)=>Promise<SpeechResult>;
 export type StreamingSpeechEvent =

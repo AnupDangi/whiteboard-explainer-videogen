@@ -8,6 +8,7 @@ import {contractsFromScene} from '../dist/src/semantic/harness/state.js';
 import {makeServer} from '../dist/src/server.js';
 import {wordsFromDuration} from '../dist/src/shared/voice-engine-client.js';
 import {readFileSync} from 'node:fs';
+import {makeWav} from './wav.js';
 const sceneJson=()=>{const s=JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.scene.json','utf8'));for(const o of s.objects)if(['plant','sunlight','water','carbon_dioxide'].includes(o.id))o.conceptId=o.id;return s;};
 const teaching=()=>JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.teaching.json','utf8'));
 /** Deterministic mock model: teaching returns the fixture plan; director returns the fixture scene. */
@@ -21,7 +22,7 @@ function mockModel(calls){
 function factories(calls){
   calls=calls||[];
   let i=0;
-  return {model:()=>mockModel(calls[i++]||[]),speech:language=>async text=>({timing:wordsFromDuration(text,2000),audio:Buffer.from('wav-audio'),format:'wav'})};
+  return {model:()=>mockModel(calls[i++]||[]),speech:language=>async text=>({timing:wordsFromDuration(text,2000),audio:makeWav(40),format:'wav'})};
 }
 test('semantic job lifecycle: create → scenes pushed in order → complete snapshot',async()=>{
   const root=await mkdtemp(join(tmpdir(),'semantic-jobs-'));

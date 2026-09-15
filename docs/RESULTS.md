@@ -1,3 +1,17 @@
+# 2026-09-15 — Phase 7 per-semantic-segment TTS timing
+
+- TTS per teaching beat: exact real segment durations, deterministic WAV
+  concatenation for scene audio, composed word timeline with
+  `timingSource:'semantic-segment'`; provider/aligner word timestamps win
+  verbatim when present; single-beat scenes keep the single-call path.
+- Speech failures stay loud (segment failure, mixed format, invalid WAV).
+- Verification: typecheck clean; `npm test` **302/302** (6 new
+  `semantic-timing` tests); real bundled engine: 2-beat synthesis joined into
+  valid RIFF/WAVE 4876 ms in 2.5 s wall. `git diff --check` clean.
+- Remaining Phase 7 debt: per-segment TTS doubles provider calls on cloud
+  providers (local engine unaffected); cloud word-timestamp providers remain
+  unevaluated (no paid run today).
+
 # 2026-09-15 — Phase 3 teaching-architect model stage
 
 - Grounded runs plan pedagogy through a real `architect` model stage per
