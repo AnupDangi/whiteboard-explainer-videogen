@@ -340,3 +340,33 @@ test('selectRelevantWindows keeps a short lesson on the requested topic and insi
  assert.equal(single.length,1,'budget of one yields one window');
  assert.match(single[0].text,/KV cache dominates/,'the single window is the most prompt-relevant one');
 });
+
+test('a teaching failure replays knowledge windows from the memo instead of re-buying them',async()=>{
+ const {generateV2,resetCallMemo}=await import('../dist/src/semantic/planning/generate.js');
+ resetCallMemo();
+ const source=pad('Leaves capture sunlight. Roots absorb water. Leaves take in carbon dioxide. Inputs enable plant food production.',40);
+ let teachingCalls=0;
+ const model={calls:[],events:[],_chapterPlan:undefined,async generate(stage,_i,input,_schema,validate){
+  this.calls.push({stage,input});
+  if(stage==='knowledge')return validate(validKnowledge());
+  if(stage==='teaching'){
+   teachingCalls++;
+   if(teachingCalls===1)throw new Error('Untaught relation: forced-first-failure');
+   this._chapterPlan=fixturePlan();
+   return validate(fixturePlan());
+  }
+  if(stage==='architect')return validate(architectPayload(input,this._chapterPlan));
+  const s=sceneJson();s.id=input.semanticScene.id;
+  input.semanticScene.beats.forEach((beat,index)=>{s.beats[index].narration=beat.narrationDraft;});
+  return validate({scene:s,decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'inputs',labelsOnly:'labels',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'decoration'}});
+ }};
+ const results=[];
+ for await(const result of generateV2({prompt:'Teach the full report',sourceText:source,sourceId:'src_test',allowedArchetypes:['structural_diagram','convergence'],maxScenes:2},model,{criticEnv:{...process.env,V2_KNOWLEDGE_WINDOW_CHARS:'3000',V2_KNOWLEDGE_SOURCE_CHARS:'0'}}))results.push(result);
+ const knowledgeCalls=model.calls.filter(call=>call.stage==='knowledge').length;
+ const distinctWindows=new Set(model.calls.filter(call=>call.stage==='knowledge').map(call=>call.input.sourceText)).size;
+ assert.ok(teachingCalls>=2,'the repair re-ran teaching');
+ assert.ok(knowledgeCalls>0);
+ assert.equal(knowledgeCalls,distinctWindows,'knowledge windows were NOT re-bought by the repair');
+ assert.ok(results.length>=1&&results.every(result=>result.manifest.status==='PASS'));
+ resetCallMemo();
+});

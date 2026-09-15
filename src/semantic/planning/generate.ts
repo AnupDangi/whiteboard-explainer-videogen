@@ -1,4 +1,15 @@
 import {log} from '../../shared/logger.js';
+/** Per-call memo: the unit of retry must equal the unit of cost. Validated
+ *  window graphs and chapter plans are memoized by their semantic input hash,
+ *  so a later stage failure replays them instead of re-buying the same model
+ *  calls (the pre-fix behavior re-ran the whole knowledge stage on any
+ *  teaching failure). Bounded, in-process; a restart starts cold. */
+const callMemo=new Map<string,unknown>();
+const MEMO_LIMIT=400;
+const memoKey=(part:string,value:unknown)=>`${part}:${stableHash(value)}`;
+const memoGet=<T,>(key:string):T|undefined=>{const value=callMemo.get(key);if(value!==undefined)log('v2.call.memo-hit',{key:key.slice(0,40)});return value as T|undefined;};
+const memoPut=(key:string,value:unknown)=>{if(callMemo.size>=MEMO_LIMIT)callMemo.delete(callMemo.keys().next().value as string);callMemo.set(key,value);};
+export const resetCallMemo=()=>callMemo.clear();
 import {stageFailure,repairHints} from '../repair.js';
 import {planTeaching,type TeachingInput} from './teaching-planner.js';
 import {selectVisualModel} from './visual-model.js';
@@ -89,23 +100,31 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
       const sceneBudget=input.maxScenes??1;
       const selectedKnowledgeWindows=selectRelevantWindows(knowledgeWindows,input.prompt,Math.max(1,Math.min(knowledgeWindows.length,sceneBudget)));
       if(selectedKnowledgeWindows.length<knowledgeWindows.length)log('v2.knowledge.window-budget',{planned:knowledgeWindows.length,kept:selectedKnowledgeWindows.length,maxScenes:input.maxScenes??1});
-      const graphs:ConceptGraph[]=[];
-      for(const [index,window] of selectedKnowledgeWindows.entries()){
-       signal?.throwIfAborted();
-       log('v2.knowledge.window',{index:index+1,count:selectedKnowledgeWindows.length,chars:window.text.length});
-       graphs.push(await compileKnowledge({prompt:input.prompt,sourceText:window.text,evidenceScope:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model,{},signal));
-      }
+       const graphs:ConceptGraph[]=[];
+       for(const [index,window] of selectedKnowledgeWindows.entries()){
+        signal?.throwIfAborted();
+        log('v2.knowledge.window',{index:index+1,count:selectedKnowledgeWindows.length,chars:window.text.length});
+         const windowMemoKey=memoKey('knowledge-window',{text:window.text,prompt:input.prompt,language:input.language,sourceId:input.sourceId});
+         const cachedGraph=memoGet<ConceptGraph>(windowMemoKey);
+         if(cachedGraph){graphs.push(cachedGraph);continue;}
+         const graph=await compileKnowledge({prompt:input.prompt,sourceText:window.text,evidenceScope:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model,{},signal);
+         memoPut(windowMemoKey,graph);graphs.push(graph);
+       }
       const graph=attachSourceVisuals(graphs.length>1?mergeConceptGraphs(graphs):graphs[0],input.sourceFigures,input.sourceId);
       const teachingWindows=chapterWindows(knowledgeText);
       const windows=selectRelevantWindows(teachingWindows,input.prompt,Math.max(1,Math.min(teachingWindows.length,sceneBudget)));
      const perWindow=Math.max(1,Math.floor((input.maxScenes??1)/windows.length));
-     const planned:TeachingPlanV2[]=[];let prior:string[]=[];
-     for(const [index,window] of windows.entries()){
-      const chapterPlan=await planTeaching({...input,sourceText:window.text,evidenceScope:knowledgeText,maxScenes:perWindow},model,{repairFindings,conceptGraph:graph,chapter:{index:index+1,count:windows.length,priorConcepts:prior,maxScenes:perWindow},signal});
-      planned.push(chapterPlan);prior=[...new Set([...prior,...chapterPlan.scenes.flatMap(scene=>scene.requiredConceptIds)])];
-     }
-     const merged=mergeGroundedPlans(graph,planned.map((plan,index)=>({window:windows[index],plan})));
-     const sceneCap=input.maxScenes??1;
+      const planned:TeachingPlanV2[]=[];let prior:string[]=[];
+       for(const [index,window] of windows.entries()){
+        const chapterMemoKey=memoKey('teaching-chapter',{window:window.text,graph,prior,perWindow,repairFindings,prompt:input.prompt,language:input.language,sourceId:input.sourceId});
+       const cachedPlan=memoGet<TeachingPlanV2>(chapterMemoKey);
+       if(cachedPlan){planned.push(cachedPlan);prior=[...new Set([...prior,...cachedPlan.scenes.flatMap(scene=>scene.requiredConceptIds)])];continue;}
+       const chapterPlan=await planTeaching({...input,sourceText:window.text,evidenceScope:knowledgeText,maxScenes:perWindow},model,{repairFindings,conceptGraph:graph,chapter:{index:index+1,count:windows.length,priorConcepts:prior,maxScenes:perWindow},signal});
+       memoPut(chapterMemoKey,chapterPlan);
+       planned.push(chapterPlan);prior=[...new Set([...prior,...chapterPlan.scenes.flatMap(scene=>scene.requiredConceptIds)])];
+       }
+      const merged=mergeGroundedPlans(graph,planned.map((plan,index)=>({window:windows[index],plan})));
+      const sceneCap=input.maxScenes??1;
      if(merged.scenes.length>sceneCap){log('v2.plan.scene-cap',{planned:merged.scenes.length,kept:sceneCap});merged.scenes=merged.scenes.slice(0,sceneCap);}
      return {plan:merged,conceptGraph:graph};
     }
