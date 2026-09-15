@@ -43,21 +43,28 @@ export function snapQuoteToSource(sourceText:string,quote:string):string|null{
  if(quoteTokens.length<3)return null;
  const unique=new Set(quoteTokens);
  const sentences=normalizeEvidence(sourceText).split(/(?<=[.!?;])\s+/);
+ /** Same split on the raw text: normalization never adds/removes sentence-boundary
+  *  punctuation, so raw[i] normalizes to sentences[i] and the replacement can stay
+  *  a character-for-character copy of the source. */
+ const rawSentences=sourceText.split(/(?<=[.!?;])\s+/);
  const frequencies=new Map<string,number>();
  for(const token of evidenceTokens(sourceText))frequencies.set(token,(frequencies.get(token)??0)+1);
- let best:{sentence:string;score:number;distinctive:boolean}|null=null;
- for(const sentence of sentences){
+ let best:{index:number;score:number;distinctive:boolean}|null=null;
+ for(let i=0;i<sentences.length;i++){
+  const sentence=sentences[i];
   if(sentence.length>Math.max(400,quote.length*3))continue;
   const sentenceTokens=new Set(evidenceTokens(sentence));
   let hit=0;for(const token of unique)if(sentenceTokens.has(token))hit+=1;
   const score=hit/unique.size;
   const distinctive=[...unique].some(token=>sentenceTokens.has(token)&&(frequencies.get(token)??0)<=5);
-  if(score>=0.6&&distinctive&&(!best||score>best.score))best={sentence,score,distinctive};
+  if(score>=0.6&&distinctive&&(!best||score>best.score))best={index:i,score,distinctive};
  }
- return best?best.sentence:null;
+ if(!best)return null;
+ const raw=rawSentences[best.index]??null;
+ return raw&&normalizeEvidence(raw)===sentences[best.index]?raw:null;
 }
 /** Whitespace/unicode-normalized form for verbatim-quote matching. */
-const normalizeEvidence=(text:string)=>text.replace(/[\u2018\u2019\u201A\u201B]/g,"'").replace(/[\u201C\u201D\u201E]/g,'"').replace(/[\u2013\u2014]/g,'-').replace(/\u2026/g,'...').replace(/\u00A0/g,' ').replace(/[\u2217\u22C5\u00B7\u2219]/g,'*').replace(/[\u2212\u2010\u2011]/g,'-').replace(/\u2264/g,'<=').replace(/\u2265/g,'>=').replace(/\s+/g,' ').trim();
+const normalizeEvidence=(text:string)=>text.replace(/[\u2018\u2019\u201A\u201B]/g,"'").replace(/[\u201C\u201D\u201E]/g,'"').replace(/[\u2013\u2014]/g,'-').replace(/\u2026/g,'...').replace(/\u00A0/g,' ').replace(/[\u2217\u22C5\u00B7\u2219]/g,'*').replace(/[\u2212\u2010\u2011]/g,'-').replace(/\u2264/g,'<=').replace(/\u2265/g,'>=').replace(/[\u0000-\u0008\u000B\u000E-\u001F]/g,'').normalize('NFKD').replace(/[\u0300-\u036F]/g,'').replace(/\s+/g,' ').trim();
 export const evidenceSupported=(sourceText:string,quote:string):boolean=>sourceText.includes(quote)||normalizeEvidence(sourceText).includes(normalizeEvidence(quote));
 
 /** Bounded source slice that never cuts mid-sentence when a boundary exists. */

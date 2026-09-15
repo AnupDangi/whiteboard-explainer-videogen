@@ -306,3 +306,14 @@ test('validateKnowledge snaps paraphrased evidence and keeps unrelated evidence 
  broken.mechanisms=broken.mechanisms.map(mechanism=>({...mechanism,evidenceRefs:['ev_bad']}));
  assert.throws(()=>validateKnowledge(broken,source),/Fabricated evidence: ev_bad/);
 });
+
+test('snapQuoteToSource survives math-italic unicode formulas in the PDF source',async()=>{
+ const {snapQuoteToSource}=await import('../dist/src/semantic/planning/knowledge-compiler.js');
+ const coefficient='\u{1D458}',b='\u{1D466}',tau='\u{1D70F}',lambda='\u{1D706}',delta='\u0394';
+ const source=`The effort-dependent token-penalty coefficient is\n${coefficient}(${b}) = ${coefficient}0 exp\n\u0012\n\u2212\n${b} \u2212 ${b}min\n${tau}\n\u0013\n, (12)\nwhere ${coefficient}0 is the penalty coefficient at the lowest effort level ${b}min and ${tau} controls the rate of penalty decay.`;
+ const snapped=snapQuoteToSource(source,'The effort-dependent token-penalty coefficient is k(b) = k0 exp(-(b - bmin)/tau).');
+ assert.ok(snapped,'formula-notation quote snaps to a source sentence');
+ assert.ok(source.includes(snapped),'snapped quote is a raw verbatim substring, not a normalized copy');
+ assert.ok(snapped.includes('penalty coefficient'),'snapped sentence is the formula passage');
+ assert.equal(snapQuoteToSource(source,'k(b) = 42.'),null,'a formula with no matching source sentence stays rejected');
+});
