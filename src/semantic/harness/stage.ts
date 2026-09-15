@@ -5,7 +5,7 @@ import {log} from '../../shared/logger.js';
 import type {StageJournal} from './journal.js';
 
 /** Bounded, owner-scoped context handed to a stage repair function. */
-export interface StageRepairContext<T>{stage:HarnessStage;owner:StageOwner;attempt:0|1;input:unknown;error:Error;gate:GateResult;output?:T}
+export interface StageRepairContext<T>{stage:HarnessStage;owner:StageOwner;attempt:0|1;input:unknown;error:Error;gate:GateResult;output?:T;signal:AbortSignal}
 export type StageRepair<T>=(context:StageRepairContext<T>)=>Promise<T>|T;
 
 export const DEFAULT_STAGE_POLICIES:Record<HarnessStage,StagePolicy>={
@@ -22,7 +22,7 @@ export const DEFAULT_STAGE_POLICIES:Record<HarnessStage,StagePolicy>={
  render:{owner:'renderer',timeoutMs:30000,maxRepairs:0,budgetUsd:0}
 };
 
-export interface StageExecuteOptions<T>{stage:HarnessStage;input:unknown;run:()=>Promise<T>|T;gate:(output:T)=>GateResult;journal?:StageJournal;policy?:StagePolicy;attempt?:0|1;model?:string|(()=>string|undefined);promptHash?:string;skillHash?:string;usage?:()=>{costUsd:number;promptTokens:number;completionTokens:number};repair?:StageRepair<T>;resume?:boolean}
+export interface StageExecuteOptions<T>{stage:HarnessStage;input:unknown;run:(signal:AbortSignal)=>Promise<T>|T;gate:(output:T)=>GateResult;journal?:StageJournal;policy?:StagePolicy;attempt?:0|1;model?:string|(()=>string|undefined);promptHash?:string;skillHash?:string;usage?:()=>{costUsd:number;promptTokens:number;completionTokens:number};repair?:StageRepair<T>;resume?:boolean}
 
 const emptyGate=(stage:HarnessStage):GateResult=>({stage,passed:false,findings:[]});
 const gateError=(stage:HarnessStage,gate:GateResult)=>Object.assign(new Error(`${stage} gate failed: ${gate.findings.filter(f=>f.severity==='hard').map(f=>f.code).join(', ')}`),{gate});
@@ -41,7 +41,7 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
  await options.journal?.persistInput?.(options.stage,options.attempt??0,inputHash,options.input);
  if(options.resume&&options.journal?.read){
   const prior=await options.journal.read();
-  const match=prior.find(entry=>!('status' in entry)&&entry.stage===options.stage&&entry.inputHash===inputHash&&entry.harnessVersion===HARNESS_VERSION) as StageEnvelope<T>|undefined;
+  const match=prior.find(entry=>!('status' in entry)&&entry.stage===options.stage&&entry.inputHash===inputHash&&entry.harnessVersion===HARNESS_VERSION&&entry.skillHash===options.skillHash&&entry.promptHash===options.promptHash) as StageEnvelope<T>|undefined;
   if(match){
    const output=structuredClone(match.output);
    const gate=options.gate(output);
@@ -61,16 +61,18 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
  let attempt:0|1=options.attempt??0,hasProduced=false,produced:T|undefined;
  for(;;){
   const startedAt=new Date().toISOString(),started=performance.now();
+  const controller=new AbortController();
   let output:T;
   if(hasProduced)output=produced as T;
   else{
    let timer:NodeJS.Timeout|undefined;
-   try{output=await Promise.race([Promise.resolve().then(options.run),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error(`${options.stage} exceeded ${policy.timeoutMs}ms`)),policy.timeoutMs);timer.unref?.();})]);}
+   try{output=await Promise.race([Promise.resolve().then(()=>options.run(controller.signal)),new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort(new Error(`${options.stage} exceeded ${policy.timeoutMs}ms`));reject(new Error(`${options.stage} exceeded ${policy.timeoutMs}ms`));},policy.timeoutMs);})]);}
    catch(error){
     if(timer)clearTimeout(timer);
+    controller.abort(error);
     const value=error instanceof Error?error:new Error(String(error)),gate=(error as {gate?:GateResult})?.gate??emptyGate(options.stage);
     await appendFailure(attempt,startedAt,started,gate,value);
-    if(attempt<maxRepairs){produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt,input:options.input,error:value,gate});hasProduced=true;attempt=1;continue;}
+    if(attempt<maxRepairs){produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt,input:options.input,error:value,gate,signal:controller.signal});hasProduced=true;attempt=1;continue;}
     throw error;
    }
    if(timer)clearTimeout(timer);
@@ -79,7 +81,7 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
   if(!gate.passed){
    const error=gateError(options.stage,gate);
    await appendFailure(attempt,startedAt,started,gate,error);
-   if(attempt<maxRepairs){produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt,input:options.input,error,gate,output});hasProduced=true;attempt=1;continue;}
+   if(attempt<maxRepairs){produced=await options.repair!({stage:options.stage,owner:policy.owner,attempt,input:options.input,error,gate,output,signal:controller.signal});hasProduced=true;attempt=1;continue;}
    throw error;
   }
   const usage=options.usage?.()??{costUsd:0,promptTokens:0,completionTokens:0};

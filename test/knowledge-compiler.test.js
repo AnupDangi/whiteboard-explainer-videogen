@@ -217,3 +217,31 @@ test('source-visual-grounding selects figures whose captions name required conce
  const none=selectSourceVisuals(semantic,{...graph,sourceVisuals:[]});
  assert.deepEqual(none.selected,[]);assert.deepEqual(none.rejected,[]);
 });
+
+test('source capping stops at a paragraph or sentence boundary, never mid-sentence',async()=>{
+ const {capAtBoundary}=await import('../dist/src/semantic/planning/knowledge-compiler.js');
+ const text='First paragraph sentence. Still first paragraph.\n\nSecond paragraph sentence. Second continues here.\n\nThird paragraph.';
+ const paragraph=capAtBoundary(text,60);
+ assert.ok(paragraph.endsWith('Still first paragraph.'),paragraph);
+ assert.ok(!paragraph.includes('Second paragraph'));
+ const sentence=capAtBoundary('One sentence here. Another sentence that will be cut in the middle of words',40);
+ assert.equal(sentence,'One sentence here.');
+ const hard=capAtBoundary('a'.repeat(50),10);
+ assert.equal(hard.length,10);
+ assert.equal(capAtBoundary('short text',100),'short text');
+});
+
+test('route exhaustion surfaces the earlier validation error, not the later timeout',async()=>{
+ const {createJsonModel}=await import('../dist/src/semantic/planning/model-adapter.js');
+ const asked=[];
+ const fetcher=async(url,init)=>{
+  if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:['test/a','test/b','test/c'].map(id=>({id,pricing:{prompt:'0',completion:'0'}}))}));
+  const model=JSON.parse(init.body).model;asked.push(model);
+  if(model==='test/a')return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({bad:true})}}],usage:{prompt_tokens:10,completion_tokens:10,cost:.00001}}));
+  throw new Error('The operation was aborted due to timeout');
+ };
+ const model=createJsonModel({env:{OPENROUTER_API_KEY:'test',OPENROUTER_MODEL:'test/a',OPENROUTER_MODEL_FALLBACKS:'test/b,test/c'},maxCostUsd:1,fetcher});
+ const schema={type:'object',additionalProperties:false,required:['ok'],properties:{ok:{type:'boolean'}}};
+ await assert.rejects(()=>model.generate('knowledge','x',{},schema,v=>v),/validation exhausted: .*additional property|validation exhausted:/);
+ assert.deepEqual(asked,['test/a','test/b','test/c']);
+});

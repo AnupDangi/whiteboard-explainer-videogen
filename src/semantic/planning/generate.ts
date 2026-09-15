@@ -21,7 +21,7 @@ import {gateBoardAlignment,gateCompiled,gateConceptGraph,gateLesson,gateTeaching
 import {HARNESS_VERSION,type LearnerProfile} from '../harness/contracts.js';
 import type {GateResult,HarnessStage} from '../harness/contracts.js';
 import {renderSVG} from '../renderer/render-svg.js';
-import {compileKnowledge,chapterWindows,mergeGroundedPlans,attachSourceVisuals,selectSourceVisuals} from './knowledge-compiler.js';
+import {compileKnowledge,chapterWindows,mergeGroundedPlans,attachSourceVisuals,selectSourceVisuals,capAtBoundary} from './knowledge-compiler.js';
 import {architectContracts} from './teaching-architect.js';
 import {narratedSpeech} from '../semantic-timing.js';
 import {skillContract} from '../skills.js';
@@ -75,26 +75,26 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
  let plan,conceptGraph;
  try{
    const beforeCalls=model.calls.length;
-   const buildKnowledge=async(repairFindings?:string[])=>{
+   const buildKnowledge=async(repairFindings?:string[],signal?:AbortSignal)=>{
     if(input.sourceText){
      const cutoff=Number((options.criticEnv??process.env)?.V2_KNOWLEDGE_SOURCE_CHARS??30000);
-     const knowledgeText=cutoff>0&&input.sourceText.length>cutoff?input.sourceText.slice(0,cutoff):input.sourceText;
+     const knowledgeText=cutoff>0&&input.sourceText.length>cutoff?capAtBoundary(input.sourceText,cutoff):input.sourceText;
      if(knowledgeText.length<input.sourceText.length)log('v2.knowledge.source-capped',{chars:knowledgeText.length,total:input.sourceText.length});
-     const graph=attachSourceVisuals(await compileKnowledge({prompt:input.prompt,sourceText:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model),input.sourceFigures,input.sourceId);
+     const graph=attachSourceVisuals(await compileKnowledge({prompt:input.prompt,sourceText:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model,{},signal),input.sourceFigures,input.sourceId);
      const windows=chapterWindows(knowledgeText);
      const perWindow=Math.max(1,Math.floor((input.maxScenes??1)/windows.length));
      const planned:TeachingPlanV2[]=[];let prior:string[]=[];
      for(const [index,window] of windows.entries()){
-      const chapterPlan=await planTeaching({...input,sourceText:window.text,maxScenes:perWindow},model,{repairFindings,conceptGraph:graph,chapter:{index:index+1,count:windows.length,priorConcepts:prior,maxScenes:perWindow}});
+      const chapterPlan=await planTeaching({...input,sourceText:window.text,maxScenes:perWindow},model,{repairFindings,conceptGraph:graph,chapter:{index:index+1,count:windows.length,priorConcepts:prior,maxScenes:perWindow},signal});
       planned.push(chapterPlan);prior=[...new Set([...prior,...chapterPlan.scenes.flatMap(scene=>scene.requiredConceptIds)])];
      }
      return {plan:mergeGroundedPlans(graph,planned.map((plan,index)=>({window:windows[index],plan}))),conceptGraph:graph};
     }
-    const generated=await planTeaching(input,model,{repairFindings});
+    const generated=await planTeaching(input,model,{repairFindings,signal});
     const sourceVisuals=(input.sourceFigures??[]).map((figure,index)=>({id:`source-visual:${index+1}`,sourceId:input.sourceId??'source',page:figure.page,caption:figure.caption,provenance:`source-${figure.kind}`}));
     return {plan:generated,conceptGraph:conceptGraphFromPlan(generated,sourceVisuals)};
    };
-   const stage=await harness.execute({resume:options.resume,stage:'knowledge-compiler',input,run:()=>buildKnowledge(),repair:async({error,gate})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return buildKnowledge(findings);},gate:value=>gateConceptGraph(value.conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'knowledge-compiler',version:HARNESS_VERSION}),skillHash:skillContract('knowledge-compiler').hash,usage:()=>{const calls=model.calls.slice(beforeCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
+   const stage=await harness.execute({resume:options.resume,stage:'knowledge-compiler',input,run:(signal)=>buildKnowledge(undefined,signal),repair:async({error,gate,signal})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return buildKnowledge(findings,signal);},gate:value=>gateConceptGraph(value.conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'knowledge-compiler',version:HARNESS_VERSION}),skillHash:skillContract('knowledge-compiler').hash,usage:()=>{const calls=model.calls.slice(beforeCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
   plan=stage.output.plan;conceptGraph=stage.output.conceptGraph;
   telemetry('teaching','success',{elapsedMs:performance.now()-teachingStart,details:{harnessStage:'knowledge-compiler',harnessVersion:HARNESS_VERSION}});
  }catch(e){telemetry('teaching','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-teachingStart});throw stageFailure(e,'teaching');}
@@ -107,7 +107,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   let architect;
   if(input.sourceText){
    const beforeArchitectCalls=model.calls.length;
-   const architectStage=await harness.execute({resume:options.resume,stage:'teaching-architect',input:{scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter},run:()=>architectContracts({scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter},model),repair:async({error,gate})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return architectContracts({scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter,repairFindings:findings},model);},gate:contracts=>gateTeachingContracts(contracts,projectedState,conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'teaching-architect',version:HARNESS_VERSION}),skillHash:skillContract('teaching-architect').hash,usage:()=>{const calls=model.calls.slice(beforeArchitectCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
+   const architectStage=await harness.execute({resume:options.resume,stage:'teaching-architect',input:{scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter},run:(signal)=>architectContracts({scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter},model,signal),repair:async({error,gate,signal})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return architectContracts({scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter,repairFindings:findings},model,signal);},gate:contracts=>gateTeachingContracts(contracts,projectedState,conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'teaching-architect',version:HARNESS_VERSION}),skillHash:skillContract('teaching-architect').hash,usage:()=>{const calls=model.calls.slice(beforeArchitectCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
    architect={output:architectStage.output};
   }else{
    architect=await harness.execute({resume:options.resume,stage:'teaching-architect',input:{scene:semantic,learnerState:projectedState,conceptGraph},run:()=>contractsFromScene(semantic,plan,projectedState),gate:contracts=>gateTeachingContracts(contracts,projectedState,conceptGraph)});
@@ -134,7 +134,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   at=performance.now();
   telemetry('director','started');
   let directed:Awaited<ReturnType<typeof directVisual>>;
-  try{const beforeDirectorCalls=model.calls.length;const buildDirected=async(repairNotes?:string[])=>{const value=await directVisual(semantic,plan.conceptRegistry,mentalModel,model,previous,input.language,{candidates,sourceVisualIds:groundedSourceVisualIds,repairNotes,whiteboardPlan:board});value.scene=canonicalizeVisualScene(semantic.id,value.scene,plan.conceptRegistry);
+  try{const beforeDirectorCalls=model.calls.length;const buildDirected=async(repairNotes?:string[],signal?:AbortSignal)=>{const value=await directVisual(semantic,plan.conceptRegistry,mentalModel,model,previous,input.language,{candidates,sourceVisualIds:groundedSourceVisualIds,repairNotes,whiteboardPlan:board,signal});value.scene=canonicalizeVisualScene(semantic.id,value.scene,plan.conceptRegistry);
     // Bridge semantic continuity (concept keys) to runtime continuity (object ids).
     // Per-scene canonical ids differ, so resolve each kept concept to the current
     // object with the same appearance; the compiler then reuses previous geometry
@@ -150,7 +150,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
     value.scene.continuity.transitions=deriveContinuityDecisions(value.scene,previous,semanticRegistry.snapshot());
     return value;};
    const directorGate=(value:Awaited<ReturnType<typeof buildDirected>>)=>{const visual=gateVisual(value.scene,semanticRegistry.snapshot()),boardGate=gateBoardAlignment(board,value.scene);return {stage:'visual-director' as const,passed:visual.passed&&boardGate.passed,findings:[...visual.findings,...boardGate.findings]};};
-   const visualStage=await harness.execute({resume:options.resume,stage:'visual-director',input:{semantic,mentalModel,whiteboardPlan:board,registry:semanticRegistry.snapshot(),candidates,groundedSourceVisualIds},run:()=>buildDirected(),repair:async({error,gate})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return buildDirected(findings);},gate:directorGate,model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'visual-director',version:HARNESS_VERSION}),skillHash:skillContract('visual-director').hash,usage:()=>{const calls=model.calls.slice(beforeDirectorCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});directed=visualStage.output;
+   const visualStage=await harness.execute({resume:options.resume,stage:'visual-director',input:{semantic,mentalModel,whiteboardPlan:board,registry:semanticRegistry.snapshot(),candidates,groundedSourceVisualIds},run:(signal)=>buildDirected(undefined,signal),repair:async({error,gate,signal})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return buildDirected(findings,signal);},gate:directorGate,model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'visual-director',version:HARNESS_VERSION}),skillHash:skillContract('visual-director').hash,usage:()=>{const calls=model.calls.slice(beforeDirectorCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});directed=visualStage.output;
     telemetry('director','success',{elapsedMs:performance.now()-at});}catch(e){telemetry('director','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-at});throw stageFailure(e,'director');}
   const directorMs=performance.now()-at;
   at=performance.now();

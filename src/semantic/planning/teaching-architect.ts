@@ -58,9 +58,9 @@ export function validateArchitectOutput(raw:unknown,input:ArchitectStageInput):T
 }
 
 /** Grounded teaching-architect stage: one model call producing validated contracts. */
-export async function architectContracts(input:ArchitectStageInput,model:JsonModel):Promise<TeachingContract[]>{
+export async function architectContracts(input:ArchitectStageInput,model:JsonModel,signal?:AbortSignal):Promise<TeachingContract[]>{
  const instructions=[architectPrompt({language:input.language,repairNotes:input.repairFindings,chapter:input.chapter}),skillInstruction('teaching-architect')].filter(Boolean).join(' ');
- const value=await model.generate('architect',instructions,{scene:input.scene,learnerState:input.learnerState,conceptGraph:{concepts:input.conceptGraph.concepts,aliases:input.conceptGraph.aliases,claims:input.conceptGraph.claims,mechanisms:input.conceptGraph.mechanisms,terminology:input.conceptGraph.terminology}},architectSchema,raw=>validateArchitectOutput(raw,input));
+ const value=await model.generate('architect',instructions,{scene:input.scene,learnerState:input.learnerState,conceptGraph:{concepts:input.conceptGraph.concepts,aliases:input.conceptGraph.aliases,claims:input.conceptGraph.claims,mechanisms:input.conceptGraph.mechanisms,terminology:input.conceptGraph.terminology}},architectSchema,raw=>validateArchitectOutput(raw,input),{signal});
  return value as TeachingContract[];
 }
 

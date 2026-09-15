@@ -29,9 +29,9 @@ export function gateTeachingContracts(contracts:TeachingContract[],state:Learner
 }
 export function gateWhiteboard(plan:WhiteboardPlan,semantic:SemanticScenePlan):GateResult{
  const findings:GateFinding[]=[];
- for(const beat of plan.beats){if(!beat.semanticKeys.length)findings.push(finding('VISUAL_SUPPORT','whiteboard-planner',`${beat.contractId} has narration without a semantic visual target`));}
+ for(const beat of plan.beats){const targets=new Set([...beat.semanticKeys,...beat.diffs.flatMap(diff=>diff.semanticKeys),...beat.relations.flatMap(relation=>[relation.fromConceptId,relation.toConceptId])]);if(!targets.size)findings.push(finding('VISUAL_SUPPORT','whiteboard-planner',`${beat.contractId} has narration without a semantic visual target`));}
  if(plan.beats.some(b=>b.diffs.some(d=>d.operation==='RESET'))&&!plan.resetReason)findings.push(finding('CONTINUITY','whiteboard-planner','Canvas reset has no pedagogical reason'));
- const covered=new Set(plan.beats.flatMap(b=>b.semanticKeys));for(const key of semantic.requiredConceptIds)if(!covered.has(key))findings.push(finding('VISUAL_SUPPORT','whiteboard-planner',`Required concept ${key} has no visual beat`));
+ const covered=new Set(plan.beats.flatMap(b=>[...b.semanticKeys,...b.diffs.flatMap(diff=>diff.semanticKeys)]));for(const key of semantic.requiredConceptIds)if(!covered.has(key))findings.push(finding('VISUAL_SUPPORT','whiteboard-planner',`Required concept ${key} has no visual beat`));
  return result('whiteboard-planner',findings);
 }
 export function gateVisual(scene:VisualSceneV2,registry:SemanticRegistrySnapshot):GateResult{

@@ -67,3 +67,17 @@ test('a resumed pipeline completes without re-calling completed model stages',as
   }finally{await retryStore.close();}
  }finally{await store.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('resume replay refuses a stage whose skill or prompt hash changed',async()=>{
+ const journal=new MemoryStageJournal();
+ await executeStage({stage:'knowledge-compiler',input:{prompt:'x'},run:()=>({plan:'first'}),gate:()=>ok('knowledge-compiler'),journal,skillHash:'skill-A',promptHash:'prompt-A'});
+ let runs=0;
+ const same=await executeStage({stage:'knowledge-compiler',input:{prompt:'x'},run:()=>{runs++;return {plan:'second'};},gate:()=>ok('knowledge-compiler'),journal,resume:true,skillHash:'skill-A',promptHash:'prompt-A'});
+ assert.equal(runs,0,'identical hashes replay');
+ assert.deepEqual(same.output,{plan:'first'});
+ const changedSkill=await executeStage({stage:'knowledge-compiler',input:{prompt:'x'},run:()=>{runs++;return {plan:'third'};},gate:()=>ok('knowledge-compiler'),journal,resume:true,skillHash:'skill-B',promptHash:'prompt-A'});
+ assert.equal(runs,1,'changed skill hash must not replay stale output');
+ assert.deepEqual(changedSkill.output,{plan:'third'});
+ const changedPrompt=await executeStage({stage:'knowledge-compiler',input:{prompt:'x'},run:()=>{runs++;return {plan:'fourth'};},gate:()=>ok('knowledge-compiler'),journal,resume:true,skillHash:'skill-A',promptHash:'prompt-B'});
+ assert.equal(runs,2,'changed prompt hash must not replay');
+});

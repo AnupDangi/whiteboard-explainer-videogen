@@ -51,7 +51,7 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
  }
  return visual;
 }
-export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:{candidates?:ReturnType<typeof assetCandidates>;sourceVisualIds?:string[];repairNotes?:string[];whiteboardPlan?:WhiteboardPlan}):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
+export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:{candidates?:ReturnType<typeof assetCandidates>;sourceVisualIds?:string[];repairNotes?:string[];whiteboardPlan?:WhiteboardPlan;signal?:AbortSignal}):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
  const candidates=resolved?.candidates??assetCandidates(scene,registry,mentalModel),allowedAssets=new Set(candidates.flatMap(c=>c.candidates.map(a=>a.id)));
  const fallbackNote=primitiveFallbackNote(candidates.filter(c=>!c.candidates.length&&!c.representation).map(c=>c.conceptId));
  const repairNote=resolved?.repairNotes?.length?`A previous direction failed these visual checks: ${resolved.repairNotes.join('; ')}. Correct exactly those objects, relations, anchors, states or actions and keep narration, beat IDs and concept coverage unchanged.`:'';
@@ -70,7 +70,7 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
    if(choice?.representation&&!o.assetRef){o.representation=o.representation??choice.representation;if(o.representation.family!==choice.representation.family)throw new Error('Representation family changed');o.primitiveRef='rectangle';}
   }
   return {...result,scene:validateDirectedScene(result.scene,scene,registry,mentalModel,allowedAssets,previous)};
- }) as {scene:VisualSceneV2;decisions:DirectionDecisions};
+ },{signal:resolved?.signal}) as {scene:VisualSceneV2;decisions:DirectionDecisions};
  // Deterministic geometry repair belongs to the compiler, never another model call.
  let compiled;try{compiled=compileScene(directed.scene,undefined,previous);}catch(e){throw stageFailure(e,'compile');}
  validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous);

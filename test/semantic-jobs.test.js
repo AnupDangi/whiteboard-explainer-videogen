@@ -245,3 +245,36 @@ test('multi-scene cost counts each call once and actual scene count wins over th
   assert.equal(done.status,'complete');assert.equal(done.scenes.length,2);assert.equal(done.totalScenes,2);assert.equal(done.costUsd,.03);assert.equal(done.calls,3);
  }finally{await store.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('a third concurrent job queues instead of being rejected and runs when a slot frees',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'semantic-queue-'));
+ const slowModel=()=>{const calls=[];return {calls,async generate(stage,_i,_in,_s,validate){await new Promise(resolve=>setTimeout(resolve,60));return validate(stage==='teaching'?teaching():{scene:sceneJson(),decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'inputs',labelsOnly:'none',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'none'}});}};};
+ const store=new SemanticJobStore(root,{model:slowModel});
+ try{
+  const first=await store.create({prompt:'Teach plant inputs',allowedArchetypes:['structural_diagram','convergence'],narration:false});
+  const second=await store.create({prompt:'Teach plant inputs',allowedArchetypes:['structural_diagram','convergence'],narration:false});
+  const third=await store.create({prompt:'Teach plant inputs',allowedArchetypes:['structural_diagram','convergence'],narration:false});
+  assert.equal(third.status,'queued','third job waits in the queue');
+  const done=await waitFor(()=>store.get(third.id),job=>job&&['complete','partial','error'].includes(job.status));
+  assert.equal(done.status,'complete');
+  assert.deepEqual([first.id,second.id].map(id=>store.jobs.get(id)?.status).every(status=>['complete','partial'].includes(status||'')),true);
+ }finally{await store.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('retrying a failed job preserves its cost budget',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'semantic-retry-budget-'));
+ const model={calls:[],async generate(stage,_i,input,_s,validate){
+  if(stage==='teaching')return validate(teaching());
+  if(stage==='director')throw new Error('director provider exploded');
+  const s=sceneJson();s.id=input.semanticScene.id;
+  return validate({scene:s,decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'inputs',labelsOnly:'none',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'none'}});
+ }};
+ const store=new SemanticJobStore(root,{model:()=>model});
+ try{
+  const created=await store.create({prompt:'Teach plant inputs',allowedArchetypes:['structural_diagram','convergence'],narration:false,maxCostUsd:.31});
+  const failed=await waitFor(()=>store.get(created.id),job=>job&&['error','partial'].includes(job.status));
+  assert.equal(failed.status,'error');
+  const retried=await store.retry(created.id);
+  assert.equal(retried.maxCostUsd,.31,'retry keeps the original budget');
+ }finally{await store.close();await rm(root,{recursive:true,force:true});}
+});

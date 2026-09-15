@@ -8,7 +8,7 @@ import type {JsonModel} from './model-adapter.js';
 import type {SourceFigure} from '../../shared/types.js';
 import type {ConceptGraph} from '../harness/contracts.js';
 export interface TeachingInput {prompt:string;sourceText?:string;sourceId?:string;sourceFigures?:SourceFigure[];maxScenes?:number;allowedArchetypes:VisualArchetype[];language?:string;targetMinutes?:number;groundingPolicy?:'source-only'|'source-plus-verified'}
-export async function planTeaching(input:TeachingInput,model:JsonModel,options:{repairFindings?:string[];conceptGraph?:ConceptGraph;chapter?:{index:number;count:number;priorConcepts:string[];maxScenes:number}}={}):Promise<TeachingPlanV2>{
+export async function planTeaching(input:TeachingInput,model:JsonModel,options:{repairFindings?:string[];conceptGraph?:ConceptGraph;chapter?:{index:number;count:number;priorConcepts:string[];maxScenes:number};signal?:AbortSignal}={}):Promise<TeachingPlanV2>{
  if(!input.prompt.trim()||input.prompt.length>4000||(input.sourceText?.length??0)>120000)throw new Error('V2 prompt/source bounds exceeded');
  const maxScenes=options.chapter?.maxScenes??input.maxScenes??1;if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>24)throw new Error('V2 scene limit must be 1–24');
  const graph=options.conceptGraph;
@@ -26,5 +26,5 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
    for(const requirement of [...plan.requiredClaims,...plan.requiredMechanisms])if(!requirements.has(requirement.id))throw new Error(`Requirement outside knowledge inventory: ${requirement.id}`);
   }
   return plan;
- }) as TeachingPlanV2;
+ },{signal:options.signal}) as TeachingPlanV2;
 }

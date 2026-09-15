@@ -35,6 +35,17 @@ export const knowledgeGraphSchema=obj({
  evidence:arr(evidence,24)
 });
 
+/** Bounded source slice that never cuts mid-sentence when a boundary exists. */
+export function capAtBoundary(text:string,limit:number):string{
+ if(limit<=0||text.length<=limit)return text;
+ const slice=text.slice(0,limit);
+ const paragraph=slice.lastIndexOf('\n\n');
+ if(paragraph>limit*0.3)return slice.slice(0,paragraph).trimEnd();
+ const sentence=Math.max(slice.lastIndexOf('. '),slice.lastIndexOf('! '),slice.lastIndexOf('? '));
+ if(sentence>limit*0.3)return slice.slice(0,sentence+1).trimEnd();
+ return slice;
+}
+
 export interface KnowledgeInput {prompt:string;sourceText:string;sourceId?:string;language?:string;repairFindings?:string[]}
 
 /** Long documents: one global graph, then bounded chapter windows against shared state. */
@@ -156,9 +167,9 @@ export function selectSourceVisuals(semantic:{id:string;requiredConceptIds:strin
 }
 
 /** The real knowledge-compiler stage: one source-grounded model call, validated deterministically. */
-export async function compileKnowledge(input:KnowledgeInput,model:JsonModel,promptOptions:KnowledgePromptOptions={}):Promise<ConceptGraph>{
+export async function compileKnowledge(input:KnowledgeInput,model:JsonModel,promptOptions:KnowledgePromptOptions={},signal?:AbortSignal):Promise<ConceptGraph>{
  if(!input.sourceText?.trim())throw new Error('Knowledge compilation requires source text');
  const instructions=[knowledgePrompt({language:input.language,repairNotes:input.repairFindings,...promptOptions}),skillInstruction('knowledge-compiler')].filter(Boolean).join(' ');
- const value=await model.generate('knowledge',instructions,{prompt:input.prompt,sourceId:input.sourceId??'source',sourceText:input.sourceText},knowledgeGraphSchema,raw=>validateKnowledge(raw,input.sourceText));
+ const value=await model.generate('knowledge',instructions,{prompt:input.prompt,sourceId:input.sourceId??'source',sourceText:input.sourceText},knowledgeGraphSchema,raw=>validateKnowledge(raw,input.sourceText),{signal});
  return value as ConceptGraph;
 }
