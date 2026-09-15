@@ -103,3 +103,18 @@ test('a cycle candidate is deprioritised when the plan relations cannot close a 
  const open=selectVisualModel(broken,registry,{keepFromPrevious:[],prepareForNext:[]},['cycle','flow']);
  assert.equal(open.candidateArchetypes[0],'flow','a non-closing relation set no longer leads with cycle');
 });
+
+test('spreadExcessIntroductions heals a beat that introduces more than three concepts',async()=>{
+ const {spreadExcessIntroductions}=await import('../dist/src/semantic/planning/teaching-planner.js');
+ const value={scenes:[{key:'s1',beats:[
+  {key:'b1',introduce:['a','b','c','d','e']},
+  {key:'b2',introduce:['f']},
+  {key:'b3',introduce:[]}]}]};
+ spreadExcessIntroductions(value);
+ const beats=value.scenes[0].beats;
+ assert.ok(beats.every(b=>b.introduce.length<=3),'no beat introduces more than three concepts');
+ const all=beats.flatMap(b=>b.introduce).sort();
+ assert.deepEqual(all,['a','b','c','d','e','f'],'every concept is still introduced exactly once');
+ assert.deepEqual(beats[0].introduce,['a','b','c'],'the earliest concepts stay in the first beat');
+ assert.deepEqual(beats[1].introduce,['d','e','f'],'overflow moves into the next beat ahead of its own concepts');
+});
