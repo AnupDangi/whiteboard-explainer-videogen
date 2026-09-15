@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {readFileSync} from 'node:fs';
 import {validateKnowledge,compileKnowledge,chapterWindows,mergeGroundedPlans,knowledgeGraphSchema} from '../dist/src/semantic/planning/knowledge-compiler.js';
-import {conceptGraphFromPlan,stableHash} from '../dist/src/semantic/harness/state.js';
+import {conceptGraphFromPlan,contractsFromScene,stableHash} from '../dist/src/semantic/harness/state.js';
 import {planTeaching} from '../dist/src/semantic/planning/teaching-planner.js';
 import {generateV2} from '../dist/src/semantic/planning/generate.js';
 import {createVoiceEngineSpeech} from '../dist/src/semantic/speech.js';
@@ -100,12 +100,14 @@ const sceneJson=()=>{
  for(const object of value.objects)if(['plant','sunlight','water','carbon_dioxide'].includes(object.id))object.conceptId=object.id;
  return value;
 };
+const architectPayload=(input,planJson)=>({contracts:contractsFromScene(input.scene,planJson,input.learnerState).map((contract,index)=>({beatKey:input.scene.beats[index].id,objective:contract.objective,motivation:contract.motivation,prerequisites:contract.prerequisites,learnerDelta:contract.learnerDelta,strategy:contract.strategy,mechanismIds:contract.mechanismIds,evidenceRefs:contract.evidenceRefs,...(contract.misconception?{misconception:contract.misconception}:{}),...(contract.checkpoint?{checkpoint:{prompt:contract.checkpoint.prompt,expectedUnderstanding:contract.checkpoint.expectedUnderstanding,kind:contract.checkpoint.kind}}:{})}))});
 const groundedModel=(knowledgeJson,planJson)=>({
  calls:[],events:[],
  async generate(stage,_instructions,input,_schema,validate){
   this.calls.push({stage});
   if(stage==='knowledge')return validate(knowledgeJson);
   if(stage==='teaching')return validate(planJson);
+  if(stage==='architect')return validate(architectPayload(input,planJson));
   const s=sceneJson();s.id=input.semanticScene.id;
   return validate({scene:s,decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'plant and inputs',labelsOnly:'labels',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'decoration'}});
  }
@@ -172,8 +174,10 @@ test('long grounded documents plan one global graph with bounded chapter windows
    const callIndex=this.calls.filter(call=>call.stage==='teaching').length;
    const plan=fixturePlan();
    if(callIndex===2){plan.scenes[0].continuity.keepFromPrevious=['plant'];for(const scene of plan.scenes)for(const beat of scene.beats)beat.narrationDraft=`${beat.narrationDraft} Chapter two revisits these inputs from the soil and canopy perspective with fresh worked detail.`;}
+   this._chapterPlan=plan;
    return validate(plan);
   }
+  if(stage==='architect')return validate(architectPayload(input,this._chapterPlan));
   const s=sceneJson();s.id=input.semanticScene.id;
   input.semanticScene.beats.forEach((beat,index)=>{s.beats[index].narration=beat.narrationDraft;});
   if(input.semanticScene.continuity.keepFromPrevious.includes('plant'))for(const beat of s.beats)for(const action of beat.actions)if(action.type==='draw'&&action.objectIds.includes('plant')){action.type='highlight';action.id=`${action.id}_preserved`;}

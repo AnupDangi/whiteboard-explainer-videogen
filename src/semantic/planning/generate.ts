@@ -21,6 +21,7 @@ import {HARNESS_VERSION,type LearnerProfile} from '../harness/contracts.js';
 import type {GateResult,HarnessStage} from '../harness/contracts.js';
 import {renderSVG} from '../renderer/render-svg.js';
 import {compileKnowledge,chapterWindows,mergeGroundedPlans,attachSourceVisuals} from './knowledge-compiler.js';
+import {architectContracts} from './teaching-architect.js';
 import type {TeachingPlanV2} from '../types.js';
 
 export interface StageMetrics {
@@ -95,7 +96,18 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
  const semanticRegistry=new LessonSemanticRegistry(conceptGraph);
  const criticEnabled=(options.criticEnv??process.env).V2_CRITIC==='on'&&Boolean(options.judge);
  const lessonArchitecture=[];let projectedState=structuredClone(learnerState);
- for(const semantic of plan.scenes){const learnerBefore=structuredClone(projectedState);const architect=await harness.execute({resume:options.resume,stage:'teaching-architect',input:{scene:semantic,learnerState:projectedState,conceptGraph},run:()=>contractsFromScene(semantic,plan,projectedState),gate:contracts=>gateTeachingContracts(contracts,projectedState,conceptGraph)});const board=await harness.execute({resume:options.resume,stage:'whiteboard-planner',input:{contracts:architect.output,scene:semantic},run:()=>whiteboardPlanFromContracts(semantic,architect.output),gate:value=>gateWhiteboard(value,semantic)});projectedState=advanceLearnerState(projectedState,architect.output,conceptGraph);lessonArchitecture.push({semantic,learnerBefore,contracts:architect.output,board:board.output});}
+ for(const [sceneIndex,semantic] of plan.scenes.entries()){const learnerBefore=structuredClone(projectedState);
+  const chapter=plan.scenes.length>1?`This scene is part ${sceneIndex+1} of ${plan.scenes.length} of one lesson. Keep canonical identity and terminology stable with the earlier scenes.`:undefined;
+  let architect;
+  if(input.sourceText){
+   const beforeArchitectCalls=model.calls.length;
+   const architectStage=await harness.execute({resume:options.resume,stage:'teaching-architect',input:{scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter},run:()=>architectContracts({scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter},model),repair:async({error,gate})=>{const findings=gate.findings.filter(f=>f.severity==='hard').map(f=>`${f.code}: ${f.message}`);if(!findings.length)throw error;return architectContracts({scene:semantic,learnerState:projectedState,conceptGraph,language:input.language,chapter,repairFindings:findings},model);},gate:contracts=>gateTeachingContracts(contracts,projectedState,conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'teaching-architect',version:HARNESS_VERSION}),skillHash:stableHash('teaching-architect'),usage:()=>{const calls=model.calls.slice(beforeArchitectCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
+   architect={output:architectStage.output};
+  }else{
+   architect=await harness.execute({resume:options.resume,stage:'teaching-architect',input:{scene:semantic,learnerState:projectedState,conceptGraph},run:()=>contractsFromScene(semantic,plan,projectedState),gate:contracts=>gateTeachingContracts(contracts,projectedState,conceptGraph)});
+  }
+  const board=await harness.execute({resume:options.resume,stage:'whiteboard-planner',input:{contracts:architect.output,scene:semantic},run:()=>whiteboardPlanFromContracts(semantic,architect.output),gate:value=>gateWhiteboard(value,semantic)});
+  projectedState=advanceLearnerState(projectedState,architect.output,conceptGraph);lessonArchitecture.push({semantic,learnerBefore,contracts:architect.output,board:board.output});}
  for(const lessonScene of lessonArchitecture){
   options.signal?.throwIfAborted();
   const {semantic,learnerBefore,contracts,board}=lessonScene;

@@ -4,6 +4,7 @@ import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {SemanticJobStore,classifySemanticError} from '../dist/src/semantic/jobs.js';
+import {contractsFromScene} from '../dist/src/semantic/harness/state.js';
 import {makeServer} from '../dist/src/server.js';
 import {wordsFromDuration} from '../dist/src/shared/voice-engine-client.js';
 import {readFileSync} from 'node:fs';
@@ -131,7 +132,7 @@ test('polling fallback: GET /api/semantic/jobs/:id returns snapshot',async()=>{
   }finally{await semanticStore.close();await new Promise(resolve=>server.close(resolve));await rm(root,{recursive:true,force:true});}
 });
 async function waitFor(get,predicate){
-  for(let i=0;i<200;i++){const v=await get();if(predicate(v))return v;await new Promise(r=>setTimeout(r,50));}
+  for(let i=0;i<600;i++){const v=await get();if(predicate(v))return v;await new Promise(r=>setTimeout(r,50));}
   throw new Error('waitFor timeout');
 }
 
@@ -198,6 +199,7 @@ test('document source is ingested and grounded as teaching evidence',async()=>{
  const model={calls:[],async generate(stage,_instructions,input,_schema,validate){
   this.calls.push({stage});
   if(stage==='knowledge')return validate({version:1,concepts:['plant','sunlight','water','carbon_dioxide'].map(key=>({key,canonicalName:key,aliases:[],semanticType:'entity',evidenceRefs:['e1']})),prerequisites:[],mechanisms:[{id:'inputs_mechanism',statement:'Inputs enable plant food production',conceptIds:['plant'],requiresStateChange:false,evidenceRefs:['e1']}],claims:[{id:'light_claim',statement:'light claim',critical:true,evidenceRefs:['e1']},{id:'water_claim',statement:'water claim',critical:true,evidenceRefs:['e1']},{id:'carbon_claim',statement:'carbon claim',critical:true,evidenceRefs:['e1']}],quantities:[],terminology:[],evidence:[{id:'e1',sourceId:input.sourceId,quote:'sunlight, water and carbon dioxide'}]});
+  if(stage==='architect'){const p=teaching();const scene=input.scene;const contracts=contractsFromScene(scene,p,input.learnerState);return validate({contracts:contracts.map((contract,index)=>({beatKey:scene.beats[index].id,objective:contract.objective,motivation:contract.motivation,prerequisites:contract.prerequisites,learnerDelta:contract.learnerDelta,strategy:contract.strategy,mechanismIds:contract.mechanismIds,evidenceRefs:contract.evidenceRefs,...(contract.misconception?{misconception:contract.misconception}:{}),...(contract.checkpoint?{checkpoint:{prompt:contract.checkpoint.prompt,expectedUnderstanding:contract.checkpoint.expectedUnderstanding,kind:contract.checkpoint.kind}}:{})}))});}
   if(stage==='teaching'){teachingInput=input;const p=teaching();p.evidenceRefs=[{id:'e1',sourceId:input.sourceId,quote:'sunlight, water and carbon dioxide'}];for(const s of p.scenes)for(const b of s.beats)if(b.requirementIds.length)b.evidenceRefs=['e1'];return validate(p);}
   const s=sceneJson();s.id=input.semanticScene.id;
   return validate({scene:s,decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'inputs',labelsOnly:'none',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'none'}});

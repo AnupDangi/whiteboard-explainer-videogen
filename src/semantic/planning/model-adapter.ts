@@ -1,7 +1,7 @@
 import {loggedFetch,log} from '../../shared/logger.js';
 import {DEFAULT_FAST_MODEL,loadModelRouter} from '../../shared/model-router.js';
 import {assertSchema,healSchema,type Schema} from '../schemas.js';
-export type Stage='teaching'|'knowledge'|'director';
+export type Stage='teaching'|'knowledge'|'architect'|'director';
 export interface StageCall {stage:Stage;model:string;elapsedMs:number;promptTokens:number;completionTokens:number;costUsd:number;attempt:number}
 export interface StageEvent {
   stage:Stage;

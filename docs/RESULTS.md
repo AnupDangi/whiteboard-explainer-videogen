@@ -1,3 +1,15 @@
+# 2026-09-15 — Phase 3 teaching-architect model stage
+
+- Grounded runs plan pedagogy through a real `architect` model stage per
+  scene: one validated contract per beat (learner delta, objective,
+  prerequisites, strategy, mechanism, misconception, checkpoint, evidence);
+  narration, geometry and unknown fields are schema-forbidden.
+- Prompt-only pipeline unchanged (deterministic projection); grounded jobs
+  chain architect → whiteboard-planner → director with one-attempt repair.
+- Verification: typecheck clean; `npm test` **296/296** (4 new
+  `teaching-architect` tests incl. `eval:prereq-order`); `git diff --check`
+  clean. No live run (rides the knowledge-stage provider route).
+
 # 2026-09-15 — Chapter windows, journal resume, live provider baseline
 
 - Phase 2 long-doc: `chapterWindows` + per-window planning against one global

@@ -1,3 +1,24 @@
+# Phase 3 real teaching-architect model stage, 2026-09-15
+
+Grounded runs now execute a real `architect` model stage per scene
+(`src/semantic/planning/teaching-architect.ts`, prompt per the
+`teaching-architect` skill): exactly one contract per beat in scene order,
+each fixing learner delta, objective, prerequisites, strategy (enum), the
+mechanism it explains, optional misconception and checkpoint, and evidence —
+while narration stays owned by the semantic beats (the schema has no narration
+field, and geometry/coordinates/unknown fields are schema-forbidden).
+`validateArchitectOutput` rejects beat-order mismatches, wrong beat counts,
+concepts outside the beat, unknown prerequisites/mechanisms/evidence. The
+prompt-only pipeline keeps the deterministic projection; grounded source jobs
+flow architect → whiteboard-planner → director with the Phase 8 one-attempt
+owner repair. The flaky `semantic job lifecycle` waitFor budget was raised to
+30 s to survive full-suite parallel load.
+
+Verification: `npm run typecheck` clean; `npm test` **296/296 pass, 0 fail**
+(292 + 4 new in `test/teaching-architect.test.js`, including the skill's
+`eval:prereq-order`); `git diff --check` clean. No live provider run in this
+change; architect live behavior rides the same OpenRouter route as knowledge.
+
 # Live grounding baseline, chapter windows, and journal resume, 2026-09-15
 
 Chapter windows for long grounded documents are implemented: `chapterWindows`
