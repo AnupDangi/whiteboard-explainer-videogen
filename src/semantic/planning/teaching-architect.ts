@@ -5,6 +5,7 @@ import {contractsFromScene} from '../harness/state.js';
 import type {JsonModel} from './model-adapter.js';
 import type {ArchitectPromptOptions} from './prompt-builder.js';
 import {architectPrompt} from './prompt-builder.js';
+import {skillInstruction} from '../skills.js';
 
 /** teaching-architect skill contract. Narration is deliberately absent: the
  *  architect never writes narration, the semantic beats own it. */
@@ -58,7 +59,8 @@ export function validateArchitectOutput(raw:unknown,input:ArchitectStageInput):T
 
 /** Grounded teaching-architect stage: one model call producing validated contracts. */
 export async function architectContracts(input:ArchitectStageInput,model:JsonModel):Promise<TeachingContract[]>{
- const value=await model.generate('architect',architectPrompt({language:input.language,repairNotes:input.repairFindings,chapter:input.chapter}),{scene:input.scene,learnerState:input.learnerState,conceptGraph:{concepts:input.conceptGraph.concepts,aliases:input.conceptGraph.aliases,claims:input.conceptGraph.claims,mechanisms:input.conceptGraph.mechanisms,terminology:input.conceptGraph.terminology}},architectSchema,raw=>validateArchitectOutput(raw,input));
+ const instructions=[architectPrompt({language:input.language,repairNotes:input.repairFindings,chapter:input.chapter}),skillInstruction('teaching-architect')].filter(Boolean).join(' ');
+ const value=await model.generate('architect',instructions,{scene:input.scene,learnerState:input.learnerState,conceptGraph:{concepts:input.conceptGraph.concepts,aliases:input.conceptGraph.aliases,claims:input.conceptGraph.claims,mechanisms:input.conceptGraph.mechanisms,terminology:input.conceptGraph.terminology}},architectSchema,raw=>validateArchitectOutput(raw,input));
  return value as TeachingContract[];
 }
 

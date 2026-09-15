@@ -11,6 +11,7 @@ import type {ConceptIdentity,SemanticScenePlan,VisualSceneV2,CompiledSceneV2} fr
 import type {VisualModel} from './visual-model.js';
 import type {JsonModel} from './model-adapter.js';
 import type {WhiteboardPlan} from '../harness/contracts.js';
+import {skillInstruction} from '../skills.js';
 export interface DirectionDecisions {centralTeachingObject:string;firstFocus:string;illustratedConcepts:string;labelsOnly:string;movingRelations:string;persistentContext:string;stateChanges:string;omit:string}
 const decisionKeys=['centralTeachingObject','firstFocus','illustratedConcepts','labelsOnly','movingRelations','persistentContext','stateChanges','omit'];
 const decisionSchema:Schema={type:'object',additionalProperties:false,required:decisionKeys,properties:Object.fromEntries(decisionKeys.map(k=>[k,{type:'string',minLength:1,maxLength:600}]))};
@@ -53,7 +54,8 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
  const candidates=resolved?.candidates??assetCandidates(scene,registry,mentalModel),allowedAssets=new Set(candidates.flatMap(c=>c.candidates.map(a=>a.id)));
  const fallbackNote=primitiveFallbackNote(candidates.filter(c=>!c.candidates.length&&!c.representation).map(c=>c.conceptId));
  const repairNote=resolved?.repairNotes?.length?`A previous direction failed these visual checks: ${resolved.repairNotes.join('; ')}. Correct exactly those objects, relations, anchors, states or actions and keep narration, beat IDs and concept coverage unchanged.`:'';
- const directed=await model.generate('director',`${directorPrompt({archetype:mentalModel.candidateArchetypes[0],language,whiteboard:Boolean(resolved?.whiteboardPlan)})} ${fallbackNote} ${repairNote}`,{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},schema,value=>{
+ const instructions=[directorPrompt({archetype:mentalModel.candidateArchetypes[0],language,whiteboard:Boolean(resolved?.whiteboardPlan)}),fallbackNote,repairNote,skillInstruction('visual-director')].filter(Boolean).join(' ');
+ const directed=await model.generate('director',instructions,{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},schema,value=>{
   const response=value as {scene?:VisualSceneV2;direction?:unknown;decisions:DirectionDecisions};
   const result={scene:response.scene??directionToScene(response.direction,scene),decisions:response.decisions};
   for(const o of result.scene.objects){
