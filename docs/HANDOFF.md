@@ -35,8 +35,11 @@
   that are not present verbatim in the PDF source (notation differs). Options:
   extend normalization, or snap formula-shaped quotes to the neighbouring
   plain-language sentence per the new prompt rule.
-- Repo: private GitHub repository — URL recorded below once created/published
-  (pending in this session).
+- Repo: published to the existing private repository
+  **https://github.com/AnupDangi/Lamina-Labs-Clone.git** — branch
+  `v4-optimization`, fast-forward `94bb43e..53c591b` (35 commits). No new repo
+  was created because this project's origin already existed; creating a second
+  repo would have split the history. Nothing was overwritten (0 commits behind).
 
 # Tracked multi-video run, 2026-09-15 (afternoon)
 
