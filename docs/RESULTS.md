@@ -1,3 +1,18 @@
+# 2026-09-16 (early) — Offline narrated export proof (Path A)
+
+- Reproduce: `npm run export:example -- --scenes photosynthesis-plant,water-cycle --out output/path-a/one-minute`
+- `output/path-a/one-minute/narrated.mp4`: **68.19 s**, 840 480 bytes, H.264
+  960×540 @12 fps, mono AAC 44.1 kHz; `volumedetect` mean −25.2 dB, max
+  −4.6 dB. Zero provider calls; local voice engine (`supertonic`, voice F3).
+- Per-scene artifacts: `silent.mp4`, `speech.wav`, `narrated.mp4`,
+  `compiled.json`, `manifest.json`, event/fixed SVG+PNG frames.
+- Timing label: compiled with engine timing (`kind:'engine'`) so the frame
+  stamp reads `LOCAL TTS · ESTIMATED WORD TIMING` (the default estimate path
+  labels `ESTIMATED TIMING · SILENT PREVIEW` even with muxed audio).
+- Scope: committed example scenes and estimated word boundaries. This proves
+  compile → local TTS → render → mux → concat, **not** the live planning chain.
+- `npm test` **343/343**; typecheck clean.
+
 # 2026-09-15 (late) — Batch 5: evidence snapping + route cooldown (fixture-verified, live partial)
 
 - Commits `209b24d`, `540a432`. `npm run typecheck` clean; `npm test`

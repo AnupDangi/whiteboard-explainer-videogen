@@ -1,3 +1,37 @@
+# 2026-09-16 (early) handoff — Path A proof: offline narrated export, no model calls
+
+- Purpose: prove the V2 pipeline can produce a real narrated MP4 today while
+  the live LLM contract chain is still failing every job. **Path A makes zero
+  provider calls and needs no API key.**
+- Command (reproducible):
+  `npm run export:example -- --scenes photosynthesis-plant,water-cycle --out output/path-a/one-minute`
+  (new `scripts/export-example-video.ts`; compiles committed example scenes,
+  narrates with the local voice engine, writes per-scene review artifacts via
+  `writeV2Artifacts`, concatenates the narrated segments).
+- Result: `output/path-a/one-minute/narrated.mp4` — **68.19 s, 840 480 bytes,
+  H.264 960×540 @12 fps, mono AAC 44.1 kHz**. Audio is real: `volumedetect`
+  mean −25.2 dB / max −4.6 dB. Frames verified by eye at 5 s, 40 s, 63 s
+  (scenes render, labels complete after the typewriter reveal).
+- Honesty detail fixed while proving it: the frame stamp is driven by
+  `scene.timing.kind`. Compiling with the engine timing
+  (`wordsFromDuration`, kind `engine`) makes it read
+  `LOCAL TTS · ESTIMATED WORD TIMING`; the default estimate path reads
+  `ESTIMATED TIMING · SILENT PREVIEW` even when audio is muxed.
+- Limitations: committed **example** scenes (not model-generated), local
+  voice-engine narration with estimated word boundaries, 68 s (the example set
+  has no exact 60 s single scene), and Path A bypasses the LLM gates entirely —
+  it proves rendering/TTS/export, **not** that the live planning chain works.
+- Verification: `npm test` **343/343**; `npm run typecheck` clean; `ffprobe`
+  and `volumedetect` output recorded above.
+- Next bounded task (Path B, unchanged blocker list): (1) add the
+  state-mechanism rule to the teaching prompt
+  (`requiresStateChange` mechanisms must be transformed on screen),
+  (2) launch runs in a **new session** so aborting a terminal command no longer
+  kills the job (`nohup`/`disown` was not enough — the process group still got
+  the signal; use a detached launcher), (3) split the 12 validators into
+  hard-correctness vs advisory-with-deterministic-heals so quality gates stop
+  failing whole jobs.
+
 # 2026-09-15 (late) handoff — batch 5: cross-window evidence, math normalization, route cooldown
 
 - Commits `209b24d`, `540a432`, `6b31407`. Working tree was left dirty after
