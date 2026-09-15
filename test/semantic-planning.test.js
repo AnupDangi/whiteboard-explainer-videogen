@@ -77,3 +77,12 @@ test('teaching rejects a scene whose concepts cannot fit any candidate archetype
  const accepted=await planTeaching({...input,allowedArchetypes:['cycle']},model2);
  assert.equal(accepted.scenes[0].requiredConceptIds.length,6);
 });
+
+test('archetype selection prefers a family that can hold the scene concept count',async()=>{
+ const scene={...plan().scenes[0],candidateArchetypes:['cycle','flow'],requiredConceptIds:['plant','sunlight','water','carbon_dioxide','extra1','extra2','extra3']};
+ const registry=[...plan().conceptRegistry,...['extra1','extra2','extra3'].map(id=>({id,canonicalName:id,aliases:[],semanticType:'entity'}))];
+ const model=selectVisualModel(scene,registry,{keepFromPrevious:[],prepareForNext:[]},['cycle','flow']);
+ assert.equal(model.candidateArchetypes[0],'flow','flow (2-8) precedes cycle (3-6) for seven concepts');
+ const small=selectVisualModel({...scene,requiredConceptIds:['plant','sunlight','water']},registry,{keepFromPrevious:[],prepareForNext:[]},['cycle','flow']);
+ assert.equal(small.candidateArchetypes[0],'cycle','cycle stays first when it fits');
+});

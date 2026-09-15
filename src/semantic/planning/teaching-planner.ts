@@ -5,16 +5,12 @@ import {validateTeachingPlan} from './validate.js';
 import {log} from '../../shared/logger.js';
 import {evidenceSupported,snapQuoteToSource} from './knowledge-compiler.js';
 import {teachingPrompt} from './prompt-builder.js';
+import {archetypeFits} from '../compiler/archetypes.js';
 import type {TeachingPlanV2,VisualArchetype} from '../types.js';
 import type {JsonModel} from './model-adapter.js';
 import type {SourceFigure} from '../../shared/types.js';
 import type {ConceptGraph} from '../harness/contracts.js';
 export interface TeachingInput {prompt:string;sourceText?:string;sourceId?:string;evidenceScope?:string;sourceFigures?:SourceFigure[];maxScenes?:number;allowedArchetypes:VisualArchetype[];language?:string;targetMinutes?:number;groundingPolicy?:'source-only'|'source-plus-verified'}
-/** Primary-representation bounds each archetype compiler enforces (see
- *  compiler/archetypes.ts). A plan whose scene cannot fit any of its candidate
- *  archetypes is guaranteed to fail the visual director, so it is rejected at
- *  the teaching layer where the owner can repair it. */
-const ARCHETYPE_CAPACITY:Partial<Record<VisualArchetype,[number,number]>>={flow:[2,8],cycle:[3,6],transformation:[2,4],comparison:[2,4],numbered_steps:[2,7],equation_walkthrough:[2,6],matrix_operation:[3,6],branch:[2,10],cause_effect:[2,10],state_machine:[2,10],hierarchy:[2,12],timeline:[2,6],trajectory:[3,6]};
 export async function planTeaching(input:TeachingInput,model:JsonModel,options:{repairFindings?:string[];conceptGraph?:ConceptGraph;chapter?:{index:number;count:number;priorConcepts:string[];maxScenes:number};signal?:AbortSignal}={}):Promise<TeachingPlanV2>{
  if(!input.prompt.trim()||input.prompt.length>4000||(input.sourceText?.length??0)>120000)throw new Error('V2 prompt/source bounds exceeded');
  const maxScenes=options.chapter?.maxScenes??input.maxScenes??1;if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>24)throw new Error('V2 scene limit must be 1–24');
@@ -25,7 +21,7 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   const {plan}=validateTeachingPlan(teachingIntentToPlan(value),new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
   for(const s of plan.scenes)if(s.candidateArchetypes.some(a=>!input.allowedArchetypes.includes(a)))throw new Error('Unavailable archetype');
   for(const s of plan.scenes){
-   const fits=s.candidateArchetypes.some(a=>{const capacity=ARCHETYPE_CAPACITY[a];return !capacity||(s.requiredConceptIds.length>=capacity[0]&&s.requiredConceptIds.length<=capacity[1]);});
+   const fits=s.candidateArchetypes.some(a=>archetypeFits(a,s.requiredConceptIds.length));
    if(!fits)throw new Error(`Scene ${s.id} requires ${s.requiredConceptIds.length} primary concepts, which no candidate archetype (${s.candidateArchetypes.join('/')}) can represent; merge or split concepts`);
   }
   if(input.sourceText){
