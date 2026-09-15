@@ -99,9 +99,22 @@ export function chapterWindows(sourceText:string,maxChars=12000):ChapterWindow[]
   if(buffer&&(buffer+'\n\n'+paragraph).length>maxChars)push();
   buffer=buffer?`${buffer}\n\n${paragraph}`:paragraph;
  }
- push();
- return windows.length?windows:[{id:'chapter:1',index:1,text:sourceText}];
+  push();
+  return windows.length?windows:[{id:'chapter:1',index:1,text:sourceText}];
 }
+
+/** Bounds how much of a long document is planned: a short lesson must not pay
+ *  for windows whose scenes will be discarded by the scene cap. Windows are
+ *  chosen by prompt-term relevance (ties keep document order) so a narrow
+ *  requested topic is not replaced by the document's opening pages. */
+export function selectRelevantWindows(windows:ChapterWindow[],prompt:string,budget:number):ChapterWindow[]{
+ if(budget>=windows.length)return windows;
+ const terms=[...new Set((prompt.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}-]{3,}/gu)??[]))];
+ const scored=windows.map((window,index)=>({window,index,score:terms.reduce((total,term)=>total+(window.text.toLowerCase().includes(term)?1:0),0)}));
+ scored.sort((a,b)=>b.score-a.score||a.index-b.index);
+ return scored.slice(0,Math.max(1,budget)).sort((a,b)=>a.index-b.index).map(entry=>entry.window);
+}
+
 
 /** Deterministic union of per-window plans. Identical requirement/evidence meaning keeps one id;
  *  a colliding id with different meaning renames with a chapter suffix. */

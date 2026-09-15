@@ -21,7 +21,7 @@ import {gateBoardAlignment,gateCompiled,gateConceptGraph,gateLesson,gateTeaching
 import {HARNESS_VERSION,type LearnerProfile} from '../harness/contracts.js';
 import type {GateResult,HarnessStage} from '../harness/contracts.js';
 import {renderSVG} from '../renderer/render-svg.js';
-import {compileKnowledge,chapterWindows,mergeGroundedPlans,mergeConceptGraphs,attachSourceVisuals,selectSourceVisuals,capAtBoundary} from './knowledge-compiler.js';
+import {compileKnowledge,chapterWindows,mergeGroundedPlans,mergeConceptGraphs,attachSourceVisuals,selectSourceVisuals,capAtBoundary,selectRelevantWindows} from './knowledge-compiler.js';
 import {architectContracts} from './teaching-architect.js';
 import {narratedSpeech} from '../semantic-timing.js';
 import {skillContract,skillDoc} from '../skills.js';
@@ -84,16 +84,20 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
      if(knowledgeText.length<input.sourceText.length)log('v2.knowledge.source-capped',{chars:knowledgeText.length,total:input.sourceText.length});
      // One global graph from bounded windows so the whole document is covered
      // while each provider call stays inside a latency-safe prompt size.
-     const knowledgeWindowChars=Number(env?.V2_KNOWLEDGE_WINDOW_CHARS??40000);
-     const knowledgeWindows=chapterWindows(knowledgeText,knowledgeWindowChars);
-     const graphs:ConceptGraph[]=[];
-     for(const [index,window] of knowledgeWindows.entries()){
-      signal?.throwIfAborted();
-      log('v2.knowledge.window',{index:index+1,count:knowledgeWindows.length,chars:window.text.length});
-      graphs.push(await compileKnowledge({prompt:input.prompt,sourceText:window.text,evidenceScope:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model,{},signal));
-     }
-     const graph=attachSourceVisuals(graphs.length>1?mergeConceptGraphs(graphs):graphs[0],input.sourceFigures,input.sourceId);
-     const windows=chapterWindows(knowledgeText);
+      const knowledgeWindowChars=Number(env?.V2_KNOWLEDGE_WINDOW_CHARS??40000);
+      const knowledgeWindows=chapterWindows(knowledgeText,knowledgeWindowChars);
+      const sceneBudget=input.maxScenes??1;
+      const selectedKnowledgeWindows=selectRelevantWindows(knowledgeWindows,input.prompt,Math.max(1,Math.min(knowledgeWindows.length,sceneBudget)));
+      if(selectedKnowledgeWindows.length<knowledgeWindows.length)log('v2.knowledge.window-budget',{planned:knowledgeWindows.length,kept:selectedKnowledgeWindows.length,maxScenes:input.maxScenes??1});
+      const graphs:ConceptGraph[]=[];
+      for(const [index,window] of selectedKnowledgeWindows.entries()){
+       signal?.throwIfAborted();
+       log('v2.knowledge.window',{index:index+1,count:selectedKnowledgeWindows.length,chars:window.text.length});
+       graphs.push(await compileKnowledge({prompt:input.prompt,sourceText:window.text,evidenceScope:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model,{},signal));
+      }
+      const graph=attachSourceVisuals(graphs.length>1?mergeConceptGraphs(graphs):graphs[0],input.sourceFigures,input.sourceId);
+      const teachingWindows=chapterWindows(knowledgeText);
+      const windows=selectRelevantWindows(teachingWindows,input.prompt,Math.max(1,Math.min(teachingWindows.length,sceneBudget)));
      const perWindow=Math.max(1,Math.floor((input.maxScenes??1)/windows.length));
      const planned:TeachingPlanV2[]=[];let prior:string[]=[];
      for(const [index,window] of windows.entries()){

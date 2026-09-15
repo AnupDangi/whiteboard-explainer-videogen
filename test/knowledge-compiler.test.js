@@ -193,9 +193,9 @@ test('long grounded documents plan one global graph with bounded chapter windows
  }};
  const results=[];
  for await(const result of generateV2({prompt:'Teach the full report',sourceText:source,sourceId:'src_test',allowedArchetypes:['structural_diagram','convergence'],maxScenes:2},model))results.push(result);
- assert.equal(results.length,2);assert.ok(results.every(result=>result.manifest.status==='PASS'));
- const teachingCalls=model.calls.filter(call=>call.stage==='teaching');
- assert.equal(teachingCalls.length,2);
+  assert.equal(results.length,2);assert.ok(results.every(result=>result.manifest.status==='PASS'));
+  const teachingCalls=model.calls.filter(call=>call.stage==='teaching');
+  assert.equal(teachingCalls.length,2,'a two-scene lesson plans two bounded chapter windows, not one per document window');
  const plan=results[0].plan;
  assert.equal(plan.scenes.length,2);
  assert.equal(new Set(plan.scenes.map(scene=>scene.id)).size,plan.scenes.length);
@@ -325,4 +325,18 @@ test('evidenceSupported accepts quotes through PDF whitespace-collapse artifacts
  assert.ok(evidenceSupported(source,quote),'kerned extraction with dropped spaces still supports the verbatim quote');
  assert.ok(!evidenceSupported(source,'DSpark renders drafts on a GPU cluster.'),'paraphrase stays rejected');
  assert.ok(!evidenceSupported('graph ranking and layered layout','rankin gand'),'short quotes cannot cross word boundaries');
+});
+
+test('selectRelevantWindows keeps a short lesson on the requested topic and inside its window budget',async()=>{
+ const {chapterWindows,selectRelevantWindows}=await import('../dist/src/semantic/planning/knowledge-compiler.js');
+ const source=['Introduction and acknowledgements.','The KV cache dominates long-context serving memory.','Causal encoder-decoder reduces prefill cost.','Unrelated appendix about fonts.'].join('\n\n');
+ const windows=chapterWindows(source,40);
+ assert.ok(windows.length>=3,'source splits into several windows');
+ const chosen=selectRelevantWindows(windows,'how the KV cache dominates long-context serving',2);
+ assert.equal(chosen.length,2,'budget bounds the window count');
+ const joined=chosen.map(window=>window.text).join(' ');
+ assert.match(joined,/KV cache dominates/,'the prompt-relevant window is selected');
+ const single=selectRelevantWindows(windows,'how the KV cache dominates long-context serving',1);
+ assert.equal(single.length,1,'budget of one yields one window');
+ assert.match(single[0].text,/KV cache dominates/,'the single window is the most prompt-relevant one');
 });
