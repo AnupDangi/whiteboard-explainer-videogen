@@ -18,12 +18,15 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  if(!supportedArchetype(scene.archetype))throw new Error(`Archetype not implemented: ${scene.archetype}`);
  if(['structural_diagram','convergence'].includes(scene.archetype)&&scene.objects.filter(o=>o.role==='hero').length!==1)throw new Error('Structural composition requires exactly one hero');
  const placements=archetypePlacements(scene);
+ /** Eight distinct non-centre zones keep a hero plus up to eight unplaced
+  *  supports from stacking two objects on the same rect. */
+ const SUPPORT_ZONES:LayoutZone[]=['upper_left','upper_right','lower_left','lower_right','left','right','top','bottom'];
  const objects:CompiledObject[]=[],remaining=[...scene.objects];let support=0;
  while(remaining.length){const index=remaining.findIndex(o=>!o.parentId||objects.some(p=>p.id===o.parentId));if(index<0)throw new Error('Unresolved parent');const o=remaining.splice(index,1)[0];
   const asset=o.assetRef?getAsset(o.assetRef):undefined;if(asset&&!asset.archetypes.includes(scene.archetype))throw new Error(`Asset incompatible with archetype: ${o.id}`);
   if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!['before','after'].includes(state)&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
-  const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',w=hero?330:labelOnly?250:132,h=hero?440:labelOnly?44:132;
-  const zone=o.preferredZone??(hero?'center':(['upper_left','upper_right','lower_left','lower_right'] as LayoutZone[])[support++%4]);
+  const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(scene.archetype),w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;
+  const zone=o.preferredZone??(hero?'center':SUPPORT_ZONES[support++%SUPPORT_ZONES.length]);
   let rect=placements.get(o.id)??zoneRect(zone,w,h);const parent=o.parentId?objects.find(p=>p.id===o.parentId):undefined;
   if(parent){const cw=Math.min(w,parent.w*.4),ch=Math.min(h,parent.h*.35);const px=zone.includes('left')?.2:zone.includes('right')?.8:.5,py=zone.includes('upper')?.2:zone.includes('lower')?.54:.5;rect={x:parent.x+(parent.w-cw)*px,y:parent.y+(parent.h-ch)*py,w:cw,h:ch};if(o.collisionPolicy==='touch')rect.x=parent.x+parent.w;}
   const old=scene.continuity.keepFromPrevious.includes(o.id)?previous?.objects.find(x=>x.id===o.id):undefined;
