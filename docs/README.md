@@ -19,6 +19,8 @@ Supporting evidence / plans:
 - `PERFORMANCE_ANALYSIS.md` — measured latency/cost, model-router and
   parallelism plan.
 - `SOURCE_INTELLIGENCE_PLAN.md` — LD1–LD8 source-intelligence program.
+- `ICON_SYSTEM_PLAN.md` — dynamic representation & external icon subsystem
+  integration plan (proposal, not implemented).
 - `REVIEW_CORPUS.md` — fixed review corpus.
 - `OPTIMIZATION_PLAN.md` — original V2 roadmap; Phases B–H never implemented.
 - `VIDEO_QUALITY_REVIEW.md` — 2026-09-09 quality review.
