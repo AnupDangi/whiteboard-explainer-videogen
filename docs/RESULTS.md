@@ -1,3 +1,11 @@
+# 2026-09-15 — Full check pass
+
+- Cold-build suite **311/311**, typecheck clean, diff-check clean.
+- Phase audit: all plan phases verified in code; skill-contract gap fixed
+  (content-hashed envelopes + Hard-invariant instructions, non-executable).
+- Live: resume replayed 5 grounded stages at 0 ms again ($0.012); director
+  hung 2x150 s — provider latency wall. Today's spend ~$0.57.
+
 # 2026-09-15 — Phase 10 local completion
 
 - Comprehension protocol: fixed factual/mechanism/transfer questions on all

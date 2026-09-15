@@ -1,3 +1,30 @@
+# Full check pass, 2026-09-15
+
+Cold-build verification from the working tree: `git status` clean of code
+changes, 10 functional commits on top of `26658c0`, `npm run typecheck`
+clean, `npm test` **311/311 pass, 0 fail** (two runs; one `semantic job
+lifecycle` flake under parallel load passed on rerun and in isolation),
+`git diff --check` clean, renderer purity spot-check clean (no wall-clock
+state in `render-svg.ts`), `VISUAL_PIPELINE` default `explainer` confirmed.
+
+Phase-by-phase code audit against `PLAN_TO_IMPLEMENT.md`: Phases 0-10
+verified in code (kernel contracts, knowledge compiler, architect stage,
+board alignment, resolver chain + synthesis validation, director/compiler
+boundary, per-segment TTS, repair routing, job gating + resume, eval corpus
++ comprehension protocol + migration gates). One audit finding fixed this
+pass: local skills were documentation only. `skillContract` now compiles
+each skill's `SKILL.md` into a versioned stage contract - its exact content
+hash lands in stage envelopes and its Hard invariants are appended as
+non-executable prose to the knowledge-compiler, teaching-architect and
+visual-director instructions, with drift pinned by tests.
+
+Final live check of the day: resume replayed the five completed grounded
+stages at 0 ms ($0.012 total, one call) and the director hung both 150 s
+attempts inside its 300 s budget - the same provider latency wall, not a
+code failure. Today's provider spend ~$0.57. The system is ready for the
+48x3 narrated benchmark and the machine-evaluated migration gates as soon
+as OpenRouter routes answer within the 150 s request timeout.
+
 # Phase 10 local completion: comprehension protocol, long-form case, migration gates, 2026-09-15
 
 - Comprehension protocol fixtures (plan Phase 10): every smoke case plus the
