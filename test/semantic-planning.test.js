@@ -52,3 +52,13 @@ test('V2 route health retries models that hung to the request timeout last',asyn
  assert.equal(sequence.at(-1),'test/c');
  void second;
 });
+
+test('V2 teaching evidence validates against the full source scope, not the chapter window',async()=>{
+ const scope='Leaves capture sunlight.\nRoots absorb water from the soil.';
+ const withEvidence=(quote,id='evidence')=>{const build=()=>{const p=intent();p.evidenceRefs=[{id,sourceId:'source',quote}];p.scenes[0].beats.forEach(beat=>beat.evidenceRefs=[id]);return p;};return {generate:async(_s,_i,_inp,_schema,validate)=>validate(build())};};
+ const plan=await planTeaching({...input,sourceText:'Leaves capture sunlight.',evidenceScope:scope,sourceId:'source'},withEvidence('Roots absorb water from the soil.'));
+ assert.ok(scope.includes(plan.evidenceRefs[0].quote),'evidence from another chapter window is accepted');
+ const snapped=await planTeaching({...input,sourceText:'Leaves capture sunlight.',evidenceScope:scope,sourceId:'source'},withEvidence('Plant roots take up water from the soil.'));
+ assert.ok(scope.includes(snapped.evidenceRefs[0].quote),'mild paraphrase snaps to real source text');
+ await assert.rejects(planTeaching({...input,sourceText:'Leaves capture sunlight.',evidenceScope:scope,sourceId:'source'},withEvidence('Quantum tunnelling explains gravity.')),/Fabricated evidence/);
+});

@@ -2,12 +2,14 @@ import {teachingIntentSchema} from '../identity/runtime-schemas.js';
 import {teachingIntentToPlan} from '../identity/intent-adapter.js';
 import {teachingPlanSchema} from '../schemas.js';
 import {validateTeachingPlan} from './validate.js';
+import {log} from '../../shared/logger.js';
+import {evidenceSupported,snapQuoteToSource} from './knowledge-compiler.js';
 import {teachingPrompt} from './prompt-builder.js';
 import type {TeachingPlanV2,VisualArchetype} from '../types.js';
 import type {JsonModel} from './model-adapter.js';
 import type {SourceFigure} from '../../shared/types.js';
 import type {ConceptGraph} from '../harness/contracts.js';
-export interface TeachingInput {prompt:string;sourceText?:string;sourceId?:string;sourceFigures?:SourceFigure[];maxScenes?:number;allowedArchetypes:VisualArchetype[];language?:string;targetMinutes?:number;groundingPolicy?:'source-only'|'source-plus-verified'}
+export interface TeachingInput {prompt:string;sourceText?:string;sourceId?:string;evidenceScope?:string;sourceFigures?:SourceFigure[];maxScenes?:number;allowedArchetypes:VisualArchetype[];language?:string;targetMinutes?:number;groundingPolicy?:'source-only'|'source-plus-verified'}
 export async function planTeaching(input:TeachingInput,model:JsonModel,options:{repairFindings?:string[];conceptGraph?:ConceptGraph;chapter?:{index:number;count:number;priorConcepts:string[];maxScenes:number};signal?:AbortSignal}={}):Promise<TeachingPlanV2>{
  if(!input.prompt.trim()||input.prompt.length>4000||(input.sourceText?.length??0)>120000)throw new Error('V2 prompt/source bounds exceeded');
  const maxScenes=options.chapter?.maxScenes??input.maxScenes??1;if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>24)throw new Error('V2 scene limit must be 1–24');
@@ -17,9 +19,19 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
  return await model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes:options.repairFindings,knowledge,chapter}),input,teachingIntentSchema,value=>{
   const {plan}=validateTeachingPlan(teachingIntentToPlan(value),new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
   for(const s of plan.scenes)if(s.candidateArchetypes.some(a=>!input.allowedArchetypes.includes(a)))throw new Error('Unavailable archetype');
-  if(input.sourceText){for(const e of plan.evidenceRefs)if(e.sourceId!==(input.sourceId??'source')||!input.sourceText.includes(e.quote))throw new Error(`Fabricated evidence: ${e.id}`);if(!plan.evidenceRefs.length)throw new Error('Source-grounded plan requires evidence');}else if(plan.evidenceRefs.length)throw new Error('Prompt-only plan cannot invent evidence');
+  if(input.sourceText){
+   const scope=input.evidenceScope??input.sourceText;
+   for(const e of plan.evidenceRefs){
+    if(e.sourceId!==(input.sourceId??'source'))throw new Error(`Fabricated evidence: ${e.id}`);
+    if(evidenceSupported(scope,e.quote))continue;
+    const snapped=snapQuoteToSource(scope,e.quote);
+    if(!snapped)throw new Error(`Fabricated evidence: ${e.id}`);
+    log('v2.evidence.snapped',{id:e.id,stage:'teaching',paraphrase:e.quote.slice(0,80),source:snapped.slice(0,80)});e.quote=snapped;
+   }
+   if(!plan.evidenceRefs.length)throw new Error('Source-grounded plan requires evidence');
+  }else if(plan.evidenceRefs.length)throw new Error('Prompt-only plan cannot invent evidence');
   if(graph){
-   const keys=new Set(graph.concepts.map(c=>c.id)),evidenceIds=new Set(graph.evidence.map(e=>e.id)),requirements=new Set([...graph.claims.map(c=>c.id),...graph.mechanisms.map(m=>m.id)]);
+   const keys=new Set(graph.concepts.map(c=>c.id)),evidenceIds=new Set([...graph.evidence.map(e=>e.id),...graph.sourceVisuals.map(v=>v.id)]),requirements=new Set([...graph.claims.map(c=>c.id),...graph.mechanisms.map(m=>m.id)]);
    for(const c of plan.conceptRegistry)if(!keys.has(c.id))throw new Error(`Concept outside knowledge inventory: ${c.id}`);
    for(const e of plan.evidenceRefs)if(!evidenceIds.has(e.id))throw new Error(`Evidence outside knowledge inventory: ${e.id}`);
    for(const scene of plan.scenes)for(const conceptId of scene.requiredConceptIds)if(!keys.has(conceptId))throw new Error(`Required concept outside knowledge inventory: ${conceptId}`);

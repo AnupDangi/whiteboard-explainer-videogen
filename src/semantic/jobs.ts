@@ -59,12 +59,13 @@ export class SemanticJobStore {
     if(options.source){
       if(sourceText!==undefined)throw new Error('Provide source or sourceText, not both');
       const doc=await ingestSource(options.source,controller.signal);
-      sourceText=doc.text.length>120000?doc.text.slice(0,120000).replace(/\s+\S*$/,''):doc.text;
+      const sourceMax=Number(process.env?.V2_SOURCE_MAX_CHARS??200000);
+sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*$/,''):doc.text;
       sourceId=`src_${doc.sha256.slice(0,28)}`;
       sourceFigures=doc.figures;
-      if(doc.text.length>120000)log('semantic-job.source-truncated',{chars:doc.text.length,kept:sourceText.length});
+      if(doc.text.length>sourceText.length)log('semantic-job.source-truncated',{chars:doc.text.length,kept:sourceText.length});
     }
-    if(!options.prompt?.trim()||options.prompt.length>4000||(sourceText?.length??0)>120000)throw new Error('V2 prompt/source bounds exceeded');
+    if(!options.prompt?.trim()||options.prompt.length>4000||(sourceText?.length??0)>200000)throw new Error('V2 prompt/source bounds exceeded');
     const maxScenes=options.maxScenes??Math.min(24,Math.max(1,Math.ceil((options.targetMinutes??.5)*2)));if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>24)throw new Error('V2 scene limit must be 1–24');
     if(!Array.isArray(options.allowedArchetypes)||!options.allowedArchetypes.length||options.allowedArchetypes.some(a=>!ARCHETYPE_PATTERN.test(a)))throw new Error('allowedArchetypes required');
     if(typeof options.narration!=='boolean')throw new Error('Invalid narration option');

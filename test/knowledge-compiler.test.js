@@ -245,3 +245,64 @@ test('route exhaustion surfaces the earlier validation error, not the later time
  await assert.rejects(()=>model.generate('knowledge','x',{},schema,v=>v),/validation exhausted: .*additional property|validation exhausted:/);
  assert.deepEqual(asked,['test/a','test/b','test/c']);
 });
+
+test('evidence matching tolerates whitespace and unicode punctuation but not paraphrase',async()=>{
+ const {evidenceSupported}=await import('../dist/src/semantic/planning/knowledge-compiler.js');
+ const source='The plant captures sunlight. Roots absorb\nwater from the soil.';
+ assert.equal(evidenceSupported(source,'Roots absorb  water from the soil.'),true);
+ assert.equal(evidenceSupported(source,'Roots absorb water from the soil.'),true);
+ assert.equal(evidenceSupported('He said \u201Chello\u201D today.','He said "hello" today.'),true);
+ assert.equal(evidenceSupported('Water\u00A0flows up.','Water flows up.'),true);
+ assert.equal(evidenceSupported('The plant uses light.','Plants convert light energy into sugar.'),false);
+});
+
+test('mergeConceptGraphs unions window graphs, renaming colliding evidence ids and deduping meaning',async()=>{
+ const {mergeConceptGraphs}=await import('../dist/src/semantic/planning/knowledge-compiler.js');
+ const base=validKnowledge();
+ const first=validateKnowledge(base,SOURCE);
+ const second=structuredClone(first);
+ second.evidence=second.evidence.map(item=>({...item,quote:`${item.quote} Additionally, roots reach deeper.`}));
+ second.concepts=second.concepts.map(concept=>({...concept,id:`${concept.id}_w2`,canonicalName:`${concept.canonicalName} Two`}));
+ const merged=mergeConceptGraphs([first,second]);
+ assert.ok(merged.concepts.length>first.concepts.length,'window concepts union');
+ const evidenceIds=[...new Set(merged.evidence.map(item=>item.id))];
+ assert.equal(evidenceIds.length,merged.evidence.length,'evidence ids stay unique across windows');
+ assert.ok(merged.evidence.some(item=>item.id.endsWith('_w2')),'colliding evidence ids rename with the window suffix');
+ assert.ok(merged.claims.length>=first.claims.length);
+ assert.ok(merged.quantities.length>0);
+});
+
+test('compileKnowledge validates evidence against the full scope, not the prompt window',async()=>{
+ const farQuote='A distant section states that CSA2 reuses global KV cache across layers.';
+ const payload=structuredClone(validKnowledge());
+ payload.evidence=[...payload.evidence,{id:'ev_far',sourceId:'src',quote:farQuote}];
+ const model={generate:async(_task,_instructions,_options,_schema,validate)=>validate(structuredClone(payload))};
+ const compiled=await compileKnowledge({prompt:'topic',sourceText:'Leaves capture sunlight.',evidenceScope:`${SOURCE}\n${farQuote}`,sourceId:'src'},model);
+ assert.ok(compiled.evidence.some(item=>item.quote===farQuote),'quote from outside the prompt window still validates');
+ await assert.rejects(()=>compileKnowledge({prompt:'topic',sourceText:'Leaves capture sunlight.',evidenceScope:'Leaves capture sunlight.',sourceId:'src'},model),/Fabricated evidence/);
+});
+
+test('snapQuoteToSource replaces a paraphrase with the exact source sentence and rejects unrelated text',async()=>{
+ const {snapQuoteToSource}=await import('../dist/src/semantic/planning/knowledge-compiler.js');
+ const source='Compressed Sparse Attention 2 (CSA2), which applies cross-layer reuse to global KV and Top-K indices to substantially reduce decoding cost. The benchmark uses FP4 KV caching.';
+ const snapped=snapQuoteToSource(source,'CSA2 combines cross-layer KV cache reuse in Compressed Sparse Attention 2 (CSA2)');
+ assert.ok(snapped&&source.includes(snapped),'snapped quote is copied verbatim from the source');
+ assert.equal(snapQuoteToSource(source,'Bananas ripen faster in humid weather.'),null);
+});
+
+test('validateKnowledge snaps paraphrased evidence and keeps unrelated evidence failing',async()=>{
+ const source='Plants make food using sunlight, water and carbon dioxide. Leaves capture sunlight for energy. Roots absorb water from the soil.';
+ const payload=validKnowledge();
+ payload.evidence=[{id:'ev_paraphrase',sourceId:'src',quote:'Plants make their food using water, sunlight and carbon dioxide.'}];
+ payload.claims=payload.claims.map(claim=>({...claim,evidenceRefs:['ev_paraphrase']}));
+ payload.concepts=payload.concepts.map(concept=>({...concept,evidenceRefs:['ev_paraphrase']}));
+ payload.quantities=[];
+ payload.mechanisms=payload.mechanisms.map(mechanism=>({...mechanism,evidenceRefs:['ev_paraphrase']}));
+ const healed=validateKnowledge(structuredClone(payload),source);
+ assert.ok(source.includes(healed.evidence[0].quote),'paraphrase replaced by a real source sentence');
+ const broken=structuredClone(payload);broken.evidence=[{id:'ev_bad',sourceId:'src',quote:'Quantum tunnelling explains gravity.'}];
+ broken.claims=broken.claims.map(claim=>({...claim,evidenceRefs:['ev_bad']}));
+ broken.concepts=broken.concepts.map(concept=>({...concept,evidenceRefs:['ev_bad']}));
+ broken.mechanisms=broken.mechanisms.map(mechanism=>({...mechanism,evidenceRefs:['ev_bad']}));
+ assert.throws(()=>validateKnowledge(broken,source),/Fabricated evidence: ev_bad/);
+});

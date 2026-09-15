@@ -35,6 +35,31 @@ export const knowledgeGraphSchema=obj({
  evidence:arr(evidence,24)
 });
 
+const evidenceTokens=(text:string):string[]=>normalizeEvidence(text).toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._-]*/gu)??[];
+/** Nearest source sentence that covers most of a paraphrase. Never invents text:
+ *  the replacement is copied character-for-character from the source. */
+export function snapQuoteToSource(sourceText:string,quote:string):string|null{
+ const quoteTokens=evidenceTokens(quote);
+ if(quoteTokens.length<3)return null;
+ const unique=new Set(quoteTokens);
+ const sentences=normalizeEvidence(sourceText).split(/(?<=[.!?;])\s+/);
+ const frequencies=new Map<string,number>();
+ for(const token of evidenceTokens(sourceText))frequencies.set(token,(frequencies.get(token)??0)+1);
+ let best:{sentence:string;score:number;distinctive:boolean}|null=null;
+ for(const sentence of sentences){
+  if(sentence.length>Math.max(400,quote.length*3))continue;
+  const sentenceTokens=new Set(evidenceTokens(sentence));
+  let hit=0;for(const token of unique)if(sentenceTokens.has(token))hit+=1;
+  const score=hit/unique.size;
+  const distinctive=[...unique].some(token=>sentenceTokens.has(token)&&(frequencies.get(token)??0)<=5);
+  if(score>=0.6&&distinctive&&(!best||score>best.score))best={sentence,score,distinctive};
+ }
+ return best?best.sentence:null;
+}
+/** Whitespace/unicode-normalized form for verbatim-quote matching. */
+const normalizeEvidence=(text:string)=>text.replace(/[\u2018\u2019\u201A\u201B]/g,"'").replace(/[\u201C\u201D\u201E]/g,'"').replace(/[\u2013\u2014]/g,'-').replace(/\u2026/g,'...').replace(/\u00A0/g,' ').replace(/[\u2217\u22C5\u00B7\u2219]/g,'*').replace(/[\u2212\u2010\u2011]/g,'-').replace(/\u2264/g,'<=').replace(/\u2265/g,'>=').replace(/\s+/g,' ').trim();
+export const evidenceSupported=(sourceText:string,quote:string):boolean=>sourceText.includes(quote)||normalizeEvidence(sourceText).includes(normalizeEvidence(quote));
+
 /** Bounded source slice that never cuts mid-sentence when a boundary exists. */
 export function capAtBoundary(text:string,limit:number):string{
  if(limit<=0||text.length<=limit)return text;
@@ -46,7 +71,7 @@ export function capAtBoundary(text:string,limit:number):string{
  return slice;
 }
 
-export interface KnowledgeInput {prompt:string;sourceText:string;sourceId?:string;language?:string;repairFindings?:string[]}
+export interface KnowledgeInput {prompt:string;sourceText:string;sourceId?:string;language?:string;repairFindings?:string[];evidenceScope?:string}
 
 /** Long documents: one global graph, then bounded chapter windows against shared state. */
 export interface ChapterWindow {id:string;index:number;text:string}
@@ -96,6 +121,7 @@ export function mergeGroundedPlans(graph:ConceptGraph,windows:{window:ChapterWin
 
 /** Deterministic alias merge first; ambiguity, cycles, orphans and fabricated evidence reject. */
 export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
+ if(Array.isArray(raw))throw new Error(`Knowledge response must be one JSON object with concepts/claims/evidence keys; received a bare array of ${raw.length} items. Re-emit the whole graph as an object.`);
  assertSchema(raw,knowledgeGraphSchema);
  const value=structuredClone(raw) as {concepts:{key:string;canonicalName:string;aliases:string[];semanticType:ConceptGraph['concepts'][number]['semanticType'];visualFamily?:string;evidenceRefs:string[]}[];prerequisites:{before:string;after:string;reason:string}[];mechanisms:ConceptGraph['mechanisms'];claims:{id:string;statement:string;critical:boolean;evidenceRefs:string[]}[];quantities:{conceptKey:string;value:string;evidenceRefs:string[]}[];terminology:{key:string;definition:string}[];evidence:{id:string;sourceId?:string;quote:string;section?:string}[]};
  const concepts:ConceptGraph['concepts']=value.concepts.map(c=>({id:c.key,canonicalName:c.canonicalName,aliases:[...(c.aliases??[])],semanticType:c.semanticType,evidenceRefs:[...new Set(c.evidenceRefs)],...(c.visualFamily?{visualFamily:c.visualFamily}:{})}));
@@ -138,7 +164,12 @@ export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
  // Deterministic heal: models compile terminology for entities mentioned in
  // claims without emitting them as concepts; unknown-key entries drop (recorded).
  const knownTerminology=value.terminology.filter(term=>keys.has(term.key));
- const droppedTerminology=value.terminology.length-knownTerminology.length; for(const item of value.evidence)if(sourceText&&!sourceText.includes(item.quote))throw new Error(`Fabricated evidence: ${item.id}`);
+ const droppedTerminology=value.terminology.length-knownTerminology.length; for(const item of value.evidence){
+  if(!sourceText||evidenceSupported(sourceText,item.quote))continue;
+  const snapped=snapQuoteToSource(sourceText,item.quote);
+  if(snapped){log('v2.evidence.snapped',{id:item.id,paraphrase:item.quote.slice(0,80),source:snapped.slice(0,80)});item.quote=snapped;continue;}
+  throw new Error(`Fabricated evidence: ${item.id} ("${item.quote.slice(0,80)}") is not present in the ingested source; quote the source verbatim.`);
+ }
  const graph:ConceptGraph={version:1,concepts,aliases,prerequisites:value.prerequisites.filter((edge,index,all)=>all.findIndex(other=>other.before===edge.before&&other.after===edge.after)===index),mechanisms:value.mechanisms.map(m=>({...m,conceptIds:[...new Set(m.conceptIds)],evidenceRefs:[...new Set(m.evidenceRefs)]})),claims:value.claims.map(c=>({id:c.id,statement:c.statement,critical:c.critical,evidenceRefs:[...new Set(c.evidenceRefs)]})) satisfies KnowledgeClaim[] as KnowledgeClaim[],terminology:Object.fromEntries(knownTerminology.map(t=>[t.key,{definition:t.definition}])),quantities:value.quantities.map(q=>({conceptId:q.conceptKey,value:q.value,evidenceRefs:[...new Set(q.evidenceRefs)]})),evidence:value.evidence.map(e=>({id:e.id,sourceId:e.sourceId??'source',quote:e.quote,section:e.section})),sourceVisuals:[]};
  return graph;
 }
@@ -167,9 +198,33 @@ export function selectSourceVisuals(semantic:{id:string;requiredConceptIds:strin
 }
 
 /** The real knowledge-compiler stage: one source-grounded model call, validated deterministically. */
+/** Deterministic union of per-window knowledge graphs. Identical meaning keeps one id;
+ *  a colliding id with a different fingerprint renames with a window suffix. */
+export function mergeConceptGraphs(graphs:ConceptGraph[]):ConceptGraph{
+ if(!graphs.length)throw new Error('mergeConceptGraphs requires at least one graph');
+ if(graphs.length===1)return graphs[0];
+ const first=graphs[0];
+ const concepts:ConceptGraph['concepts']=[],aliases:Record<string,string>={},prerequisites:ConceptGraph['prerequisites']=[],mechanisms:ConceptGraph['mechanisms']=[],claims:ConceptGraph['claims']=[],quantities:ConceptGraph['quantities']=[],evidence:ConceptGraph['evidence']=[],sourceVisuals:ConceptGraph['sourceVisuals']=[];
+ const terminology:ConceptGraph['terminology']={};
+ const seenEvidence=new Map<string,string>(),seenRequirement=new Map<string,string>();
+ const canonical=new Map<string,string>();
+ for(const [index,graph] of graphs.entries()){
+  for(const concept of graph.concepts)if(!canonical.has(concept.id)){canonical.set(concept.id,concept.id);concepts.push(structuredClone(concept));}
+  for(const [alias,target] of Object.entries(graph.aliases))if(!(alias in aliases))aliases[alias]=target;
+  for(const edge of graph.prerequisites)if(!prerequisites.some(other=>other.before===edge.before&&other.after===edge.after))prerequisites.push(structuredClone(edge));
+  for(const term of Object.entries(graph.terminology))if(!(term[0] in terminology))terminology[term[0]]=structuredClone(term[1]);
+  for(const item of graph.evidence){const fingerprint=normalizeEvidence(item.quote);const prior=seenEvidence.get(item.id);let id=item.id;if(prior!==undefined&&prior!==fingerprint){id=`${item.id}_w${index+1}`;}else if(prior!==undefined)continue;seenEvidence.set(id,fingerprint);evidence.push({...structuredClone(item),id});}
+  for(const claim of graph.claims){const prior=seenRequirement.get(claim.id);let id=claim.id;if(prior!==undefined&&prior!==claim.statement){id=`${claim.id}_w${index+1}`;}else if(prior!==undefined)continue;seenRequirement.set(id,claim.statement);claims.push({...structuredClone(claim),id});}
+  for(const mechanism of graph.mechanisms){const prior=seenRequirement.get(mechanism.id);let id=mechanism.id;if(prior!==undefined&&prior!==mechanism.statement){id=`${mechanism.id}_w${index+1}`;}else if(prior!==undefined)continue;seenRequirement.set(id,mechanism.statement);mechanisms.push({...structuredClone(mechanism),id});}
+  for(const quantity of graph.quantities)if(!quantities.some(other=>other.conceptId===quantity.conceptId&&other.value===quantity.value))quantities.push(structuredClone(quantity));
+  for(const visual of graph.sourceVisuals)if(!sourceVisuals.some(other=>other.id===visual.id))sourceVisuals.push(structuredClone(visual));
+ }
+ return {version:1,concepts,aliases,prerequisites,mechanisms,claims,terminology,quantities,evidence,sourceVisuals};
+}
+
 export async function compileKnowledge(input:KnowledgeInput,model:JsonModel,promptOptions:KnowledgePromptOptions={},signal?:AbortSignal):Promise<ConceptGraph>{
  if(!input.sourceText?.trim())throw new Error('Knowledge compilation requires source text');
  const instructions=[knowledgePrompt({language:input.language,repairNotes:input.repairFindings,...promptOptions}),skillDocInstruction('teaching-architect/references/knowledge-compiler.md')].filter(Boolean).join(' ');
- const value=await model.generate('knowledge',instructions,{prompt:input.prompt,sourceId:input.sourceId??'source',sourceText:input.sourceText},knowledgeGraphSchema,raw=>validateKnowledge(raw,input.sourceText),{signal});
+ const value=await model.generate('knowledge',instructions,{prompt:input.prompt,sourceId:input.sourceId??'source',sourceText:input.sourceText},knowledgeGraphSchema,raw=>validateKnowledge(raw,input.evidenceScope??input.sourceText),{signal});
  return value as ConceptGraph;
 }

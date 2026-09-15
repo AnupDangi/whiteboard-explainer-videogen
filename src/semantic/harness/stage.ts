@@ -10,7 +10,7 @@ export type StageRepair<T>=(context:StageRepairContext<T>)=>Promise<T>|T;
 
 export const DEFAULT_STAGE_POLICIES:Record<HarnessStage,StagePolicy>={
  ingest:{owner:'harness',timeoutMs:30000,maxRepairs:0,budgetUsd:0},
- 'knowledge-compiler':{owner:'knowledge-compiler',timeoutMs:420000,maxRepairs:1,budgetUsd:.2},
+ 'knowledge-compiler':{owner:'knowledge-compiler',timeoutMs:600000,maxRepairs:1,budgetUsd:.2},
  'teaching-architect':{owner:'teaching-architect',timeoutMs:90000,maxRepairs:1,budgetUsd:.35},
  'whiteboard-planner':{owner:'whiteboard-planner',timeoutMs:90000,maxRepairs:1,budgetUsd:.25},
  'representation-guide':{owner:'representation-guide',timeoutMs:10000,maxRepairs:0,budgetUsd:0},
