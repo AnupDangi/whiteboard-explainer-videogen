@@ -125,7 +125,7 @@ export function directorPrompt(options:DirectorPromptOptions={}):string{
  const level=options.learnerLevel?`Write for ${options.learnerLevel}.`:'';
  const lang=options.language&&options.language!=='en'?`Write every label and the title in the language tagged "${options.language}" (BCP-47); never English.`:'';
   return [
-    `Choose the visual mental model, object inventory, hierarchy, relations, semantic anchors, and meaningful actions. Explicitly answer all eight direction decisions.`,
+    `Choose the visual mental model, object inventory, hierarchy, relations, semantic anchors, and meaningful actions. Explicitly answer all eight direction decisions as short plain-language strings; write "none" for any decision that does not apply rather than leaving it empty.`,
     `Use only candidate asset IDs. The hero object MUST use mentalModel.heroConceptIds[0] as conceptId.`,
     `Use one hero illustration in center; distribute supports in upper_left, upper_right, lower_left, lower_right.`,
     `Use a small number of annotations and concise labels. Do not turn a biological/structural scene into boxes.`,

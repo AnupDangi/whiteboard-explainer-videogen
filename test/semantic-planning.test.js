@@ -62,3 +62,18 @@ test('V2 teaching evidence validates against the full source scope, not the chap
  assert.ok(scope.includes(snapped.evidenceRefs[0].quote),'mild paraphrase snaps to real source text');
  await assert.rejects(planTeaching({...input,sourceText:'Leaves capture sunlight.',evidenceScope:scope,sourceId:'source'},withEvidence('Quantum tunnelling explains gravity.')),/Fabricated evidence/);
 });
+
+test('teaching rejects a scene whose concepts cannot fit any candidate archetype',async()=>{
+ const plan=intent();
+ plan.conceptRegistry=[...plan.conceptRegistry,{key:'extra1',canonicalName:'Extra One',aliases:[],semanticType:'entity',evidenceRefs:[]},{key:'extra2',canonicalName:'Extra Two',aliases:[],semanticType:'entity',evidenceRefs:[]},{key:'extra3',canonicalName:'Extra Three',aliases:[],semanticType:'entity',evidenceRefs:[]}];
+ plan.scenes[0].candidateArchetypes=['cycle'];
+ plan.scenes[0].requiredConceptKeys=['plant','sunlight','water','carbon_dioxide','extra1','extra2','extra3'];
+ plan.scenes[0].beats[0].introduce=[...new Set([...(plan.scenes[0].beats[0].introduce??[]),'extra1','extra2','extra3'])];
+ const model={generate:async(_s,_i,_inp,_schema,validate)=>validate(structuredClone(plan))};
+ await assert.rejects(planTeaching({...input,allowedArchetypes:['cycle']},model),/no candidate archetype/);
+ const fitting=structuredClone(plan);fitting.scenes[0].requiredConceptKeys=['plant','sunlight','water','carbon_dioxide','extra1','extra2'];
+ fitting.scenes[0].beats[0].introduce=fitting.scenes[0].beats[0].introduce.filter(key=>fitting.scenes[0].requiredConceptKeys.includes(key));
+ const model2={generate:async(_s,_i,_inp,_schema,validate)=>validate(structuredClone(fitting))};
+ const accepted=await planTeaching({...input,allowedArchetypes:['cycle']},model2);
+ assert.equal(accepted.scenes[0].requiredConceptIds.length,6);
+});
