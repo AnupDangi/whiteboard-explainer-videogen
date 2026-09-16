@@ -1,3 +1,4 @@
+import {log} from '../../shared/logger.js';
 import {assertSchema,type Schema} from '../schemas.js';
 import type {ConceptGraph,LearnerState,TeachingContract} from '../harness/contracts.js';
 import type {SemanticScenePlan,TeachingPlanV2} from '../types.js';

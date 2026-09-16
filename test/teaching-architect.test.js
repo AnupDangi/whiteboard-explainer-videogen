@@ -28,7 +28,8 @@ test('skill eval:prereq-order — contracts referencing the graph pass and unkno
  const unknownMech=allContracts();unknownMech.contracts[0].mechanismIds=['ghost_mech'];
  assert.throws(()=>validateArchitectOutput(unknownMech,{scene:scenePlan,learnerState,conceptGraph:graph}),/Unknown mechanism ghost_mech/);
  const unknownEvidence=allContracts();unknownEvidence.contracts[0].evidenceRefs=['ev_ghost'];
- assert.throws(()=>validateArchitectOutput(unknownEvidence,{scene:scenePlan,learnerState,conceptGraph:graph}),/Unknown evidence ev_ghost/);
+ const healed=validateArchitectOutput(unknownEvidence,{scene:scenePlan,learnerState,conceptGraph:graph});
+ assert.ok(!healed[0].evidenceRefs.includes('ev_ghost'),'unknown evidence refs are dropped, not fatal');
 });
 
 test('the architect cannot invent concepts outside the beat or change beat order',()=>{
