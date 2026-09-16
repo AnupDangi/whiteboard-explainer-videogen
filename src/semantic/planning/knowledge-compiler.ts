@@ -75,6 +75,21 @@ export function snapQuoteToSource(sourceText:string,quote:string):string|null{
  if(!best)return null;
  return sentences[best.index]??null;
 }
+/** Ground model-invented evidence ids: a plan evidence entry whose (already
+ *  snapped) quote matches a compiled inventory entry verbatim maps to that
+ *  entry's id; anything else was never verified by the knowledge compiler. */
+export function evidenceIdGrounding(plan:{evidenceRefs:{id:string;quote?:string}[]},graph:{evidence:{id:string;quote:string}[]},inventoryIds:Set<string>):{renames:{from:string;to:string}[];dropped:string[]}{
+ const renames:{from:string;to:string}[]=[],dropped:string[]=[];
+ const byQuote=new Map<string,string>();
+ for(const e of graph.evidence)byQuote.set(evidenceTokens(e.quote).slice(0,8).join(' '),e.id);
+ for(const entry of plan.evidenceRefs){
+  if(inventoryIds.has(entry.id))continue;
+  const match=byQuote.get(evidenceTokens(entry.quote??'').slice(0,8).join(' '));
+  if(match){renames.push({from:entry.id,to:match});}
+  else dropped.push(entry.id);
+ }
+ return {renames,dropped};
+}
 /** Whitespace/unicode-normalized form for verbatim-quote matching. */
 const normalizeEvidence=(text:string)=>text.replace(/[\u2018\u2019\u201A\u201B]/g,"'").replace(/[\u201C\u201D\u201E]/g,'"').replace(/[\u2013\u2014]/g,'-').replace(/\u2026/g,'...').replace(/\u00A0/g,' ').replace(/[\u2217\u22C5\u00B7\u2219]/g,'*').replace(/[\u2212\u2010\u2011]/g,'-').replace(/\u2264/g,'<=').replace(/\u2265/g,'>=').replace(/[\u0000-\u0008\u000B\u000E-\u001F]/g,'').normalize('NFKD').replace(/[\u0300-\u036F]/g,'').replace(/\s+/g,' ').trim();
 export const evidenceSupported=(sourceText:string,quote:string):boolean=>{

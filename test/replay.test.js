@@ -57,7 +57,7 @@ test('replay: knowledge formula evidence now snaps to the math-italic source ins
  assert.ok(scope.includes(healed.evidence[0].quote),'the formula quote snapped to real source text');
 });
 
-test('replay: the document sourceId is still rejected as an evidence id',async()=>{
+test('replay: document-keyed evidence with a verbatim quote is bridged, not fabricated',async()=>{
  const f=await fixture('sourceid-evidence');
  const payload=f.payload;
  const graph={version:1,
@@ -68,9 +68,8 @@ test('replay: the document sourceId is still rejected as an evidence id',async()
   evidence:[{id:'ev_real',sourceId:'source',quote:'Real source sentence about the KV cache footprint.'}],
   sourceVisuals:[]};
  const scope=payload.evidenceRefs.map(entry=>entry.quote).join(' ');
- await assert.rejects(async()=>{
-  const {planTeaching}=await import('../dist/src/semantic/planning/teaching-planner.js');
-  const model={generate:async(_s,_i,_inp,_schema,validate)=>validate(structuredClone(payload))};
-  await planTeaching({prompt:'teach kv cache',sourceText:scope,evidenceScope:scope,sourceId:'src_dc9a790964b67d2b85361fbfb6a4',allowedArchetypes:ARCHETYPES,maxScenes:4},model,{conceptGraph:graph});
- },/Evidence outside knowledge inventory: src_/);
+ const {planTeaching}=await import('../dist/src/semantic/planning/teaching-planner.js');
+ const model={generate:async(_s,_i,_inp,_schema,validate)=>validate(structuredClone(payload))};
+ const plan=await planTeaching({prompt:'teach kv cache',sourceText:scope,evidenceScope:scope,sourceId:'src_dc9a790964b67d2b85361fbfb6a4',allowedArchetypes:ARCHETYPES,maxScenes:4},model,{conceptGraph:graph});
+ assert.ok(plan.evidenceRefs.some(entry=>entry.id==='src_dc9a790964b67d2b85361fbfb6a4'),'the verbatim-scope quote stays grounded with its plan id');
 });

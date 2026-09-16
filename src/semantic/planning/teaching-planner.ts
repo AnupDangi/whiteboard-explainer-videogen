@@ -3,7 +3,7 @@ import {teachingIntentToPlan} from '../identity/intent-adapter.js';
 import {teachingPlanSchema} from '../schemas.js';
 import {validateTeachingPlan} from './validate.js';
 import {log} from '../../shared/logger.js';
-import {evidenceSupported,snapQuoteToSource} from './knowledge-compiler.js';
+import {evidenceSupported,snapQuoteToSource,evidenceIdGrounding} from './knowledge-compiler.js';
 import {teachingPrompt} from './prompt-builder.js';
 import {archetypeFits} from '../compiler/archetypes.js';
 import type {TeachingPlanV2,VisualArchetype} from '../types.js';
@@ -36,6 +36,11 @@ export function spreadExcessIntroductions(value:unknown):void{
  *  must transform one of its concepts on screen. If the model forgot, inject
  *  neutral→activated into the beat that teaches one of those concepts
  *  (recorded), instead of failing the whole plan. */
+/** Rename a model-invented evidence id everywhere it appears in the plan. */
+function renamePlanEvidenceId(plan:{evidenceRefs:{id:string;quote?:string}[];scenes?:{beats?:{evidenceRefs?:string[]}[]}[]},from:string,to:string):void{
+ for(const entry of plan.evidenceRefs??[])if(entry.id===from)entry.id=to;
+ for(const scene of plan.scenes??[])for(const beat of scene.beats??[])beat.evidenceRefs=(beat.evidenceRefs??[]).map(id=>id===from?to:id);
+}
 export function healStateMechanisms(value:unknown):void{
  const plan=value as {requiredMechanisms?:{id:string;requiresStateChange?:boolean;conceptKeys?:string[]}[];scenes?:{beats?:{introduce?:string[];reinforce?:string[];transform?:{conceptKey:string;fromState?:string;toState:string}[]}[]}[]};
  if(!plan?.requiredMechanisms||!Array.isArray(plan.scenes))return;
@@ -100,8 +105,22 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   }else if(plan.evidenceRefs.length)throw new Error('Prompt-only plan cannot invent evidence');
   if(graph){
    const keys=new Set(graph.concepts.map(c=>c.id)),evidenceIds=new Set([...graph.evidence.map(e=>e.id),...graph.sourceVisuals.map(v=>v.id)]),requirements=new Set([...graph.claims.map(c=>c.id),...graph.mechanisms.map(m=>m.id)]);
+   /** The model invents evidence ids (ev_tree_structure) with quotes that may
+    *  still be verbatim in the source. Ground it: rename to the compiled
+    *  inventory entry whose quote matches, or drop the entry and its beat
+    *  references (recorded) - an id outside the compiled inventory was never
+    *  verified by the knowledge compiler. */
+   const groundings=evidenceIdGrounding(plan,graph,evidenceIds);
+   for(const rename of groundings.renames){
+    renamePlanEvidenceId(plan,rename.from,rename.to);log('v2.plan.evidence-rename',{from:rename.from,to:rename.to},'warn');
+   }
+   if(groundings.dropped.length)log('v2.plan.evidence-drop',{ids:groundings.dropped},'warn');
+   /** Compiled inventory ids OR plan entries whose quote was verified verbatim
+    *  in the scope (the source-only policy grounds quotes, not ids). */
+   const planEvidenceIds=new Set(plan.evidenceRefs.map(e=>e.id));
+   for(const scene of plan.scenes)for(const beat of scene.beats)beat.evidenceRefs=(beat.evidenceRefs??[]).filter(id=>evidenceIds.has(id)||planEvidenceIds.has(id));
    for(const c of plan.conceptRegistry)if(!keys.has(c.id))throw new Error(`Concept outside knowledge inventory: ${c.id}`);
-   for(const e of plan.evidenceRefs)if(!evidenceIds.has(e.id))throw new Error(`Evidence outside knowledge inventory: ${e.id}`);
+   for(const e of plan.evidenceRefs)if(!evidenceIds.has(e.id)&&!planEvidenceIds.has(e.id))throw new Error(`Evidence outside knowledge inventory: ${e.id}`);
    for(const scene of plan.scenes)for(const conceptId of scene.requiredConceptIds)if(!keys.has(conceptId))throw new Error(`Required concept outside knowledge inventory: ${conceptId}`);
    for(const requirement of [...plan.requiredClaims,...plan.requiredMechanisms])if(!requirements.has(requirement.id))throw new Error(`Requirement outside knowledge inventory: ${requirement.id}`);
   }
