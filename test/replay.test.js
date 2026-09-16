@@ -70,6 +70,8 @@ test('replay: document-keyed evidence with a verbatim quote is bridged, not fabr
  const scope=payload.evidenceRefs.map(entry=>entry.quote).join(' ');
  const {planTeaching}=await import('../dist/src/semantic/planning/teaching-planner.js');
  const model={generate:async(_s,_i,_inp,_schema,validate)=>validate(structuredClone(payload))};
- const plan=await planTeaching({prompt:'teach kv cache',sourceText:scope,evidenceScope:scope,sourceId:'src_dc9a790964b67d2b85361fbfb6a4',allowedArchetypes:ARCHETYPES,maxScenes:4},model,{conceptGraph:graph});
- assert.ok(plan.evidenceRefs.some(entry=>entry.id==='src_dc9a790964b67d2b85361fbfb6a4'),'the verbatim-scope quote stays grounded with its plan id');
+ /** Thin-teaching: the document-keyed id is NOT in the compiled inventory, so
+  *  the entry is dropped - with no grounded evidence left the plan is
+  *  rejected rather than published with ungrounded beats. */
+ await assert.rejects(planTeaching({prompt:'teach kv cache',sourceText:scope,evidenceScope:scope,sourceId:'src_dc9a790964b67d2b85361fbfb6a4',allowedArchetypes:ARCHETYPES,maxScenes:4},model,{conceptGraph:graph}),/requires evidence|lacks evidence|Unknown evidence/);
 });

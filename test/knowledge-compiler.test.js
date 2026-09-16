@@ -84,6 +84,10 @@ test('schema forbids geometry, ids, code and unknown fields in the knowledge con
 
 const fixturePlan=()=>{
  const plan=JSON.parse(readFileSync('examples/semantic/photosynthesis-plant.teaching.json','utf8'));
+ /** Thin-teaching contract: the model emits evidence ID references; the
+  *  intent layer strips quote/sourceId fields, and planTeaching rebuilds the
+  *  entries from the compiled inventory. The fixture keeps full entries so
+  *  conceptGraphFromPlan has verbatim quotes to compile. */
  plan.evidenceRefs=[
   {id:'ev_light',sourceId:'src_test',quote:'Leaves capture sunlight'},
   {id:'ev_water',sourceId:'src_test',quote:'Roots absorb water'},
@@ -158,6 +162,7 @@ test('chapter windows split long documents deterministically on paragraph bounds
 test('mergeGroundedPlans dedupes identical meaning and renames colliding ids deterministically',()=>{
  const graph=conceptGraphFromPlan(fixturePlan());
  const base=fixturePlan();
+ base.evidenceRefs=[{id:'ev_light',sourceId:'src_test',quote:'Leaves capture sunlight'},{id:'ev_water',sourceId:'src_test',quote:'Roots absorb water'},{id:'ev_carbon',sourceId:'src_test',quote:'Leaves take in carbon dioxide'},{id:'ev_mech',sourceId:'src_test',quote:'Inputs enable plant food production'}];
  const first={...base,scenes:[{...base.scenes[0]}]};
  const revisited=structuredClone(base);
  revisited.requiredClaims=revisited.requiredClaims.map(claim=>({...claim,statement:`${claim.statement} (revisited)`}));

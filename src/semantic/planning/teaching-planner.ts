@@ -75,7 +75,11 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
  const modelInput={...input,evidenceScope:undefined};
  return await model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes:options.repairFindings,knowledge,chapter}),modelInput,teachingIntentSchema,value=>{
    spreadExcessIntroductions(value);healStateMechanisms(value);
-   const intent=value as {evidenceRefs?:{id:string}[];scenes?:{key:string;beats?:{key?:string;evidenceRefs?:string[]}[]}[]};
+   const intent=value as {evidenceRefs?:{id:string;sourceId?:string;quote?:string}[];scenes?:{key:string;beats?:{key?:string;evidenceRefs?:string[]}[]}[]};
+   /** Thin-teaching boundary: the model references COMPILED evidence ids; it
+    *  does not author quotes. Strip model-authored quote/sourceId fields now -
+    *  the plan's evidence entries are rebuilt from the compiled inventory. */
+   if(intent.evidenceRefs)intent.evidenceRefs=intent.evidenceRefs.map(e=>({id:e.id}));
    /** Beats referencing evidence the plan itself never declared are dropped
     *  (recorded) - an undeclared reference cannot be verified. */
    const declaredEvidence=new Set((intent.evidenceRefs??[]).map(e=>e.id));
@@ -84,7 +88,25 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
     if(beat.evidenceRefs)beat.evidenceRefs=beat.evidenceRefs.filter(id=>declaredEvidence.has(id));
     if(before>(beat.evidenceRefs??[]).length)log('v2.plan.evidence-ref-heal',{scene:scene.key,beat:beat.key,dropped:before-(beat.evidenceRefs??[]).length},'warn');
    }
-   const {plan}=validateTeachingPlan(teachingIntentToPlan(value),new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
+   const planDraft=teachingIntentToPlan(value);
+   if(input.sourceText&&options.conceptGraph){
+    /** Thin-teaching: evidence entries are REBUILT from the compiled inventory
+     *  by id before plan validation (the schema requires sourceId+quote, which
+     *  the compiled entries carry). Model-invented ids are dropped (recorded). */
+    const compiled=new Map<string,{id:string;sourceId?:string;quote:string}>();
+    for(const e of options.conceptGraph.evidence)compiled.set(e.id,{id:e.id,sourceId:e.sourceId??'source',quote:e.quote});
+    for(const v of options.conceptGraph.sourceVisuals)compiled.set(v.id,{id:v.id,sourceId:v.sourceId,quote:v.caption??''});
+    const declaredIds=new Set(intent.evidenceRefs?.map(e=>e.id)??[]);
+    planDraft.evidenceRefs=(planDraft.evidenceRefs??[]).filter(e=>compiled.has(e.id)).map(e=>{
+     const compiledEntry=compiled.get(e.id);
+     return compiledEntry?{id:compiledEntry.id,sourceId:compiledEntry.sourceId??'source',quote:compiledEntry.quote}:e as {id:string;sourceId:string;quote:string};
+    });
+    const grounded=new Set(planDraft.evidenceRefs.map(e=>e.id));
+    for(const scene of planDraft.scenes)for(const beat of scene.beats)beat.evidenceRefs=(beat.evidenceRefs??[]).filter(id=>grounded.has(id));
+    for(const concept of planDraft.conceptRegistry)concept.evidenceRefs=(concept.evidenceRefs??[]).filter(id=>grounded.has(id));
+    for(const requirement of [...planDraft.requiredClaims,...planDraft.requiredMechanisms])requirement.evidenceRefs=(requirement.evidenceRefs??[]).filter(id=>grounded.has(id));
+   }
+   const {plan}=validateTeachingPlan(planDraft,new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
   for(const s of plan.scenes){
    /** The archetype list is harness-owned: the job constrains it, so a scene
     *  naming unavailable families is clamped to the allowed ones (recorded). */
@@ -97,20 +119,21 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
    if(!fits)throw new Error(`Scene ${s.id} requires ${s.requiredConceptIds.length} primary concepts, which no candidate archetype (${s.candidateArchetypes.join('/')}) can represent; merge or split concepts`);
   }
   if(input.sourceText){
-   const scope=input.evidenceScope??input.sourceText;
+   /** Thin-teaching: evidence comes from the compiled inventory by id. A
+    *  model-invented id is accepted only if its quote (stripped above) matched
+    *  nothing - the graph holds the verified quotes. */
+   const compiled=new Map<string,{id:string;sourceId?:string;quote:string}>();
+   for(const e of options.conceptGraph?.evidence??[])compiled.set(e.id,{id:e.id,sourceId:e.sourceId??'source',quote:e.quote});
+   for(const v of options.conceptGraph?.sourceVisuals??[])compiled.set(v.id,{id:v.id,sourceId:v.sourceId,quote:v.caption??''});
+   const declaredIds=new Set(intent.evidenceRefs?.map(e=>e.id)??[]);
+   const rebuilt:TeachingPlanV2['evidenceRefs']=[];
    for(const e of plan.evidenceRefs){
-    /** Book-keeping bridge: the model may echo the default sourceId ('source')
-     *  instead of the document id; the quote still has to be verbatim in the
-     *  scope (checked next), so the field is bridged (recorded) rather than
-     *  throwing a misleading 'Fabricated evidence'. */
-    const expectedSourceId=input.sourceId??'source';
-    if(e.sourceId!==expectedSourceId)e.sourceId=expectedSourceId;
-    if(evidenceSupported(scope,e.quote))continue;
-    const snapped=snapQuoteToSource(scope,e.quote);
-    if(!snapped)throw new Error(`Fabricated evidence: ${e.id}`);
-    log('v2.evidence.snapped',{id:e.id,stage:'teaching',paraphrase:e.quote.slice(0,80),source:snapped.slice(0,80)});e.quote=snapped;
+    const compiledEntry=compiled.get(e.id) as {id:string;sourceId?:string;quote:string}|undefined;
+    if(!compiledEntry){log('v2.plan.evidence-drop',{id:e.id},'warn');continue;}
+    rebuilt.push({id:compiledEntry.id,sourceId:compiledEntry.sourceId??input.sourceId??'source',quote:compiledEntry.quote});
    }
-   if(!plan.evidenceRefs.length)throw new Error('Source-grounded plan requires evidence');
+   plan.evidenceRefs=rebuilt;
+   if(!plan.evidenceRefs.length)throw new Error('Source-grounded plan requires evidence: reference the compiled evidence ids listed in the prompt');
   }else if(plan.evidenceRefs.length)throw new Error('Prompt-only plan cannot invent evidence');
   if(graph){
    const keys=new Set(graph.concepts.map(c=>c.id)),evidenceIds=new Set([...graph.evidence.map(e=>e.id),...graph.sourceVisuals.map(v=>v.id)]),requirements=new Set([...graph.claims.map(c=>c.id),...graph.mechanisms.map(m=>m.id)]);
