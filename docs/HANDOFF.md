@@ -7,22 +7,37 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | wave | commit | result |
 |---|---|---|
 | **S0** baseline | `9905c41` | layout spacing fix, gate-before-teaching, docs reset, `test/layout-invariants.test.js` |
-| **S1** failure ownership | *(this commit)* | `classifyFailure` + harness ownership gate; preflight; `test/harness-routing.test.js` |
+| **S1** failure ownership | `7041c86` | `classifyFailure` + harness ownership gate; preflight; `test/harness-routing.test.js` |
+| **S1b** resolver/compiler contract | `a07bce9` | candidates scoped to the selected archetype; `test/representation-archetype.test.js` |
+| **S1c** narrated end-to-end | `ecff8cb` | four more contract defects fixed; **a narrated 2-scene lesson now completes** |
 
-Tests: **432/432**. Code graph: **1,736 nodes / 3,737 edges** (`graphify update . --force`).
+Tests: **438/438**. Code graph: **1,740 nodes / 3,740 edges** (`graphify update . --force`).
 
-### S1 measured effect (same prompt, live paid route, 1 scene)
+### First complete narrated lesson (live paid route)
 
-| | before (`s1-smoke`) | after (`s1-smoke-after`) |
+`dist/scripts/generate-v2-video.js --prompt "…scientific discovery…" --scenes 2 --narration --budget 1.5`
+
+| | value |
+|---|---|
+| status | **complete**, 2/2 scenes exported |
+| video | `inference-modes` 38.5s + `grounding-models` 21.9s = **60.4s** h264+aac |
+| wall | 75.1s |
+| model calls | 3 (1 teaching + 2 director) |
+| cost | $0.039 |
+
+Reproduce: `node --env-file-if-exists=.env dist/scripts/generate-v2-video.js --out output/lesson --prompt "…" --archetypes cause_effect,flow,structural_diagram,comparison --scenes 2 --narration --budget 1.5`
+
+### S1 measured effect (routing)
+
+Same live prompt, 1 scene, before vs after routing:
+
+| | before | after |
 |---|---|---|
 | director model calls | **2** | **1** |
 | director ms | 37,858 | 16,122 |
-| routed failures | 0 | 1 (`→ representation-guide`) |
 | retries on a non-director failure | 2 | **0** |
 
-The failure was unchanged (`Critical representation degraded: object_sensory-experience`) — which is the point: S1 stops the pipeline from *paying twice* for a defect the director cannot fix, and attributes it to the owner that can. The job still fails; that defect is real work for S3/S4.
-
-Structural proof: `classifyFailure()` now has a production caller (`executeStage`, `stage.ts:91`). Before S1 the classifier had **zero** production callers — it existed only for tests.
+Structural proof: `classifyFailure()` now has a production caller (`executeStage`, `stage.ts:91`). Before S1 it had **zero** — grep and the graph both agreed.
 
 ## 0. Cleanup performed this session
 
@@ -110,24 +125,30 @@ This is the gap between us and a system that can visually explain arbitrary conc
 4. **Latency target:** what is "Lamina-level" for a 1-minute video — 30s? 60s? This determines how aggressively to cut `maxScenes` and windows.
 5. **Budget:** the OpenRouter account's monthly spend cap blocks paid routes; only free routes work, and they are too slow/unreliable for the knowledge stage. This must be raised before any real end-to-end run.
 
-## 8. Wave S1 — what changed
+## 8. Waves S0–S1c — what changed
 
 ```
-src/semantic/harness/contracts.ts   STAGE_OWNERS: the one stage→owner map
+src/semantic/harness/contracts.ts   STAGE_OWNERS: the one stage->owner map
 src/semantic/repair.ts              classifyFailure(), RoutedStageFailure; RepairOwner retired to = StageOwner
 src/semantic/harness/stage.ts       repairIfOwned(): a foreign failure is routed, never repaired
 src/semantic/compiler/zones.ts      SUPPORTED_ARCHETYPES is the executable subset
-src/semantic/planning/visual-model.ts  unsupported archetypes are rejected before the director call
-src/semantic/planning/generate.ts   preflight: archetype capacity + board beat count before the director
-src/semantic/planning/visual-director.ts  post-compile integrity failures typed REPRESENTATION (routed)
-test/harness-routing.test.js        eight routing acceptance tests
-test/layout-invariants.test.js      layered-layout regression (S0)
+src/semantic/compiler/archetypes.ts rank cap derived from label width (4 -> 6), layered grid from real height
+src/semantic/compiler/compile-scene.ts  child geometry never reused verbatim; overlap error carries real rects
+src/semantic/identity/intent-adapter.ts a parented child is normalised off the 'forbid' policy
+src/semantic/planning/visual-model.ts   unsupported archetypes rejected before the director call
+src/semantic/planning/visual-director.ts archetype-scoped candidates; absent required relation synthesized;
+                                        post-compile integrity typed REPRESENTATION; defensive failure dump
+src/semantic/planning/generate.ts   concept graph gated before teaching; preflight before the director
 ```
 
 Routing rules, in precedence order: a gate finding names its own stage → `PipelineError.failureClass` names the class → a provider/budget error is `harness`-owned → otherwise the running stage owns it. Rule 4 preserves genuinely stage-owned repairs (the teaching repair executed inside the knowledge stage still works).
 
-Committed. Working tree clean apart from generated artifacts.
+Synthesis rules, both recorded: an *entirely absent* required relation is realized (a present-but-wrong one stays strict); a child's geometry is always re-derived from its parent.
 
-### Next: S2 (heal audit + visibility)
+### What still limits output quality
 
-`healSchema` (`schemas.ts:54-129`) silently mutates model output with zero logging; ~24 `*-heal` sites in `semantic/`, 23 in the V1 planner. S2 classifies each as NORMALIZATION / SAFE-DETERMINISTIC / SEMANTIC, instruments the semantic ones, and freezes new heal rules. Then S3 makes runtime contracts truthful (static relations, unsupported motions, ignored transitions).
+The lesson completes but reads thin: on the same run, four of five concepts render as bare label pills because **no asset exists for `abduction`, `axiom`, `induction`, `deduction`**. That is the 43-asset static-registry ceiling, not a layout or routing defect. Relations also render only when an action animates them (`renderer/relations.ts:8`), so the graph is richer than the picture.
+
+### Next: S3 (contract truthfulness), then S2
+
+S3 makes runtime match the advertised contract: static relations render, unsupported motions are rejected, continuity transitions are consumed or rejected, unsupported archetypes fail early. It is the largest remaining visual-quality lever per unit of work, and it completes the unimplemented Phase 4 clause of `PLAN_TO_IMPLEMENT.md`. S2 (heal inventory + visibility) follows; the icon system (P0–P2, no network) is the capability ceiling after that.
