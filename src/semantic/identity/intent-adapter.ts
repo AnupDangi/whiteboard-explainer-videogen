@@ -24,6 +24,10 @@ export function directionToScene(direction:any,semantic:SemanticScenePlan):Visua
   }
  }
  if(dropped.length)log('v2.direction.parenting-heal',{scene:semantic.id,dropped:[...new Set(dropped)],archetype:direction.archetype});
+ /** An object with neither asset nor primitive is not renderable: a labeled
+  *  concept degrades to the tier-7 labeled abstraction, an unlabeled one to a
+  *  rectangle (recorded), instead of failing the stage. */
+ for(const o of objects)if(!o.assetRef&&!o.primitiveRef){o.primitiveRef=o.label?'label':'rectangle';log('v2.direction.primitive-heal',{scene:semantic.id,object:o.id,tier:o.label?'label':'rectangle'},'warn');}
  const objectFor=(key:string)=>{const found=objects.filter((o:any)=>o.conceptId===key);if(found.length!==1)throw new Error(`Ambiguous or missing concept ${key}`);return found[0];};
  for(const o of objects)if(o.parentId){const parent=objects.find((p:any)=>p.id===o.parentId);if(!parent)throw new Error(`Missing parent ${o.parentId}`);parent.children.push(o.id);}
  const form=(type:string)=>['contains','part_of'].includes(type)?'containment':type==='flows_to'?'flow':type==='labels'?'leader':type==='compares_with'?'brace':'arrow';
@@ -34,7 +38,18 @@ export function directionToScene(direction:any,semantic:SemanticScenePlan):Visua
   *  is synthesized as a morph on the concept's object (recorded). */
  const semanticById=new Map(semantic.beats.map((b:any)=>[b.id,b]));
  const beats=direction.beats.map((b:any,i:number)=>{
-  const actions=b.actions.map(({conceptKeys,relationRefs,...a}:any,j:number)=>({...a,id:`action_${i}_${j}`,objectIds:conceptKeys.map((k:string)=>objectFor(k).id),relationIds:relationRefs.map(relationFor)}));
+  const actions=b.actions.map(({conceptKeys,relationRefs,relationIds,...a}:any,j:number)=>{
+   const mapped=relationRefs?.length?relationRefs.map(relationFor):((relationIds??[]).map((key:string)=>{
+    /** The model may emit plan relation keys directly (refrigerant-to-compressor)
+     *  instead of typed relationRefs: resolve through the plan's own relation
+     *  list and drop unresolvable references (recorded). */
+    const planRelation=(semantic.requiredRelations??[]).find((r:any)=>r.id===key);
+    if(!planRelation)return null;
+    try{return relationFor(planRelation);}catch{return null;}
+   }).filter(Boolean) as string[]);
+   if(relationIds?.length&&!relationRefs?.length)log('v2.direction.relation-ids-heal',{scene:semantic.id,action:a.id??j,dropped:(relationIds.length??0)-(mapped?.length??0)},'warn');
+   return {...a,id:`action_${i}_${j}`,objectIds:(conceptKeys??[]).map((k:string)=>objectFor(k).id),relationIds:mapped??[]};
+  });
   const semanticBeat=semantic.beats.find((sb:any)=>sb.id===b.key);
   for(const transform of semanticBeat?.transform??[]){
    const conceptId=transform.conceptId;

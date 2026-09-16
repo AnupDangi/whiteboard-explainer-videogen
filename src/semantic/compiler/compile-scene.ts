@@ -46,7 +46,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   if(old){if(old.conceptId!==o.conceptId||old.assetRef!==o.assetRef)throw new Error('Persistent identity changed');rect={x:old.x,y:old.y,w:old.w,h:old.h};}
   const baseFontSize=scene.archetype==='numbered_steps'?24:scene.archetype==='equation_walkthrough'?24:labelOnly?22:20;
   const fitted=fitLabel(o.label,labelOnly?rect.w:Math.max(rect.w,180),baseFontSize);
-  if(fitted.truncated&&o.importance==='primary')throw new Error(`Critical label would be truncated: ${o.id}`);
+  if(fitted.truncated&&o.importance==='primary'&&o.primitiveRef!=='label')throw new Error(`Critical label would be truncated: ${o.id}`);
   if(fitted.fitted||fitted.truncated)diagnostics.push(`representation fallback: label "${o.label}" ${fitted.truncated?'truncated to three lines':'shrunk to '+fitted.fontSize+'px'} to fit (${o.id})`);
   const fontSize=fitted.fontSize,lines=fitted.lines;
   const compiled:CompiledObject={...o,...rect,anchors:{},fontSize,lines,zIndex:parent?parent.zIndex+1:hero?1:2};

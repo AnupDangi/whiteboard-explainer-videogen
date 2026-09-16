@@ -2,7 +2,7 @@ import type {VisualSceneV2,Rect,VisualArchetype} from '../types.js';
 /** Primary-representation bounds each family enforces below. Shared so plan
  *  validation and archetype selection agree with the compiler instead of
  *  discovering the limit as a render-time failure. */
-export const ARCHETYPE_CAPACITY:Partial<Record<VisualArchetype,[number,number]>>={flow:[2,8],cycle:[3,6],transformation:[2,4],comparison:[2,4],numbered_steps:[2,7],equation_walkthrough:[2,6],matrix_operation:[3,6],branch:[2,10],cause_effect:[2,10],state_machine:[2,10],hierarchy:[2,12],timeline:[2,6],trajectory:[3,6]};
+export const ARCHETYPE_CAPACITY:Partial<Record<VisualArchetype,[number,number]>>={flow:[2,5],cycle:[3,6],transformation:[2,4],comparison:[2,4],numbered_steps:[2,7],equation_walkthrough:[2,6],matrix_operation:[3,6],branch:[2,10],cause_effect:[2,10],state_machine:[2,10],hierarchy:[2,12],timeline:[2,6],trajectory:[3,6]};
 export const archetypeFits=(archetype:VisualArchetype,count:number):boolean=>{const capacity=ARCHETYPE_CAPACITY[archetype];return !capacity||(count>=capacity[0]&&count<=capacity[1]);};
 /** Each family owns its composition. Physical systems never pass through graph layout. */
 export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
