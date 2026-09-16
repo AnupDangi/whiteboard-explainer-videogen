@@ -281,6 +281,10 @@ export function applyCompositionFallbacks(input: VisualSceneV2): FallbackOutcome
         fallbackArchetype(scene, warnings, `needs 2–8 primaries (has ${count})`);
       } else if (flowHasCycle(scene)) {
         breakFlowCycle(scene, warnings);
+        if (flowHasCycle(scene)) {
+          fallbackArchetype(scene, warnings, 'relations still form a cycle after edge repair');
+          ensureSingleHero(scene, warnings);
+        }
       } else if (flowColumnOverflow(scene)) {
         fallbackArchetype(scene, warnings, 'would exceed three readable branches per column');
         ensureSingleHero(scene, warnings);

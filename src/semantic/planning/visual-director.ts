@@ -115,6 +115,14 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
    throw stageFailure(e,'compile');}
  validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous);
  for(const o of directed.scene.objects)if(scene.requiredConceptIds.includes(o.conceptId??'')){const actual=compiled.objects.find(c=>c.id===o.id);if(actual?.assetRef!==o.assetRef||actual?.representation?.family!==o.representation?.family)throw new Error(`Critical representation degraded: ${o.id}`);}
+  /** Untimed required relations are the plan's own animations: inject a flow
+   *  action for each relation its focus beat fails to animate (recorded). */
+  for(const required of scene.requiredRelations)for(const b of scene.beats.filter(b=>b.relationFocus.includes(required.id))){
+   const visualBeat=directed.scene.beats.find(vb=>vb.id===b.id);
+   if(visualBeat?.actions.some(a=>a.relationIds.includes(required.id)))continue;
+   visualBeat?.actions.push({id:`${b.id}_rel_${required.id}`,type:'flow',objectIds:[],relationIds:[required.id],durationMs:1500,leadMs:0,easing:'linear'});
+   log('v2.director.relation-heal',{scene:scene.id,beat:b.id,relation:required.id},'warn');
+  }
  const hero=compiled.objects.find(o=>o.role==='hero');
  if(hero?.primitiveRef==='label'&&!['numbered_steps','timeline','trajectory'].includes(compiled.scene.archetype))throw new Error('Unrepresented structural hero: choose a semantic composition');
  return directed;

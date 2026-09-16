@@ -24,7 +24,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  /** Eight distinct non-centre zones keep a hero plus up to eight unplaced
   *  supports from stacking two objects on the same rect. */
  const SUPPORT_ZONES:LayoutZone[]=['upper_left','upper_right','lower_left','lower_right','left','right','top','bottom'];
- const objects:CompiledObject[]=[],remaining=[...scene.objects];let support=0;
+ const objects:CompiledObject[]=[],remaining=[...scene.objects];const childIndex=new Map<string,number>();let support=0;
  while(remaining.length){const index=remaining.findIndex(o=>!o.parentId||objects.some(p=>p.id===o.parentId));if(index<0)throw new Error('Unresolved parent');const o=remaining.splice(index,1)[0];
   const asset=o.assetRef?getAsset(o.assetRef):undefined;if(asset&&!asset.archetypes.includes(scene.archetype))throw new Error(`Asset incompatible with archetype: ${o.id}`);
   if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!['before','after'].includes(state)&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
@@ -33,7 +33,15 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   let rect=placements.get(o.id)??zoneRect(zone,w,h);
   if(labelOnly&&rect){const native=scene.archetype==='equation_walkthrough'?44:44;rect={x:rect.x,y:rect.y+(rect.h-native)/2,w:rect.w,h:native};}
   const parent=o.parentId?objects.find(p=>p.id===o.parentId):undefined;
-  if(parent){const cw=Math.min(w,parent.w*.4),ch=Math.min(h,parent.h*.35);const px=zone.includes('left')?.2:zone.includes('right')?.8:.5,py=zone.includes('upper')?.2:zone.includes('lower')?.54:.5;rect={x:parent.x+(parent.w-cw)*px,y:parent.y+(parent.h-ch)*py,w:cw,h:ch};if(o.collisionPolicy==='touch')rect.x=parent.x+parent.w;}
+  if(parent){
+   const cw=Math.min(w,parent.w*.4),ch=Math.min(h,parent.h*.35);
+   const px=zone.includes('left')?.2:zone.includes('right')?.8:.5;
+   /** Children that share a zone on the same parent derange vertically, or two
+    *  'lower_right' subparts would land on identical rects. */
+   const slot=(childIndex.get(o.parentId!)??0);childIndex.set(o.parentId!,slot+1);
+   const py=zone.includes('upper')?.18+[0,.34][slot%2]! as number:zone.includes('lower')?.58+[0,.26][slot%2]! as number:.4;
+   rect={x:parent.x+(parent.w-cw)*px,y:parent.y+(parent.h-ch)*Math.min(1,py),w:cw,h:ch};if(o.collisionPolicy==='touch')rect.x=parent.x+parent.w;
+  }
   const old=scene.continuity.keepFromPrevious.includes(o.id)?previous?.objects.find(x=>x.id===o.id):undefined;
   if(old){if(old.conceptId!==o.conceptId||old.assetRef!==o.assetRef)throw new Error('Persistent identity changed');rect={x:old.x,y:old.y,w:old.w,h:old.h};}
   const baseFontSize=scene.archetype==='numbered_steps'?24:scene.archetype==='equation_walkthrough'?24:labelOnly?22:20;
