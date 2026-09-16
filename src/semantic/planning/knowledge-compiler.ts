@@ -293,7 +293,7 @@ export async function compileKnowledge(input:KnowledgeInput,model:JsonModel,prom
    dropped+=refs.length-kept.length;item.evidenceRefs=kept;
   }
   if(dropped)log('v2.knowledge.evidence-ref-heal',{dropped},'warn');
-  return validateKnowledge(raw,input.evidenceScope??input.sourceText);
+  return validateKnowledge(payload,input.evidenceScope??input.sourceText);
  },{signal});
  return value as ConceptGraph;
  return value as ConceptGraph;
