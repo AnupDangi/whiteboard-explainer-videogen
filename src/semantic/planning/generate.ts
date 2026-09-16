@@ -30,6 +30,7 @@ import type {SpeechResult} from '../speech.js';
 import {randomUUID} from 'node:crypto';
 import type {StageJournal} from '../harness/journal.js';
 import {TeachingHarness} from '../harness/teaching-harness.js';
+import {StageBudget,jobBudgetMs} from '../harness/budget.js';
 import {advanceLearnerState,conceptGraphFromPlan,contractsFromScene,defaultLearnerProfile,deriveContinuityDecisions,initialLearnerState,stableHash,whiteboardPlanFromContracts} from '../harness/state.js';
 import {LessonSemanticRegistry} from '../harness/registry.js';
 import {gateBoardAlignment,gateCompiled,gateConceptGraph,gateLesson,gateTeachingContracts,gateVisual,gateWhiteboard} from '../harness/gates.js';
@@ -80,7 +81,12 @@ export interface GenerateOptions {
 export async function* generateV2(input:TeachingInput,model:JsonModel,options:GenerateOptions={}){
  const start=performance.now();
  let previous:CompiledSceneV2|undefined;
- const runId=options.runId??randomUUID(),harness=new TeachingHarness({runId,input,journal:options.journal}),gates=harness.gates;
+ const runId=options.runId??randomUUID();
+ /** A job-relative budget: the stage ceilings are absolute and far above what a
+  *  short lesson can justify (knowledge 600s, director 360s for one minute). */
+ const budgetMs=jobBudgetMs(input.targetMinutes,options.criticEnv??process.env),budget=new StageBudget({totalMs:budgetMs});
+ log('v2.job.budget',{runId,budgetMs:Math.round(budgetMs),targetMinutes:input.targetMinutes??1});
+ const harness=new TeachingHarness({runId,input,journal:options.journal,budget}),gates=harness.gates;
  const learnerProfile=structuredClone(options.learnerProfile??defaultLearnerProfile(input.language));
  let learnerState=initialLearnerState(learnerProfile);
  const telemetry=(stage:TelemetryEvent['stage'],status:TelemetryEvent['status'],extra:Partial<TelemetryEvent>={})=>options.onTelemetry?.({stage,status,...extra,atMs:performance.now()-start});

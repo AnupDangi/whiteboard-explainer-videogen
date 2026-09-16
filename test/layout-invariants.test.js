@@ -186,3 +186,29 @@ test('a kept child is re-derived from its parent instead of reusing moved geomet
   assert.ok(compiled.diagnostics.some(d => d.includes('re-derived child c')),
     'dropping the reused child geometry must be recorded');
 });
+
+/** A flat text archetype must accept whatever the resolver produced. The heal
+ *  used to strip assets only, so a composed object (`representation` plus a
+ *  rectangle) still failed the compiler's `primitiveRef !== 'label'` check —
+ *  which became common once the resolver started composing most concepts.
+ *  Measured: `numbered_steps` failed a live run this way. */
+test('a flat text archetype flattens composed and nested objects instead of failing', () => {
+  const actions = ['s1', 's1a', 's2'].map((id, i) => ({id: `a${i}`, type: 'reveal', objectIds: [id], relationIds: [], durationMs: 400, leadMs: 0, easing: 'linear'}));
+  const scene = {
+    version: 2, id: 'steps', title: 'Steps', teachingGoal: 'g', mentalModel: 'm', archetype: 'numbered_steps',
+    objects: [
+      {id: 's1', label: 'Prepare', role: 'hero', children: ['s1a'], state: 'neutral', allowedStates: ['neutral'], importance: 'primary', collisionPolicy: 'forbid', representation: {family: 'container'}, primitiveRef: 'rectangle'},
+      {id: 's1a', label: 'Detail', role: 'support', parentId: 's1', children: [], state: 'neutral', allowedStates: ['neutral'], importance: 'secondary', collisionPolicy: 'contain', primitiveRef: 'label'},
+      {id: 's2', label: 'Execute', role: 'support', children: [], state: 'neutral', allowedStates: ['neutral'], importance: 'secondary', collisionPolicy: 'forbid', primitiveRef: 'rectangle'},
+    ],
+    relations: [],
+    beats: [{id: 'beat_1', narration: 'probe', actions}],
+    continuity: {keepFromPrevious: [], prepareForNext: []},
+  };
+  const compiled = compileScene(scene);
+  assert.ok(compiled.objects.every(o => o.primitiveRef === 'label'), 'every object must become a label');
+  assert.ok(compiled.objects.every(o => !o.parentId && o.children.length === 0), 'the sequence is flat');
+  assert.ok(compiled.objects.every(o => !['contain', 'overlay', 'touch'].includes(o.collisionPolicy)), 'a relative policy without a parent is invalid');
+  assert.equal(findCollisions(compiled.objects).length, 0);
+  assert.ok(compiled.diagnostics.some(d => /text-only/.test(d)), 'the flattening must be recorded');
+});

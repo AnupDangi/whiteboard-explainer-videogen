@@ -20,9 +20,35 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **P3a** retrieval policy | `15bb8c7` | fail-closed licence gate, collection profiles, retrieval modes, deterministic ranker |
 | **S3b** routing before search | `f880e46` | `equation` concepts are not icon-searched and are not counted as degradations |
 | **P3** external retrieval | `51ddfcc` | Iconify client, bounded per-concept resolution, wired into `representation-guide`; 13 failure-injection tests |
-| **P3b** context-driven icons | *(this commit)* | model-chosen `visualQuery`, semantic suitability gate, icons preferred over compositions; **real library icons now render** |
+| **P3b** context-driven icons | `ec21b60` | model-chosen `visualQuery`, semantic suitability gate, icons preferred over compositions; **real library icons now render** |
+| **S7** latency budgets | *(this commit)* | job-relative stage budgets, explicit route/flag logging, startup validation |
+| **S6** bounded concurrency | *(this commit)* | `mapConcurrent` + TTS beats concurrent (measured: 6.5%, so default 1) |
+| **S3c** flat-archetype heal | *(this commit)* | `numbered_steps`/`timeline`/`trajectory` flatten composed objects instead of failing |
 
-Tests: **499/499**. Code graph: **1,882 nodes / 4,073 edges** (`graphify update . --force`).
+Tests: **511/511**. Code graph: **1,916 nodes / 4,153 edges** (`graphify update . --force`).
+
+### S7 — the job now has a latency budget
+
+`harness/budget.ts` derives an allowance from `targetMinutes` (`V2_JOB_BUDGET_MS` overrides, `V2_JOB_BUDGET_FACTOR` scales; default 2x the lesson length, so **120s for a one-minute video**). Every stage timeout becomes a share of *what is left*, floored at 8s, so the absolute ceilings are unreachable:
+
+| stage | ceiling before | now bounded by |
+|---|---|---|
+| knowledge-compiler | 600s | at most 40% of remaining |
+| visual-director | 360s | at most 35% of remaining |
+
+When the remainder is thin the budget **sheds repairs first** (a repair is a second full model call), and an exhausted budget **fails explicitly** rather than starting work it cannot finish. `semantic-job.routes` is logged at creation with the resolved route for every task, the fallback chain, `visualIcons` and the budget, and `VISUAL_ICONS` is validated at creation instead of mid-generation.
+
+### S6 — concurrency, with a negative result worth keeping
+
+`harness/concurrency.ts` provides `mapConcurrent`: bounded workers, **results placed at their input index**, first failure stops scheduling. TTS beats now use it, and the audio is byte-identical to the serial join (asserted).
+
+**But the measurement says it barely helps:** six beats on the real local engine — **10,943ms serial vs 10,226ms at three in flight (6.5%)**, with per-call generation time tripling. The bundled voice engine is CPU-bound, so concurrency buys contention rather than throughput. The default is therefore **1**, with `V2_TTS_CONCURRENCY` to raise it for a network voice where the cost is I/O, not compute.
+
+**Teaching windows were deliberately not parallelised.** They look independent — separate model calls, deterministic ordered merge — but each window's prompt carries `priorConcepts` from the windows before it, so it is a real dependency. The plan says to parallelise only when they are independent; they are not, and that is recorded rather than forced.
+
+### S3c — the flat archetypes accept whatever the resolver produced
+
+`numbered_steps`/`timeline`/`trajectory` require every object to be a label. The heal stripped **assets only**, so a composed object (`representation` plus a rectangle) still failed — which became common once the resolver began composing most concepts, and which cost a live run. They are now flattened properly: assets and compositions dropped, parenting cleared, relative collision policies reset, all recorded as diagnostics.
 
 ### P3b — retrieval is driven by the model, and it now works
 

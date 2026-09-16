@@ -10,6 +10,9 @@ import type {V2Speech} from './speech.js';
 import {generateV2} from './planning/generate.js';
 import type {TeachingInput} from './planning/teaching-planner.js';
 import {ingestSource} from '../explainer/sources.js';
+import {loadModelRouter,loadModelFallbacks,DEFAULT_FAST_MODEL} from '../shared/model-router.js';
+import {jobBudgetMs} from './harness/budget.js';
+import {retrievalMode} from './planning/representation-external.js';
 import type {SourceInput,SourceFigure} from '../shared/types.js';
 import {FileStageJournal} from './harness/journal.js';
 import {HARNESS_VERSION,type GateResult,type HarnessRunManifest,type LearnerProfile,type StageOwner} from './harness/contracts.js';
@@ -78,6 +81,7 @@ sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*
       if(previous.harnessVersion!==HARNESS_VERSION)throw new Error(`Resume source harness ${previous.harnessVersion} does not match ${HARNESS_VERSION}`);
     }
     if(options.groundingPolicy!==undefined&&!['source-only','source-plus-verified'].includes(options.groundingPolicy))throw new Error('Invalid grounding policy');
+    retrievalMode(process.env.VISUAL_ICONS);
     if(options.targetMinutes!==undefined&&(!Number.isFinite(options.targetMinutes)||options.targetMinutes<1||options.targetMinutes>60))throw new Error('Target minutes must be 1–60');
     const configuredCostCeiling=Number(process.env.V2_MAX_JOB_COST_USD??2);if(!Number.isFinite(configuredCostCeiling)||configuredCostCeiling<=0||configuredCostCeiling>100)throw new Error('Invalid V2_MAX_JOB_COST_USD');
     if(options.maxCostUsd!==undefined&&(!Number.isFinite(options.maxCostUsd)||options.maxCostUsd<=0||options.maxCostUsd>configuredCostCeiling))throw new Error(`Budget must be above $0 and at most $${configuredCostCeiling}`);
@@ -96,6 +100,10 @@ sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*
       try{await copyFile(join(this.root,options.resumeFrom,'stage-journal.ndjson'),join(this.root,job.id,'stage-journal.ndjson'));log('semantic-job.resume-journal-copied',{jobId:job.id,resumeFrom:options.resumeFrom});}
       catch(e){log('semantic-job.resume-fresh',{jobId:job.id,resumeFrom:options.resumeFrom,reason:String(e instanceof Error?e.message:e)});}
     }
+    /** Routing and feature flags are logged up front: a stage silently running
+     *  on a weak route, or icon retrieval left on, must be visible at job start
+     *  rather than inferred from failures later. */
+    log('semantic-job.routes',{jobId:job.id,routes:loadModelRouter(process.env,process.env.OPENROUTER_MODEL??DEFAULT_FAST_MODEL),fallbacks:loadModelFallbacks(process.env),visualIcons:retrievalMode(process.env.VISUAL_ICONS),jobBudgetMs:jobBudgetMs(options.targetMinutes,process.env),critic:process.env.V2_CRITIC==='on'});
     log('semantic-job.created',{jobId:job.id,language,maxScenes,narration:options.narration,archetypes:options.allowedArchetypes.length,...(options.source?{sourceKind:options.source.kind}:{}),...(sourceText!==undefined?{sourceChars:sourceText.length}:{})});
     const active=[...this.jobs.values()].filter(entry=>entry!==job&&['planning','streaming'].includes(entry.status));
     if(active.length>=MAX_ACTIVE){job.status='queued';this.queue.push(job.id);log('semantic-job.queued',{jobId:job.id,activeJobs:active.length});await this.save(job,'queued');}

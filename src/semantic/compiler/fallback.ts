@@ -238,6 +238,27 @@ function ensureMatrixTokens(scene: VisualSceneV2, warnings: string[]): void {
  *  offered a transformation-only asset but the director chose spatial_process).
  *  The concept stays on the board as a labeled primitive; the pick is warned.
  *  Relation anchors that named removed asset subparts degrade to center. */
+/** These archetypes are flat text sequences: every object is a label and none
+ *  is nested. The old heal only stripped assets, so a composed object
+ *  (`representation` + `rectangle`) still failed the compiler's
+ *  `primitiveRef !== 'label'` check — which is exactly what happened once the
+ *  resolver began producing compositions for most concepts. */
+function flattenToLabels(scene: VisualSceneV2, warnings: string[]): void {
+  for (const o of scene.objects) {
+    if (o.primitiveRef !== 'label') {
+      delete o.assetRef;
+      delete o.representation;
+      o.primitiveRef = 'label';
+      warn(warnings, `${scene.archetype} is text-only; converted ${o.conceptId ?? o.id} to label primitive`);
+    }
+    if (o.parentId !== undefined || o.children.length) {
+      delete o.parentId;
+      o.children = [];
+      if (['contain', 'overlay', 'touch'].includes(o.collisionPolicy)) o.collisionPolicy = 'forbid';
+    }
+  }
+}
+
 const PRIMITIVE_ANCHORS = new Set(['input', 'output', 'center', 'top', 'bottom']);
 function ensureAssetCompatibility(scene: VisualSceneV2, warnings: string[], catalog?: Record<string, AssetDefinition>): void {
   const stripped = new Set<string>();
@@ -322,18 +343,16 @@ export function applyCompositionFallbacks(input: VisualSceneV2, catalog?: Record
       break;
     case 'numbered_steps':
     case 'timeline':
-    case 'trajectory':
-      for (const o of roots(scene).filter(o => o.assetRef)) {
-        delete o.assetRef;
-        o.primitiveRef = 'label';
-        warn(warnings, `${scene.archetype} is text-only; converted ${o.conceptId ?? o.id} to label primitive`);
-      }
-      if (count > 7 || (scene.archetype !== 'numbered_steps' && count > 6)) {
+    case 'trajectory': {
+      flattenToLabels(scene, warnings);
+      const primaries = roots(scene).length;
+      if (primaries > 7 || (scene.archetype !== 'numbered_steps' && primaries > 6)) {
         capPrimaries(scene, warnings, scene.archetype === 'numbered_steps' ? 7 : 6);
-      } else if (count < 2 || (scene.archetype === 'trajectory' && count < 3)) {
-        fallbackArchetype(scene, warnings, `too few primaries (has ${count})`);
+      } else if (primaries < 2 || (scene.archetype === 'trajectory' && primaries < 3)) {
+        fallbackArchetype(scene, warnings, `too few primaries (has ${primaries})`);
       }
       break;
+    }
     case 'branch':
     case 'cause_effect':
     case 'state_machine':
