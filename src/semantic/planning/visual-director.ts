@@ -222,7 +222,23 @@ export function compileDirected(directed:DirectedScene,previous?:CompiledSceneV2
     *  costs the zone-rect fallback in the dump. */
    let placementMap;try{placementMap=archetypePlacements(directed.scene);}catch{placementMap=new Map();}
    log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>{const rect=placementMap.get(o.id);const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(directed.scene.archetype);const w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;const zone=o.preferredZone??(o.role==='hero'?'center':'upper_left');return {id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef,root:!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support',placed:Boolean(rect),rect:rect?{x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.w),h:Math.round(rect.h)}:zoneRect(zone,w,h)};}),relations:directed.scene.relations.map(r=>`${r.from.objectId}->${r.to.objectId}:${r.relationType}:${r.visualForm}`),directedScene:directed.scene,compiledObjects:(e as {compiledObjects?:unknown}).compiledObjects??null},'error');
-   throw stageFailure(e,'compile');}
+   /** Ownership split. A GEOMETRY invariant (overlap, canvas escape) is the
+    *  compiler's and is not repairable by another model call — retries produced
+    *  byte-identical output. A STRUCTURAL contract violation is the director's:
+    *  it chose the archetype and the relation graph, and restructuring the
+    *  graph is exactly what a targeted repair can do. Without this split a
+    *  cyclic relation graph in a `cause_effect` scene failed the whole job.
+    *  Measured on a live run. */
+   const message=e instanceof Error?e.message:String(e);
+   /** Only a pure GEOMETRY invariant is the compiler's own and therefore not
+    *  repairable: retries for those produced byte-identical output. Everything
+    *  else thrown during compilation is a contract the director wrote — a
+    *  structural archetype violation, a spoken anchor that does not exist in
+    *  its own narration, an invented asset — and a targeted repair is exactly
+    *  the right response. Measured live: a cyclic graph and an unresolvable
+    *  anchor each failed a whole job while being director-fixable. */
+   const geometryInvariant=/^(Illegal overlap|Canvas escape)/.test(message);
+   throw stageFailure(e,geometryInvariant?'compile':'director');}
  validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous,catalog);
   /** Post-compile integrity checks are owned by the representation resolver and
    *  the compiler, not by the director: the director cannot redraw pixels, and a

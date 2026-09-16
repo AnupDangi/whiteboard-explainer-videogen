@@ -29,7 +29,23 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **P5** representation telemetry | *(this commit)* | tier counts per scene, aggregated in the live metrics |
 | **S9a** regression corpus | *(this commit)* | real model output captured from the logs as fixtures |
 
-Tests: **525/525**. Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
+Tests: **530/530**. Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
+
+### Wave 2 — latency, cache, benchmark, live matrix
+
+**Where the time goes (measured, complete 2-scene narrated run):** teaching 23.7s (1 call) + director 16.6s (scene 1) + director 10.8s (scene 2) = **51.2s of model time**, plus ~24s of TTS/compile/render = **75.1s wall**. Model latency is 68% of wall, and the two director calls were serial for no reason — they only need the previous scene's SEMANTIC continuity, which the plan already declares.
+
+**The fix.** `directVisual` is split into `directScene` (model call, no compilation) and `compileDirected` (deterministic, the only step needing the previous compiled scene). `generate.ts` now runs phase 1 — visual-model, representation, grounding and the director request — **for every scene concurrently**, passing `previousContinuity` from the plan, then phase 2 compiles and produces scenes in order so geometry reuse still works.
+
+Measured after: the two director calls start 2.5s apart and overlap. **Serial sum 65.1s against a model wall span of 40.9s — 24.2s overlapped.**
+
+**Ownership fix found while doing this.** Two live runs failed with errors the director owns but that were classified compiler-owned and therefore not repairable: a cyclic relation graph in a `cause_effect` scene and a spoken anchor that does not exist in the beat's own narration. Inverted the rule: **only a pure geometry invariant (`Illegal overlap`, `Canvas escape`) is non-repairable**; everything else thrown during compilation is a contract the director wrote and gets its one targeted repair. Retried geometry is still proven byte-identical.
+
+**P4 icon cache** (`external/cache.ts`) — file or memory cache keyed by sha256, atomic writes, a corrupt entry a miss, cached assets re-validated before use. A second resolve performs zero fetches.
+
+**P6 representation benchmark** (`scripts/bench-representation.ts`, `npm run bench:representation`) — 75 concepts, 9 domains, 17 archetypes. Headline on the authored corpus: **82.7% primitive-label**, law/governance **0/10** trusted, and four abstractions that reach a trusted asset when they arguably should not (`Blood Pressure → physics.compressor.v2` is a tag collision).
+
+**S9b live matrix** (`scripts/live-matrix.ts`, `npm run matrix:live`) — one command produces job success rate, compile success, P50/P95 wall and first-playable latency, cost, model calls, top failure reasons and a PASS/FAIL line per measurable migration gate. Failed runs stay in the denominator; unmeasurable gates report PENDING rather than being faked.
 
 ### Parallel wave — S4, X1/X2, P5, S9a
 
