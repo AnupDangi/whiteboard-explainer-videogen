@@ -38,30 +38,42 @@ export const knowledgeGraphSchema=obj({
 const evidenceTokens=(text:string):string[]=>normalizeEvidence(text).toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._-]*/gu)??[];
 /** Nearest source sentence that covers most of a paraphrase. Never invents text:
  *  the replacement is copied character-for-character from the source. */
+/** Per-source snapshot: tokenizing a 105k-character source for every candidate
+ *  quote was the dominant validation cost; one WeakMap entry per source makes
+ *  repeated evidence checks near-free. */
+const sourceSnapshotCache=new Map<string,{sentences:string[];frequencies:Map<string,number>}>();
+function sourceSnapshot(sourceText:string){
+ let snapshot=sourceSnapshotCache.get(sourceText);
+ if(snapshot)return snapshot;
+ const sentences=sourceText.split(/(?<=[.!?;])\s+/);
+ const frequencies=new Map<string,number>();
+ for(const token of evidenceTokens(sourceText))frequencies.set(token,(frequencies.get(token)??0)+1);
+ snapshot={sentences,frequencies};
+ if(sourceSnapshotCache.size>50)sourceSnapshotCache.delete(sourceSnapshotCache.keys().next().value as string);
+ sourceSnapshotCache.set(sourceText,snapshot);
+ return snapshot;
+}
+/** Snap a paraphrase to the exact raw source sentence it covers. Scores the
+ *  RAW sentences directly (normalization is per-sentence), so the replacement
+ *  is always a character-for-character source substring and index alignment
+ *  cannot break when PDF artifacts precede sentence punctuation. */
 export function snapQuoteToSource(sourceText:string,quote:string):string|null{
  const quoteTokens=evidenceTokens(quote);
  if(quoteTokens.length<3)return null;
  const unique=new Set(quoteTokens);
- const sentences=normalizeEvidence(sourceText).split(/(?<=[.!?;])\s+/);
- /** Same split on the raw text: normalization never adds/removes sentence-boundary
-  *  punctuation, so raw[i] normalizes to sentences[i] and the replacement can stay
-  *  a character-for-character copy of the source. */
- const rawSentences=sourceText.split(/(?<=[.!?;])\s+/);
- const frequencies=new Map<string,number>();
- for(const token of evidenceTokens(sourceText))frequencies.set(token,(frequencies.get(token)??0)+1);
- let best:{index:number;score:number;distinctive:boolean}|null=null;
+ const snapshot=sourceSnapshot(sourceText);const sentences=snapshot.sentences;const frequencies=snapshot.frequencies;
+  let best:{index:number;score:number}|null=null;
  for(let i=0;i<sentences.length;i++){
-  const sentence=sentences[i];
-  if(sentence.length>Math.max(400,quote.length*3))continue;
-  const sentenceTokens=new Set(evidenceTokens(sentence));
+  const normalized=normalizeEvidence(sentences[i]);
+  if(normalized.length>Math.max(400,quote.length*3))continue;
+  const sentenceTokens=new Set(evidenceTokens(normalized));
   let hit=0;for(const token of unique)if(sentenceTokens.has(token))hit+=1;
   const score=hit/unique.size;
   const distinctive=[...unique].some(token=>sentenceTokens.has(token)&&(frequencies.get(token)??0)<=5);
-  if(score>=0.6&&distinctive&&(!best||score>best.score))best={index:i,score,distinctive};
+  if(score>=0.6&&distinctive&&(!best||score>best.score))best={index:i,score};
  }
  if(!best)return null;
- const raw=rawSentences[best.index]??null;
- return raw&&normalizeEvidence(raw)===sentences[best.index]?raw:null;
+ return sentences[best.index]??null;
 }
 /** Whitespace/unicode-normalized form for verbatim-quote matching. */
 const normalizeEvidence=(text:string)=>text.replace(/[\u2018\u2019\u201A\u201B]/g,"'").replace(/[\u201C\u201D\u201E]/g,'"').replace(/[\u2013\u2014]/g,'-').replace(/\u2026/g,'...').replace(/\u00A0/g,' ').replace(/[\u2217\u22C5\u00B7\u2219]/g,'*').replace(/[\u2212\u2010\u2011]/g,'-').replace(/\u2264/g,'<=').replace(/\u2265/g,'>=').replace(/[\u0000-\u0008\u000B\u000E-\u001F]/g,'').normalize('NFKD').replace(/[\u0300-\u036F]/g,'').replace(/\s+/g,' ').trim();
