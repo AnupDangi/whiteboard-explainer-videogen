@@ -16,9 +16,24 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **S8** structured director contract | `bd83e23` | required relations/objects given in the output schema shape; stage enums reconciled |
 | **P0** palette | `9534f0f` | theme roles + fill modes; golden SVG hashes pin byte-identity |
 | **P1** normalizer | `3f900c4` | fail-closed sanitizer, path grammar, flattening, transforms, converter |
-| **P2** embedded catalog | *(this commit)* | `CompiledSceneV2.assetCatalog` + `resolveAsset(ref,catalog?)` threaded through compile and renderer |
+| **P2** embedded catalog | `4a6eda4` | `CompiledSceneV2.assetCatalog` + `resolveAsset(ref,catalog?)` threaded through compile and renderer |
+| **P3a** retrieval policy | *(this commit)* | fail-closed licence gate, collection profiles, retrieval modes, deterministic ranker |
 
-Tests: **469/469**. Code graph: **1,782 nodes / 3,830 edges** (`graphify update . --force`).
+Tests: **477/477**. Code graph: **1,803 nodes / 3,877 edges** (`graphify update . --force`).
+
+### P3a — the deterministic half of external retrieval
+
+Nothing here performs I/O, so the decisions a future fetch depends on are testable now:
+
+| module | behaviour |
+|---|---|
+| `external/license.ts` | **fail-closed**: explicit allow-list only. MIT/ISC/BSD/Apache-2.0/CC0/Unlicense → `auto`; CC-BY/OFL → `attribution`; **share-alike, non-commercial, derivatives and anything unknown → `blocked`**. `assertPermitted` throws rather than warns. |
+| `external/policy.ts` | curated collection profiles (licence + drawing style per collection). `collectionsFor(mode)` returns an ordered, blocked-free list: `off` → none, `strict` → stroke-only only, `balanced` → stroke-only then the rest, `broad` → all permitted. No `if (prefix === …)` tables. |
+| `external/rank.ts` | deterministic scoring: stroke-native `+20`, fill-only `−15`, duotone `−10`, complexity penalties, attribution `−5`, unprofiled collection `−25`, preferred-collection bonus from position. Ties break on `collection` then `name`, so the same candidates always produce the same order. Blocked and unpermitted candidates are **rejected with a reason**, counted separately from the ranked set. |
+
+**Measured before building it** (and it changed the plan): across 50 fixture objects the resolver already reaches a trusted asset for **39 (78%)**. Of the 11 misses, **6 are equations/symbols**, **3 are annotation labels**, and only **2 are genuine entity gaps** (`Client`, `CPU registers`). Icon *breadth* is therefore a smaller lever than it looked — the resolver is asked for an icon for things that were never entities, and that false `REPRESENTATION_DEGRADATION` signal is what hides the real gaps.
+
+**Honest limit:** icon libraries do not fix abstract concepts. There is no icon for "abduction"; Iconify would supply a *symbol* (lightbulb, brain, network). For abstract topics the composition families remain the primary representation.
 
 ### Icon system P0–P2 — representation can now come from outside the static registry
 
