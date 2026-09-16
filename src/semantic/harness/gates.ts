@@ -42,7 +42,12 @@ export function gateVisual(scene:VisualSceneV2,registry:SemanticRegistrySnapshot
   // representation-family object legitimately draws as `rectangle` (the
   // director contract mandates that) and an asset keeps its illustration.
   const representationFamily=object.representation?.family??null;
-  if(object.importance==='primary'&&!representationFamily&&!object.assetRef&&['rectangle','label'].includes(object.primitiveRef??'')&&!labelFriendly.has(scene.archetype))findings.push(finding('REPRESENTATION_DEGRADATION','visual-director',`Critical object ${object.id} degraded to a generic primitive`));
+  if(object.importance==='primary'&&!representationFamily&&!object.assetRef&&!labelFriendly.has(scene.archetype)){
+   /** A bare rectangle is the generic-box failure the plan calls hard. A
+    *  labeled primitive is tier-7 semantic abstraction: acceptable, recorded. */
+   if((object.primitiveRef??'')==='rectangle')findings.push(finding('REPRESENTATION_DEGRADATION','visual-director',`Critical object ${object.id} degraded to a generic primitive`));
+   else if(object.label?.trim())findings.push(finding('REPRESENTATION_DEGRADATION','visual-director',`Critical object ${object.id} uses semantic abstraction (labeled primitive)`,{},'advisory'));
+  }
  }
  return result('visual-director',findings);
 }

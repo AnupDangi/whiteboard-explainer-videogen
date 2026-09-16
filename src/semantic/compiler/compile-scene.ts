@@ -30,7 +30,9 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!['before','after'].includes(state)&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
   const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(scene.archetype),w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;
   const zone=o.preferredZone??(hero?'center':SUPPORT_ZONES[support++%SUPPORT_ZONES.length]);
-  let rect=placements.get(o.id)??zoneRect(zone,w,h);const parent=o.parentId?objects.find(p=>p.id===o.parentId):undefined;
+  let rect=placements.get(o.id)??zoneRect(zone,w,h);
+  if(labelOnly&&rect){const native=scene.archetype==='equation_walkthrough'?44:44;rect={x:rect.x,y:rect.y+(rect.h-native)/2,w:rect.w,h:native};}
+  const parent=o.parentId?objects.find(p=>p.id===o.parentId):undefined;
   if(parent){const cw=Math.min(w,parent.w*.4),ch=Math.min(h,parent.h*.35);const px=zone.includes('left')?.2:zone.includes('right')?.8:.5,py=zone.includes('upper')?.2:zone.includes('lower')?.54:.5;rect={x:parent.x+(parent.w-cw)*px,y:parent.y+(parent.h-ch)*py,w:cw,h:ch};if(o.collisionPolicy==='touch')rect.x=parent.x+parent.w;}
   const old=scene.continuity.keepFromPrevious.includes(o.id)?previous?.objects.find(x=>x.id===o.id):undefined;
   if(old){if(old.conceptId!==o.conceptId||old.assetRef!==o.assetRef)throw new Error('Persistent identity changed');rect={x:old.x,y:old.y,w:old.w,h:old.h};}

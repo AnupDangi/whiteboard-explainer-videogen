@@ -39,7 +39,7 @@ export function healPreservedRedraws(scene:VisualSceneV2,board:WhiteboardPlan):n
  }
  return healed;
 }
-export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},model.candidateArchetypes);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
+export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},model.candidateArchetypes);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}).filter(candidate=>candidate.archetypes.includes(model.candidateArchetypes[0])),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
 export function representationWarnings(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel):string[]{return assetCandidates(scene,registry,model).flatMap(c=>c.warnings);}
 /** Every initial or repaired direction passes this same teaching contract. */
 export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,allowedAssets:Set<string>,previous?:CompiledSceneV2):VisualSceneV2{
@@ -48,6 +48,9 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
  if(!mentalModel.candidateArchetypes.includes(visual.archetype))throw new Error('Director chose unavailable mental model');
  if(!visual.objects.some(o=>o.role==='hero'&&o.conceptId===scene.centralConceptId))throw new Error('Director changed central teaching object');
  for(const o of visual.objects)if(o.representation&&o.assetRef)throw new Error('Object has two representations');
+  /** The archetype is harness-owned (selectVisualModel); the prompt names it, so
+   *  a model-returned mismatch is clamped to it (recorded). */
+  if(visual.archetype!==mentalModel.candidateArchetypes[0]){log('v2.director.archetype-clamp',{scene:scene.id,from:visual.archetype,to:mentalModel.candidateArchetypes[0]});visual.archetype=mentalModel.candidateArchetypes[0];}
  for(const o of visual.objects)if(o.assetRef&&!allowedAssets.has(o.assetRef))throw new Error(`Director invented asset ${o.assetRef}`);
  for(const id of scene.requiredConceptIds)if(!visual.objects.some(o=>o.conceptId===id))throw new Error(`Director omitted concept ${id}`);
  if(visual.beats.length!==scene.beats.length)throw new Error('Director changed beat count');

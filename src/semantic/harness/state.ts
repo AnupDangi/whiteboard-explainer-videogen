@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import type {ConceptGraph,LearnerProfile,LearnerState,SemanticRegistrySnapshot,TeachingContract,WhiteboardPlan} from './contracts.js';
-import type {CompiledSceneV2,ContinuityDecision,SemanticBeat,SemanticScenePlan,TeachingPlanV2,VisualObject,VisualSceneV2} from '../types.js';
+import type {CompiledSceneV2,ContinuityDecision,ObjectState,SemanticBeat,SemanticScenePlan,TeachingPlanV2,VisualObject,VisualSceneV2} from '../types.js';
 import {normalizeSemanticKey} from '../identity/types.js';
 
 export const stableHash=(value:unknown)=>createHash('sha256').update(stableJson(value)).digest('hex');
@@ -42,9 +42,14 @@ export function whiteboardPlanFromContracts(scene:SemanticScenePlan,contracts:Te
   const preserve=index===0?scene.continuity.keepFromPrevious:contract.learnerDelta.reinforcedConcepts;
   const introduce=contract.learnerDelta.newConcepts;
   const transforms=scene.beats[index].transform;
-  return {contractId:contract.id,narration:contract.narrationDraft,semanticKeys,relations:scene.requiredRelations.filter(r=>contract.relationIds.includes(r.id)),diffs:[...(preserve.length?[{operation:'PRESERVE' as const,semanticKeys:unique(preserve),reason:'Retain established visual vocabulary'}]:[]),...(introduce.length?[{operation:'INTRODUCE' as const,semanticKeys:unique(introduce),reason:'Introduce this beat learner delta'}]:[]),...transforms.map(t=>({operation:'TRANSFORM' as const,semanticKeys:[t.conceptId],reason:'Teaching contract requires a state change',fromState:t.fromState as any,toState:t.toState as any}))]};
+  return {contractId:contract.id,narration:contract.narrationDraft,semanticKeys,relations:scene.requiredRelations.filter(r=>contract.relationIds.includes(r.id)),diffs:[...(preserve.length?[{operation:'PRESERVE' as const,semanticKeys:unique(preserve),reason:'Retain established visual vocabulary'}]:[]),...(introduce.length?[{operation:'INTRODUCE' as const,semanticKeys:unique(introduce),reason:'Introduce this beat learner delta'}]:[]),...transforms.map(t=>({operation:'TRANSFORM' as const,semanticKeys:[t.conceptId],reason:'Teaching contract requires a state change',fromState:bridgeVisualState(t.fromState) as any,toState:bridgeVisualState(t.toState) as any}))]};
  })};
 }
+/** The teaching plan may declare domain-specific states (e.g.
+ *  'high-pressure-gas'); the visual layer animates the six ObjectStates.
+ *  A domain state maps to 'activated' - the object visibly changed - and the
+ *  specific state is carried by narration and captions. */
+export function bridgeVisualState(state?:string):ObjectState{return state&&(['neutral','highlighted','activated','before','after','hidden'] as string[]).includes(state)?state as ObjectState:'activated';}
 export function advanceLearnerState(before:LearnerState,contracts:TeachingContract[],graph:ConceptGraph):LearnerState{
  const next=structuredClone(before);
  for(const contract of contracts){
