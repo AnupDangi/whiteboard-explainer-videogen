@@ -1,6 +1,11 @@
 import {loggedFetch,log} from '../../shared/logger.js';
 import {DEFAULT_FAST_MODEL,loadModelFallbacks,loadModelRouter} from '../../shared/model-router.js';
 import {assertSchema,healSchema,type Schema,type HealClass,type HealEvent} from '../schemas.js';
+/** The stages that make a MODEL call. This is deliberately a subset of the
+ *  canonical harness stage list (`STAGE_OWNERS` in harness/contracts.ts), not a
+ *  duplicate of it: `representation-guide`, `whiteboard-planner`, `compiler`,
+ *  `render` and `tts-alignment` are deterministic and never reach this module.
+ *  Anything that needs the full pipeline vocabulary must use `HarnessStage`. */
 export type Stage='teaching'|'knowledge'|'architect'|'director';
 export interface StageCall {stage:Stage;model:string;elapsedMs:number;promptTokens:number;completionTokens:number;costUsd:number;attempt:number}
 export interface StageEvent {

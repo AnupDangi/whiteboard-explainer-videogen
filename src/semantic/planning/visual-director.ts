@@ -161,13 +161,19 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
 }
 export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:{candidates?:ReturnType<typeof assetCandidates>;sourceVisualIds?:string[];repairNotes?:string[];whiteboardPlan?:WhiteboardPlan;signal?:AbortSignal}):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
  const candidates=resolved?.candidates??assetCandidates(scene,registry,mentalModel),allowedAssets=new Set(candidates.flatMap(c=>c.candidates.map(a=>a.id)));
- const fallbackNote=primitiveFallbackNote(candidates.filter(c=>!c.candidates.length&&!c.representation).map(c=>c.conceptId));
-  const repairNote=resolved?.repairNotes?.length?`A previous direction failed these visual checks: ${resolved.repairNotes.join('; ')}. Correct exactly those objects, relations, anchors, states or actions and keep narration, beat IDs and concept coverage unchanged.`:'';
-  /** The gate matches relations by exact concept pair, type and anchor; naming
-   *  them removes a whole class of 'Missing semantic relation' failures. */
-  const requiredRelationNote=scene.requiredRelations.length?`Every required relation must appear with these exact values: ${scene.requiredRelations.map(required=>`${required.fromConceptId} --${required.relationType}--> ${required.toConceptId}${required.targetAnchor?` (arriving at the target part "${required.targetAnchor}")`:''}`).join('; ')}. Set from/to to the objects whose conceptId matches, and copy the relation type verbatim.`:'';
- const instructions=[directorPrompt({archetype:mentalModel.candidateArchetypes[0],language,whiteboard:Boolean(resolved?.whiteboardPlan)}),requiredRelationNote,fallbackNote,repairNote,skillInstruction('visual-director')].filter(Boolean).join(' ');
-  const directed=await model.generate('director',instructions,{semanticScene:scene,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},schema,value=>{
+  /** The teaching contract the validator enforces, given to the model in the
+   *  EXACT shape it must echo. Previously these were serialised into a sentence
+   *  and the model had to translate `fromConceptId`/`relationType`/`targetAnchor`
+   *  into `fromConcept`/`relation`/`targetPart`; measured failure: the model
+   *  emitted the right concept pair with the wrong relation type and the single
+   *  targeted repair did not converge. Field names now match the output schema,
+   *  so prompt, schema, validator and compiler express one shape. */
+  const requiredRelations=scene.requiredRelations.map(required=>({fromConcept:required.fromConceptId,relation:required.relationType,toConcept:required.toConceptId,...(required.targetAnchor?{targetPart:required.targetAnchor}:{})}));
+  const requiredObjects=[{conceptKey:scene.centralConceptId,role:'hero'},...scene.requiredConceptIds.filter(id=>id!==scene.centralConceptId).map(id=>({conceptKey:id,role:'support'}))];
+  const contractNote=requiredRelations.length?'Every entry of requiredRelations must appear in some beat\'s relationRefs with exactly those fromConcept, relation and toConcept values. Every entry of requiredObjects must appear once with that role.':'';const fallbackNote=primitiveFallbackNote(candidates.filter(c=>!c.candidates.length&&!c.representation).map(c=>c.conceptId));
+   const repairNote=resolved?.repairNotes?.length?`A previous direction failed these visual checks: ${resolved.repairNotes.join('; ')}. Correct exactly those objects, relations, anchors, states or actions and keep narration, beat IDs and concept coverage unchanged.`:'';
+  const instructions=[directorPrompt({archetype:mentalModel.candidateArchetypes[0],language,whiteboard:Boolean(resolved?.whiteboardPlan)}),contractNote,fallbackNote,repairNote,skillInstruction('visual-director')].filter(Boolean).join(' ');
+   const directed=await model.generate('director',instructions,{semanticScene:scene,requiredRelations,requiredObjects,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},schema,value=>{
    const response=value as {scene?:VisualSceneV2;direction?:unknown;decisions:DirectionDecisions};
    if(response.scene){
     // Instrumented legacy passthrough (plan heal rule 24): kept for model

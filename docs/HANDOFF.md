@@ -12,9 +12,22 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **S1c** narrated end-to-end | `ecff8cb` | four more contract defects fixed; **a narrated 2-scene lesson now completes** |
 | **V2 default** | `08e08a5` | semantic is the default; V1 frozen legacy (not deleted) |
 | **S3** contract truthfulness | `528842e` | static relations render; unimplemented motions removed; continuity realisation documented + tested |
-| **S2** heal visibility | *(this commit)* | every `healSchema` rule reports `{path,rule,classification,before,after}`; SEMANTIC heals counted on the job snapshot |
+| **S2** heal visibility | `b943b60` | every `healSchema` rule reports `{path,rule,classification,before,after}`; SEMANTIC heals counted on the job snapshot |
+| **S8** structured director contract | *(this commit)* | required relations/objects given in the output schema shape; stage enums reconciled |
 
-Tests: **447/447**. Code graph: **1,742 nodes / 3,743 edges** (`graphify update . --force`).
+Tests: **450/450**. Code graph: **1,742 nodes / 3,743 edges** (`graphify update . --force`).
+
+### S8 — one shape from prompt to validator
+
+| change | before | after |
+|---|---|---|
+| required relations | serialised into a prose sentence with **different field names** (`fromConceptId`/`relationType`/`targetAnchor`) than the output schema (`fromConcept`/`relation`/`targetPart`) | structured `requiredRelations` input in the **output field names**, so the model echoes rather than translates |
+| required objects / hero role | implied by the plan | explicit `requiredObjects: [{conceptKey, role}]` |
+| stage enums | `Stage` (model calls) looked like a stale duplicate of `HarnessStage` | documented as deliberately the model-callable subset; `STAGE_OWNERS` remains the canonical list |
+
+Measured: the prompt that failed twice on `Missing semantic relation rel-bill-to-committee` **now completes** — 1 scene, 44.5s, 2 calls, $0.018.
+
+Prompt sizes from that run: teaching 3,440 / director 4,703 prompt tokens. The director instruction is ~4.0k chars; the rest is structured data, not prose.
 
 ### S2 — no deterministic correction is silent any more
 
@@ -176,6 +189,6 @@ Synthesis rules, both recorded: an *entirely absent* required relation is realiz
 
 The lesson completes but reads thin: on the same run, four of five concepts render as bare label pills because **no asset exists for `abduction`, `axiom`, `induction`, `deduction`**. That is the 43-asset static-registry ceiling, not a layout or routing defect. Relations also render only when an action animates them (`renderer/relations.ts:8`), so the graph is richer than the picture.
 
-### Next: S8 (structured director contract), then the icon system
+### Next: the icon system (P0–P2), then S6/S7 latency
 
-S2 closed heal visibility. The remaining reliability gap is **director model variance**: a live run on a different prompt failed twice on `Missing semantic relation rel-bill-to-committee` because the model emitted the right concept pair with the wrong relation type, and the single targeted repair did not converge. That is an honest failure under the one-repair policy, but it costs a job. The fix is **S8**: give the model the required relations as a **structured** contract (the prompt currently serialises them into a sentence) so prompt, schema, validator and compiler all express the same shape. After that, the icon system (P0–P2, no network) is the capability ceiling — four of five concepts on the live lesson still render as bare label pills.
+S8 closed the contract-shape gap that was costing whole jobs. The remaining ceiling is **representation**: on the live lesson, four of five concepts still render as bare label pills because the registry holds 43 static assets and no runtime resolution. The next capability work is **`docs/ICON_SYSTEM_PLAN.md` P0–P2** (palette, normalizer, embedded catalog — all no-network, additive, and inert until a catalog is supplied). After that, **S6/S7** for throughput: a 1-minute lesson still costs ~30–140s of wall time with no job-relative latency budget.
