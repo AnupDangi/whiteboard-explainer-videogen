@@ -18,7 +18,7 @@ const id:Schema={type:'string',minLength:1,maxLength:64,pattern:'^[a-z][a-z0-9_-
 const en=(values:readonly string[]):Schema=>({type:'string',enum:values});
 const obj=(properties:Record<string,Schema>,optional:string[]=[]):Schema=>({type:'object',properties,required:Object.keys(properties).filter(k=>!optional.includes(k)),additionalProperties:false});
 const SEMANTIC_TYPES=['entity','material','process','state','quantity','equation','location','role'] as const;
-const concept=obj({key:id,canonicalName:str(120),aliases:arr(str(120),12),semanticType:en(SEMANTIC_TYPES),visualFamily:str(80),evidenceRefs:arr(id)},['visualFamily','evidenceRefs','aliases']);
+const concept=obj({key:id,canonicalName:str(120),aliases:arr(str(120),12),semanticType:en(SEMANTIC_TYPES),visualFamily:str(80),visualQuery:str(40),evidenceRefs:arr(id)},['visualFamily','visualQuery','evidenceRefs','aliases']);
 const prerequisite=obj({before:id,after:id,reason:str(160)},['reason']);
 const mechanism=obj({id,statement:str(400),conceptIds:arr(id,16,1),requiresStateChange:{type:'boolean'},evidenceRefs:arr(id)});
 const claim=obj({id,statement:str(400),critical:{type:'boolean'},evidenceRefs:arr(id)});
@@ -192,8 +192,8 @@ function canonicalVisualFamily(value:string|undefined,semanticType:string,key:st
 export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
  if(Array.isArray(raw))throw new Error(`Knowledge response must be one JSON object with concepts/claims/evidence keys; received a bare array of ${raw.length} items. Re-emit the whole graph as an object.`);
  assertSchema(raw,knowledgeGraphSchema);
- const value=structuredClone(raw) as {concepts:{key:string;canonicalName:string;aliases:string[];semanticType:ConceptGraph['concepts'][number]['semanticType'];visualFamily?:string;evidenceRefs:string[]}[];prerequisites:{before:string;after:string;reason:string}[];mechanisms:ConceptGraph['mechanisms'];claims:{id:string;statement:string;critical:boolean;evidenceRefs:string[]}[];quantities:{conceptKey:string;value:string;evidenceRefs:string[]}[];terminology:{key:string;definition:string}[];evidence:{id:string;sourceId?:string;quote:string;section?:string}[]};
- const concepts:ConceptGraph['concepts']=value.concepts.map(c=>({id:c.key,canonicalName:c.canonicalName,aliases:[...(c.aliases??[])],semanticType:c.semanticType,evidenceRefs:[...new Set(c.evidenceRefs)],...(canonicalVisualFamily(c.visualFamily,c.semanticType,c.key)?{visualFamily:canonicalVisualFamily(c.visualFamily,c.semanticType,c.key)}:{})}));
+ const value=structuredClone(raw) as {concepts:{key:string;canonicalName:string;aliases:string[];semanticType:ConceptGraph['concepts'][number]['semanticType'];visualFamily?:string;visualQuery?:string;evidenceRefs:string[]}[];prerequisites:{before:string;after:string;reason:string}[];mechanisms:ConceptGraph['mechanisms'];claims:{id:string;statement:string;critical:boolean;evidenceRefs:string[]}[];quantities:{conceptKey:string;value:string;evidenceRefs:string[]}[];terminology:{key:string;definition:string}[];evidence:{id:string;sourceId?:string;quote:string;section?:string}[]};
+ const concepts:ConceptGraph['concepts']=value.concepts.map(c=>({id:c.key,canonicalName:c.canonicalName,aliases:[...(c.aliases??[])],semanticType:c.semanticType,evidenceRefs:[...new Set(c.evidenceRefs)],...(c.visualQuery?{visualQuery:c.visualQuery}:{}),...(canonicalVisualFamily(c.visualFamily,c.semanticType,c.key)?{visualFamily:canonicalVisualFamily(c.visualFamily,c.semanticType,c.key)}:{})}));
  // Canonical identity (key/canonicalName) must never fork — that rejects.
  // Optional surface aliases that collide across concepts are dropped
  // deterministically (each concept keeps its own canonical identity).

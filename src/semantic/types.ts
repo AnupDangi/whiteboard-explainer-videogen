@@ -20,7 +20,7 @@ export type EasingKind = 'linear'|'ease_in_out';
 export interface EvidenceRef {id:string;sourceId:string;quote:string}
 export interface ClaimRequirement {id:string;statement:string;critical:boolean;evidenceRefs:string[]}
 export interface MechanismRequirement extends ClaimRequirement {conceptIds:string[];requiresStateChange:boolean}
-export interface ConceptIdentity {id:string;canonicalName:string;aliases:string[];semanticType:'entity'|'material'|'process'|'state'|'quantity'|'equation'|'location'|'role';visualFamily?:string;preferredColorRole?:string;evidenceRefs:string[]}
+export interface ConceptIdentity {id:string;canonicalName:string;aliases:string[];semanticType:'entity'|'material'|'process'|'state'|'quantity'|'equation'|'location'|'role';visualFamily?:string;/** A single concrete noun an icon library would actually have, chosen by the model from the lesson context. Icon search uses this, never the concept name: `Legislative Bill` never matches an icon, `document` does. */visualQuery?:string;preferredColorRole?:string;evidenceRefs:string[]}
 export interface StateChangeRequirement {conceptId:string;fromState:string;toState:string}
 export interface SemanticBeat {id:string;purpose:string;narrationDraft:string;requirementIds:string[];introduce:string[];reinforce:string[];transform:StateChangeRequirement[];relationFocus:string[];evidenceRefs:string[];intentionalPause?:string}
 export interface SemanticRelationRequirement {id:string;fromConceptId:string;toConceptId:string;relationType:typeof RELATIONS[number];targetAnchor?:string}

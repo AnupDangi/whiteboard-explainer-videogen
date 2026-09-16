@@ -19,9 +19,39 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **P2** embedded catalog | `4a6eda4` | `CompiledSceneV2.assetCatalog` + `resolveAsset(ref,catalog?)` threaded through compile and renderer |
 | **P3a** retrieval policy | `15bb8c7` | fail-closed licence gate, collection profiles, retrieval modes, deterministic ranker |
 | **S3b** routing before search | `f880e46` | `equation` concepts are not icon-searched and are not counted as degradations |
-| **P3** external retrieval | *(this commit)* | Iconify client, bounded per-concept resolution, wired into `representation-guide`; 13 failure-injection tests |
+| **P3** external retrieval | `51ddfcc` | Iconify client, bounded per-concept resolution, wired into `representation-guide`; 13 failure-injection tests |
+| **P3b** context-driven icons | *(this commit)* | model-chosen `visualQuery`, semantic suitability gate, icons preferred over compositions; **real library icons now render** |
 
-Tests: **492/492**. Code graph: **1,841 nodes / 3,957 edges** (`graphify update . --force`).
+Tests: **499/499**. Code graph: **1,882 nodes / 4,073 edges** (`graphify update . --force`).
+
+### P3b — retrieval is driven by the model, and it now works
+
+**Direct answer to "is it hardcoded or searched from context":** it is **searched from context**, and until this commit it barely was — the hardcoded 43-asset registry was the primary source and the search was gated behind it, so a live run resolved five of six concepts to procedural shapes and never issued a useful query.
+
+| change | why |
+|---|---|
+| **`visualQuery` on the concept contract** — the model picks ONE concrete noun per concept from the lesson context (`bill → document`, `committee → users`, `reconciliation → handshake`) | icon libraries are indexed by concrete nouns; `Legislative Bill` matches nothing |
+| **semantic suitability gate** (`external/suitability.ts`) — an icon is eligible only when its name is the query once style vocabulary is removed | literal matching is confidently wrong: `floor` returns `floor-lamp`, `bill` returns `bill-x` |
+| **tier policy** — a concept that only reached a procedural composition is searched for too when it names an *object* (entity/material/location/role); a real icon replaces the composition, and the composition stays the fallback when the search misses | compositions were preempting icons for exactly the nouns icons are good at |
+| **provider relevance** as `providerRank` | the ranker scored a whole collection identically and then discarded Iconify's own ordering |
+
+**The bug that blocked every icon:** the sanitizer rejected `xmlns="http://www.w3.org/2000/svg"` as an "external URL". That is a namespace declaration, not a fetch — every real icon carries it, so **100% of provider SVGs were refused**. Namespace declarations are now stripped before the URL check; a genuine `href`, `url(...)` or external URL is still rejected.
+
+**Live verification (`VISUAL_ICONS=balanced`, "how a bill becomes law"):**
+
+```
+complete · 1 scene exported · $0.017 · 2 model calls
+
+bicameral-legislature → external.tabler.building   (stroke_native)
+legislative-bill      → external.carbon.document   (mixed)
+reconciliation        → external.lucide.handshake  (stroke_native)
+committee review      → composition:component_group
+floor debate          → composition:signal
+```
+
+All three render in the chalk-ink palette because a converted part carries `strokeRole: 'outline'`. `legislature` found nothing under its query and kept its composition — the fail-visible path working as designed.
+
+Also threaded the catalog through the last two generation-path `getAsset` sites (`narration.ts`, `lintCompiledScene`) and every `canonicalAnchor` call, or a catalog-only asset threw `Unknown asset` during validation.
 
 ### P3 — external retrieval, and what the live run taught us
 

@@ -60,6 +60,7 @@ export function teachingPrompt(options:TeachingPromptOptions):string{
     `Return exactly one JSON object with the top-level keys version, requiredClaims, requiredMechanisms, conceptRegistry, scenes, misconceptions and evidenceRefs. Never return a bare array of scenes as the root value.`,
     `relationFocus may contain ONLY ids from that scene's requiredRelations (their key ids); never claim, mechanism or requirement ids.`,
     `Set visualFamily only when meaningful: signal for oscillations, quantity for relative amounts, component_group for collections, container for nested parts, system for an input/output mechanism. These are reusable geometric representations; do not claim an unrelated representation teaches the concept.`,
+    `Set BOTH fields when they apply, because they cover different concepts. visualFamily is the reusable geometric composition described above and stays the reliable default. visualQuery is for a concept that names a concrete object: ONE lower-case noun an icon library would have ("document", "database", "gavel", "users"), never a phrase and never the concept name. A concept may have either or both; a concrete object should have both so the composition remains available if no icon matches.`,
     `Do not choose shapes or coordinates.`,
     ...TEACHER_VOICE_RULES,
     ...MATH_TEACHING_RULES,

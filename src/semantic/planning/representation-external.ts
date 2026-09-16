@@ -24,6 +24,7 @@ export interface ExternalRepresentationOptions{
 export type CandidateList=ReturnType<typeof assetCandidates>;
 export interface RepresentationOutcome{candidates:CandidateList;catalog:Record<string,AssetDefinition>;warnings:string[]}
 
+const ICON_SEMANTIC_TYPES=new Set(['entity','material','location','role']);
 export const retrievalMode=(raw:string|undefined):RetrievalMode=>{
  const value=(raw??'off').trim().toLowerCase();
  if(value!=='off'&&value!=='strict'&&value!=='balanced'&&value!=='broad')throw new Error('VISUAL_ICONS must be off|strict|balanced|broad');
@@ -44,7 +45,26 @@ export async function representationCandidates(
  const candidates=assetCandidates(scene,registry,model);
  if(options.mode==='off'||!options.client)return {candidates,catalog:{},warnings:[]};
 
- const unresolved=candidates.filter(entry=>!entry.candidates.length&&!entry.representation);
+ /** Which concepts are worth a real icon.
+  *
+  *  A concept that already has a curated asset keeps it. A concept with no
+  *  representation at all is always searched for (unless the resolver ruled
+  *  icons out entirely - an equation). A concept that only reached a procedural
+  *  composition is searched for too when it names an OBJECT rather than an
+  *  abstraction: `bill` and `committee` are things an icon set covers, while a
+  *  `process` or `quantity` is better served by the composition. Before this,
+  *  compositions preempted the external tier for exactly the nouns icons are
+  *  good at, which is why a live run resolved five of six concepts to shapes
+  *  and never issued a useful search. */
+ const iconType=(id:string):boolean=>{
+  const concept=registry.find(c=>c.id===id);
+  return Boolean(concept&&ICON_SEMANTIC_TYPES.has(concept.semanticType));
+ };
+ const unresolved=candidates.filter(entry=>{
+  if(entry.candidates.length)return false;
+  if(entry.fallback==='not-applicable')return false;
+  return !entry.representation||iconType(entry.conceptId);
+ });
  const budget=Math.max(0,Math.min(options.maxConcepts??4,unresolved.length));
  if(budget<unresolved.length)log('v2.icons.budget',{requested:unresolved.length,searched:budget,scenes:scene.id});
 
@@ -53,12 +73,16 @@ export async function representationCandidates(
   const concept=registry.find(c=>c.id===entry.conceptId);
   if(!concept)continue;
   const outcome=await resolveExternalConcept(
-   {conceptId:entry.conceptId,query:concept.canonicalName,archetypes:model.candidateArchetypes},
+   {conceptId:entry.conceptId,query:concept.visualQuery??concept.canonicalName,archetypes:model.candidateArchetypes},
    {client:options.client,mode:options.mode,fetchedAt:options.fetchedAt,...(options.signal?{signal:options.signal}:{})},
   );
   for(const warning of outcome.warnings)warnings.push(warning);
   if(!outcome.asset||!outcome.assetId)continue;
   catalog[outcome.assetId]=outcome.asset;
+  /** A real icon replaces a procedural composition: the director must see the
+   *  icon as the candidate and must not be handed a family to fall back on. */
+  entry.representation=undefined;
+  entry.fallback='asset';
   entry.candidates=[{
    id:outcome.asset.id,
    aliases:outcome.asset.aliases,

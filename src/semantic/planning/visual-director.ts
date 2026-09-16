@@ -108,7 +108,7 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
  for(const [i,b] of scene.beats.entries())if(visual.beats[i].id!==b.id||visual.beats[i].narration!==b.narrationDraft)throw new Error(`Director changed narration/beat ${b.id}`);
  for(const r of visual.relations)for(const ref of [r.from,r.to]){
   const object=visual.objects.find(o=>o.id===ref.objectId)!;
-  if(object.assetRef)ref.anchor=canonicalAnchor(object.assetRef,ref.anchor);
+  if(object.assetRef)ref.anchor=canonicalAnchor(object.assetRef,ref.anchor,catalog);
   const anchors=object.assetRef?Object.keys(resolveAsset(object.assetRef,catalog).anchors):['input','output','center','top','bottom'];
   if(!anchors.includes(ref.anchor)){
    /** A named anchor the asset does not implement (the live model said
@@ -123,7 +123,7 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
    const from=visual.objects.find(o=>o.id===r.from.objectId)!,to=visual.objects.find(o=>o.id===r.to.objectId)!;
    if(from.conceptId!==required.fromConceptId||to.conceptId!==required.toConceptId||r.relationType!==required.relationType)return false;
    if(!required.targetAnchor)return true;
-   const target=to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor):required.targetAnchor;
+   const target=to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor,catalog):required.targetAnchor;
    return r.to.anchor===target;
   });
    /** A required relation is part of the teaching contract — the plan asserts
@@ -142,7 +142,7 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
     const pairPresent=visual.relations.some(r=>{const a=visual.objects.find(o=>o.id===r.from.objectId),b=visual.objects.find(o=>o.id===r.to.objectId);return Boolean(a&&b&&((a.conceptId===required.fromConceptId&&b.conceptId===required.toConceptId)||(a.conceptId===required.toConceptId&&b.conceptId===required.fromConceptId)));});
     if(pairPresent)throw new Error(`Missing semantic relation ${required.id}: direction, type and target part are required`);
     const anchorNames=to.assetRef?Object.keys(resolveAsset(to.assetRef,catalog).anchors):['input','output','center','top','bottom'];
-    const requested=required.targetAnchor?(to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor):required.targetAnchor):'center';
+    const requested=required.targetAnchor?(to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor,catalog):required.targetAnchor):'center';
     /** Mirrors intent-adapter's relationType -> visualForm mapping. */
     const visualForm=required.relationType==='contains'||required.relationType==='part_of'?'containment':required.relationType==='flows_to'?'flow':required.relationType==='labels'?'leader':required.relationType==='compares_with'?'brace':'arrow';
     relation={id:`relation_synth_${required.id}`,from:{objectId:from.id,anchor:'center'},to:{objectId:to.id,anchor:anchorNames.includes(requested)?requested:'center'},relationType:required.relationType,visualForm} as VisualSceneV2['relations'][number];

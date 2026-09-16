@@ -32,9 +32,17 @@ test('the sanitizer rejects every scripting, embedding and reference vector', ()
     '<?xml-stylesheet href="x"?>' + svg('<path d="M0 0"/>'),
     '<!ENTITY x "y">' + svg('<path d="M0 0"/>'),
     '<svg><a href="https://evil.test"><path d="M0 0"/></a></svg>',
-    svg('<path d="M0 0"/>').replace('viewBox', 'xmlns="http://www.w3.org/2000/svg" viewBox'),
+    svg('<path d="M0 0" fill="https://evil.test/x.svg"/>'),
   ];
   for (const input of bad) assert.throws(() => sanitizeSvg(input), `${input.slice(0, 60)} must be rejected`);
+});
+
+test('a namespace declaration is not an external reference, but a real reference still is', () => {
+  const real = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" d="M5 12h14"/></svg>';
+  assert.doesNotThrow(() => sanitizeSvg(real), 'every real icon carries an xmlns declaration');
+  assert.throws(() => sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.test/x"/></svg>'), /forbidden element/);
+  assert.throws(() => sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0" style="fill:url(#g)"/></svg>'), /external or scripting reference/);
+  assert.throws(() => sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0" fill="https://evil.test/x.svg"/></svg>'), /external URL/);
 });
 
 test('the sanitizer accepts the geometry it is meant to convert', () => {

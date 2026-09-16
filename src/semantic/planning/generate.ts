@@ -230,7 +230,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   at=performance.now();
   telemetry('narration-finalize','started');
   let narration;
-  try{narration=finalizeNarration(semantic,directed.scene);telemetry('narration-finalize','success',{elapsedMs:performance.now()-at});}catch(e){telemetry('narration-finalize','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-at});throw stageFailure(e,'narration-finalize');}
+  try{narration=finalizeNarration(semantic,directed.scene,catalog);telemetry('narration-finalize','success',{elapsedMs:performance.now()-at});}catch(e){telemetry('narration-finalize','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-at});throw stageFailure(e,'narration-finalize');}
   const narrationFinalizeMs=performance.now()-at;
   // P0-E execution DAG: speech and visual compile run concurrently after the
   // narration freeze. The estimated compile lands first (firstVisualReady) while

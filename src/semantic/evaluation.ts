@@ -2,13 +2,13 @@ import type {CompiledSceneV2} from './types.js';
 import {BOARD} from './compiler/zones.js';
 import {contains,findCollisions} from './compiler/collisions.js';
 import {visualBounds} from './compiler/text.js';
-import {getAsset} from './assets/registry.js';
+import {resolveAsset} from './assets/registry.js';
 import {staticIntervals} from './compiler/timeline.js';
 export interface Finding {code:string;severity:'hard'|'advisory';message:string}
 /** These are deterministic engineering checks, never a substitute for teaching-quality judgment. */
 export function lintCompiledScene(scene:CompiledSceneV2):Finding[]{
  const findings:Finding[]=[],fail=(code:string,message:string)=>findings.push({code,severity:'hard',message});
- for(const o of scene.objects){if(![o.x,o.y,o.w,o.h,o.fontSize].every(Number.isFinite))fail('nonfinite',o.id);else if(!contains(BOARD.safe,visualBounds(o)))fail('clipping',o.id);if(o.fontSize<18)fail('text-size',o.id);if(o.assetRef){try{getAsset(o.assetRef);}catch{fail('missing-asset',o.id);}}}
+ for(const o of scene.objects){if(![o.x,o.y,o.w,o.h,o.fontSize].every(Number.isFinite))fail('nonfinite',o.id);else if(!contains(BOARD.safe,visualBounds(o)))fail('clipping',o.id);if(o.fontSize<18)fail('text-size',o.id);if(o.assetRef){try{resolveAsset(o.assetRef,scene.assetCatalog);}catch{fail('missing-asset',o.id);}}}
  for(const pair of findCollisions(scene.objects))fail('text-or-object-collision',pair);
  const ids=new Set(scene.objects.map(o=>o.id)),relations=new Set(scene.relations.map(r=>r.id));
  for(const a of scene.actions){if(![a.startMs,a.durationMs].every(Number.isFinite)||a.startMs<0||a.durationMs<=0||a.startMs+a.durationMs>scene.durationMs)fail('action-window',a.id);if(a.objectIds.some(id=>!ids.has(id))||a.relationIds.some(id=>!relations.has(id)))fail('action-target',a.id);}

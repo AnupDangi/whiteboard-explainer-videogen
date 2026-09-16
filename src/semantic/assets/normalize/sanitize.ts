@@ -24,7 +24,13 @@ export function sanitizeSvg(input:string):SanitizeResult{
  if(FORBIDDEN_ELEMENT.test(input))throw new Error(`SVG sanitizer: forbidden element (${input.match(FORBIDDEN_ELEMENT)![1]})`);
  if(EVENT_HANDLER.test(input))throw new Error('SVG sanitizer: event handler attribute');
  if(EXTERNAL_REF.test(input))throw new Error('SVG sanitizer: external or scripting reference');
- if(EXTERNAL_URL.test(input))throw new Error('SVG sanitizer: external URL');
+ /** `xmlns="http://www.w3.org/2000/svg"` is a NAMESPACE declaration, not a
+  *  fetch: every real icon carries it. Namespace declarations are removed before
+  *  the URL check so the check still rejects an actual external reference, which
+  *  is what `href`/`url(...)` already cover. Without this the sanitizer rejected
+  *  every icon from every provider. */
+ const withoutNamespaceDeclarations=input.replace(/\sxmlns(?::[\w-]+)?\s*=\s*(?:"[^"]*"|'[^']*')/gi,' ');
+ if(EXTERNAL_URL.test(withoutNamespaceDeclarations))throw new Error('SVG sanitizer: external URL');
  if(INLINE_STYLE.test(input))throw new Error('SVG sanitizer: inline style is not allowed; use presentation attributes');
  let elementCount=0;
  for(const match of input.matchAll(/<\s*\/?\s*([a-zA-Z][\w:-]*)/g)){

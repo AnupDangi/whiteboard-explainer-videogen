@@ -47,9 +47,9 @@ export async function resolveExternalConcept(request:ExternalConceptRequest,opti
  try{hits=await options.client.search(query,{limit:options.searchLimit??20,...(options.signal?{signal:options.signal}:{})});}
  catch(error){outcome.warnings.push(`external search failed for ${request.conceptId}: ${error instanceof Error?error.message:String(error)}`);return outcome;}
 
- const ranked=searchCandidates(hits,options.mode,{maxCandidates:maxFetches});
+ const ranked=searchCandidates(hits,options.mode,{maxCandidates:maxFetches,query});
  outcome.rejected.push(...ranked.rejected);
- if(!ranked.ranked.length){outcome.warnings.push(`no permissioned candidate for ${request.conceptId}`);return outcome;}
+ if(!ranked.ranked.length){outcome.warnings.push(`no suitable candidate for ${request.conceptId} (query "${query}")`);return outcome;}
 
  for(const candidate of ranked.ranked){
   const id=`external.${safe(candidate.collection)}.${safe(candidate.name)}`;
