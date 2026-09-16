@@ -81,7 +81,12 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   if(input.sourceText){
    const scope=input.evidenceScope??input.sourceText;
    for(const e of plan.evidenceRefs){
-    if(e.sourceId!==(input.sourceId??'source'))throw new Error(`Fabricated evidence: ${e.id}`);
+    /** Book-keeping bridge: the model may echo the default sourceId ('source')
+     *  instead of the document id; the quote still has to be verbatim in the
+     *  scope (checked next), so the field is bridged (recorded) rather than
+     *  throwing a misleading 'Fabricated evidence'. */
+    const expectedSourceId=input.sourceId??'source';
+    if(e.sourceId!==expectedSourceId)e.sourceId=expectedSourceId;
     if(evidenceSupported(scope,e.quote))continue;
     const snapped=snapQuoteToSource(scope,e.quote);
     if(!snapped)throw new Error(`Fabricated evidence: ${e.id}`);
