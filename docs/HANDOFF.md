@@ -23,9 +23,27 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **P3b** context-driven icons | `ec21b60` | model-chosen `visualQuery`, semantic suitability gate, icons preferred over compositions; **real library icons now render** |
 | **S7** latency budgets | *(this commit)* | job-relative stage budgets, explicit route/flag logging, startup validation |
 | **S6** bounded concurrency | *(this commit)* | `mapConcurrent` + TTS beats concurrent (measured: 6.5%, so default 1) |
-| **S3c** flat-archetype heal | *(this commit)* | `numbered_steps`/`timeline`/`trajectory` flatten composed objects instead of failing |
+| **S3c** flat-archetype heal | `0bc7e2c` | `numbered_steps`/`timeline`/`trajectory` flatten composed objects instead of failing |
+| **S4** identity cleanup | *(this commit)* | dead identity paths removed; roles documented on every remaining module |
+| **X1/X2** invariants | *(this commit)* | purity and cross-cutting invariants are enforced tests, not convention |
+| **P5** representation telemetry | *(this commit)* | tier counts per scene, aggregated in the live metrics |
+| **S9a** regression corpus | *(this commit)* | real model output captured from the logs as fixtures |
 
-Tests: **511/511**. Code graph: **1,916 nodes / 4,153 edges** (`graphify update . --force`).
+Tests: **525/525**. Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
+
+### Parallel wave — S4, X1/X2, P5, S9a
+
+Four file-disjoint workstreams run in parallel, then built and verified centrally. **525/525** (was 511).
+
+**S4 — one identity authority.** `identity/references.ts` deleted (fully orphaned), along with dead exports `normalizeLegacyTeachingPlan`, `canonicalizeRelation`, `normalizeSemanticPart`, `remapContinuityIds`, `buildVisualScene`, `CanonicalRelation`, `VisualIntent`, `ResolvedVisualDirection`; several internal-only types un-exported. **−171 lines.** Every remaining identity module carries a one-line role comment. The premise about `artifacts.ts` was wrong and the agent said so: it has four live importers (`scripts/export-example-video.ts`, `scripts/generate-v2-video.ts`, `scripts/bench-semantic-archetypes.ts`, `eval/live/runner.ts`) and was left alone. `harness/registry.ts` remains the runtime authority, untouched.
+
+**X1/X2 — invariants become tests.** `test/purity.test.js` scans the source of `compiler/` and `renderer/` and fails if either imports a model/provider/fs module, touches a clock, `Math.random`, `process.env`, or if the SVG renderer stops being synchronous. `test/invariants.test.js` groups five cross-cutting rules (archetypes compile, `MOTIONS` excludes unimplemented motions, static relations render, the renderer is deterministic and non-mutating, a geometry failure is compiler-owned).
+
+**P5 — representation telemetry.** `representation-metrics.ts` classifies every concept into one of six tiers (`trusted-asset`, `substring-asset`, `composition`, `external`, `primitive-label`, `not-applicable`); `generate.ts` logs a per-scene `v2.representation.tiers`; `eval/live/metrics.ts` aggregates them. This is the measurement that was missing when icon breadth looked like the problem.
+
+**S9a — regression corpus from real output.** `test/real-output-regressions/` holds verbatim `{direction, decisions}` responses captured from the live logs, with the run they came from and what went wrong. **Of the 42 distinct director outputs collected, every one carried actions with `relationRefs` and no `conceptKeys`** — the defect that used to kill whole jobs. Six tests replay the real bytes through the same heal the adapter applies.
+
+**A limitation the corpus surfaced honestly:** the logger redacts narration, so a captured beat reads `"[REDACTED]"` and spoken anchors can never resolve. The corpus therefore proves conversion, structural validity and composition repair, and **asserts the redaction explicitly so a skipped fixture is never mistaken for a passing one**. Future captures should set `V2_REPLAY_DIR`, which writes the raw response before redaction.
 
 ### S7 — the job now has a latency budget
 

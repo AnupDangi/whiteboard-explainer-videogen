@@ -1,0 +1,348 @@
+{
+ "capturedFrom": "p3b-live.log",
+ "stage": "director",
+ "archetype": "numbered_steps",
+ "note": "a flat text archetype given composed (rectangle) roots",
+ "response": {
+  "direction": {
+   "title": "The Legislative Journey",
+   "teachingGoal": "Understand the sequential hurdles a bill faces to become law in a bicameral system.",
+   "mentalModel": "A bill is a draft that must be refined and agreed upon by two separate groups before it is finalized.",
+   "archetype": "numbered_steps",
+   "objects": [
+    {
+     "label": "Bill",
+     "role": "hero",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "primary",
+     "preferredZone": "center",
+     "collisionPolicy": "forbid",
+     "conceptKey": "bill",
+     "primitiveRef": "rectangle",
+     "children": []
+    },
+    {
+     "label": "Committee",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "upper_left",
+     "collisionPolicy": "forbid",
+     "conceptKey": "committee",
+     "primitiveRef": "rectangle",
+     "children": []
+    },
+    {
+     "label": "Floor",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "upper_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "floor",
+     "primitiveRef": "rectangle",
+     "children": []
+    },
+    {
+     "label": "Amendment",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "tertiary",
+     "preferredZone": "upper_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "amendment",
+     "primitiveRef": "label",
+     "children": []
+    },
+    {
+     "label": "Reconciliation",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "lower_left",
+     "collisionPolicy": "forbid",
+     "conceptKey": "reconciliation",
+     "primitiveRef": "label",
+     "children": []
+    },
+    {
+     "label": "Law",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "lower_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "law",
+     "primitiveRef": "label",
+     "children": []
+    }
+   ],
+   "relations": [
+    {
+     "fromConcept": "bill",
+     "relation": "flows_to",
+     "toConcept": "committee"
+    },
+    {
+     "fromConcept": "committee",
+     "relation": "flows_to",
+     "toConcept": "floor"
+    },
+    {
+     "fromConcept": "floor",
+     "relation": "flows_to",
+     "toConcept": "reconciliation"
+    },
+    {
+     "fromConcept": "reconciliation",
+     "relation": "transforms_to",
+     "toConcept": "law"
+    }
+   ],
+   "beats": [
+    {
+     "key": "beat-introduction",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "draw",
+       "anchor": {
+        "text": "bill",
+        "occurrence": 0
+       },
+       "durationMs": 3000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "bill"
+       ],
+       "relationRefs": []
+      }
+     ]
+    },
+    {
+     "key": "beat-committee",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "committee",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "committee"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "enters",
+        "occurrence": 0
+       },
+       "durationMs": 1500,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "bill",
+         "relation": "flows_to",
+         "toConcept": "committee"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "beat-floor-debate",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "floor",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "floor"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "amendments",
+        "occurrence": 0
+       },
+       "durationMs": 800,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "amendment"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "moves",
+        "occurrence": 0
+       },
+       "durationMs": 1500,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "committee",
+         "relation": "flows_to",
+         "toConcept": "floor"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "beat-reconciliation",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "reconciliation",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "reconciliation"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "aligns",
+        "occurrence": 0
+       },
+       "durationMs": 1500,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "floor",
+         "relation": "flows_to",
+         "toConcept": "reconciliation"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "beat-enactment",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "law",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "law"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "trace",
+       "anchor": {
+        "text": "becomes",
+        "occurrence": 0
+       },
+       "durationMs": 1500,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "reconciliation",
+         "relation": "transforms_to",
+         "toConcept": "law"
+        }
+       ]
+      },
+      {
+       "type": "highlight",
+       "anchor": {
+        "text": "enacted",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "fromState": "neutral",
+       "toState": "activated",
+       "conceptKeys": [
+        "bill"
+       ],
+       "relationRefs": []
+      }
+     ]
+    }
+   ]
+  },
+  "decisions": {
+   "centralTeachingObject": "bill",
+   "firstFocus": "bill",
+   "illustratedConcepts": "bill, committee, floor",
+   "labelsOnly": "amendment, reconciliation, law",
+   "movingRelations": "bill to committee, committee to floor, floor to reconciliation",
+   "persistentContext": "The bill remains the central focus as it moves through the stages.",
+   "stateChanges": "The bill transitions from neutral to activated in the final beat to signify enactment.",
+   "omit": "none"
+  }
+ }
+}

@@ -2,6 +2,8 @@
  *
  *  Rule: models emit semantic keys and semantic references.
  *        Runtime owns all internal IDs.
+ *  Runtime authority is `harness/registry.ts` (LessonSemanticRegistry);
+ *  `SemanticIdentityRegistry` here is the secondary/translation registry.
  */
 
 /** A semantic key is the stable human-readable concept name the model uses.
@@ -12,11 +14,11 @@ export type SemanticKey = string;
 
 /** A runtime-scoped object identity generated deterministically from the
  *  scene index and concept key. Not exposed to model prompts. */
-export type ObjectId = string;
+type ObjectId = string;
 
 /** Kinds of typed reference failures emitted when a semantic reference cannot
  *  be resolved to a concrete scene entity. */
-export type ReferenceFailure =
+type ReferenceFailure =
   | 'UNKNOWN_CONCEPT'
   | 'AMBIGUOUS_CONCEPT'
   | 'CONCEPT_NOT_IN_SCENE'
@@ -52,7 +54,7 @@ export function normalizeSemanticKey(raw: string): SemanticKey {
 }
 
 /** Runtime identity of a resolved scene object. */
-export interface CanonicalObject {
+interface CanonicalObject {
   id: ObjectId;
   conceptKey: SemanticKey;
   role: 'hero' | 'support' | 'structure' | 'material' | 'equation' | 'annotation' | 'label' | 'decorative_support' | 'data';
@@ -66,14 +68,6 @@ export interface SemanticRelationRef {
   toConcept: SemanticKey;
   /** Semantically names a subpart/anchor on the target concept, e.g. "roots". */
   targetPart?: string;
-}
-
-/** Canonical identity of a relation after resolution. */
-export interface CanonicalRelation {
-  id: string;
-  from: { conceptKey: SemanticKey; objectId: ObjectId; part?: string };
-  to: { conceptKey: SemanticKey; objectId: ObjectId; part?: string };
-  relationType: SemanticRelationRef['relation'];
 }
 
 /** Registry that owns all internal IDs per `generateV2` invocation.

@@ -4,6 +4,7 @@ import type {CompiledSceneV2} from '../../src/semantic/types.js';
 import {normalizeSemanticKey} from '../../src/semantic/identity/types.js';
 import type {ComprehensionQuestion,LiveEvalCase} from './manifest.js';
 import type {HarnessRunManifest} from '../../src/semantic/harness/contracts.js';
+import {REPRESENTATION_TIERS,type RepresentationTierCounts} from '../../src/semantic/representation-metrics.js';
 
 export interface StageSuccessFlags {
   sourceUnderstandingSuccess: boolean;
@@ -304,6 +305,22 @@ export function sceneTelemetry(scene: CompiledSceneV2, stageMetrics: StageMetric
     continuityConcepts:[...new Set([...scene.scene.continuity.keepFromPrevious.map(id=>scene.objects.find(o=>o.id===id)?.conceptId).filter((id):id is string=>Boolean(id)),...(scene.scene.continuity.transitions??[]).filter(t=>['KEEP','MOVE','TRANSFORM'].includes(t.action)).map(t=>t.conceptId)])],
     continuityTransitions:scene.scene.continuity.transitions?.length??0
   };
+}
+
+/** Sums the tier fields of every `v2.representation.tiers` event (P5 telemetry).
+ *  Events from other sources are ignored; unknown/missing fields contribute 0. */
+export function aggregateRepresentationTiers(events: Array<{event?: string; scene?: string; [k: string]: unknown}>): RepresentationTierCounts {
+  const counts: RepresentationTierCounts = { total: 0 };
+  for (const tier of REPRESENTATION_TIERS) counts[tier] = 0;
+  for (const event of events) {
+    if (event.event !== 'v2.representation.tiers') continue;
+    for (const tier of REPRESENTATION_TIERS) {
+      const value = event[tier];
+      if (typeof value === 'number') counts[tier] += value;
+    }
+    if (typeof event.total === 'number') counts.total += event.total;
+  }
+  return counts;
 }
 
 export function percent(num: number, den: number): number {

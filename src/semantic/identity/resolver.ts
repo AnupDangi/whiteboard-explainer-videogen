@@ -1,11 +1,15 @@
+/** Translation utility: resolves semantic keys into deterministic runtime IDs
+ *  and validates references. Not the identity authority
+ *  (`harness/registry.ts`).
+ */
 import { SemanticIdentityRegistry, SemanticReferenceError, type SemanticKey, type SemanticRelationRef } from './types.js';
 import type { SemanticObject, SemanticResolvedBeat, SemanticAction } from './canonical-schemas.js';
-import type { VisualObject, VisualRelation, VisualAction, VisualBeat, VisualSceneV2 } from '../types.js';
+import type { VisualObject, VisualRelation, VisualAction, VisualBeat } from '../types.js';
 import { canonicalAnchor } from '../assets/registry.js';
 
 /** Runtime reference resolver: converts semantic keys into deterministic
  *  runtime IDs and validates references. All errors are typed. */
-export interface ResolutionContext {
+interface ResolutionContext {
   registry: SemanticIdentityRegistry;
   sceneKey: string;
   allowedArchetypes: readonly string[];
@@ -153,25 +157,4 @@ function mapRelationForm(relation: string): VisualRelation['visualForm'] {
     default:
       return 'arrow';
   }
-}
-
-/** Build the existing VisualSceneV2 from a resolved semantic direction. */
-export function buildVisualScene(
-  sceneKey: string,
-  teaching: { teachingGoal: string; mentalModel: string; beats: { key: string; narrationDraft: string; intentionalPause?: string }[] },
-  intent: { archetype: VisualSceneV2['archetype']; title: string },
-  resolved: { objects: VisualObject[]; relations: VisualRelation[]; beats: VisualBeat[] },
-): VisualSceneV2 {
-  return {
-    version: 2,
-    id: sceneKey,
-    title: intent.title,
-    teachingGoal: teaching.teachingGoal,
-    mentalModel: teaching.mentalModel,
-    archetype: intent.archetype,
-    objects: resolved.objects,
-    relations: resolved.relations,
-    beats: resolved.beats,
-    continuity: { keepFromPrevious: [], prepareForNext: [] },
-  };
 }

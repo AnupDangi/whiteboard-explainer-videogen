@@ -1,7 +1,6 @@
-/** Translates the new model-facing canonical schemas into the existing internal
- *  TeachingPlanV2 / SemanticScenePlan contracts used by validate/selectVisualModel.
+/** Translation utility: canonical schemas -> internal TeachingPlanV2 /
+ *  SemanticScenePlan. Not the identity authority (`harness/registry.ts`).
  */
-import { normalizeSemanticKey } from './types.js';
 import type { TeachingIntent, SceneTeachingIntent, SemanticBeatV2 } from './canonical-schemas.js';
 import type { TeachingPlanV2, SemanticBeat, SemanticScenePlan, SemanticRelationRequirement, ConceptIdentity, EvidenceRef } from '../types.js';
 
@@ -67,22 +66,4 @@ function canonicalToBeat(b: SemanticBeatV2): SemanticBeat {
     evidenceRefs: [],
     intentionalPause: b.intentionalPause,
   };
-}
-
-/** Backward-compatible normalizer: a legacy TeachingPlanV2 already uses lowercase
- *  snake_case IDs as semantic keys, but the runtime now asserts that IDs do not
- *  contain model-generated identifiers. This function strips any "obj_" / "rel_"
- *  prefixes and normalizes aliases. */
-export function normalizeLegacyTeachingPlan(raw: TeachingPlanV2): TeachingPlanV2 {
-  const cloned: TeachingPlanV2 = structuredClone(raw);
-  // Rewrite concept IDs to ensure they are semantic keys.
-  for (const c of cloned.conceptRegistry) {
-    c.aliases = c.aliases.map(a => normalizeSemanticKey(a));
-  }
-  for (const s of cloned.scenes) {
-    s.id = normalizeSemanticKey(s.id);
-    // Required relations remain declared with raw ids; canonical relation refs use
-    // concept keys directly.
-  }
-  return cloned;
 }

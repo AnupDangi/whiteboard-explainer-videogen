@@ -1,3 +1,6 @@
+/** JSON-schema translation of the model-facing semantic contracts. Not the
+ *  identity authority (`harness/registry.ts`).
+ */
 import {teachingPlanSchema,visualObjectSchema,visualActionSchema,type Schema} from '../schemas.js';
 import {ARCHETYPES,RELATIONS} from '../types.js';
 const text:Schema={type:'string',minLength:1,maxLength:1800};
@@ -7,7 +10,7 @@ const object=(properties:Record<string,Schema>,optional:string[]=[]):Schema=>({t
 function rename(schema:Schema,names:Record<string,string>):Schema{
  const copy=structuredClone(schema);copy.properties=Object.fromEntries(Object.entries(copy.properties!).map(([k,v])=>[names[k]??k,v]));copy.required=copy.required!.map(k=>names[k]??k);return copy;
 }
-export const relationRefSchema=object({fromConcept:key,relation:{type:'string',enum:RELATIONS},toConcept:key,targetPart:{type:'string',minLength:1,maxLength:64},sourcePart:{type:'string',minLength:1,maxLength:64}},['targetPart','sourcePart']);
+const relationRefSchema=object({fromConcept:key,relation:{type:'string',enum:RELATIONS},toConcept:key,targetPart:{type:'string',minLength:1,maxLength:64},sourcePart:{type:'string',minLength:1,maxLength:64}},['targetPart','sourcePart']);
 // Preserve source evidence and requirement references while moving concept/scene/beat
 // references to semantic keys. Runtime IDs are generated after this boundary.
 export const teachingIntentSchema=structuredClone(teachingPlanSchema);
@@ -24,7 +27,7 @@ const op=structuredClone(visualObjectSchema.properties!);
 for(const k of ['id','conceptId','parentId','children'])delete op[k];
 op.conceptKey=key;op.parentConceptKey=key;
 op.children=array(key,32);
-export const semanticObjectSchema=object(op,['representation','assetRef','primitiveRef','preferredZone','parentConceptKey','children']);
+const semanticObjectSchema=object(op,['representation','assetRef','primitiveRef','preferredZone','parentConceptKey','children']);
 const ap=structuredClone(visualActionSchema.properties!);
 for(const k of ['id','objectIds','relationIds'])delete ap[k];
 ap.conceptKeys=array(key,32);ap.relationRefs=array(relationRefSchema);

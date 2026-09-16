@@ -1,43 +1,11 @@
+/** Translation utility: rewrites model-generated scene object/relation/action
+ *  IDs to deterministic runtime IDs. Not the identity authority
+ *  (`harness/registry.ts`).
+ */
 import { normalizeSemanticKey, SemanticIdentityRegistry, SemanticReferenceError } from './types.js';
-import type { SemanticKey, SemanticRelationRef } from './types.js';
-import type { VisualSceneV2, VisualObject, VisualRelation, VisualBeat, VisualAction } from '../types.js';
+import type { SemanticKey } from './types.js';
+import type { VisualSceneV2, VisualBeat } from '../types.js';
 import { resolveObjects, resolveRelations } from './resolver.js';
-
-/** Builds a typed semantic relation reference from the model's preferred
- *  shape: either the canonical tuple `{fromConcept, relation, toConcept}` or
- *  the legacy `{fromConceptId, relationType, toConceptId, targetAnchor}`. */
-export function canonicalizeRelation(
-  raw: Record<string, unknown>,
-  allowedRelations: readonly string[],
-): SemanticRelationRef {
-  const from = asString(raw.fromConcept ?? raw.fromConceptId);
-  const to = asString(raw.toConcept ?? raw.toConceptId);
-  const relation = asString(raw.relation ?? raw.relationType);
-  const targetPart = raw.targetPart && typeof raw.targetPart === 'string' ? normalizeSemanticKey(raw.targetPart) : undefined;
-  if (!from || !to || !relation) {
-    throw new Error(`Missing semantic relation fields in ${JSON.stringify(raw)}`);
-  }
-  if (!allowedRelations.includes(relation)) {
-    throw new Error(`Unknown relation type: ${relation}`);
-  }
-  return {
-    fromConcept: normalizeSemanticKey(from),
-    relation: relation as SemanticRelationRef['relation'],
-    toConcept: normalizeSemanticKey(to),
-    targetPart,
-  };
-}
-
-function asString(value: unknown): string | undefined {
-  if (typeof value === 'string') return value;
-  return undefined;
-}
-
-/** Resolves a semantic part alias for a concept to a known asset anchor.
- *  Returns the normalized part if no alias mapping exists. */
-export function normalizeSemanticPart(raw: string): string {
-  return normalizeSemanticKey(raw);
-}
 
 /** Runtime owns visual identity. This function takes a model-generated
  *  VisualSceneV2 (with arbitrary object/relation IDs) and returns a
@@ -138,19 +106,4 @@ export function canonicalizeVisualScene(
       }))} : {})
     },
   };
-}
-
-/** Map old runtime IDs from a previous scene to new IDs in the current scene
- *  while preserving semantic continuity. Used for multi-scene jobs. */
-export function remapContinuityIds(
-  previousObjects: VisualObject[],
-  currentObjects: VisualObject[],
-): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const prev of previousObjects) {
-    if (!prev.conceptId) continue;
-    const match = currentObjects.find(o => o.conceptId === prev.conceptId && o.role === prev.role);
-    if (match) map.set(prev.id, match.id);
-  }
-  return map;
 }

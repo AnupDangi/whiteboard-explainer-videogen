@@ -1,3 +1,6 @@
+/** Translation utility: model intent -> internal TeachingPlanV2 / VisualSceneV2.
+ *  Not the identity authority (`harness/registry.ts`).
+ */
 import type {TeachingPlanV2,VisualSceneV2,SemanticScenePlan} from '../types.js';
 import {log} from '../../shared/logger.js';
 import {bridgeVisualState} from '../harness/state.js';

@@ -4,7 +4,8 @@
  *  asset matches, the resolver falls back to a labeled primitive and records a
  *  visible warning (counted in eval metrics as `representation fallback`).
  *  The runtime owns this decision; the model only sees the candidate list plus
- *  an explicit primitive-fallback note.
+ *  an explicit primitive-fallback note. Translation utility — not the identity
+ *  authority (`harness/registry.ts`).
  */
 import {COMPOSITION_FAMILIES,REPRESENTATION_FAMILIES,type CompositionFamily,type RepresentationRequest, type RepresentationResolution, type RepresentationCandidate, type RepresentationSpec} from '../representation.js';
 import { ASSETS } from '../assets/registry.js';
@@ -12,7 +13,7 @@ import { searchAssets } from '../assets/search.js';
 import type { VisualArchetype } from '../types.js';
 import {cacheSynthesisSpec} from '../representation-synthesis.js';
 
-export interface RepresentationConcept {
+interface RepresentationConcept {
   id: string;
   canonicalName: string;
   aliases: string[];
@@ -20,7 +21,7 @@ export interface RepresentationConcept {
   visualFamily?: string;
 }
 
-export interface RepresentationDecision {
+interface RepresentationDecision {
   /** Curated asset candidates (may be empty when falling back). */
   candidates: { id: string }[];
   representation?:RepresentationSpec;

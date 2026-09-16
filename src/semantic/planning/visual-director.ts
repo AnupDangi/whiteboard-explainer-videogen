@@ -19,7 +19,8 @@ import {skillInstruction} from '../skills.js';
 export interface DirectionDecisions {centralTeachingObject:string;firstFocus:string;illustratedConcepts:string;labelsOnly:string;movingRelations:string;persistentContext:string;stateChanges:string;omit:string}
 const decisionKeys=['centralTeachingObject','firstFocus','illustratedConcepts','labelsOnly','movingRelations','persistentContext','stateChanges','omit'];
 const decisionSchema:Schema={type:'object',additionalProperties:false,required:decisionKeys,properties:Object.fromEntries(decisionKeys.map(k=>[k,{type:'string',maxLength:600}]))};
-const schema:Schema={type:'object',additionalProperties:false,required:['direction','decisions'],properties:{direction:resolvedDirectionSchema,decisions:decisionSchema}};
+/** The director's full response contract. Exported so a replay (the real-output regression corpus) heals against exactly what the model was asked for. */
+export const directorResponseSchema:Schema={type:'object',additionalProperties:false,required:['direction','decisions'],properties:{direction:resolvedDirectionSchema,decisions:decisionSchema}};
 /** Deterministic continuity heal: a PRESERVE diff whose visual re-draws the
  *  concept is converted to a highlight, so the preserved object is emphasized
  *  instead of re-introduced (recorded by the caller). */
@@ -174,7 +175,7 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
   const contractNote=requiredRelations.length?'Every entry of requiredRelations must appear in some beat\'s relationRefs with exactly those fromConcept, relation and toConcept values. Every entry of requiredObjects must appear once with that role.':'';const fallbackNote=primitiveFallbackNote(candidates.filter(c=>!c.candidates.length&&!c.representation).map(c=>c.conceptId));
    const repairNote=resolved?.repairNotes?.length?`A previous direction failed these visual checks: ${resolved.repairNotes.join('; ')}. Correct exactly those objects, relations, anchors, states or actions and keep narration, beat IDs and concept coverage unchanged.`:'';
   const instructions=[directorPrompt({archetype:mentalModel.candidateArchetypes[0],language,whiteboard:Boolean(resolved?.whiteboardPlan)}),contractNote,fallbackNote,repairNote,skillInstruction('visual-director')].filter(Boolean).join(' ');
-   const directed=await model.generate('director',instructions,{semanticScene:scene,requiredRelations,requiredObjects,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},schema,value=>{
+   const directed=await model.generate('director',instructions,{semanticScene:scene,requiredRelations,requiredObjects,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},directorResponseSchema,value=>{
    const response=value as {scene?:VisualSceneV2;direction?:unknown;decisions:DirectionDecisions};
    if(response.scene){
     // Instrumented legacy passthrough (plan heal rule 24): kept for model

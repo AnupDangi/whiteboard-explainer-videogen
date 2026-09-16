@@ -1,0 +1,415 @@
+{
+ "capturedFrom": "narrated-2sc-b.log",
+ "stage": "director",
+ "archetype": "cause_effect",
+ "note": "actions carried relationRefs with no conceptKeys; one also omitted a required relation",
+ "response": {
+  "direction": {
+   "title": "Modes of Inference in Scientific Discovery",
+   "teachingGoal": "Distinguish between the three modes of inference in scientific discovery.",
+   "mentalModel": "A central world model receiving sensory inputs and processing them through three distinct logical pathways.",
+   "archetype": "cause_effect",
+   "objects": [
+    {
+     "representation": {
+      "family": "system"
+     },
+     "label": "World Model",
+     "role": "hero",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "primary",
+     "preferredZone": "center",
+     "collisionPolicy": "forbid",
+     "conceptKey": "world-model",
+     "children": [
+      "axiom"
+     ]
+    },
+    {
+     "label": "Axiom",
+     "role": "structure",
+     "primitiveRef": "label",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "center",
+     "collisionPolicy": "contain",
+     "conceptKey": "axiom",
+     "parentConceptKey": "world-model",
+     "children": []
+    },
+    {
+     "label": "Sensory Experience",
+     "role": "support",
+     "primitiveRef": "label",
+     "state": "hidden",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated",
+      "hidden"
+     ],
+     "importance": "secondary",
+     "preferredZone": "upper_left",
+     "collisionPolicy": "forbid",
+     "conceptKey": "sensory-experience",
+     "children": []
+    },
+    {
+     "label": "Deduction",
+     "role": "support",
+     "primitiveRef": "label",
+     "state": "hidden",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated",
+      "hidden"
+     ],
+     "importance": "secondary",
+     "preferredZone": "upper_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "deduction",
+     "children": []
+    },
+    {
+     "label": "Induction",
+     "role": "support",
+     "primitiveRef": "label",
+     "state": "hidden",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated",
+      "hidden"
+     ],
+     "importance": "secondary",
+     "preferredZone": "lower_left",
+     "collisionPolicy": "forbid",
+     "conceptKey": "induction",
+     "children": []
+    },
+    {
+     "label": "Abduction",
+     "role": "support",
+     "primitiveRef": "label",
+     "state": "hidden",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated",
+      "hidden"
+     ],
+     "importance": "secondary",
+     "preferredZone": "lower_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "abduction",
+     "children": []
+    }
+   ],
+   "relations": [
+    {
+     "fromConcept": "sensory-experience",
+     "relation": "flows_to",
+     "toConcept": "world-model"
+    },
+    {
+     "fromConcept": "world-model",
+     "relation": "depends_on",
+     "toConcept": "deduction"
+    },
+    {
+     "fromConcept": "sensory-experience",
+     "relation": "flows_to",
+     "toConcept": "induction"
+    },
+    {
+     "fromConcept": "abduction",
+     "relation": "causes",
+     "toConcept": "world-model",
+     "targetPart": "axiom"
+    }
+   ],
+   "beats": [
+    {
+     "key": "intro-world-model",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "draw",
+       "anchor": {
+        "text": "world model",
+        "occurrence": 0
+       },
+       "durationMs": 5000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "world-model"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "axioms",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "axiom"
+       ],
+       "relationRefs": []
+      }
+     ],
+     "intentionalPause": "Wait for the student to visualize a mental framework."
+    },
+    {
+     "key": "sensory-input",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "Sensory experience",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "sensory-experience"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "raw data",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "sensory-experience",
+         "relation": "flows_to",
+         "toConcept": "world-model"
+        }
+       ]
+      }
+     ],
+     "intentionalPause": "Show data entering the system."
+    },
+    {
+     "key": "deduction-beat",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "Deduction",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "deduction"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "trace",
+       "anchor": {
+        "text": "applies",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "world-model",
+         "relation": "depends_on",
+         "toConcept": "deduction"
+        }
+       ]
+      },
+      {
+       "type": "highlight",
+       "anchor": {
+        "text": "axioms",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "axiom"
+       ],
+       "relationRefs": [],
+       "toState": "highlighted"
+      }
+     ],
+     "intentionalPause": "Highlight the closed loop of deduction."
+    },
+    {
+     "key": "induction-beat",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "Induction",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "induction"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "observed cases",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "sensory-experience",
+         "relation": "flows_to",
+         "toConcept": "induction"
+        }
+       ]
+      }
+     ],
+     "intentionalPause": "Show patterns forming from data."
+    },
+    {
+     "key": "abduction-beat",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "Abduction",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "abduction"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "pulse",
+       "anchor": {
+        "text": "intuitive leap",
+        "occurrence": 0
+       },
+       "durationMs": 1500,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "abduction"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "trace",
+       "anchor": {
+        "text": "invents new axioms",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "abduction",
+         "relation": "causes",
+         "toConcept": "world-model",
+         "targetPart": "axiom"
+        }
+       ]
+      }
+     ],
+     "intentionalPause": "Highlight the spark of a new idea."
+    },
+    {
+     "key": "discovery-synthesis",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "pulse",
+       "anchor": {
+        "text": "update",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "world-model"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "highlight",
+       "anchor": {
+        "text": "expand",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "abduction",
+        "induction",
+        "deduction"
+       ],
+       "relationRefs": [],
+       "toState": "activated"
+      }
+     ],
+     "intentionalPause": "Show the full cycle in motion."
+    }
+   ]
+  },
+  "decisions": {
+   "centralTeachingObject": "world-model",
+   "firstFocus": "world-model",
+   "illustratedConcepts": "world-model",
+   "labelsOnly": "axiom, sensory-experience, deduction, induction, abduction",
+   "movingRelations": "sensory-experience flows_to world-model, sensory-experience flows_to induction",
+   "persistentContext": "world-model, axiom",
+   "stateChanges": "abduction pulsed during leap, axioms highlighted during deduction",
+   "omit": "none"
+  }
+ }
+}

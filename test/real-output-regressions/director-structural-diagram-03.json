@@ -1,0 +1,235 @@
+{
+ "capturedFrom": "narrated-2sc-c.log",
+ "stage": "director",
+ "archetype": "structural_diagram",
+ "note": "children declared with a default collision policy; a 5-rank chain",
+ "response": {
+  "direction": {
+   "title": "Grounding Logic in World Models",
+   "teachingGoal": "Explain how world models ground abstract logic in reality.",
+   "mentalModel": "A container where abstract axioms are mapped to sensory simulations.",
+   "archetype": "structural_diagram",
+   "objects": [
+    {
+     "label": "World Model",
+     "role": "hero",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "primary",
+     "preferredZone": "center",
+     "collisionPolicy": "forbid",
+     "conceptKey": "world-model",
+     "representation": {
+      "family": "container"
+     },
+     "children": [
+      "axiom"
+     ]
+    },
+    {
+     "label": "Axiom",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "upper_left",
+     "collisionPolicy": "contain",
+     "conceptKey": "axiom",
+     "primitiveRef": "label",
+     "parentConceptKey": "world-model",
+     "children": []
+    },
+    {
+     "label": "Sensory Experience",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "lower_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "sensory-experience",
+     "primitiveRef": "label",
+     "children": []
+    },
+    {
+     "label": "Deduction",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "upper_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "deduction",
+     "primitiveRef": "label",
+     "children": []
+    }
+   ],
+   "relations": [
+    {
+     "fromConcept": "world-model",
+     "relation": "contains",
+     "toConcept": "axiom"
+    },
+    {
+     "fromConcept": "world-model",
+     "relation": "depends_on",
+     "toConcept": "sensory-experience"
+    }
+   ],
+   "beats": [
+    {
+     "key": "intro-grounding",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "draw",
+       "anchor": {
+        "text": "world model",
+        "occurrence": 0
+       },
+       "durationMs": 4000,
+       "leadMs": 0,
+       "easing": "ease_in_out",
+       "conceptKeys": [
+        "world-model"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "logical symbols",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "axiom"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "trace",
+       "anchor": {
+        "text": "meaning",
+        "occurrence": 0
+       },
+       "durationMs": 1500,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "world-model",
+         "relation": "contains",
+         "toConcept": "axiom"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "sensory-mapping",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "sensory simulations",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "sensory-experience"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "linking",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "world-model",
+         "relation": "depends_on",
+         "toConcept": "sensory-experience"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "grounding-conclusion",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "logical deductions",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "deduction"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "highlight",
+       "anchor": {
+        "text": "connected",
+        "occurrence": 0
+       },
+       "durationMs": 1500,
+       "leadMs": 0,
+       "easing": "linear",
+       "toState": "highlighted",
+       "conceptKeys": [
+        "world-model",
+        "deduction"
+       ],
+       "relationRefs": []
+      }
+     ]
+    }
+   ]
+  },
+  "decisions": {
+   "centralTeachingObject": "world-model",
+   "firstFocus": "world-model",
+   "illustratedConcepts": "world-model",
+   "labelsOnly": "axiom, sensory-experience, deduction",
+   "movingRelations": "world-model depends_on sensory-experience",
+   "persistentContext": "world-model, axiom",
+   "stateChanges": "world-model and deduction are highlighted in the final beat to show connection.",
+   "omit": "none"
+  }
+ }
+}

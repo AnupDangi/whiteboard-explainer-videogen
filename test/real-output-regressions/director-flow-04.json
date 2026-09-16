@@ -1,0 +1,312 @@
+{
+ "capturedFrom": "narrated-2sc.log",
+ "stage": "director",
+ "archetype": "flow",
+ "note": "relation-only actions plus composed objects with no asset",
+ "response": {
+  "direction": {
+   "title": "The Three Modes of Logical Inference",
+   "teachingGoal": "Distinguish between the three types of logical inference.",
+   "mentalModel": "A flow of information from raw observation to structured logical rules.",
+   "archetype": "flow",
+   "objects": [
+    {
+     "label": "Scientific Discovery",
+     "role": "hero",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "primary",
+     "preferredZone": "center",
+     "collisionPolicy": "forbid",
+     "conceptKey": "scientific-discovery",
+     "representation": {
+      "family": "system"
+     },
+     "children": []
+    },
+    {
+     "label": "Sensory Experience",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "upper_left",
+     "collisionPolicy": "forbid",
+     "conceptKey": "sensory-experience",
+     "assetRef": "data.value.v2",
+     "children": []
+    },
+    {
+     "label": "Abduction",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "upper_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "abduction",
+     "primitiveRef": "label",
+     "children": []
+    },
+    {
+     "label": "Induction",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "lower_right",
+     "collisionPolicy": "forbid",
+     "conceptKey": "induction",
+     "primitiveRef": "label",
+     "children": []
+    },
+    {
+     "label": "Deduction",
+     "role": "support",
+     "state": "neutral",
+     "allowedStates": [
+      "neutral",
+      "highlighted",
+      "activated"
+     ],
+     "importance": "secondary",
+     "preferredZone": "lower_left",
+     "collisionPolicy": "forbid",
+     "conceptKey": "deduction",
+     "primitiveRef": "label",
+     "children": []
+    }
+   ],
+   "relations": [
+    {
+     "fromConcept": "sensory-experience",
+     "relation": "flows_to",
+     "toConcept": "abduction"
+    },
+    {
+     "fromConcept": "abduction",
+     "relation": "flows_to",
+     "toConcept": "induction"
+    },
+    {
+     "fromConcept": "induction",
+     "relation": "flows_to",
+     "toConcept": "deduction"
+    }
+   ],
+   "beats": [
+    {
+     "key": "intro-discovery",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "draw",
+       "anchor": {
+        "text": "Scientific discovery",
+        "occurrence": 0
+       },
+       "durationMs": 5000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "scientific-discovery"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "sensory experience",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "sensory-experience"
+       ],
+       "relationRefs": []
+      }
+     ],
+     "intentionalPause": "Wait for the student to focus on the starting point of observation."
+    },
+    {
+     "key": "abduction-beat",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "abduction",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "abduction"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "intuitive leap",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "sensory-experience",
+         "relation": "flows_to",
+         "toConcept": "abduction"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "induction-beat",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "Induction",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "induction"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "generalizes",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "abduction",
+         "relation": "flows_to",
+         "toConcept": "induction"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "deduction-beat",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "reveal",
+       "anchor": {
+        "text": "deduction",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "deduction"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "flow",
+       "anchor": {
+        "text": "applies",
+        "occurrence": 0
+       },
+       "durationMs": 2000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [],
+       "relationRefs": [
+        {
+         "fromConcept": "induction",
+         "relation": "flows_to",
+         "toConcept": "deduction"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "cycle-summary",
+     "narration": "[REDACTED]",
+     "actions": [
+      {
+       "type": "pulse",
+       "anchor": {
+        "text": "complete cycle",
+        "occurrence": 0
+       },
+       "durationMs": 1500,
+       "leadMs": 0,
+       "easing": "linear",
+       "conceptKeys": [
+        "scientific-discovery"
+       ],
+       "relationRefs": []
+      },
+      {
+       "type": "highlight",
+       "anchor": {
+        "text": "logical certainty",
+        "occurrence": 0
+       },
+       "durationMs": 1000,
+       "leadMs": -180,
+       "easing": "linear",
+       "conceptKeys": [
+        "abduction",
+        "induction",
+        "deduction"
+       ],
+       "relationRefs": []
+      }
+     ]
+    }
+   ]
+  },
+  "decisions": {
+   "centralTeachingObject": "scientific-discovery",
+   "firstFocus": "scientific-discovery",
+   "illustratedConcepts": "sensory-experience",
+   "labelsOnly": "abduction, induction, deduction",
+   "movingRelations": "sensory-to-abduction, abduction-to-induction, induction-to-deduction",
+   "persistentContext": "scientific-discovery",
+   "stateChanges": "none",
+   "omit": "world-model"
+  }
+ }
+}
