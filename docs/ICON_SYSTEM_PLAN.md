@@ -1,11 +1,26 @@
 # Dynamic Representation & Icon Subsystem — Integration Plan
 
-Status: proposal, not implemented.
+Status: P0–P2 implemented; P3+ not started.
 Scope: add a controlled dynamic representation subsystem to the V2 semantic
 pipeline. External icon retrieval is a fallback source for representation
 candidates, never a renderer path.
 
-This document is a plan only. No code has been changed.
+| phase | state | where |
+|---|---|---|
+| P0 palette + fill modes | **done** | `renderer/palette.ts`, `AssetPart.strokeRole/fillRole/fillMode/fillOpacity`, golden SVG hashes in `test/golden-svg-hashes.json` |
+| P1 normalizer | **done** | `assets/normalize/{sanitize,path,geometry,transform,colors}.ts`, `assets/external/convert.ts` |
+| P2 embedded catalog | **done** | `CompiledSceneV2.assetCatalog`, `resolveAsset(ref, catalog?)`, threaded through compile/fallback/renderer |
+| P3–P7 | not started | external retrieval, cache/replay, policy/ranking, benchmark, promotion |
+
+**Path corrections** (this document was written before a repo restructure):
+`src/semantic/representation.ts` is now `src/semantic/identity/representation.ts`;
+the `getAsset` touch points are `compile-scene.ts` (asset lookup, anchor
+resolution, facing ports), `fallback.ts:ensureAssetCompatibility`,
+`visual-director.ts` (candidate metadata, archetype fit, anchors),
+`illustrations.ts`, `relations.ts` and `render-svg.ts` — all now resolve through
+`resolveAsset(ref, catalog?)`. `docs/v4/critical_changes.md` was deleted with the
+stale docs, so its two non-goals are no longer recorded anywhere; P3 needs an
+explicit decision in this file instead.
 
 ---
 

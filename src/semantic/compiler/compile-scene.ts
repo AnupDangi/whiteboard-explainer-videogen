@@ -1,8 +1,9 @@
 import {archetypePlacements} from './archetypes.js';
 import {MOTIONS} from '../types.js';
 import type {CompiledObject,CompiledSceneV2,VisualTiming,LayoutZone} from '../types.js';
+import type {AssetDefinition} from '../assets/types.js';
 import {validateVisualScene} from '../planning/validate.js';
-import {getAsset,canonicalAnchor} from '../assets/registry.js';
+import {resolveAsset,canonicalAnchor} from '../assets/registry.js';
 import {applyCompositionFallbacks} from './fallback.js';
 import {BOARD,zoneRect,supportedArchetype} from './zones.js';
 import {fitLabel,visualBounds} from './text.js';
@@ -10,14 +11,14 @@ import {findCollisions,contains} from './collisions.js';
 import {routeRelation} from './routing.js';
 import {occupancy} from './occupancy.js';
 import {compileTimeline,estimatedTiming,staticIntervals} from './timeline.js';
-export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:CompiledSceneV2):CompiledSceneV2{
+export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:CompiledSceneV2,catalog?:Record<string,AssetDefinition>):CompiledSceneV2{
  const validated=validateVisualScene(input,undefined,new Set(previous?.objects.map(o=>o.id))),diagnostics:string[]=[];
- const {scene,warnings:fallbackWarnings}=applyCompositionFallbacks(validated);
+ const {scene,warnings:fallbackWarnings}=applyCompositionFallbacks(validated,catalog);
  for(const w of fallbackWarnings)diagnostics.push(w);
   /** Schema MOTIONS is the contract (the prompt advertises all of them); any
    *  action the renderer does not individually animate simply times its beat. */
   for(const action of scene.beats.flatMap(b=>b.actions))if(!MOTIONS.includes(action.type))throw new Error(`Motion not implemented: ${action.type}`);
- for(const r of scene.relations)for(const ref of [r.from,r.to]){const o=scene.objects.find(o=>o.id===ref.objectId)!;if(o.assetRef)ref.anchor=canonicalAnchor(o.assetRef,ref.anchor);}
+ for(const r of scene.relations)for(const ref of [r.from,r.to]){const o=scene.objects.find(o=>o.id===ref.objectId)!;if(o.assetRef)ref.anchor=canonicalAnchor(o.assetRef,ref.anchor,catalog);}
  if(!supportedArchetype(scene.archetype))throw new Error(`Archetype not implemented: ${scene.archetype}`);
  if(['structural_diagram','convergence'].includes(scene.archetype)&&scene.objects.filter(o=>o.role==='hero').length!==1)throw new Error('Structural composition requires exactly one hero');
  const placements=archetypePlacements(scene);
@@ -26,7 +27,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  const SUPPORT_ZONES:LayoutZone[]=['upper_left','upper_right','lower_left','lower_right','left','right','top','bottom'];
  const objects:CompiledObject[]=[],remaining=[...scene.objects];const childIndex=new Map<string,number>();let support=0;
  while(remaining.length){const index=remaining.findIndex(o=>!o.parentId||objects.some(p=>p.id===o.parentId));if(index<0)throw new Error('Unresolved parent');const o=remaining.splice(index,1)[0];
-  const asset=o.assetRef?getAsset(o.assetRef):undefined;if(asset&&!asset.archetypes.includes(scene.archetype))throw new Error(`Asset incompatible with archetype: ${o.id}`);
+  const asset=o.assetRef?resolveAsset(o.assetRef,catalog):undefined;if(asset&&!asset.archetypes.includes(scene.archetype))throw new Error(`Asset incompatible with archetype: ${o.id}`);
   if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!['before','after'].includes(state)&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
   const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(scene.archetype),w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;
   const zone=o.preferredZone??(hero?'center':SUPPORT_ZONES[support++%SUPPORT_ZONES.length]);
@@ -58,7 +59,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   const compiled:CompiledObject={...o,...rect,anchors:{},fontSize,lines,zIndex:parent?parent.zIndex+1:hero?1:2};
   objects.push(compiled);
  }
- const resolveAnchors=()=>{for(const o of objects){o.anchors={center:{x:o.x+o.w/2,y:o.y+o.h/2},input:{x:o.x,y:o.y+o.h/2},output:{x:o.x+o.w,y:o.y+o.h/2},top:{x:o.x+o.w/2,y:o.y},bottom:{x:o.x+o.w/2,y:o.y+o.h}};if(o.assetRef){const a=getAsset(o.assetRef),[vx,vy,vw,vh]=a.viewBox;for(const [name,p] of Object.entries(a.anchors))o.anchors[name]={x:o.x+(p.x-vx)/vw*o.w,y:o.y+(p.y-vy)/vh*o.h};}}};
+ const resolveAnchors=()=>{for(const o of objects){o.anchors={center:{x:o.x+o.w/2,y:o.y+o.h/2},input:{x:o.x,y:o.y+o.h/2},output:{x:o.x+o.w,y:o.y+o.h/2},top:{x:o.x+o.w/2,y:o.y},bottom:{x:o.x+o.w/2,y:o.y+o.h}};if(o.assetRef){const a=resolveAsset(o.assetRef,catalog),[vx,vy,vw,vh]=a.viewBox;for(const [name,p] of Object.entries(a.anchors))o.anchors[name]={x:o.x+(p.x-vx)/vw*o.w,y:o.y+(p.y-vy)/vh*o.h};}}};
  // Labels are part of occupied geometry, including labels below illustration bounds.
  for(let pass=0;pass<3&&findCollisions(objects).length;pass++){
   for(const o of objects.filter(o=>o.role==='annotation'||o.role==='label')){
@@ -121,7 +122,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  for(const o of objects)if(!contains(BOARD.safe,visualBounds(o)))throw new Error(`Canvas escape: ${o.id}`);
  resolveAnchors();
  // Non-directional symbols expose facing flow ports; physical subpart anchors stay fixed.
-  for(const o of objects){if(!o.assetRef||getAsset(o.assetRef).flowPortPolicy!=='facing')continue;const ports={input:{...o.anchors.input},output:{...o.anchors.output}};
+  for(const o of objects){if(!o.assetRef||resolveAsset(o.assetRef,catalog).flowPortPolicy!=='facing')continue;const ports={input:{...o.anchors.input},output:{...o.anchors.output}};
    for(const name of ['input','output']){const outgoing=scene.relations.filter(r=>r.from.objectId===o.id&&r.from.anchor===name&&r.relationType==='flows_to');if(!outgoing.length)continue;
     for(const r of outgoing)if(!objects.find(t=>t.id===r.to.objectId)!.anchors[r.to.anchor]){diagnostics.push(`representation fallback: anchor ${r.to.anchor} unavailable; degraded to center (${r.id})`);r.to.anchor='center';}
     const targets=outgoing.map(r=>objects.find(t=>t.id===r.to.objectId)!.anchors[r.to.anchor]);const meanX=targets.reduce((n,p)=>n+p.x,0)/targets.length;o.anchors[name]=meanX<o.x+o.w/2?ports.input:ports.output;
@@ -148,5 +149,5 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   }),timing=structuredClone(timingInput??estimatedTiming(scene)),actions=compileTimeline(scene,timing);
  if(['structural_diagram','convergence','cross_section','spatial_process'].includes(scene.archetype)){const metrics=occupancy(objects);if(metrics.heroRatio<.3)diagnostics.push('Weak hero salience');if(metrics.areaRatio<.2)diagnostics.push('Low structural occupancy');}
  const gaps=staticIntervals(scene,timing,actions);if(gaps.some(g=>g.endMs-g.startMs>3500))diagnostics.push('Narrated static interval exceeds 3500ms');
- return {version:2,scene,objects,relations,actions,timing,durationMs:timing.durationMs+650,diagnostics};
+ return {version:2,scene,objects,relations,actions,timing,durationMs:timing.durationMs+650,diagnostics,...(catalog&&Object.keys(catalog).length?{assetCatalog:catalog}:{})};
 }

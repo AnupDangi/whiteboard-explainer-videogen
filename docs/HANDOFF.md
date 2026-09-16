@@ -13,9 +13,24 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **V2 default** | `08e08a5` | semantic is the default; V1 frozen legacy (not deleted) |
 | **S3** contract truthfulness | `528842e` | static relations render; unimplemented motions removed; continuity realisation documented + tested |
 | **S2** heal visibility | `b943b60` | every `healSchema` rule reports `{path,rule,classification,before,after}`; SEMANTIC heals counted on the job snapshot |
-| **S8** structured director contract | *(this commit)* | required relations/objects given in the output schema shape; stage enums reconciled |
+| **S8** structured director contract | `bd83e23` | required relations/objects given in the output schema shape; stage enums reconciled |
+| **P0** palette | `9534f0f` | theme roles + fill modes; golden SVG hashes pin byte-identity |
+| **P1** normalizer | `3f900c4` | fail-closed sanitizer, path grammar, flattening, transforms, converter |
+| **P2** embedded catalog | *(this commit)* | `CompiledSceneV2.assetCatalog` + `resolveAsset(ref,catalog?)` threaded through compile and renderer |
 
-Tests: **450/450**. Code graph: **1,742 nodes / 3,743 edges** (`graphify update . --force`).
+Tests: **469/469**. Code graph: **1,782 nodes / 3,830 edges** (`graphify update . --force`).
+
+### Icon system P0–P2 — representation can now come from outside the static registry
+
+| phase | delivered | gate |
+|---|---|---|
+| **P0** | `renderer/palette.ts`; `AssetPart.strokeRole/fillRole/fillMode/fillOpacity`; `stroke` optional | **byte-identical SVG across all 12 fixtures** (`test/golden-svg-hashes.json`), and every fixture on disk must be pinned |
+| **P1** | `assets/normalize/{sanitize,path,geometry,transform,colors}.ts` + `assets/external/convert.ts` | sanitizer fail-closed on 18 attack vectors; conversion is deterministic and clock-free |
+| **P2** | `CompiledSceneV2.assetCatalog`; `resolveAsset(ref, catalog?)` threaded through `compile-scene`, `fallback`, `illustrations`, `relations`, `render-svg` | an asset that exists **only** in the catalog renders identically in-process, in a fresh process (export) and after a JSON round-trip (browser) |
+
+Two defects found while writing the tests: the transform argument guard was inverted, and an arc whose endpoints coincide divided by zero and produced NaN points (the spec says to omit such an arc).
+
+Still inert by design: nothing produces a catalog yet. P3 (external retrieval) is the first phase that does, and it is the one that adds network, licences and caching — deliberately not started.
 
 ### S8 — one shape from prompt to validator
 
@@ -189,6 +204,13 @@ Synthesis rules, both recorded: an *entirely absent* required relation is realiz
 
 The lesson completes but reads thin: on the same run, four of five concepts render as bare label pills because **no asset exists for `abduction`, `axiom`, `induction`, `deduction`**. That is the 43-asset static-registry ceiling, not a layout or routing defect. Relations also render only when an action animates them (`renderer/relations.ts:8`), so the graph is richer than the picture.
 
-### Next: the icon system (P0–P2), then S6/S7 latency
+### Next: P3 external retrieval, or S6/S7 throughput
 
-S8 closed the contract-shape gap that was costing whole jobs. The remaining ceiling is **representation**: on the live lesson, four of five concepts still render as bare label pills because the registry holds 43 static assets and no runtime resolution. The next capability work is **`docs/ICON_SYSTEM_PLAN.md` P0–P2** (palette, normalizer, embedded catalog — all no-network, additive, and inert until a catalog is supplied). After that, **S6/S7** for throughput: a 1-minute lesson still costs ~30–140s of wall time with no job-relative latency budget.
+The icon track has reached the point where the only thing missing is a **source** of candidate icons: P0–P2 give the palette, the safe converter and the embedded catalog, but nothing yet produces a catalog entry. **P3** adds Iconify search + fetch behind `VISUAL_ICONS=off|strict|balanced|broad` (default off), with a hard licence gate and the sanitizer as the only ingest path. It introduces network, licences and caching — the first phase that can fail in ways the deterministic layers cannot.
+
+**Before P3, three decisions are needed** (the plan's blockers, minus the one that disappeared with `docs/v4/`):
+1. `VISUAL_ICONS` default and rollout mode — the plan recommends `off`, then `balanced`.
+2. OpenMoji (CC BY-SA) — use with attribution, or do not use.
+3. Who signs off promoting a frequent winner into the static registry (P7).
+
+If representation breadth is less urgent than speed, **S6/S7** (bounded concurrency + job-relative latency budgets) are the alternative: a 1-minute lesson still costs 30–140s of wall time with no latency budget, and the harness still allows a 600s knowledge timeout for a 60s video.

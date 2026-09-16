@@ -112,7 +112,9 @@ export function convertSvgToAsset(input:ConvertInput):ConvertResult{
   viewBox,
   parts,
   anchors,
-  states:{highlighted:{partIds:parts.map(p=>p.id)},activated:{partIds:parts.map(p=>p.id)}},
+  /** Curated assets declare all three states the compiler validates against, so
+   *  a converted asset must too or every allowedStates list would fail. */
+  states:{neutral:{partIds:parts.map(p=>p.id)},highlighted:{partIds:parts.map(p=>p.id)},activated:{partIds:parts.map(p=>p.id)}},
   styleFamily:input.styleFamily??'chalk-ink-v2',
   source:input.source??provenance.sourceUrl??'generated',
   license:input.license??provenance.licenseId,

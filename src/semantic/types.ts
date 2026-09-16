@@ -1,4 +1,5 @@
 import type {RepresentationSpec,RepresentationProvenance} from './representation.js';
+import type {AssetDefinition} from './assets/types.js';
 /** V2 semantic contracts. Models never own pixel geometry. */
 export const ARCHETYPES = ['simple_explanation','numbered_steps','flow','cause_effect','branch','convergence','comparison','hierarchy','timeline','cycle','structural_diagram','cross_section','spatial_process','transformation','state_machine','equation_walkthrough','matrix_operation','chart','trajectory'] as const;
 export type VisualArchetype = typeof ARCHETYPES[number];
@@ -53,4 +54,9 @@ export interface CompiledRelation extends VisualRelation {points:Point[]}
 export interface WordTiming {word:string;startMs:number;endMs:number}
 export type TimingSource = 'provider'|'aligner'|'semantic-segment'|'estimated';
 export interface VisualTiming {kind:string;words:WordTiming[];durationMs:number;timingSource?:TimingSource}
-export interface CompiledSceneV2 {version:2;scene:VisualSceneV2;objects:CompiledObject[];relations:CompiledRelation[];actions:CompiledVisualAction[];timing:VisualTiming;durationMs:number;diagnostics:string[]}
+/** `assetCatalog` carries any representation the static registry does not hold
+ *  (a converted or synthesized asset), so the browser, the exporter and a replay
+ *  all render from the same embedded data with no registry entry and no network.
+ *  It lives on the compiled scene only: `visualSceneSchema` is closed to unknown
+ *  fields and the model must never emit an asset. */
+export interface CompiledSceneV2 {version:2;scene:VisualSceneV2;objects:CompiledObject[];relations:CompiledRelation[];actions:CompiledVisualAction[];timing:VisualTiming;durationMs:number;diagnostics:string[];assetCatalog?:Record<string,AssetDefinition>}

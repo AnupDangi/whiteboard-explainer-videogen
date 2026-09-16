@@ -1,10 +1,11 @@
 import type {CompiledObject,ObjectState} from '../types.js';
-import {getAsset} from '../assets/registry.js';
+import {resolveAsset} from '../assets/registry.js';
+import type {AssetDefinition} from '../assets/types.js';
 import {length,path,pointAt} from '../assets/geometry.js';
 import {COLORS,clamp} from './style.js';
 import {resolveAssetColor,themePalette,type ThemePalette} from './palette.js';
-export function renderIllustration(o:CompiledObject,draw:number,emphasis:number,state:ObjectState='neutral',palette:ThemePalette=themePalette()):{svg:string;cursor?:{x:number;y:number;angle:number}}{
- const asset=getAsset(o.assetRef!),[vx,vy,vw,vh]=asset.viewBox,parts=[...asset.parts].sort((a,b)=>a.order-b.order||a.id.localeCompare(b.id));
+export function renderIllustration(o:CompiledObject,draw:number,emphasis:number,state:ObjectState='neutral',palette:ThemePalette=themePalette(),catalog?:Record<string,AssetDefinition>):{svg:string;cursor?:{x:number;y:number;angle:number}}{
+ const asset=resolveAsset(o.assetRef!,catalog),[vx,vy,vw,vh]=asset.viewBox,parts=[...asset.parts].sort((a,b)=>a.order-b.order||a.id.localeCompare(b.id));
   // State variants: before/after reuse highlighted/activated part sets; before shows the
   // "before" variant dimmed, after shows the "after" variant fully (Task 6.5).
   const stateKey=state==='before'||state==='after'?state:state==='activated'?'activated':'highlighted';

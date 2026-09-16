@@ -7,7 +7,8 @@
  *  narration) are never altered — only composition, roles and tokens.
  */
 import type { VisualObject, VisualSceneV2 } from '../types.js';
-import { getAsset } from '../assets/registry.js';
+import type { AssetDefinition } from '../assets/types.js';
+import { resolveAsset } from '../assets/registry.js';
 
 export interface FallbackOutcome {
   scene: VisualSceneV2;
@@ -238,7 +239,7 @@ function ensureMatrixTokens(scene: VisualSceneV2, warnings: string[]): void {
  *  The concept stays on the board as a labeled primitive; the pick is warned.
  *  Relation anchors that named removed asset subparts degrade to center. */
 const PRIMITIVE_ANCHORS = new Set(['input', 'output', 'center', 'top', 'bottom']);
-function ensureAssetCompatibility(scene: VisualSceneV2, warnings: string[]): void {
+function ensureAssetCompatibility(scene: VisualSceneV2, warnings: string[], catalog?: Record<string, AssetDefinition>): void {
   const stripped = new Set<string>();
   for (const o of scene.objects) {
     if (!o.assetRef) continue;
@@ -246,7 +247,7 @@ function ensureAssetCompatibility(scene: VisualSceneV2, warnings: string[]): voi
     // only known assets under the wrong archetype degrade to labels.
     let compatible: boolean;
     try {
-      compatible = getAsset(o.assetRef).archetypes.includes(scene.archetype);
+      compatible = resolveAsset(o.assetRef, catalog).archetypes.includes(scene.archetype);
     } catch {
       throw new Error(`Unknown asset: ${o.assetRef}`);
     }
@@ -270,7 +271,7 @@ function ensureAssetCompatibility(scene: VisualSceneV2, warnings: string[]): voi
   }
 }
 
-export function applyCompositionFallbacks(input: VisualSceneV2): FallbackOutcome {
+export function applyCompositionFallbacks(input: VisualSceneV2, catalog?: Record<string, AssetDefinition>): FallbackOutcome {
   const scene: VisualSceneV2 = structuredClone(input);
   const warnings: string[] = [];
   const count = roots(scene).length;
@@ -352,6 +353,6 @@ export function applyCompositionFallbacks(input: VisualSceneV2): FallbackOutcome
     ensureSingleHero(scene, warnings);
   }
   // Last: an asset that cannot render under the final archetype becomes a label.
-  ensureAssetCompatibility(scene, warnings);
+  ensureAssetCompatibility(scene, warnings, catalog);
   return { scene, warnings };
 }
