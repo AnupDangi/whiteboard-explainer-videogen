@@ -51,6 +51,45 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
   /** The archetype is harness-owned (selectVisualModel); the prompt names it, so
    *  a model-returned mismatch is clamped to it (recorded). */
   if(visual.archetype!==mentalModel.candidateArchetypes[0]){log('v2.director.archetype-clamp',{scene:scene.id,from:visual.archetype,to:mentalModel.candidateArchetypes[0]});visual.archetype=mentalModel.candidateArchetypes[0];}
+  /** Cycle contract synthesis: a cycle must be exactly one closed ring. When
+   *  the model's graph does not form one, close it deterministically over the
+   *  plan's primaries in beat order, reusing the plan's own relation type
+   *  where one exists between the pair (recorded degradation). */
+  if(visual.archetype==='cycle'){
+   const primaryIds=visual.objects.filter(o=>!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support').map(o=>o.id);
+   const conceptOf=(id:string)=>visual.objects.find(o=>o.id===id)?.conceptId;
+   const ringArcs=visual.relations.filter(r=>primaryIds.includes(r.from.objectId)&&primaryIds.includes(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback&&!['labels','compares_with'].includes(r.relationType));
+   const outgoingCount=(id:string)=>ringArcs.filter(r=>r.from.objectId===id).length;
+   const visited=new Set<string>();
+   let current=[...primaryIds].sort()[0];
+   while(visited.size<primaryIds.length){
+    visited.add(current);
+    const next=ringArcs.filter(r=>r.from.objectId===current&&!visited.has(r.to.objectId));
+    if(next.length!==1){break;}
+    current=next[0].to.objectId;
+   }
+   if(visited.size<primaryIds.length||!ringArcs.some(r=>r.from.objectId===current&&r.to.objectId===[...primaryIds].sort()[0])){
+    /** Repair: keep exactly one outgoing arc per node along the plan order. */
+    const beatOrder=new Map<string,number>();
+    scene.beats.forEach((b,i)=>{for(const key of [...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)])if(!beatOrder.has(key))beatOrder.set(key,i);});
+    const order=[...primaryIds].sort((a,b)=>(beatOrder.get(conceptOf(a)!)??99)-(beatOrder.get(conceptOf(b)!)??99)||a.localeCompare(b));
+    const start=order[0];
+    const planArcType=(fromId:string,toId:string)=>{const from=conceptOf(fromId),to=conceptOf(toId);const arc=scene.requiredRelations.find(r=>r.fromConceptId===from&&r.toConceptId===to);return arc?.relationType??'flows_to';};
+    for(let i=0;i<order.length;i++){
+     const fromId=order[i],toId=order[(i+1)%order.length];
+     const existing=ringArcs.filter(r=>r.from.objectId===fromId);
+     if(existing.length===1&&existing[0].to.objectId===toId)continue;
+     for(const r of existing)if(r.to.objectId!==toId){r.visualForm='none';log('v2.director.ring-heal',{scene:scene.id,dropped:`${r.from.objectId}->${r.to.objectId}`},'warn');}
+     if(!ringArcs.some(r=>r.from.objectId===fromId&&r.to.objectId===toId)){
+      const from=conceptOf(fromId),to=conceptOf(toId);
+      const arc=scene.requiredRelations.find(r=>r.fromConceptId===from&&r.toConceptId===to);
+      const newRelation={id:`relation_ring_${i}`,from:{objectId:fromId,anchor:'center'},to:{objectId:toId,anchor:'center'},relationType:arc?.relationType??'flows_to',visualForm:'flow',label:arc?.id??'cycle arc'} as VisualSceneV2['relations'][number];
+      visual.relations.push(newRelation);ringArcs.push(newRelation);
+      log('v2.director.ring-heal',{scene:scene.id,added:`${fromId}->${toId}`},'warn');
+     }
+    }
+   }
+  }
  for(const o of visual.objects)if(o.assetRef&&!allowedAssets.has(o.assetRef))throw new Error(`Director invented asset ${o.assetRef}`);
  for(const id of scene.requiredConceptIds)if(!visual.objects.some(o=>o.conceptId===id))throw new Error(`Director omitted concept ${id}`);
  if(visual.beats.length!==scene.beats.length)throw new Error('Director changed beat count');
