@@ -59,7 +59,13 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
   const object=visual.objects.find(o=>o.id===ref.objectId)!;
   if(object.assetRef)ref.anchor=canonicalAnchor(object.assetRef,ref.anchor);
   const anchors=object.assetRef?Object.keys(getAsset(object.assetRef).anchors):['input','output','center','top','bottom'];
-  if(!anchors.includes(ref.anchor))throw new Error(`Unavailable semantic anchor ${ref.anchor}`);
+  if(!anchors.includes(ref.anchor)){
+   /** A named anchor the asset does not implement (the live model said
+    *  'exterior') degrades to 'center' with a diagnostic, mirroring the
+    *  unroutable-relation degradation, instead of failing the whole stage. */
+   log('v2.director.anchor-degraded',{scene:scene.id,object:object.id,from:ref.anchor,to:'center'},'warn');
+   ref.anchor='center';
+  }
  }
  for(const required of scene.requiredRelations){
   const relation=visual.relations.find(r=>{
