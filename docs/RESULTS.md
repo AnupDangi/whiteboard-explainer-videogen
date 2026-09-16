@@ -1,3 +1,17 @@
+# 2026-09-16 (morning) — Green-run walls: 11 deterministic heals landed, one 'partial' job
+
+- Commits `6e3d10a`…`6962d61`. `npm test` **361/361**; typecheck clean.
+- Live (prompt-refrigeration, 1 min, narrated, ~40 attempts, ~$0.60): exactly
+  one job reached `partial` — one compiled scene, firstPlayable 33.8 s. Every
+  other attempt failed at a deterministic gate on director-output variance;
+  each observed variant is now healed mechanically and recorded
+  (parenting, anchors, assets-by-family, archetype clamp, ring synthesis,
+  primitive tiers, move-destination, relation ids).
+- Honest position: the pipeline is fixture-proven and Path-A-export-proven;
+  the LIVE pass rate is still 0 because the director emits free-form layout
+  decisions the harness already owns. Next bounded task: thin director
+  refactor (documented in HANDOFF).
+
 # 2026-09-16 (early) — Offline narrated export proof (Path A)
 
 - Reproduce: `npm run export:example -- --scenes photosynthesis-plant,water-cycle --out output/path-a/one-minute`

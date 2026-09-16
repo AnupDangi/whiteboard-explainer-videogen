@@ -1,3 +1,33 @@
+# 2026-09-16 (morning) handoff — A1–A4 landed; A5 green run reached 'partial' once; director variance is the remaining wall
+
+## Landed (all pushed to `v4-optimization`, 361/361 tests)
+- `A1` `6e3d10a` — sticky route cooldown (3 successes forgive 1 timeout), cooldown routes skipped+logged, repairs bounded by the stage deadline.
+- `A2` `3282193` — replay corpus: 7 live-failure fixtures; fixed the #1 live failure (`intentionalPause:''` — healSchema now omits empty optional strings); `V2_REPLAY_DIR` auto-recording.
+- `A3` `e1d07ea` — per-call memo: teaching failure replays knowledge windows at $0; knowledge repairs re-run only the failed window.
+- `A4` `7caf278` — mechanical heals (state-mechanism transform injection, PRESERVE re-draw→highlight).
+- `bc143b2` — archetype-aware containment parenting (graph families keep roots) + flow column overflow → recorded fallback + compile-failure geometry dump.
+- `da4d6dc` — MOTIONS whitelist aligned with the schema (move/split/merge legal), enriched failure dump (rects, placement coverage, relations).
+- `b148b8d` — domain-state bridge (whiteboard+actions), family-filtered candidates, archetype clamp, label-native sizing inside cells, transform synthesis.
+- `d304fc4` — unavailable anchors degrade to center.
+- `3cd2ec8` — same-zone child derangement, untimed-relation action injection (runtime ids), surviving-cycle fallback.
+- `6962d61` — deterministic cycle-ring synthesis from the plan's beat order.
+- `aad386a` — ICON_SYSTEM_PLAN committed; `7065d53` Path A offline narrated export (`npm run export:example`).
+
+## Measured live state (green runs, prompt-refrigeration 1-min narrated)
+- One job reached **`partial`: 1 full compiled scene, firstPlayable 33.8 s, ~$0.05** before its second scene failed the then-unhealed cycle gate. The scene pipeline (knowledge → teaching → architect → board → representation → grounding → director → compile → TTS) works end-to-end when the director output complies.
+- Remaining failure mode: **director-output variance against the layout/representation gates** — every live failure this round was the model choosing containment parenting for a graph family, an incompatible asset for the directed family, an unavailable anchor/mental model, a broken cycle ring, or a move without destination. Each got a deterministic recorded heal, but the tail is long (~40 live attempts today, pass rate still 0). Spend today: ~$0.60; all attempts journaled, failures preserved.
+
+## The remaining root cause + next bounded task (decided, not yet implemented)
+**The director stage owns decisions the harness already knows.** Parenting,
+anchors, primitive tiers and ring structure are deterministically implied by
+the whiteboard plan + candidates, yet the model still emits them and every
+variant collides with a gate. The bounded next task is the **thin director
+refactor** (plan Phase 6 boundary): restrict the director schema to its
+mandate — semantic object inventory, emphasis, continuity intent — and derive
+parenting/zones/primitives/anchors/rings deterministically. That collapses
+most of the remaining failure surface in one architectural move instead of
+more per-gate heals.
+
 # 2026-09-16 (early) handoff — Path A proof: offline narrated export, no model calls
 
 - Purpose: prove the V2 pipeline can produce a real narrated MP4 today while
