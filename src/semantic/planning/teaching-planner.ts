@@ -64,7 +64,11 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
  const graph=options.conceptGraph;
  const knowledge=graph?{keys:graph.concepts.map(c=>c.id),terminology:Object.entries(graph.terminology).map(([key,term])=>`${key}: ${term.definition}`),requirements:[...graph.claims.map(c=>c.id),...graph.mechanisms.map(m=>m.id)],evidence:[...graph.evidence.map(e=>e.id),...graph.sourceVisuals.map(v=>v.id)]}:undefined;
  const chapter=options.chapter?`This is chapter ${options.chapter.index} of ${options.chapter.count} of one longer lesson. Plan scenes for this chapter only, on one shared mental model. Prefix every scene id with ch${options.chapter.index}_. These concepts are already established in earlier chapters and may be reused as continuity: ${options.chapter.priorConcepts.join(', ')||'none'}. Keep canonical identity, terminology and representation vocabulary stable with those earlier scenes.`:'';
-  return await model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes:options.repairFindings,knowledge,chapter}),input,teachingIntentSchema,value=>{
+   /** evidenceScope is validation-only (the full source); sending it to the
+  *  model burned ~30k prompt tokens per teaching call. The model quotes from
+  *  its chapter window; the verbatim gate still checks against the full scope. */
+ const modelInput={...input,evidenceScope:undefined};
+ return await model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes:options.repairFindings,knowledge,chapter}),modelInput,teachingIntentSchema,value=>{
    spreadExcessIntroductions(value);healStateMechanisms(value);
    const {plan}=validateTeachingPlan(teachingIntentToPlan(value),new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
   for(const s of plan.scenes){

@@ -59,6 +59,8 @@ export function loadModelRouter(env:NodeJS.ProcessEnv,base:string):ModelRouterCo
  * existing per-stage model variables remain the source of truth until an
  * operator opts into fallback routing. */
 export function loadModelFallbacks(env:NodeJS.ProcessEnv):string[] {
-  const configured=(env.OPENROUTER_MODEL_FALLBACKS||'').split(',').map(v=>v.trim()).filter(Boolean);
+  const raw=(env.OPENROUTER_MODEL_FALLBACKS??'').trim();
+  if(raw==='none'||raw==='-'||raw==='0')return [];
+  const configured=raw.split(',').map(v=>v.trim()).filter(Boolean);
   return [...new Set(configured.length?configured:MODEL_SHORTLIST)];
 }
