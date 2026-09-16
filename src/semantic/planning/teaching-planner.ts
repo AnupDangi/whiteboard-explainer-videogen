@@ -67,7 +67,13 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   return await model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes:options.repairFindings,knowledge,chapter}),input,teachingIntentSchema,value=>{
    spreadExcessIntroductions(value);healStateMechanisms(value);
    const {plan}=validateTeachingPlan(teachingIntentToPlan(value),new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
-  for(const s of plan.scenes)if(s.candidateArchetypes.some(a=>!input.allowedArchetypes.includes(a)))throw new Error('Unavailable archetype');
+  for(const s of plan.scenes){
+   /** The archetype list is harness-owned: the job constrains it, so a scene
+    *  naming unavailable families is clamped to the allowed ones (recorded). */
+   const clamped=s.candidateArchetypes.filter(a=>input.allowedArchetypes.includes(a));
+   if(!clamped.length){log('v2.plan.archetype-heal',{scene:s.id,dropped:s.candidateArchetypes,to:[input.allowedArchetypes[0]]},'warn');s.candidateArchetypes=[input.allowedArchetypes[0] as VisualArchetype];}
+   else if(clamped.length<s.candidateArchetypes.length){log('v2.plan.archetype-heal',{scene:s.id,dropped:s.candidateArchetypes.filter(a=>!input.allowedArchetypes.includes(a))},'warn');s.candidateArchetypes=clamped as VisualArchetype[];}
+  }
   for(const s of plan.scenes){
    const fits=s.candidateArchetypes.some(a=>archetypeFits(a,s.requiredConceptIds.length));
    if(!fits)throw new Error(`Scene ${s.id} requires ${s.requiredConceptIds.length} primary concepts, which no candidate archetype (${s.candidateArchetypes.join('/')}) can represent; merge or split concepts`);
