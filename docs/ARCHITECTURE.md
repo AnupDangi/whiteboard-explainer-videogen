@@ -1,144 +1,143 @@
-# Architecture — current (2026-09-13)
+# Architecture — what the codebase actually is
 
-Two pipelines, one repo. `src/explainer/` is the default node/edge pipeline behind
-the main UI. `src/semantic/` is the V2 teaching pipeline (plan → direct → compile).
-`src/shared/` is used by both. `VISUAL_PIPELINE=explainer|semantic` selects the
-landing page only; both APIs are always served.
+Verified against source on 2026-09-16. Every claim cites `path:line`. Line counts are current.
 
-## Target architecture
+## 1. Two pipelines, one shared spine
 
-`docs/mermaid-diagram.png` is the target architecture diagram for the
-harness-controlled teaching compiler (this document describes the implemented
-state; the diagram describes the system the plan builds toward).
+| pipeline | entry | planner | compiler/renderer | flag |
+|---|---|---|---|---|
+| legacy "explainer" (V1) | `src/explainer/jobs.ts:46` | `src/explainer/planner.ts:486` | `src/explainer/engine.ts:241` | default |
+| semantic (V2) | `src/semantic/jobs.ts:41` | `src/semantic/planning/generate.ts:76` | `src/semantic/compiler/compile-scene.ts:13` + `src/semantic/renderer/render-svg.ts:13` | `VISUAL_PIPELINE=semantic` |
 
-## Request flows
+Selection point: `src/semantic/pipeline.ts:4`. Route sets are disjoint: `/api/jobs*` vs `/api/semantic/*` (`src/server.ts:207`). The two pipelines share only `src/shared/*` (logger, model-router, language, voice-engine client) and `src/explainer/sources.ts` (imported by `src/semantic/jobs.ts:12`).
 
-```
-UI prompt ──POST /api/jobs──▶ JobStore (explainer, 2-active cap)
-  │  poll /api/jobs/:id (400ms full snapshots, revisioned, idempotent)
-  │  GET /media/:id/:scene.wav · GET /api/export?job= → /output/<id>.mp4
-  └──▶ GET /api/jobs → library (20 most recent, metadata only)
-       /?job=<uuid> reopens any saved job
+**There is no shared compile/render path.** V1 uses `explainer/engine.ts`, V2 uses `semantic/renderer/*`. This is deliberate but doubles maintenance.
 
-UI ──POST /api/semantic/jobs──▶ SemanticJobStore (2-active cap, durable snapshots)
-  │  SSE /api/semantic/jobs/:id/stream (?from=N resume, end on terminal)
-  │  GET /media/semantic/:id/:scene.wav
-```
-
-Both stores persist `job.json` + per-scene audio under `.data/` (V1) and
-`.data/semantic/` (V2). Completed jobs stay on disk; the library lists them.
-Exports land in `output/`. `.env`, `.data/`, `output/` are git-ignored.
-
-## Explainer pipeline (default)
-
-`POST /api/jobs {mode, prompt|source, durationMinutes, narration, language}` →
-ingest (`sources.ts`: PDF page-aware, docx/pptx/md/json/text/URL) → document map
-(cached, sha256) → outline (bounded repair + heals) → per-chapter content
-(`planContent`: validators split hard-correctness vs quality-advisory with
-deterministic heals) → director or deterministic auto-director → per-scene
-voice-engine TTS (bounded pool, fail-soft to estimated silent timing) + compile →
-snapshot commit. Progressive: scenes commit as prepared; browser plays while later
-scenes prepare. MP4 export re-renders the same SVGs via Sharp + FFmpeg and muxes
-local audio.
-
-## Semantic V2 pipeline
+## 2. Size
 
 ```
-planTeaching ─▶ selectVisualModel ─▶ resolveRepresentation ─▶ directVisual
-  (LLM)          (deterministic)      (tiered, never throws)    (LLM)
-  ─▶ canonicalizeVisualScene (runtime owns IDs) ─▶ finalizeNarration
-  ─▶ voice-engine speech ─▶ compileScene ─▶ renderSVG ─▶ artifacts
+src/ total                          9,791 LOC / 96 files
+  explainer/      (V1)              4,493  (20 files)   planner.ts alone = 1,431
+  semantic/planning/                1,411  (10 files)
+  semantic/identity/                1,025  (10 files)
+  semantic/          (core)           940  (16 files)
+  semantic/compiler/                  720  ( 9 files)   fallback.ts = 357
+  semantic/harness/                   419  ( 7 files)
+  semantic/renderer/                  158  ( 9 files)
+  semantic/assets/                     98  ( 9 files)
+  shared/                             271  ( 6 files)
+  server.ts                           224
 ```
 
-- Models emit validated scene data only: no coordinates, no SVG, no code.
-- `src/semantic/identity/`: `SemanticIdentityRegistry` (deterministic
-  `concept_<scene>_<key>_<n>` IDs), `canonicalizeVisualScene` (rewrites model IDs,
-  preserves beat IDs), `resolveRepresentation` (strict union-archetype search →
-  alias-substring asset → labeled-primitive fallback, always warned).
-- `src/semantic/compiler/fallback.ts`: flow-cycle return arcs, comparison
-  demotion, matrix token/asset injection (gated on matrix assets), hero
-  promotion, asset/archetype compatibility strip with anchor repair, label fit,
-  direct-line connector safety net. Every repair is a counted
-  `representation fallback` diagnostic. Unknown asset IDs still throw.
-- `compileScene` validates → fallbacks → places (per-archetype deterministic
-  layouts) → resolves anchors → routes → timelines. 17 archetypes compile;
-  anything else fails explicitly.
-- `renderSVG(scene, timeMs)` is pure and shared by browser, contact sheets, and
-  export. Speech timing is word-estimated from audio duration and labeled
-  `engine`, never provider alignment.
-- Optional critic (`V2_CRITIC=on`): calibrated vision judge, one bounded repair.
+## 3. V2 stage chain (authoritative)
 
-## Browser player (`public/app.ts`)
+Execution order: `src/semantic/planning/generate.ts`. Policies: `src/semantic/harness/stage.ts:11-23`.
 
-Polls full snapshots; clock follows the `<audio>` element while narrated, else a
-local timer clamped to prepared duration. Guards added after a real stuck-video
-incident: client errors report messages (not just counts), the rAF loop survives
-frame exceptions, and audio stalls (paused-while-playing, frozen clock) trigger
-bounded re-sync with `audio-stalled` telemetry. Preparation vs completion stay
-distinct states; `/?job=<uuid>` reopens saved work.
+| # | stage | owner module | model? |
+|---|---|---|---|
+| 0 | `ingest` | `explainer/sources.ts` | no |
+| 1 | `knowledge-compiler` | `planning/knowledge-compiler.ts` | **yes** |
+| 2 | `teaching-architect` | `planning/teaching-architect.ts` | **yes** |
+| 3 | `whiteboard-planner` | `harness/state.ts:39` | no |
+| 4 | `representation-guide` | `identity/representation.ts:98` | no |
+| 5 | `source-visual-grounding` | `knowledge-compiler.ts:256` | no |
+| 6 | `visual-director` | `planning/visual-director.ts:135` | **yes** |
+| 7 | narration finalize | `planning/narration.ts:4` | no |
+| 8 | `tts` ∥ `compiler` | `semantic-timing.ts` / `compiler/compile-scene.ts` | no |
+| 9 | `tts-alignment` | `semantic/jobs.ts` | no |
+| 10 | `pedagogy-critic` | `critic-repair.ts` | yes (only if `V2_CRITIC=on`) |
+| 11 | `render` | `renderer/render-svg.ts` | no |
 
-## Module map
+Only **4 model calls per scene** (knowledge, teaching, architect, director) plus optional critic. Everything else is deterministic.
 
-| Area | Files |
+## 4. Data layers (transforms)
+
+```
+ConceptGraph        contracts.ts:10     <- knowledge-compiler.ts
+  -> TeachingPlanV2  types.ts:23        <- teaching-planner.ts / teaching-architect.ts
+  -> SemanticScenePlan types.ts:22      (nested scenes[])
+  -> WhiteboardPlan  contracts.ts:46    <- state.ts:39
+  -> VisualSceneV2   types.ts:33        <- intent-adapter.ts:15 directionToScene
+  -> CompiledSceneV2 types.ts:42        <- compile-scene.ts:13
+  -> SVG string                         <- render-svg.ts:13
+```
+
+Known losses between layers:
+- `state.ts:22` — `terminology.definition` and `quantities.value` are filled with `canonicalName` (placeholder, not real definitions).
+- `identity/registry.ts:15,20,32` — canonical plan path drops `evidenceRefs` and `misconceptions`.
+- `intent-adapter.ts:20-26` — parent/child relations dropped for non-containment archetypes.
+- `intent-adapter.ts:66` — continuity is reset to `{keepFromPrevious:[], prepareForNext:[]}` in `directionToScene`; the real continuity is re-derived later in `generate.ts:198-206`.
+
+## 5. The constraint that holds
+
+Models emit **validated semantic data only**. Geometry is constructed by trusted code. `renderSVG(scene, timeMs)` is pure and deterministic — no `Date`, `Math.random`, `performance.now`, DOM or env inside `renderer/` or `compiler/` (grep-verified). Browser and export call the same function. This is the central invariant and it is intact.
+
+## 6. Layering of trust
+
+- **Deterministic (no model):** all of `compiler/*`, `renderer/*`, `assets/*`, `harness/{gates,state,registry,journal,stage}.ts`, `identity/{canonicalize,resolver,registry,representation}.ts`, `schemas.ts`, `evaluation.ts`, `semantic-timing.ts`.
+- **Model boundary:** exactly one module does network I/O — `planning/model-adapter.ts:39`. Everything model-driven goes through it.
+
+## 7. The second architecture: healing
+
+The system is built to tolerate malformed model output field-by-field. This is effective but is now a parallel design surface:
+
+- `schemas.ts:54-129 healSchema` — ~11 rules (object→array, enum near-miss aliases, empty-string drop, missing arrays, number clamps, parent/child sync). **Entirely unlogged.**
+- `compiler/fallback.ts` (357 LOC) — model-free composition repair: demote-to-annotation, break flow cycles, cap primaries, promote/demote hero, inject `=` token, strip archetype-incompatible assets.
+- ~24 `*-heal` / `*-fallback` log sites in `semantic/`, **23 more** in `explainer/planner.ts`.
+- `compile-scene.ts:57-113` — three collision-repair passes.
+
+Inventory count: 21 distinct `v2.*-heal` tags, ~269 heal/fallback/degrade/clamp/repair tokens across `src/`.
+
+## 8. Layout capabilities (V2)
+
+| archetype | algorithm | location |
+|---|---|---|
+| flow | longest-path ranking, ≤5 cols | `compiler/archetypes.ts:11-17` |
+| cycle | single ring + walk validation | `archetypes.ts:18-27`, heal `visual-director.ts:64-98` |
+| transformation / comparison | equal-cell horizontal grid | `archetypes.ts:28-30` |
+| cross_section / spatial_process | hero centre + ≤4 margin supports | `archetypes.ts:31-34` |
+| numbered_steps | vertical rows | `archetypes.ts:35-37` |
+| equation_walkthrough | stacked derivation rows | `archetypes.ts:38-43` |
+| matrix_operation | weighted horizontal widths | `archetypes.ts:44-49` |
+| branch / cause_effect / state_machine | layered Sugiyama-lite, ≤4 ranks | `archetypes.ts:50-86` |
+| hierarchy | BFS tree, leaf-centred, ≤3 levels | `archetypes.ts:87-101` |
+| timeline | equal row | `archetypes.ts:102-105` |
+| trajectory | parametric curve | `archetypes.ts:106-109` |
+| **structural_diagram, convergence** | **no layout branch — zone fallback only** | `compile-scene.ts:32-33` |
+| **simple_explanation** | declared in `types.ts:3` but rejected by `zones.ts:5` | `compile-scene.ts:21` |
+
+## 9. Identity layer is half-wired
+
+Two identity systems coexist:
+1. `harness/registry.ts:6 LessonSemanticRegistry` — used by the live path.
+2. `identity/types.ts:83 SemanticIdentityRegistry` — largely superseded.
+
+The entire `identity/references.ts` module is orphaned. `canonicalToPlan`, `normalizeLegacyTeachingPlan`, `buildVisualScene`, `resolveObjects/Relations/Beats`, `canonicalizeRelation`, `remapContinuityIds` have **zero production references** (test-only or none). The live translation is `intent-adapter.ts`.
+
+~35 orphaned runtime exports across 20 files (e.g. `CRITIC_RUBRIC`, `INK`, `PALETTE`, `GENERATION_MANIFEST_VERSION`). `src/semantic/artifacts.ts` has no importer at all.
+
+## 10. Dead / partial features
+
+- `simple_explanation` archetype: declared, rejected by the compiler.
+- Motions `move`, `split`, `merge`: accepted by validation (`compile-scene.ts:19`) but `renderer/scene-state.ts:6-15` has no branch — they never animate. `morph`/`replace` do.
+- Continuity `transitions` (MOVE/REMOVE/REPLACE/REINTRODUCE): computed at `harness/state.ts:67-79`, validated, but **the renderer never reads them** (`scene-state.ts:4-17` uses only `keepFromPrevious` + beat actions).
+- Relations render **only if an action animates them** (`renderer/relations.ts:8`); model-added non-required relations silently vanish.
+- Anchors: rich subpart anchors exist only for curated assets; everything else is a generic 5-point box that degrades to `center` in 5 places.
+
+## 11. Assets and skills (current truth)
+
+- **Assets: 43 total** — 4 direct (`assets/icons/inputs.ts`, `assets/illustrations/plant.ts`) + 39 catalog templates (`assets/templates/catalog.ts:57`). All original static geometry, `chalk-ink-v2`. Matching is genuinely runtime-computed (normalised scoring in `assets/search.ts:3-7`, tiers in `identity/representation.ts:47-124`) **over a hardcoded import list** (`assets/registry.ts:7`).
+- **Icon system plan: 0 of 7 proposed module groups implemented.** No `assets/external/`, no `assets/normalize/`, no `renderer/palette.ts`, no `assetCatalog`, no `RepresentationSource:'external'` (`representation.ts:12`). `assets/validator.ts:3` explicitly forbids external SVG.
+- **Skills: 3 of 13 SKILL.md files actually load.** Only the `# Hard invariants` section (≤10 lines) is injected (`semantic/skills.ts:31-45`). Loaded: `visual-director`, `teaching-architect`, `teaching-architect/references/knowledge-compiler.md`. Stages `whiteboard-planner`, `pedagogy-critic`, `source-visual-grounding` exist but receive **zero** skill text. 19 of 21 reference docs are dead.
+
+## 12. Where the time goes
+
+A 1-minute video needs 2 scenes. Measured on a real run (`59ca93e3`, 1 scene, 41s output):
+
+| class | share |
 |---|---|
-| Planning | `explainer/planner.ts`, `budgets.ts`, `auto-director.ts`, `semantic/planning/{teaching-planner,visual-model,visual-director,prompt-builder,validate,model-adapter,narration,generate}.ts` |
-| Identity | `semantic/identity/{types,resolver,canonicalize,representation,registry,references,canonical-schemas}.ts` |
-| Compile/render | `semantic/compiler/{compile-scene,fallback,archetypes,zones,routing,text,timeline,collisions,occupancy}.ts`, `semantic/renderer/*.ts`, `explainer/engine.ts` |
-| Assets | `semantic/assets/{registry,search,validator,geometry,templates/catalog,illustrations/*,icons/*}.ts` (43 curated) |
-| Speech | `shared/voice-engine-client.ts`, `semantic/speech.ts` (Supertonic 3 default, Piper fallback) |
-| Jobs/server | `explainer/jobs.ts`, `semantic/jobs.ts`, `src/server.ts`, `shared/{model-router,logger,language}.ts` |
-| Eval | `eval/live/{manifest,runner,metrics,compare}.ts`, `eval/semantic/cases/` |
+| LLM latency (knowledge + teaching + architect + director) | **91.0%** |
+| TTS engine | 9.0% |
+| deterministic compile + render + gates | **<0.3%** |
 
-## Evaluation
-
-Three separate trees, one role each (never blended):
-
-- `eval/live/` — **coherent teaching** on live providers: 48-case manifest plus
-  the long-form `deepseek_mla_report` document case, smoke subset of 6, stage
-  success rates, repair histogram, failure taxonomy, per-stage cost/latency,
-  eight separate quality dimensions, and the machine-evaluated migration gates
-  (`eval/live/gates.ts`). Run with `npm run test:live:v2[:smoke]`.
-- `eval/semantic/cases/` — **fixture compile bench**: fixed scene JSON compiled
-  through the deterministic pipeline (`npm run bench:semantic:archetypes`),
-  measuring compiler/archetype coverage with zero provider calls.
-- `eval/visual-bench/cases/` — **renderer generalization**: fixed scene cases
-  rendered through the pure renderer (`npm run bench:visual`).
-
-Metrics count `representationFallbackCount` from diagnostics + telemetry.
-Teaching quality and aesthetics are human-judged, not metered. Fixture
-throughput is never reported as model/TTS performance.
-
-## Logging and telemetry ledger
-
-One durable append-only JSONL ledger, written by `src/shared/logger.ts`:
-
-- **Path**: `app.log` in the repo root (override with `APP_LOG_PATH`); rotated
-  once past 20 MB to `app.<timestamp>.log`. Never delete it — rotate or
-  truncate only, it is the cost/prefill/scene-generation record.
-- **Per-job mirror**: every line also lands in `.data/<jobId>/log.jsonl` when a
-  job context is active.
-- **What it records**:
-  - `provider.request` / `provider.response` / `provider.failure` — host, path,
-    HTTP status, latency, request id (never headers, bodies, or query strings);
-  - `v2.planner.call` — model, latency, **prompt (prefill) tokens**, completion
-    tokens, cost, attempt;
-  - `v2.stage` — per-stage OK/FAIL with owner, attempt, latency, model, cost,
-    prompt/completion tokens, skill hash, gate codes;
-  - `v2.scene` — per generated scene: archetype, object/relation/beat counts,
-    duration, timing kind and provenance, narrated flag, word count, scene-ready
-    latency, cost and calls so far, diagnostics;
-  - `semantic-job.created` / `first-playable` / `status` / `summary` — lifecycle,
-    `firstPlayableMs`, wall time, aggregate cost, calls, prompt/completion
-    tokens, model routes, final gate, MP4 status.
-- **Redaction**: values matching key/token/secret/password/credential, plus
-  prompt, narration, sourceText and base64 payloads, are replaced with
-  `[REDACTED]` before writing; the ledger never contains provider secrets.
-- Logging is best-effort: a ledger write failure must never break the pipeline.
-
-## Hard constraints
-
-No generated executable code or Manim; no model coordinates or raw SVG; renderer
-deterministic; estimated timing visibly labeled; provider failures stay visible
-(no silent fixture success); keys in `.env`, data in `.data/`, exports in
-`output/`. Current gaps and next tasks: `HANDOFF.md`. Evidence log: `RESULTS.md`.
-Spec reference: `docs/v4/`.
+Critical path is **100% external model latency plus one serial TTS**. The deterministic compiler and renderer are not a bottleneck. Details and parallelisation targets live in `docs/HANDOFF.md`.

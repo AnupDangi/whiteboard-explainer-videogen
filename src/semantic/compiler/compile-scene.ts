@@ -95,6 +95,20 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
       o.w=original.w;o.h=original.h;
      }
     }
+    /** Same-zone nudge/scale can deadlock when two supports prefer adjacent
+     *  zones with no free room between them. Fall back to the same
+     *  zone-relocation search the structural branch uses, so a crowded
+     *  non-structural scene repairs instead of failing the job. */
+    if(findCollisions(objects).length>=before){
+     const beforeCount=findCollisions(objects).length;let best={...original},bestCount=beforeCount,bestDistance=Infinity;
+     for(const scale of [1,.9,.8])for(const zone of ['upper_left','upper_right','lower_left','lower_right','left','right'] as LayoutZone[]){
+      Object.assign(o,zoneRect(zone,original.w*scale,original.h*scale));
+      if(!contains(BOARD.safe,visualBounds(o)))continue;
+      const count=findCollisions(objects).length,distance=Math.hypot(o.x-original.x,o.y-original.y)+(1-scale)*100;
+      if(count<bestCount||(count===bestCount&&count<beforeCount&&distance<bestDistance)){best={x:o.x,y:o.y,w:o.w,h:o.h};bestCount=count;bestDistance=distance;}
+     }
+     Object.assign(o,best);if(bestCount<beforeCount)diagnostics.push(`geometry repair: relocated support ${o.id}`);
+    }
    }
   }
  const collisions=findCollisions(objects);if(collisions.length)throw new Error(`Illegal overlap: ${collisions.join(', ')}`);

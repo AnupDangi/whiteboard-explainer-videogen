@@ -1,4 +1,5 @@
 import type {VisualSceneV2,Rect,VisualArchetype} from '../types.js';
+import {BOARD} from './zones.js';
 /** Primary-representation bounds each family enforces below. Shared so plan
  *  validation and archetype selection agree with the compiler instead of
  *  discovering the limit as a render-time failure. */
@@ -54,8 +55,35 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
   const rank=new Map<string,number>(),pending=new Set(ids);
   while(pending.size){const ready=[...pending].filter(id=>edges.filter(e=>e.to.objectId===id).every(e=>rank.has(e.from.objectId))).sort();if(!ready.length)throw new Error('Branch graph contains a cycle; choose the cycle archetype');for(const id of ready){rank.set(id,Math.max(0,...edges.filter(e=>e.to.objectId===id).map(e=>rank.get(e.from.objectId)!+1)));pending.delete(id);}}
   const ranks=Math.max(...rank.values())+1;if(ranks>4)throw new Error('Branch graph exceeds four readable layers');
-  for(let layer=0;layer<ranks;layer++){const group=roots.filter(o=>rank.get(o.id)===layer).sort((a,b)=>a.id.localeCompare(b.id));if(group.length>4)throw new Error('Branch graph layer exceeds four readable nodes');
-   group.forEach((o,row)=>placements.set(o.id,{x:120+(layer+.5)*(1040/ranks)-70,y:170+(row+.5)*400/group.length-55,w:140,h:110}));}
+  /** Bounded layered grid. The previous row pitch was `400/group.length`
+   *  (100px for a 4-node rank) while a node's rect plus its label block is
+   *  ~166px tall, so the layout itself manufactured the overlaps the compiler
+   *  then rejected as illegal and could not repair. Rows now advance by the
+   *  real visual height, and a crowded rank wraps into extra columns inside its
+   *  own band instead of stacking into its neighbours. Column width is derived
+   *  from the band so horizontal gaps stay positive for every capacity the
+   *  archetype admits (2-10 primaries). */
+  const SAFE=BOARD.safe,GAP=10,LABEL_BLOCK=56,NOMINAL_H=110,MIN_H=54,MIN_W=60;
+  const byRank=new Map<number,string[]>();
+  for(const id of ids){const r=rank.get(id)!;byRank.set(r,[...(byRank.get(r)??[]),id]);}
+  const bandW=SAFE.w/ranks;
+  const maxRowsFull=Math.max(1,Math.floor((SAFE.h-GAP)/(NOMINAL_H+LABEL_BLOCK+GAP)));
+  const maxRowsHard=Math.max(1,Math.floor((SAFE.h-GAP)/(MIN_H+LABEL_BLOCK+GAP)));
+  const maxColsByWidth=Math.max(1,Math.floor(bandW/(MIN_W+GAP)));
+  for(let layer=0;layer<ranks;layer++){
+   const group=(byRank.get(layer)??[]).slice().sort((a,b)=>a.localeCompare(b));
+   if(!group.length)continue;
+   let cols=Math.max(1,Math.min(Math.ceil(group.length/maxRowsFull),maxColsByWidth));
+   if(Math.ceil(group.length/cols)>maxRowsHard)cols=Math.max(1,Math.ceil(group.length/maxRowsHard));
+   const rows=Math.ceil(group.length/cols),slotW=bandW/cols,rowPitch=(SAFE.h-GAP)/rows;
+   const w=Math.min(140,slotW-GAP),h=Math.max(MIN_H,Math.min(NOMINAL_H,rowPitch-LABEL_BLOCK-GAP));
+   group.forEach((id,index)=>{
+    const col=Math.floor(index/rows),row=index%rows;
+    const x=SAFE.x+layer*bandW+col*slotW+(slotW-w)/2;
+    const y=SAFE.y+row*rowPitch;
+    placements.set(id,{x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});
+   });
+  }
  }else if(scene.archetype==='hierarchy'){
   if(roots.length<2||roots.length>12)throw new Error('Hierarchy requires 2–12 nodes');
   const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback&&['contains','part_of','depends_on','causes'].includes(r.relationType));

@@ -1,4 +1,5 @@
 import {assertSchema,type Schema} from '../schemas.js';
+import {REPRESENTATION_FAMILIES} from '../representation.js';
 import {normalizeSemanticKey} from '../identity/types.js';
 import {log} from '../../shared/logger.js';
 import type {ConceptGraph,KnowledgeClaim} from '../harness/contracts.js';
@@ -175,12 +176,24 @@ export function mergeGroundedPlans(graph:ConceptGraph,windows:{window:ChapterWin
  return merged;
 }
 
+/** visualFamily is free text in the model contract but the resolver only
+ *  accepts the canonical composition families. Unmatched/missing values heal
+ *  deterministically from semanticType (recorded) instead of silently losing
+ *  the composition tier and dropping the concept to a primitive label. */
+const FAMILY_BY_SEMANTIC_TYPE:Record<string,string>={process:'signal',state:'container',quantity:'quantity',equation:'quantity',entity:'component_group',material:'component_group',location:'container',role:'component_group'};
+function canonicalVisualFamily(value:string|undefined,semanticType:string,key:string):string|undefined{
+ const healed=FAMILY_BY_SEMANTIC_TYPE[semanticType];
+ if(REPRESENTATION_FAMILIES.includes(value as never))return value;
+ if(!healed)return undefined;
+ log('v2.knowledge.family-heal',{concept:key,from:value??null,to:healed});
+ return healed;
+}
 /** Deterministic alias merge first; ambiguity, cycles, orphans and fabricated evidence reject. */
 export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
  if(Array.isArray(raw))throw new Error(`Knowledge response must be one JSON object with concepts/claims/evidence keys; received a bare array of ${raw.length} items. Re-emit the whole graph as an object.`);
  assertSchema(raw,knowledgeGraphSchema);
  const value=structuredClone(raw) as {concepts:{key:string;canonicalName:string;aliases:string[];semanticType:ConceptGraph['concepts'][number]['semanticType'];visualFamily?:string;evidenceRefs:string[]}[];prerequisites:{before:string;after:string;reason:string}[];mechanisms:ConceptGraph['mechanisms'];claims:{id:string;statement:string;critical:boolean;evidenceRefs:string[]}[];quantities:{conceptKey:string;value:string;evidenceRefs:string[]}[];terminology:{key:string;definition:string}[];evidence:{id:string;sourceId?:string;quote:string;section?:string}[]};
- const concepts:ConceptGraph['concepts']=value.concepts.map(c=>({id:c.key,canonicalName:c.canonicalName,aliases:[...(c.aliases??[])],semanticType:c.semanticType,evidenceRefs:[...new Set(c.evidenceRefs)],...(c.visualFamily?{visualFamily:c.visualFamily}:{})}));
+ const concepts:ConceptGraph['concepts']=value.concepts.map(c=>({id:c.key,canonicalName:c.canonicalName,aliases:[...(c.aliases??[])],semanticType:c.semanticType,evidenceRefs:[...new Set(c.evidenceRefs)],...(canonicalVisualFamily(c.visualFamily,c.semanticType,c.key)?{visualFamily:canonicalVisualFamily(c.visualFamily,c.semanticType,c.key)}:{})}));
  // Canonical identity (key/canonicalName) must never fork — that rejects.
  // Optional surface aliases that collide across concepts are dropped
  // deterministically (each concept keeps its own canonical identity).

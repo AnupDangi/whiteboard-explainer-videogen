@@ -23,3 +23,6 @@ app.server.out
 
 # downloaded Chinese g2pW lookup cache (regenerated on demand)
 /g2pW/
+
+# graphify knowledge-graph cache
+graphify-out/

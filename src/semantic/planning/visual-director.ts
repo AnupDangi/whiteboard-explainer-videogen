@@ -39,7 +39,13 @@ export function healPreservedRedraws(scene:VisualSceneV2,board:WhiteboardPlan):n
  }
  return healed;
 }
-export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},model.candidateArchetypes);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}).filter(candidate=>candidate.archetypes.includes(model.candidateArchetypes[0])),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
+/** Resolver results already support at least one candidate archetype; drop
+ *  nothing. Primary-archetype-compatible picks sort first so the director
+ *  prefers them, and a non-primary pick still survives (the compiler degrades
+ *  an incompatible final pick to a labeled primitive instead of leaving the
+ *  concept unrepresented). */
+function archetypeSort(model:VisualModel){const primary=model.candidateArchetypes[0];return (a:{archetypes:string[]},b:{archetypes:string[]})=>(b.archetypes.includes(primary)?1:0)-(a.archetypes.includes(primary)?1:0);}
+export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},model.candidateArchetypes);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}).sort(archetypeSort(model)),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
 export function representationWarnings(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel):string[]{return assetCandidates(scene,registry,model).flatMap(c=>c.warnings);}
 /** Every initial or repaired direction passes this same teaching contract. */
 export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,allowedAssets:Set<string>,previous?:CompiledSceneV2):VisualSceneV2{

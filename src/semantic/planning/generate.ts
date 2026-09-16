@@ -87,7 +87,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
  let plan,conceptGraph;
  try{
    const beforeCalls=model.calls.length;
-   const buildKnowledge=async(repairFindings?:string[],signal?:AbortSignal)=>{
+    const buildKnowledge=async(repairFindings?:string[],signal?:AbortSignal,forceKnowledge=false)=>{
     if(input.sourceText){
      const env=options.criticEnv??process.env;
      const cutoff=Number(env?.V2_KNOWLEDGE_SOURCE_CHARS??0);
@@ -108,8 +108,8 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
        const inFlight=new Map<string,Promise<ConceptGraph>>();
        const windowTasks=selectedKnowledgeWindows.map((window,index)=>{
         log('v2.knowledge.window',{index:index+1,count:selectedKnowledgeWindows.length,chars:window.text.length});
-         const windowMemoKey=memoKey('knowledge-window',{text:window.text,prompt:input.prompt,language:input.language,sourceId:input.sourceId});
-         const cachedGraph=memoGet<ConceptGraph>(windowMemoKey);
+          const windowMemoKey=memoKey('knowledge-window',{text:window.text,prompt:input.prompt,language:input.language,sourceId:input.sourceId});
+          const cachedGraph=forceKnowledge?undefined:memoGet<ConceptGraph>(windowMemoKey);
          if(cachedGraph)return Promise.resolve(cachedGraph);
          const running=inFlight.get(windowMemoKey);
          if(running)return running;
@@ -119,7 +119,15 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
        });
        graphs.push(...await Promise.all(windowTasks));
       const graph=attachSourceVisuals(graphs.length>1?mergeConceptGraphs(graphs):graphs[0],input.sourceFigures,input.sourceId);
-      const teachingWindows=chapterWindows(knowledgeText);
+       /** Validate the concept graph BEFORE planning teaching. The harness gate
+        *  used to run only after the whole stage, so a rejected graph still paid
+        *  for every teaching window and the repair then re-bought them (measured
+        *  ~36s of discarded model calls on the 1-min job). Failing here lets the
+        *  owner repair re-run knowledge only; teaching is bought once, after the
+        *  graph is accepted. */
+       const graphGate=gateConceptGraph(graph);
+       if(!graphGate.passed)throw Object.assign(new Error(`knowledge gate failed: ${graphGate.findings.filter(finding=>finding.severity==='hard').map(finding=>finding.code).join(', ')}`),{gate:graphGate});
+       const teachingWindows=chapterWindows(knowledgeText);
       const windows=selectRelevantWindows(teachingWindows,input.prompt,Math.max(1,Math.min(teachingWindows.length,sceneBudget)));
      const perWindow=Math.max(1,Math.floor((input.maxScenes??1)/windows.length));
       const planned:TeachingPlanV2[]=[];let prior:string[]=[];
@@ -140,7 +148,8 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
     const sourceVisuals=(input.sourceFigures??[]).map((figure,index)=>({id:`source-visual:${index+1}`,sourceId:input.sourceId??'source',page:figure.page,caption:figure.caption,provenance:`source-${figure.kind}`}));
     return {plan:generated,conceptGraph:conceptGraphFromPlan(generated,sourceVisuals)};
    };
-   const stage=await harness.execute({resume:options.resume,stage:'knowledge-compiler',input,run:(signal)=>buildKnowledge(undefined,signal),repair:async({error,gate,signal})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;return buildKnowledge(findings,signal);},gate:value=>gateConceptGraph(value.conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'knowledge-compiler',version:HARNESS_VERSION}),skillHash:skillDoc('teaching-architect/references/knowledge-compiler.md').hash,usage:()=>{const calls=model.calls.slice(beforeCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
+   const stage=await harness.execute({resume:options.resume,stage:'knowledge-compiler',input,run:(signal)=>buildKnowledge(undefined,signal),repair:async({error,gate,signal})=>{const findings=repairHints({error,gate});if(!findings.length)throw error;/** Only a rejected concept graph requires re-buying knowledge windows; a
+      *  downstream teaching failure must replay them from the memo. */const graphFailure=Boolean((error as {gate?:unknown}).gate);return buildKnowledge(findings,signal,graphFailure);},gate:value=>gateConceptGraph(value.conceptGraph),model:()=>model.calls.at(-1)?.model,promptHash:stableHash({stage:'knowledge-compiler',version:HARNESS_VERSION}),skillHash:skillDoc('teaching-architect/references/knowledge-compiler.md').hash,usage:()=>{const calls=model.calls.slice(beforeCalls);return {costUsd:calls.reduce((n,c)=>n+c.costUsd,0),promptTokens:calls.reduce((n,c)=>n+c.promptTokens,0),completionTokens:calls.reduce((n,c)=>n+c.completionTokens,0)};}});
   plan=stage.output.plan;conceptGraph=stage.output.conceptGraph;
   telemetry('teaching','success',{elapsedMs:performance.now()-teachingStart,details:{harnessStage:'knowledge-compiler',harnessVersion:HARNESS_VERSION}});
  }catch(e){telemetry('teaching','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-teachingStart});throw stageFailure(e,'teaching');}

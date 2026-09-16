@@ -161,7 +161,7 @@ For passive video, `LearnerState` represents expected knowledge established by v
 - Evaluate comprehension outside generation using factual, mechanism, and transfer questions. Compare expected learner-state changes with independent evaluator and human results.
 - Calibrate model critics on controlled corruptions in both pairwise orders before using them as release gates.
 - Add blind V1-versus-V2 human comparisons and a smaller real-learner pre-test/post-test/retention protocol.
-- Update `docs/HANDOFF.md`, `docs/RESULTS.md`, and the existing V4 architecture documents after each accepted wave.
+- Update `docs/HANDOFF.md` (measurements, limitations, next bounded task) and `docs/ARCHITECTURE.md` (structure) after each accepted wave.
 
 ## Public interfaces and data contracts
 

@@ -1,5 +1,6 @@
 import {parseTeachingPlan,parseVisualScene} from '../schemas.js';
 import {segmentWords} from '../../shared/language.js';
+import {log} from '../../shared/logger.js';
 import type {TeachingPlanV2,VisualSceneV2} from '../types.js';
 export function uniqueIds(items:{id:string}[],label:string):Set<string>{const ids=new Set(items.map(x=>x.id));if(ids.size!==items.length)throw new Error(`Duplicate ${label} ID`);return ids;}
 const normalizeWord=(w:string)=>w.toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
@@ -75,6 +76,22 @@ export function validateVisualScene(input:unknown,conceptIds?:Set<string>,previo
   for(const r of s.relations)refs([r.from.objectId,r.to.objectId],objects,'relation object');
   for(const b of s.beats)for(const a of b.actions){
     refs(a.objectIds,objects,'action object');refs(a.relationIds,relations,'action relation');
+    /** Mechanical target-kind heal, scoped to actions the rules below would
+     *  actually reject. The direction contract lets a model attach a relation
+     *  reference to an object/state action (or object refs to a relation
+     *  action); the resolved action then carries the wrong target kind and is
+     *  rejected as unrenderable, which killed the live job twice. Actions that
+     *  legitimately target both kinds (pulse/highlight on a relation) are left
+     *  untouched. Recorded, never silent. */
+    if(['trace','flow'].includes(a.type)&&a.objectIds.length){log('v2.direction.action-kind-heal',{action:a.id,type:a.type,dropped:'object-targets',count:a.objectIds.length},'warn');a.objectIds=[];}
+    else if(['draw','reveal','fill'].includes(a.type)&&a.relationIds.length){
+     if(a.objectIds.length){log('v2.direction.action-kind-heal',{action:a.id,type:a.type,dropped:'relation-targets',count:a.relationIds.length},'warn');a.relationIds=[];}
+     else{log('v2.direction.action-kind-heal',{action:a.id,from:a.type,to:'flow',reason:'object action with relation-only target'},'warn');a.type='flow';}
+    }
+    else if(['replace','morph'].includes(a.type)){
+     if(!a.objectIds.length&&a.relationIds.length){log('v2.direction.action-kind-heal',{action:a.id,from:a.type,to:'flow',reason:'state action with relation-only target'},'warn');a.type='flow';}
+     else if(a.objectIds.length&&!a.toState){log('v2.direction.action-kind-heal',{action:a.id,from:a.type,to:'highlight',reason:'state action without toState'},'warn');a.type='highlight';}
+    }
     if(!a.objectIds.length&&!a.relationIds.length)throw new Error('Action has no target');
     if(['trace','flow'].includes(a.type)&&(!a.relationIds.length||a.objectIds.length))throw new Error('Trace/flow require relation targets only');
     if(['draw','reveal','fill'].includes(a.type)&&(!a.objectIds.length||a.relationIds.length))throw new Error('Object action requires object targets only');

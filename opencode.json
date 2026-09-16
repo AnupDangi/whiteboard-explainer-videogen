@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "graphify": {
+      "type": "local",
+      "command": [
+        "/Users/anupdangi/.local/share/uv/tools/graphifyy/bin/python",
+        "-m",
+        "graphify.serve",
+        "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/explain-canvas-lab/graphify-out/graph.json"
+      ],
+      "enabled": true
+    }
+  }
+}
