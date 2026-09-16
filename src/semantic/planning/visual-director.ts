@@ -161,7 +161,17 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
  }
  return visual;
 }
-export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:{candidates?:ReturnType<typeof assetCandidates>;sourceVisualIds?:string[];repairNotes?:string[];whiteboardPlan?:WhiteboardPlan;catalog?:Record<string,AssetDefinition>;signal?:AbortSignal}):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
+/** A directed scene plus everything the deterministic compile step needs. The
+ *  two are deliberately separate so the MODEL calls for several scenes can run
+ *  concurrently while compilation stays ordered: compilation is the only step
+ *  that depends on the previous scene (geometry reuse), and it costs nothing. */
+export interface DirectedScene{scene:VisualSceneV2;decisions:DirectionDecisions;plan:SemanticScenePlan;registry:ConceptIdentity[];mentalModel:VisualModel;allowedAssets:Set<string>;catalog?:Record<string,AssetDefinition>}
+
+/** Direct one scene: build the contract the model must echo, call it, validate
+ *  the direction. No compilation, so this is safe to run for every scene at
+ *  once. `previousContinuity` lets the caller supply the semantic continuity
+ *  from the plan when the previous compiled scene does not exist yet. */
+export async function directScene(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:{candidates?:ReturnType<typeof assetCandidates>;sourceVisualIds?:string[];repairNotes?:string[];whiteboardPlan?:WhiteboardPlan;catalog?:Record<string,AssetDefinition>;previousContinuity?:VisualSceneV2['continuity']|null;prefetched?:{scene:VisualSceneV2;decisions:DirectionDecisions};signal?:AbortSignal}):Promise<DirectedScene>{
  const candidates=resolved?.candidates??assetCandidates(scene,registry,mentalModel),allowedAssets=new Set(candidates.flatMap(c=>c.candidates.map(a=>a.id)));
   /** The teaching contract the validator enforces, given to the model in the
    *  EXACT shape it must echo. Previously these were serialised into a sentence
@@ -175,7 +185,11 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
   const contractNote=requiredRelations.length?'Every entry of requiredRelations must appear in some beat\'s relationRefs with exactly those fromConcept, relation and toConcept values. Every entry of requiredObjects must appear once with that role.':'';const fallbackNote=primitiveFallbackNote(candidates.filter(c=>!c.candidates.length&&!c.representation).map(c=>c.conceptId));
    const repairNote=resolved?.repairNotes?.length?`A previous direction failed these visual checks: ${resolved.repairNotes.join('; ')}. Correct exactly those objects, relations, anchors, states or actions and keep narration, beat IDs and concept coverage unchanged.`:'';
   const instructions=[directorPrompt({archetype:mentalModel.candidateArchetypes[0],language,whiteboard:Boolean(resolved?.whiteboardPlan)}),contractNote,fallbackNote,repairNote,skillInstruction('visual-director')].filter(Boolean).join(' ');
-   const directed=await model.generate('director',instructions,{semanticScene:scene,requiredRelations,requiredObjects,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:previous?.scene.continuity??null},directorResponseSchema,value=>{
+   /** `prefetched` is the response from an earlier, concurrent issue of this
+    *  exact request. Everything after it — validation, compilation, the
+    *  integrity checks — is unchanged, so a prefetched scene and an inline one
+    *  are indistinguishable apart from when the latency was paid. */
+   const directed=resolved?.prefetched as {scene:VisualSceneV2;decisions:DirectionDecisions}|undefined??await model.generate('director',instructions,{semanticScene:scene,requiredRelations,requiredObjects,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:resolved?.previousContinuity??previous?.scene.continuity??null},directorResponseSchema,value=>{
    const response=value as {scene?:VisualSceneV2;direction?:unknown;decisions:DirectionDecisions};
    if(response.scene){
     // Instrumented legacy passthrough (plan heal rule 24): kept for model
@@ -190,8 +204,16 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
   }
   return {...result,scene:validateDirectedScene(result.scene,scene,registry,mentalModel,allowedAssets,previous,resolved?.catalog)};
  },{signal:resolved?.signal}) as {scene:VisualSceneV2;decisions:DirectionDecisions};
+  return {scene:directed.scene,decisions:directed.decisions,plan:scene,registry,mentalModel,allowedAssets,catalog:resolved?.catalog};
+}
+
+/** Compile an already-directed scene. Deterministic geometry belongs to the
+ *  compiler, never another model call, and this is the one step that needs the
+ *  previous compiled scene. */
+export function compileDirected(directed:DirectedScene,previous?:CompiledSceneV2):DirectedScene{
+  const {plan:scene,registry,mentalModel,allowedAssets,catalog}=directed;
  // Deterministic geometry repair belongs to the compiler, never another model call.
- let compiled;try{compiled=compileScene(directed.scene,undefined,previous,resolved?.catalog);}catch(e){
+ let compiled;try{compiled=compileScene(directed.scene,undefined,previous,catalog);}catch(e){
    /** Phase 8: failed critical gates retain diagnostic partial artifacts. The
     *  directed geometry is dumped compactly so a layout wall can be analyzed
     *  without re-paying for the model call. */
@@ -201,7 +223,7 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
    let placementMap;try{placementMap=archetypePlacements(directed.scene);}catch{placementMap=new Map();}
    log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>{const rect=placementMap.get(o.id);const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(directed.scene.archetype);const w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;const zone=o.preferredZone??(o.role==='hero'?'center':'upper_left');return {id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef,root:!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support',placed:Boolean(rect),rect:rect?{x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.w),h:Math.round(rect.h)}:zoneRect(zone,w,h)};}),relations:directed.scene.relations.map(r=>`${r.from.objectId}->${r.to.objectId}:${r.relationType}:${r.visualForm}`),directedScene:directed.scene,compiledObjects:(e as {compiledObjects?:unknown}).compiledObjects??null},'error');
    throw stageFailure(e,'compile');}
- validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous,resolved?.catalog);
+ validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous,catalog);
   /** Post-compile integrity checks are owned by the representation resolver and
    *  the compiler, not by the director: the director cannot redraw pixels, and a
    *  repair call reproduced this failure byte-identically on the live run while
@@ -211,4 +233,18 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
   const hero=compiled.objects.find(o=>o.role==='hero');
   if(hero?.primitiveRef==='label'&&!['numbered_steps','timeline','trajectory'].includes(compiled.scene.archetype))throw stageFailure(new Error('Unrepresented structural hero: choose a semantic composition'),'representation');
  return directed;
+}
+
+/** Direct and compile in one step, the single-scene entry point. The
+ *  orchestrator calls `directScene` concurrently and `compileDirected` in order. */
+export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:Parameters<typeof directScene>[6]):Promise<DirectedScene>{
+ return compileDirected(await directScene(scene,registry,mentalModel,model,previous,language,resolved),previous);
+}
+
+/** Issue the director request for one scene without compiling it, so the model
+ *  calls for several scenes can overlap. Uses `previousContinuity` supplied by
+ *  the caller because the previous compiled scene does not exist yet. */
+export async function prefetchDirection(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,language?:string,resolved?:Parameters<typeof directScene>[6]):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
+ const full=await directScene(scene,registry,mentalModel,model,undefined,language,{...resolved,prefetched:undefined});
+ return {scene:full.scene,decisions:full.decisions};
 }

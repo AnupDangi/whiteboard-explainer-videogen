@@ -25,7 +25,9 @@
     "bench:semantic:archetypes": "npm run build && node dist/scripts/bench-semantic-archetypes.js",
     "bench:visual": "npm run build && node dist/scripts/run-visual-bench.js",
     "calibrate:semantic:critic": "npm run build && node --env-file-if-exists=.env dist/scripts/calibrate-semantic-critic.js",
-    "export:example": "npm run build && node --env-file-if-exists=.env dist/scripts/export-example-video.js"
+    "export:example": "npm run build && node --env-file-if-exists=.env dist/scripts/export-example-video.js",
+    "matrix:live": "npm run build && node --env-file-if-exists=.env dist/scripts/live-matrix.js",
+    "bench:representation": "npm run build && node dist/scripts/bench-representation.js"
   },
   "optionalDependencies": {
     "sharp": "0.35.4"

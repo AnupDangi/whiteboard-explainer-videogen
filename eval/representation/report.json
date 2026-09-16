@@ -1,0 +1,1317 @@
+{
+  "source": "eval/representation/corpus.ts",
+  "method": "resolveRepresentation over all SUPPORTED_ARCHETYPES, classified by classifyCandidate; offline, deterministic",
+  "corpusSize": 75,
+  "domains": [
+    "biology",
+    "chemistry",
+    "computing",
+    "finance",
+    "history",
+    "law-governance",
+    "mathematics",
+    "medicine",
+    "physics"
+  ],
+  "tiers": [
+    "trusted-asset",
+    "substring-asset",
+    "composition",
+    "external",
+    "primitive-label",
+    "not-applicable"
+  ],
+  "overall": {
+    "trusted-asset": 11,
+    "substring-asset": 0,
+    "composition": 0,
+    "external": 0,
+    "primitive-label": 62,
+    "not-applicable": 2,
+    "total": 75
+  },
+  "overallPct": {
+    "trusted-asset": "14.7%",
+    "substring-asset": "0.0%",
+    "composition": "0.0%",
+    "external": "0.0%",
+    "primitive-label": "82.7%",
+    "not-applicable": "2.7%"
+  },
+  "bySemanticType": {
+    "entity": {
+      "trusted-asset": 5,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 30,
+      "not-applicable": 0,
+      "total": 35
+    },
+    "equation": {
+      "trusted-asset": 0,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 0,
+      "not-applicable": 2,
+      "total": 2
+    },
+    "location": {
+      "trusted-asset": 0,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 1,
+      "not-applicable": 0,
+      "total": 1
+    },
+    "material": {
+      "trusted-asset": 0,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 3,
+      "not-applicable": 0,
+      "total": 3
+    },
+    "process": {
+      "trusted-asset": 1,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 13,
+      "not-applicable": 0,
+      "total": 14
+    },
+    "quantity": {
+      "trusted-asset": 5,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 11,
+      "not-applicable": 0,
+      "total": 16
+    },
+    "role": {
+      "trusted-asset": 0,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 1,
+      "not-applicable": 0,
+      "total": 1
+    },
+    "state": {
+      "trusted-asset": 0,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 3,
+      "not-applicable": 0,
+      "total": 3
+    }
+  },
+  "byDomain": {
+    "biology": {
+      "trusted-asset": 2,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 6,
+      "not-applicable": 0,
+      "total": 8
+    },
+    "chemistry": {
+      "trusted-asset": 1,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 9,
+      "not-applicable": 0,
+      "total": 10
+    },
+    "computing": {
+      "trusted-asset": 3,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 7,
+      "not-applicable": 0,
+      "total": 10
+    },
+    "finance": {
+      "trusted-asset": 2,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 6,
+      "not-applicable": 0,
+      "total": 8
+    },
+    "history": {
+      "trusted-asset": 1,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 6,
+      "not-applicable": 0,
+      "total": 7
+    },
+    "law-governance": {
+      "trusted-asset": 0,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 10,
+      "not-applicable": 0,
+      "total": 10
+    },
+    "mathematics": {
+      "trusted-asset": 3,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 8,
+      "not-applicable": 2,
+      "total": 13
+    },
+    "medicine": {
+      "trusted-asset": 1,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 7,
+      "not-applicable": 0,
+      "total": 8
+    },
+    "physics": {
+      "trusted-asset": 1,
+      "substring-asset": 0,
+      "composition": 0,
+      "external": 0,
+      "primitive-label": 7,
+      "not-applicable": 1,
+      "total": 9
+    }
+  },
+  "concretePrimitiveLabels": [
+    {
+      "id": "neuron",
+      "name": "Neuron",
+      "semanticType": "entity",
+      "domains": [
+        "biology"
+      ]
+    },
+    {
+      "id": "mitochondria",
+      "name": "Mitochondria",
+      "semanticType": "entity",
+      "domains": [
+        "biology"
+      ]
+    },
+    {
+      "id": "enzyme",
+      "name": "Enzyme",
+      "semanticType": "entity",
+      "domains": [
+        "biology",
+        "chemistry"
+      ]
+    },
+    {
+      "id": "turbine",
+      "name": "Turbine",
+      "semanticType": "entity",
+      "domains": [
+        "physics"
+      ]
+    },
+    {
+      "id": "pendulum",
+      "name": "Pendulum",
+      "semanticType": "entity",
+      "domains": [
+        "physics"
+      ]
+    },
+    {
+      "id": "electromagnet",
+      "name": "Electromagnet",
+      "semanticType": "entity",
+      "domains": [
+        "physics"
+      ]
+    },
+    {
+      "id": "compiler",
+      "name": "Compiler",
+      "semanticType": "entity",
+      "domains": [
+        "computing"
+      ]
+    },
+    {
+      "id": "hash-table",
+      "name": "Hash Table",
+      "semanticType": "entity",
+      "domains": [
+        "computing"
+      ]
+    },
+    {
+      "id": "treaty",
+      "name": "Treaty",
+      "semanticType": "entity",
+      "domains": [
+        "history",
+        "law-governance"
+      ]
+    },
+    {
+      "id": "manuscript",
+      "name": "Manuscript",
+      "semanticType": "entity",
+      "domains": [
+        "history"
+      ]
+    },
+    {
+      "id": "stock",
+      "name": "Stock",
+      "semanticType": "entity",
+      "domains": [
+        "finance"
+      ]
+    },
+    {
+      "id": "collateral",
+      "name": "Collateral",
+      "semanticType": "entity",
+      "domains": [
+        "finance"
+      ]
+    },
+    {
+      "id": "vaccine",
+      "name": "Vaccine",
+      "semanticType": "material",
+      "domains": [
+        "medicine"
+      ]
+    },
+    {
+      "id": "antibiotic",
+      "name": "Antibiotic",
+      "semanticType": "material",
+      "domains": [
+        "medicine"
+      ]
+    },
+    {
+      "id": "tumor",
+      "name": "Tumor",
+      "semanticType": "entity",
+      "domains": [
+        "medicine"
+      ]
+    },
+    {
+      "id": "receptor",
+      "name": "Receptor",
+      "semanticType": "entity",
+      "domains": [
+        "medicine"
+      ]
+    },
+    {
+      "id": "constitution",
+      "name": "Constitution",
+      "semanticType": "entity",
+      "domains": [
+        "law-governance"
+      ]
+    },
+    {
+      "id": "statute",
+      "name": "Statute",
+      "semanticType": "entity",
+      "domains": [
+        "law-governance"
+      ]
+    },
+    {
+      "id": "legislature",
+      "name": "Legislature",
+      "semanticType": "entity",
+      "domains": [
+        "law-governance"
+      ]
+    },
+    {
+      "id": "ballot",
+      "name": "Ballot",
+      "semanticType": "entity",
+      "domains": [
+        "law-governance"
+      ]
+    },
+    {
+      "id": "molecule",
+      "name": "Molecule",
+      "semanticType": "entity",
+      "domains": [
+        "chemistry"
+      ]
+    },
+    {
+      "id": "catalyst",
+      "name": "Catalyst",
+      "semanticType": "entity",
+      "domains": [
+        "chemistry"
+      ]
+    },
+    {
+      "id": "covalent-bond",
+      "name": "Covalent Bond",
+      "semanticType": "entity",
+      "domains": [
+        "chemistry"
+      ]
+    },
+    {
+      "id": "acid",
+      "name": "Acid",
+      "semanticType": "material",
+      "domains": [
+        "chemistry"
+      ]
+    },
+    {
+      "id": "isotope",
+      "name": "Isotope",
+      "semanticType": "entity",
+      "domains": [
+        "chemistry"
+      ]
+    }
+  ],
+  "abstractionTrustedAssets": [
+    {
+      "id": "photosynthesis",
+      "name": "Photosynthesis",
+      "semanticType": "process",
+      "domains": [
+        "biology",
+        "chemistry"
+      ],
+      "candidateIds": [
+        "nature.sun.v2",
+        "biology.chloroplast.v2",
+        "biology.leaf.v2",
+        "biology.plant.sapling.v2"
+      ]
+    },
+    {
+      "id": "inflation",
+      "name": "Inflation",
+      "semanticType": "quantity",
+      "domains": [
+        "finance"
+      ],
+      "candidateIds": [
+        "economy.price.level.v2"
+      ]
+    },
+    {
+      "id": "blood-pressure",
+      "name": "Blood Pressure",
+      "semanticType": "quantity",
+      "domains": [
+        "medicine"
+      ],
+      "candidateIds": [
+        "physics.compressor.v2"
+      ]
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "semanticType": "quantity",
+      "domains": [
+        "mathematics"
+      ],
+      "candidateIds": [
+        "math.gradient.v2"
+      ]
+    }
+  ],
+  "perConcept": [
+    {
+      "id": "neuron",
+      "name": "Neuron",
+      "semanticType": "entity",
+      "domains": [
+        "biology"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "mitochondria",
+      "name": "Mitochondria",
+      "semanticType": "entity",
+      "domains": [
+        "biology"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "gene",
+      "name": "Gene",
+      "semanticType": "entity",
+      "domains": [
+        "biology"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "photosynthesis",
+      "name": "Photosynthesis",
+      "semanticType": "process",
+      "domains": [
+        "biology",
+        "chemistry"
+      ],
+      "kind": "abstract",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "nature.sun.v2",
+        "biology.chloroplast.v2",
+        "biology.leaf.v2",
+        "biology.plant.sapling.v2"
+      ]
+    },
+    {
+      "id": "homeostasis",
+      "name": "Homeostasis",
+      "semanticType": "state",
+      "domains": [
+        "biology"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "ecosystem",
+      "name": "Ecosystem",
+      "semanticType": "entity",
+      "domains": [
+        "biology"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "enzyme",
+      "name": "Enzyme",
+      "semanticType": "entity",
+      "domains": [
+        "biology",
+        "chemistry"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "cell",
+      "name": "Cell",
+      "semanticType": "entity",
+      "domains": [
+        "biology"
+      ],
+      "kind": "concrete",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "biology.cell.v2"
+      ]
+    },
+    {
+      "id": "turbine",
+      "name": "Turbine",
+      "semanticType": "entity",
+      "domains": [
+        "physics"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "pendulum",
+      "name": "Pendulum",
+      "semanticType": "entity",
+      "domains": [
+        "physics"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "entropy",
+      "name": "Entropy",
+      "semanticType": "quantity",
+      "domains": [
+        "physics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "velocity",
+      "name": "Velocity",
+      "semanticType": "quantity",
+      "domains": [
+        "physics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "electromagnet",
+      "name": "Electromagnet",
+      "semanticType": "entity",
+      "domains": [
+        "physics"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "nuclear-fusion",
+      "name": "Nuclear Fusion",
+      "semanticType": "process",
+      "domains": [
+        "physics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "refraction",
+      "name": "Refraction",
+      "semanticType": "process",
+      "domains": [
+        "physics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "schrodinger-equation",
+      "name": "Schrodinger Equation",
+      "semanticType": "equation",
+      "domains": [
+        "physics",
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "not-applicable",
+      "candidateIds": []
+    },
+    {
+      "id": "database",
+      "name": "Database",
+      "semanticType": "entity",
+      "domains": [
+        "computing"
+      ],
+      "kind": "concrete",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "systems.database.v2"
+      ]
+    },
+    {
+      "id": "algorithm",
+      "name": "Algorithm",
+      "semanticType": "process",
+      "domains": [
+        "computing",
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "recursion",
+      "name": "Recursion",
+      "semanticType": "process",
+      "domains": [
+        "computing",
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "compiler",
+      "name": "Compiler",
+      "semanticType": "entity",
+      "domains": [
+        "computing"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "cache",
+      "name": "Cache",
+      "semanticType": "entity",
+      "domains": [
+        "computing"
+      ],
+      "kind": "concrete",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "systems.cache.v2"
+      ]
+    },
+    {
+      "id": "neural-network",
+      "name": "Neural Network",
+      "semanticType": "entity",
+      "domains": [
+        "computing"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "byte",
+      "name": "Byte",
+      "semanticType": "quantity",
+      "domains": [
+        "computing"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "hash-table",
+      "name": "Hash Table",
+      "semanticType": "entity",
+      "domains": [
+        "computing"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "latency",
+      "name": "Latency",
+      "semanticType": "quantity",
+      "domains": [
+        "computing"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "treaty",
+      "name": "Treaty",
+      "semanticType": "entity",
+      "domains": [
+        "history",
+        "law-governance"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "dynasty",
+      "name": "Dynasty",
+      "semanticType": "entity",
+      "domains": [
+        "history"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "revolution",
+      "name": "Revolution",
+      "semanticType": "process",
+      "domains": [
+        "history"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "empire",
+      "name": "Empire",
+      "semanticType": "entity",
+      "domains": [
+        "history"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "manuscript",
+      "name": "Manuscript",
+      "semanticType": "entity",
+      "domains": [
+        "history"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "chronology",
+      "name": "Chronology",
+      "semanticType": "process",
+      "domains": [
+        "history"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "clock",
+      "name": "Clock",
+      "semanticType": "entity",
+      "domains": [
+        "history"
+      ],
+      "kind": "concrete",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "history.clock.v2"
+      ]
+    },
+    {
+      "id": "inflation",
+      "name": "Inflation",
+      "semanticType": "quantity",
+      "domains": [
+        "finance"
+      ],
+      "kind": "abstract",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "economy.price.level.v2"
+      ]
+    },
+    {
+      "id": "stock",
+      "name": "Stock",
+      "semanticType": "entity",
+      "domains": [
+        "finance"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "interest-rate",
+      "name": "Interest Rate",
+      "semanticType": "quantity",
+      "domains": [
+        "finance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "bank",
+      "name": "Bank",
+      "semanticType": "entity",
+      "domains": [
+        "finance"
+      ],
+      "kind": "concrete",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "finance.bank.v2"
+      ]
+    },
+    {
+      "id": "debt",
+      "name": "Debt",
+      "semanticType": "quantity",
+      "domains": [
+        "finance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "portfolio",
+      "name": "Portfolio",
+      "semanticType": "entity",
+      "domains": [
+        "finance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "collateral",
+      "name": "Collateral",
+      "semanticType": "entity",
+      "domains": [
+        "finance"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "liquidity",
+      "name": "Liquidity",
+      "semanticType": "quantity",
+      "domains": [
+        "finance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "vaccine",
+      "name": "Vaccine",
+      "semanticType": "material",
+      "domains": [
+        "medicine"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "antibiotic",
+      "name": "Antibiotic",
+      "semanticType": "material",
+      "domains": [
+        "medicine"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "diagnosis",
+      "name": "Diagnosis",
+      "semanticType": "process",
+      "domains": [
+        "medicine"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "immunity",
+      "name": "Immunity",
+      "semanticType": "state",
+      "domains": [
+        "medicine"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "tumor",
+      "name": "Tumor",
+      "semanticType": "entity",
+      "domains": [
+        "medicine"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "blood-pressure",
+      "name": "Blood Pressure",
+      "semanticType": "quantity",
+      "domains": [
+        "medicine"
+      ],
+      "kind": "abstract",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "physics.compressor.v2"
+      ]
+    },
+    {
+      "id": "receptor",
+      "name": "Receptor",
+      "semanticType": "entity",
+      "domains": [
+        "medicine"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "inflammation",
+      "name": "Inflammation",
+      "semanticType": "process",
+      "domains": [
+        "medicine"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "matrix",
+      "name": "Matrix",
+      "semanticType": "quantity",
+      "domains": [
+        "mathematics",
+        "computing"
+      ],
+      "kind": "concrete",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "math.matrix.v2",
+        "data.key.v2",
+        "data.latent.v2",
+        "data.query.v2",
+        "data.value.v2",
+        "math.vector.v2"
+      ]
+    },
+    {
+      "id": "vector",
+      "name": "Vector",
+      "semanticType": "quantity",
+      "domains": [
+        "mathematics",
+        "physics"
+      ],
+      "kind": "concrete",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "math.vector.v2"
+      ]
+    },
+    {
+      "id": "integral",
+      "name": "Integral",
+      "semanticType": "quantity",
+      "domains": [
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "theorem",
+      "name": "Theorem",
+      "semanticType": "entity",
+      "domains": [
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "prime-number",
+      "name": "Prime Number",
+      "semanticType": "quantity",
+      "domains": [
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "gradient",
+      "name": "Gradient",
+      "semanticType": "quantity",
+      "domains": [
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "trusted-asset",
+      "candidateIds": [
+        "math.gradient.v2"
+      ]
+    },
+    {
+      "id": "mathematical-induction",
+      "name": "Mathematical Induction",
+      "semanticType": "process",
+      "domains": [
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "topology",
+      "name": "Topology",
+      "semanticType": "entity",
+      "domains": [
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "probability",
+      "name": "Probability",
+      "semanticType": "quantity",
+      "domains": [
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "quadratic-formula",
+      "name": "Quadratic Formula",
+      "semanticType": "equation",
+      "domains": [
+        "mathematics"
+      ],
+      "kind": "abstract",
+      "tier": "not-applicable",
+      "candidateIds": []
+    },
+    {
+      "id": "constitution",
+      "name": "Constitution",
+      "semanticType": "entity",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "statute",
+      "name": "Statute",
+      "semanticType": "entity",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "jurisdiction",
+      "name": "Jurisdiction",
+      "semanticType": "location",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "democracy",
+      "name": "Democracy",
+      "semanticType": "state",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "veto",
+      "name": "Veto",
+      "semanticType": "process",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "legislature",
+      "name": "Legislature",
+      "semanticType": "entity",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "ballot",
+      "name": "Ballot",
+      "semanticType": "entity",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "referendum",
+      "name": "Referendum",
+      "semanticType": "process",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "head-of-state",
+      "name": "Head of State",
+      "semanticType": "role",
+      "domains": [
+        "law-governance"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "molecule",
+      "name": "Molecule",
+      "semanticType": "entity",
+      "domains": [
+        "chemistry"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "catalyst",
+      "name": "Catalyst",
+      "semanticType": "entity",
+      "domains": [
+        "chemistry"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "covalent-bond",
+      "name": "Covalent Bond",
+      "semanticType": "entity",
+      "domains": [
+        "chemistry"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "oxidation",
+      "name": "Oxidation",
+      "semanticType": "process",
+      "domains": [
+        "chemistry"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "acid",
+      "name": "Acid",
+      "semanticType": "material",
+      "domains": [
+        "chemistry"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "ph",
+      "name": "pH",
+      "semanticType": "quantity",
+      "domains": [
+        "chemistry"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "isotope",
+      "name": "Isotope",
+      "semanticType": "entity",
+      "domains": [
+        "chemistry"
+      ],
+      "kind": "concrete",
+      "tier": "primitive-label",
+      "candidateIds": []
+    },
+    {
+      "id": "combustion",
+      "name": "Combustion",
+      "semanticType": "process",
+      "domains": [
+        "chemistry"
+      ],
+      "kind": "abstract",
+      "tier": "primitive-label",
+      "candidateIds": []
+    }
+  ]
+}
