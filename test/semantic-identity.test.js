@@ -1,5 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { directionToScene } from '../dist/src/semantic/identity/intent-adapter.js';
+import { compileScene } from '../dist/src/semantic/compiler/compile-scene.js';
 import {
   SemanticIdentityRegistry,
   normalizeSemanticKey,
@@ -120,5 +125,41 @@ describe('semantic identity', () => {
     assert.equal(canonical.relations[0].to.objectId, canonical.objects[1].id);
     assert.equal(canonical.beats[0].id, 'beat_intro');
     assert.equal(canonical.beats[0].actions[1].relationIds[0], canonical.relations[0].id);
+  });
+
+  describe('directionToScene archetype-aware parenting (run1 replay)', () => {
+    const fixturePath = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'replay', 'run1-flow-direction.json');
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+
+    it('drops containment parenting for flow archetype and compiles without overlap', () => {
+      const scene = directionToScene(structuredClone(fixture.direction), fixture.semantic);
+      assert.equal(scene.objects.length, 7);
+      for (const o of scene.objects) assert.equal(o.parentId, undefined, `${o.id} must be a root in flow archetype`);
+      const prepared = structuredClone(scene);
+      for (const o of prepared.objects) {
+        if (fixture.semantic.requiredConceptIds.includes(o.conceptId)) {
+          o.importance = 'primary';
+          if (!o.assetRef && !o.primitiveRef) o.primitiveRef = 'rectangle';
+        }
+      }
+      for (const beat of prepared.beats) {
+        const anchors = beat.actions.map((a) => a.anchor?.text).filter(Boolean);
+        if (beat.narration === '[REDACTED]' && anchors.length) beat.narration = anchors.join(' and ');
+      }
+      const compiled = compileScene(prepared);
+      assert.equal(compiled.objects.length, 7);
+    });
+
+    it('preserves containment parenting for structural_diagram archetype', () => {
+      const direction = structuredClone(fixture.direction);
+      direction.archetype = 'structural_diagram';
+      const scene = directionToScene(direction, fixture.semantic);
+      const withParent = scene.objects.filter((o) => o.parentId);
+      assert.ok(withParent.length >= 5, `expected parented children, got ${withParent.length}`);
+      for (const key of ['refrigerant', 'compressor', 'condenser', 'expansion-valve', 'evaporator', 'heat']) {
+        const o = scene.objects.find((x) => x.conceptId === key);
+        assert.equal(o.parentId, 'object_refrigerator');
+      }
+    });
   });
 });

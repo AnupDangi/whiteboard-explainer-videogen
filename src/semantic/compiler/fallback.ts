@@ -122,6 +122,31 @@ function flowHasCycle(scene: VisualSceneV2): boolean {
   return pending.size > 0;
 }
 
+/** Rank-column overflow check mirroring `archetypePlacements` flow ranking:
+ *  returns true when any rank column would hold more than 3 roots. Cycles are
+ *  left to `flowHasCycle` (this returns false when ranking stalls). */
+function flowColumnOverflow(scene: VisualSceneV2): boolean {
+  const ids = new Set(roots(scene).map(o => o.id));
+  const edges = scene.relations.filter(
+    r => ids.has(r.from.objectId) && ids.has(r.to.objectId) && !['labels', 'compares_with'].includes(r.relationType) && r.visualForm !== 'none' && !r.layoutFeedback,
+  );
+  const rank = new Map<string, number>();
+  const pending = new Set(ids);
+  while (pending.size) {
+    const ready = [...pending].filter(id =>
+      edges.filter(e => e.to.objectId === id).every(e => rank.has(e.from.objectId)),
+    );
+    if (!ready.length) return false;
+    for (const id of ready) {
+      rank.set(id, Math.max(0, ...edges.filter(e => e.to.objectId === id).map(e => rank.get(e.from.objectId)! + 1)));
+      pending.delete(id);
+    }
+  }
+  const columns = new Map<number, number>();
+  for (const r of rank.values()) columns.set(r, (columns.get(r) ?? 0) + 1);
+  return [...columns.values()].some(n => n > 3);
+}
+
 function fallbackArchetype(scene: VisualSceneV2, warnings: string[], reason: string): void {
   if (scene.archetype === 'structural_diagram') return;
   warn(warnings, `${scene.archetype} ${reason}; using structural_diagram composition`);
@@ -256,6 +281,9 @@ export function applyCompositionFallbacks(input: VisualSceneV2): FallbackOutcome
         fallbackArchetype(scene, warnings, `needs 2–8 primaries (has ${count})`);
       } else if (flowHasCycle(scene)) {
         breakFlowCycle(scene, warnings);
+      } else if (flowColumnOverflow(scene)) {
+        fallbackArchetype(scene, warnings, 'would exceed three readable branches per column');
+        ensureSingleHero(scene, warnings);
       }
       break;
     case 'cycle':

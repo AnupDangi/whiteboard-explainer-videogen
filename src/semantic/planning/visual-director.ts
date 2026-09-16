@@ -95,7 +95,12 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
   return {...result,scene:validateDirectedScene(result.scene,scene,registry,mentalModel,allowedAssets,previous)};
  },{signal:resolved?.signal}) as {scene:VisualSceneV2;decisions:DirectionDecisions};
  // Deterministic geometry repair belongs to the compiler, never another model call.
- let compiled;try{compiled=compileScene(directed.scene,undefined,previous);}catch(e){throw stageFailure(e,'compile');}
+ let compiled;try{compiled=compileScene(directed.scene,undefined,previous);}catch(e){
+   /** Phase 8: failed critical gates retain diagnostic partial artifacts. The
+    *  directed geometry is dumped compactly so a layout wall can be analyzed
+    *  without re-paying for the model call. */
+   log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>({id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef})),relations:directed.scene.relations.length,actions:directed.scene.beats.flatMap(b=>b.actions.length)},'error');
+   throw stageFailure(e,'compile');}
  validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous);
  for(const o of directed.scene.objects)if(scene.requiredConceptIds.includes(o.conceptId??'')){const actual=compiled.objects.find(c=>c.id===o.id);if(actual?.assetRef!==o.assetRef||actual?.representation?.family!==o.representation?.family)throw new Error(`Critical representation degraded: ${o.id}`);}
  const hero=compiled.objects.find(o=>o.role==='hero');

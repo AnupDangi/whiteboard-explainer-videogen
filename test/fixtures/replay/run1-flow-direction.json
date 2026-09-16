@@ -1,0 +1,671 @@
+{
+ "direction": {
+  "title": "The Refrigeration Cycle",
+  "teachingGoal": "Trace the four-stage loop of heat transfer.",
+  "mentalModel": "A continuous loop where a fluid absorbs heat inside and dumps it outside.",
+  "archetype": "flow",
+  "objects": [
+   {
+    "label": "refrigerator system",
+    "role": "hero",
+    "state": "neutral",
+    "allowedStates": [
+     "neutral",
+     "highlighted",
+     "activated"
+    ],
+    "importance": "primary",
+    "preferredZone": "center",
+    "collisionPolicy": "forbid",
+    "conceptKey": "refrigerator",
+    "children": [
+     "refrigerant",
+     "compressor",
+     "condenser",
+     "expansion-valve",
+     "evaporator",
+     "heat"
+    ]
+   },
+   {
+    "representation": {
+     "family": "quantity",
+     "value": 0.5,
+     "afterValue": 0.8
+    },
+    "label": "refrigerant fluid",
+    "role": "material",
+    "state": "neutral",
+    "allowedStates": [
+     "neutral",
+     "highlighted",
+     "activated",
+     "before",
+     "after"
+    ],
+    "importance": "primary",
+    "preferredZone": "center",
+    "collisionPolicy": "allow",
+    "conceptKey": "refrigerant",
+    "parentConceptKey": "refrigerator",
+    "children": []
+   },
+   {
+    "assetRef": "physics.compressor.v2",
+    "label": "compressor",
+    "role": "support",
+    "state": "neutral",
+    "allowedStates": [
+     "neutral",
+     "highlighted",
+     "activated"
+    ],
+    "importance": "secondary",
+    "preferredZone": "lower_right",
+    "collisionPolicy": "forbid",
+    "conceptKey": "compressor",
+    "parentConceptKey": "refrigerator",
+    "children": []
+   },
+   {
+    "assetRef": "physics.condenser.v2",
+    "label": "condenser coils",
+    "role": "support",
+    "state": "neutral",
+    "allowedStates": [
+     "neutral",
+     "highlighted",
+     "activated"
+    ],
+    "importance": "secondary",
+    "preferredZone": "upper_right",
+    "collisionPolicy": "forbid",
+    "conceptKey": "condenser",
+    "parentConceptKey": "refrigerator",
+    "children": []
+   },
+   {
+    "primitiveRef": "label",
+    "label": "expansion valve",
+    "role": "support",
+    "state": "neutral",
+    "allowedStates": [
+     "neutral",
+     "highlighted",
+     "activated"
+    ],
+    "importance": "secondary",
+    "preferredZone": "upper_left",
+    "collisionPolicy": "forbid",
+    "conceptKey": "expansion-valve",
+    "parentConceptKey": "refrigerator",
+    "children": []
+   },
+   {
+    "assetRef": "physics.evaporator.v2",
+    "label": "evaporator coils",
+    "role": "support",
+    "state": "neutral",
+    "allowedStates": [
+     "neutral",
+     "highlighted",
+     "activated"
+    ],
+    "importance": "secondary",
+    "preferredZone": "lower_left",
+    "collisionPolicy": "forbid",
+    "conceptKey": "evaporator",
+    "parentConceptKey": "refrigerator",
+    "children": []
+   },
+   {
+    "assetRef": "physics.heat.v2",
+    "label": "thermal energy",
+    "role": "material",
+    "state": "neutral",
+    "allowedStates": [
+     "neutral",
+     "highlighted",
+     "activated"
+    ],
+    "importance": "tertiary",
+    "preferredZone": "right",
+    "collisionPolicy": "allow",
+    "conceptKey": "heat",
+    "parentConceptKey": "refrigerator",
+    "children": []
+   }
+  ],
+  "relations": [
+   {
+    "fromConcept": "compressor",
+    "relation": "causes",
+    "toConcept": "refrigerant"
+   },
+   {
+    "fromConcept": "refrigerant",
+    "relation": "flows_to",
+    "toConcept": "condenser"
+   },
+   {
+    "fromConcept": "condenser",
+    "relation": "causes",
+    "toConcept": "heat"
+   },
+   {
+    "fromConcept": "refrigerant",
+    "relation": "flows_to",
+    "toConcept": "expansion-valve"
+   },
+   {
+    "fromConcept": "heat",
+    "relation": "moves_toward",
+    "toConcept": "evaporator"
+   },
+   {
+    "fromConcept": "evaporator",
+    "relation": "causes",
+    "toConcept": "refrigerant"
+   },
+   {
+    "fromConcept": "refrigerant",
+    "relation": "flows_to",
+    "toConcept": "compressor"
+   }
+  ],
+  "beats": [
+   {
+    "key": "intro-fridge",
+    "narration": "[REDACTED]",
+    "actions": [
+     {
+      "type": "draw",
+      "durationMs": 5000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "refrigerator"
+      ],
+      "relationRefs": []
+     },
+     {
+      "type": "reveal",
+      "durationMs": 1000,
+      "leadMs": -180,
+      "easing": "linear",
+      "conceptKeys": [
+       "refrigerant"
+      ],
+      "relationRefs": []
+     }
+    ]
+   },
+   {
+    "key": "compressor-beat",
+    "narration": "[REDACTED]",
+    "actions": [
+     {
+      "type": "draw",
+      "durationMs": 1500,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "compressor"
+      ],
+      "relationRefs": []
+     },
+     {
+      "type": "pulse",
+      "durationMs": 1000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "compressor"
+      ],
+      "relationRefs": []
+     },
+     {
+      "type": "trace",
+      "anchor": {
+       "text": "squeezes",
+       "occurrence": 0
+      },
+      "durationMs": 1200,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [],
+      "relationRefs": [
+       {
+        "fromConcept": "compressor",
+        "relation": "causes",
+        "toConcept": "refrigerant"
+       }
+      ]
+     },
+     {
+      "type": "fill",
+      "durationMs": 1000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "refrigerant"
+      ],
+      "relationRefs": [],
+      "toState": "activated"
+     }
+    ]
+   },
+   {
+    "key": "condenser-beat",
+    "narration": "[REDACTED]",
+    "actions": [
+     {
+      "type": "draw",
+      "durationMs": 1500,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "condenser",
+       "heat"
+      ],
+      "relationRefs": []
+     },
+     {
+      "type": "flow",
+      "anchor": {
+       "text": "flows",
+       "occurrence": 0
+      },
+      "durationMs": 2000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [],
+      "relationRefs": [
+       {
+        "fromConcept": "refrigerant",
+        "relation": "flows_to",
+        "toConcept": "condenser"
+       }
+      ]
+     },
+     {
+      "type": "flow",
+      "anchor": {
+       "text": "releasing",
+       "occurrence": 0
+      },
+      "durationMs": 1500,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [],
+      "relationRefs": [
+       {
+        "fromConcept": "condenser",
+        "relation": "causes",
+        "toConcept": "heat"
+       }
+      ]
+     },
+     {
+      "type": "morph",
+      "durationMs": 1200,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "refrigerant"
+      ],
+      "relationRefs": [],
+      "toState": "neutral"
+     }
+    ]
+   },
+   {
+    "key": "expansion-beat",
+    "narration": "[REDACTED]",
+    "actions": [
+     {
+      "type": "reveal",
+      "durationMs": 1000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "expansion-valve"
+      ],
+      "relationRefs": []
+     },
+     {
+      "type": "flow",
+      "anchor": {
+       "text": "passes",
+       "occurrence": 0
+      },
+      "durationMs": 2000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [],
+      "relationRefs": [
+       {
+        "fromConcept": "refrigerant",
+        "relation": "flows_to",
+        "toConcept": "expansion-valve"
+       }
+      ]
+     },
+     {
+      "type": "highlight",
+      "durationMs": 1000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "refrigerant"
+      ],
+      "relationRefs": [],
+      "toState": "highlighted"
+     }
+    ]
+   },
+   {
+    "key": "evaporator-beat",
+    "narration": "[REDACTED]",
+    "actions": [
+     {
+      "type": "draw",
+      "durationMs": 1500,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "evaporator"
+      ],
+      "relationRefs": []
+     },
+     {
+      "type": "flow",
+      "anchor": {
+       "text": "absorbs",
+       "occurrence": 0
+      },
+      "durationMs": 2000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [],
+      "relationRefs": [
+       {
+        "fromConcept": "heat",
+        "relation": "moves_toward",
+        "toConcept": "evaporator"
+       }
+      ]
+     },
+     {
+      "type": "trace",
+      "durationMs": 1500,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [],
+      "relationRefs": [
+       {
+        "fromConcept": "evaporator",
+        "relation": "causes",
+        "toConcept": "refrigerant"
+       }
+      ]
+     },
+     {
+      "type": "morph",
+      "durationMs": 1000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "refrigerant"
+      ],
+      "relationRefs": [],
+      "toState": "neutral"
+     }
+    ]
+   },
+   {
+    "key": "summary-beat",
+    "narration": "[REDACTED]",
+    "actions": [
+     {
+      "type": "flow",
+      "anchor": {
+       "text": "returns",
+       "occurrence": 0
+      },
+      "durationMs": 2500,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [],
+      "relationRefs": [
+       {
+        "fromConcept": "refrigerant",
+        "relation": "flows_to",
+        "toConcept": "compressor"
+       }
+      ]
+     },
+     {
+      "type": "pulse",
+      "durationMs": 2000,
+      "leadMs": 0,
+      "easing": "linear",
+      "conceptKeys": [
+       "refrigerator"
+      ],
+      "relationRefs": []
+     }
+    ]
+   }
+  ]
+ },
+ "semantic": {
+  "teachingGoal": "Trace the four-stage loop of heat transfer.",
+  "learnerShouldUnderstand": "The refrigerator moves heat by cycling a fluid through pressure and state changes.",
+  "mentalModel": "A continuous loop where a fluid absorbs heat inside and dumps it outside.",
+  "candidateArchetypes": [
+   "cycle",
+   "flow"
+  ],
+  "continuity": {
+   "keepFromPrevious": [],
+   "prepareForNext": []
+  },
+  "id": "cycle-overview",
+  "centralConceptId": "refrigerator",
+  "requiredConceptIds": [
+   "refrigerator",
+   "refrigerant",
+   "compressor",
+   "condenser",
+   "expansion-valve",
+   "evaporator",
+   "heat"
+  ],
+  "requiredRelations": [
+   {
+    "id": "compressor-to-refrigerant",
+    "fromConceptId": "compressor",
+    "toConceptId": "refrigerant",
+    "relationType": "causes"
+   },
+   {
+    "id": "refrigerant-to-condenser",
+    "fromConceptId": "refrigerant",
+    "toConceptId": "condenser",
+    "relationType": "flows_to"
+   },
+   {
+    "id": "condenser-to-heat",
+    "fromConceptId": "condenser",
+    "toConceptId": "heat",
+    "relationType": "causes"
+   },
+   {
+    "id": "refrigerant-to-expansion",
+    "fromConceptId": "refrigerant",
+    "toConceptId": "expansion-valve",
+    "relationType": "flows_to"
+   },
+   {
+    "id": "heat-to-evaporator",
+    "fromConceptId": "heat",
+    "toConceptId": "evaporator",
+    "relationType": "moves_toward"
+   },
+   {
+    "id": "evaporator-to-refrigerant",
+    "fromConceptId": "evaporator",
+    "toConceptId": "refrigerant",
+    "relationType": "causes"
+   },
+   {
+    "id": "refrigerant-to-compressor",
+    "fromConceptId": "refrigerant",
+    "toConceptId": "compressor",
+    "relationType": "flows_to"
+   }
+  ],
+  "beats": [
+   {
+    "purpose": "Establish the system and the medium of transport.",
+    "narrationDraft": "A refrigerator doesn't create cold; it acts as a pump that moves heat out of the cabinet.",
+    "requirementIds": [
+     "heat-transfer-claim"
+    ],
+    "introduce": [
+     "refrigerator",
+     "refrigerant"
+    ],
+    "reinforce": [],
+    "relationFocus": [],
+    "evidenceRefs": [],
+    "id": "intro-fridge",
+    "transform": []
+   },
+   {
+    "purpose": "Explain the first stage of the cycle.",
+    "narrationDraft": "The cycle begins at the compressor, which squeezes the refrigerant gas, raising its temperature and pressure significantly.",
+    "requirementIds": [
+     "refrigeration-cycle-mech"
+    ],
+    "introduce": [
+     "compressor"
+    ],
+    "reinforce": [
+     "refrigerant"
+    ],
+    "relationFocus": [
+     "compressor-to-refrigerant"
+    ],
+    "evidenceRefs": [],
+    "id": "compressor-beat",
+    "transform": [
+     {
+      "fromState": "low-pressure-gas",
+      "toState": "high-pressure-gas",
+      "conceptId": "refrigerant"
+     }
+    ]
+   },
+   {
+    "purpose": "Explain heat release to the environment.",
+    "narrationDraft": "This hot gas flows through condenser coils outside the fridge, releasing heat into the room and turning into liquid.",
+    "requirementIds": [
+     "refrigeration-cycle-mech"
+    ],
+    "introduce": [
+     "condenser",
+     "heat"
+    ],
+    "reinforce": [
+     "refrigerant"
+    ],
+    "relationFocus": [
+     "refrigerant-to-condenser",
+     "condenser-to-heat"
+    ],
+    "evidenceRefs": [],
+    "id": "condenser-beat",
+    "transform": [
+     {
+      "fromState": "high-pressure-gas",
+      "toState": "high-pressure-liquid",
+      "conceptId": "refrigerant"
+     }
+    ]
+   },
+   {
+    "purpose": "Explain the pressure drop.",
+    "narrationDraft": "Next, the liquid passes through an expansion valve, where a sudden drop in pressure makes the refrigerant very cold.",
+    "requirementIds": [
+     "refrigeration-cycle-mech"
+    ],
+    "introduce": [
+     "expansion-valve"
+    ],
+    "reinforce": [
+     "refrigerant"
+    ],
+    "relationFocus": [
+     "refrigerant-to-expansion"
+    ],
+    "evidenceRefs": [],
+    "id": "expansion-beat",
+    "transform": [
+     {
+      "fromState": "high-pressure-liquid",
+      "toState": "low-pressure-liquid",
+      "conceptId": "refrigerant"
+     }
+    ]
+   },
+   {
+    "purpose": "Explain heat absorption from the interior.",
+    "narrationDraft": "Finally, in the evaporator coils inside, the cold liquid absorbs heat from your food, boiling back into a gas.",
+    "requirementIds": [
+     "refrigeration-cycle-mech"
+    ],
+    "introduce": [
+     "evaporator"
+    ],
+    "reinforce": [
+     "refrigerant",
+     "heat"
+    ],
+    "relationFocus": [
+     "heat-to-evaporator",
+     "evaporator-to-refrigerant"
+    ],
+    "evidenceRefs": [],
+    "id": "evaporator-beat",
+    "transform": [
+     {
+      "fromState": "low-pressure-liquid",
+      "toState": "low-pressure-gas",
+      "conceptId": "refrigerant"
+     }
+    ]
+   },
+   {
+    "purpose": "Close the loop.",
+    "narrationDraft": "The gas returns to the compressor to start again, continuously carrying heat away from the cold interior.",
+    "requirementIds": [
+     "refrigeration-cycle-mech",
+     "heat-transfer-claim"
+    ],
+    "introduce": [],
+    "reinforce": [
+     "refrigerator",
+     "refrigerant"
+    ],
+    "relationFocus": [
+     "refrigerant-to-compressor"
+    ],
+    "evidenceRefs": [],
+    "id": "summary-beat",
+    "transform": []
+   }
+  ]
+ }
+}

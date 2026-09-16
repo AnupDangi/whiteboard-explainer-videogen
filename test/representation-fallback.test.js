@@ -217,6 +217,29 @@ test('metrics count representation fallbacks from diagnostics and telemetry', ()
   assert.equal(m.representationFallbackCount, 2);
 });
 
+test('flow rank overflow degrades to structural_diagram instead of throwing', () => {
+  const s = scene('flow', [
+    obj('a', { primitiveRef: 'rectangle', role: 'hero' }),
+    obj('b', { primitiveRef: 'rectangle' }),
+    obj('c', { primitiveRef: 'rectangle' }),
+    obj('d', { primitiveRef: 'rectangle' }),
+    obj('sink', { primitiveRef: 'rectangle' }),
+  ], [rel('r1', 'a', 'sink'), rel('r2', 'b', 'sink'), rel('r3', 'c', 'sink'), rel('r4', 'd', 'sink')]);
+  const { scene: out, warnings } = applyCompositionFallbacks(s);
+  assert.equal(out.archetype, 'structural_diagram');
+  assert.ok(warnings.some(w => w.includes('representation fallback: flow would exceed three readable branches per column')));
+  const compiled = compileScene(s);
+  assert.equal(compiled.scene.archetype, 'structural_diagram');
+  assert.equal(compiled.scene.objects.filter(o => o.role === 'hero').length, 1);
+});
+
+test('normal linear flow scene is not degraded', () => {
+  const s = scene('flow', [obj('a'), obj('b'), obj('c')], [rel('r1', 'a', 'b'), rel('r2', 'b', 'c')]);
+  const { scene: out, warnings } = applyCompositionFallbacks(s);
+  assert.equal(out.archetype, 'flow');
+  assert.deepEqual(warnings, []);
+});
+
 test('typed representation requests select feasible assets and expose provenance', () => {
   const resolved = resolveRepresentationRequest({
     conceptKey: 'plant', semanticType: 'entity', role: 'hero', mentalModel: 'plant receives inputs',
