@@ -3,6 +3,11 @@ import type {ConceptIdentity,EvidenceRef,ObjectState,SemanticRelationRequirement
 export const HARNESS_VERSION='teaching-compiler-v1' as const;
 export type HarnessStage='ingest'|'knowledge-compiler'|'teaching-architect'|'whiteboard-planner'|'representation-guide'|'source-visual-grounding'|'visual-director'|'compiler'|'tts-alignment'|'pedagogy-critic'|'render';
 export type StageOwner='harness'|'knowledge-compiler'|'teaching-architect'|'whiteboard-planner'|'representation-guide'|'source-visual-grounding'|'visual-director'|'compiler'|'speech-layer'|'pedagogy-critic'|'renderer';
+/** The single source of truth for which owner a stage belongs to. Stage
+ *  policies, failure routing and the job snapshot all read this, so a failure
+ *  can never be handed to an owner that does not own the decision. */
+export const STAGE_OWNERS:Record<HarnessStage,StageOwner>={
+ ingest:'harness','knowledge-compiler':'knowledge-compiler','teaching-architect':'teaching-architect','whiteboard-planner':'whiteboard-planner','representation-guide':'representation-guide','source-visual-grounding':'source-visual-grounding','visual-director':'visual-director',compiler:'compiler','tts-alignment':'speech-layer','pedagogy-critic':'pedagogy-critic',render:'renderer'};
 export type GateCode='PREREQUISITE_ORDER'|'LEARNER_DELTA'|'MECHANISM_COVERAGE'|'CONTINUITY'|'COGNITIVE_LOAD'|'GROUNDING'|'DUPLICATION'|'VISUAL_SUPPORT'|'REPRESENTATION_DEGRADATION'|'COMPILE'|'TIMING'|'SPEECH';
 
 export interface SourceEvidence extends EvidenceRef {page?:number;section?:string}

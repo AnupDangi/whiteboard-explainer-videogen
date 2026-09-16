@@ -1,25 +1,27 @@
 import type {GateResult,HarnessStage,StageEnvelope,StageOwner,StagePolicy} from './contracts.js';
-import {HARNESS_VERSION} from './contracts.js';
+import {HARNESS_VERSION,STAGE_OWNERS} from './contracts.js';
 import {stableHash} from './state.js';
 import {log} from '../../shared/logger.js';
+import {classifyFailure,RoutedStageFailure} from '../repair.js';
 import type {StageJournal} from './journal.js';
 
 /** Bounded, owner-scoped context handed to a stage repair function. */
 export interface StageRepairContext<T>{stage:HarnessStage;owner:StageOwner;attempt:0|1;input:unknown;error:Error;gate:GateResult;output?:T;signal:AbortSignal}
 export type StageRepair<T>=(context:StageRepairContext<T>)=>Promise<T>|T;
 
+const policy=(stage:HarnessStage,timeoutMs:number,maxRepairs:0|1,budgetUsd:number):StagePolicy=>({owner:STAGE_OWNERS[stage],timeoutMs,maxRepairs,budgetUsd});
 export const DEFAULT_STAGE_POLICIES:Record<HarnessStage,StagePolicy>={
- ingest:{owner:'harness',timeoutMs:30000,maxRepairs:0,budgetUsd:0},
- 'knowledge-compiler':{owner:'knowledge-compiler',timeoutMs:600000,maxRepairs:1,budgetUsd:.2},
- 'teaching-architect':{owner:'teaching-architect',timeoutMs:90000,maxRepairs:1,budgetUsd:.35},
- 'whiteboard-planner':{owner:'whiteboard-planner',timeoutMs:90000,maxRepairs:1,budgetUsd:.25},
- 'representation-guide':{owner:'representation-guide',timeoutMs:10000,maxRepairs:0,budgetUsd:0},
- 'source-visual-grounding':{owner:'source-visual-grounding',timeoutMs:30000,maxRepairs:1,budgetUsd:.1},
- 'visual-director':{owner:'visual-director',timeoutMs:360000,maxRepairs:1,budgetUsd:.3},
- compiler:{owner:'compiler',timeoutMs:30000,maxRepairs:0,budgetUsd:0},
- 'tts-alignment':{owner:'speech-layer',timeoutMs:120000,maxRepairs:1,budgetUsd:.2},
- 'pedagogy-critic':{owner:'pedagogy-critic',timeoutMs:90000,maxRepairs:1,budgetUsd:.2},
- render:{owner:'renderer',timeoutMs:30000,maxRepairs:0,budgetUsd:0}
+ ingest:policy('ingest',30000,0,0),
+ 'knowledge-compiler':policy('knowledge-compiler',600000,1,.2),
+ 'teaching-architect':policy('teaching-architect',90000,1,.35),
+ 'whiteboard-planner':policy('whiteboard-planner',90000,1,.25),
+ 'representation-guide':policy('representation-guide',10000,0,0),
+ 'source-visual-grounding':policy('source-visual-grounding',30000,1,.1),
+ 'visual-director':policy('visual-director',360000,1,.3),
+ compiler:policy('compiler',30000,0,0),
+ 'tts-alignment':policy('tts-alignment',120000,1,.2),
+ 'pedagogy-critic':policy('pedagogy-critic',90000,1,.2),
+ render:policy('render',30000,0,0)
 };
 
 export interface StageExecuteOptions<T>{stage:HarnessStage;input:unknown;run:(signal:AbortSignal)=>Promise<T>|T;gate:(output:T)=>GateResult;journal?:StageJournal;policy?:StagePolicy;attempt?:0|1;model?:string|(()=>string|undefined);promptHash?:string;skillHash?:string;usage?:()=>{costUsd:number;promptTokens:number;completionTokens:number};repair?:StageRepair<T>;resume?:boolean}
@@ -79,7 +81,20 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
   }
   finally{clearTimeout(timer);}
   hasProduced=true;attempt=1;
- };
+  };
+  /** Repair only what this stage owns. A compiler geometry error raised while
+   *  running the visual-director cannot be fixed by directing again: the model
+   *  does not own pixels, and the two blind retries it produced were byte
+   *  identical. Foreign failures are routed (journaled with their real owner)
+   *  instead of being repaired here. */
+  const repairIfOwned=async(error:Error,gate:GateResult,at:0|1)=>{
+   const classified=classifyFailure(error,options.stage,gate);
+   if(classified.owner!==policy.owner){
+    log('v2.stage.routed',{stage:options.stage,owner:policy.owner,failedStage:classified.gate.stage,routedTo:classified.owner,code:classified.code},'warn');
+    throw new RoutedStageFailure(classified);
+   }
+   await runRepair(error,gate,at);
+  };
  for(;;){
   const startedAt=new Date().toISOString(),started=performance.now();
   const controller=new AbortController();
@@ -93,7 +108,7 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
     controller.abort(error);
     const value=error instanceof Error?error:new Error(String(error)),gate=(error as {gate?:GateResult})?.gate??emptyGate(options.stage);
     await appendFailure(attempt,startedAt,started,gate,value);
-    if(attempt<maxRepairs){await runRepair(value,gate,attempt);continue;}
+    if(attempt<maxRepairs){await repairIfOwned(value,gate,attempt);continue;}
     throw error;
    }
    if(timer)clearTimeout(timer);
@@ -102,7 +117,7 @@ export async function executeStage<T>(options:StageExecuteOptions<T>):Promise<{o
   if(!gate.passed){
    const error=gateError(options.stage,gate);
    await appendFailure(attempt,startedAt,started,gate,error);
-   if(attempt<maxRepairs){await runRepair(error,gate,attempt);continue;}
+   if(attempt<maxRepairs){await repairIfOwned(error,gate,attempt);continue;}
    throw error;
   }
   const usage=options.usage?.()??{costUsd:0,promptTokens:0,completionTokens:0};

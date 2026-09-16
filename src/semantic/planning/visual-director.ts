@@ -164,8 +164,13 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
    log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>{const rect=placementMap.get(o.id);const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(directed.scene.archetype);const w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;const zone=o.preferredZone??(o.role==='hero'?'center':'upper_left');return {id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef,root:!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support',placed:Boolean(rect),rect:rect?{x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.w),h:Math.round(rect.h)}:zoneRect(zone,w,h)};}),relations:directed.scene.relations.map(r=>`${r.from.objectId}->${r.to.objectId}:${r.relationType}:${r.visualForm}`)},'error');
    throw stageFailure(e,'compile');}
  validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous);
- for(const o of directed.scene.objects)if(scene.requiredConceptIds.includes(o.conceptId??'')){const actual=compiled.objects.find(c=>c.id===o.id);if(actual?.assetRef!==o.assetRef||actual?.representation?.family!==o.representation?.family)throw new Error(`Critical representation degraded: ${o.id}`);}
- const hero=compiled.objects.find(o=>o.role==='hero');
- if(hero?.primitiveRef==='label'&&!['numbered_steps','timeline','trajectory'].includes(compiled.scene.archetype))throw new Error('Unrepresented structural hero: choose a semantic composition');
+  /** Post-compile integrity checks are owned by the representation resolver and
+   *  the compiler, not by the director: the director cannot redraw pixels, and a
+   *  repair call reproduced this failure byte-identically on the live run while
+   *  costing another 15s. Routing it (typed REPRESENTATION) stops the director
+   *  retry and surfaces the degradation where it belongs. */
+  for(const o of directed.scene.objects)if(scene.requiredConceptIds.includes(o.conceptId??'')){const actual=compiled.objects.find(c=>c.id===o.id);if(actual?.assetRef!==o.assetRef||actual?.representation?.family!==o.representation?.family)throw stageFailure(new Error(`Critical representation degraded: ${o.id}`),'representation');}
+  const hero=compiled.objects.find(o=>o.role==='hero');
+  if(hero?.primitiveRef==='label'&&!['numbered_steps','timeline','trajectory'].includes(compiled.scene.archetype))throw stageFailure(new Error('Unrepresented structural hero: choose a semantic composition'),'representation');
  return directed;
 }

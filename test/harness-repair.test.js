@@ -40,11 +40,11 @@ test('stages with maxRepairs zero never invoke a supplied repair',async()=>{
 });
 
 test('repair ownership routes by failure class and failing stage',()=>{
- assert.equal(repairOwnerForStage({class:'REPRESENTATION',stage:'representation'}),'representation-resolver');
+ assert.equal(repairOwnerForStage({class:'REPRESENTATION',stage:'representation'}),'representation-guide');
  assert.equal(repairOwnerForStage({class:'GEOMETRY',stage:'compiler'}),'compiler');
- assert.equal(repairOwnerForStage({class:'TIMING',stage:'timeline'}),'timeline');
+ assert.equal(repairOwnerForStage({class:'TIMING',stage:'timeline'}),'speech-layer');
  assert.equal(repairOwnerForStage({class:'SPEECH',stage:'tts'}),'speech-layer');
- assert.equal(repairOwnerForStage({class:'PROVIDER',stage:'knowledge-compiler'}),'model-router');
+ assert.equal(repairOwnerForStage({class:'PROVIDER',stage:'knowledge-compiler'}),'harness');
  assert.equal(repairOwnerForStage({class:'SEMANTIC',stage:'knowledge-compiler'}),'knowledge-compiler');
  assert.equal(repairOwnerForStage({class:'SEMANTIC',stage:'teaching-architect'}),'teaching-architect');
  assert.equal(repairOwnerForStage({class:'SEMANTIC',stage:'whiteboard-planner'}),'whiteboard-planner');

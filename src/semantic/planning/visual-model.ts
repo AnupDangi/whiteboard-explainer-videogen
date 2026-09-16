@@ -19,10 +19,15 @@ function cycleRelationsClose(scene:SemanticScenePlan):boolean{
  return current===start;
 }
 import {archetypeFits} from '../compiler/archetypes.js';
+import {supportedArchetype} from '../compiler/zones.js';
 export interface VisualModel {mentalModel:string;candidateArchetypes:VisualArchetype[];heroConceptIds:string[];supportConceptIds:string[];relationStrategy:string[];requiredObjectStates:{conceptId:string;fromState:string;toState:string}[]}
 /** Scene semantics and benchmark constraints determine eligibility, never topic regexes. */
 export function selectVisualModel(scene:SemanticScenePlan,registry:ConceptIdentity[],previous:SceneContinuity,allowed:readonly VisualArchetype[],forbidden:readonly VisualArchetype[]=[]):VisualModel{
-  const candidates=scene.candidateArchetypes.filter(a=>allowed.includes(a)&&!forbidden.includes(a));
+  const requested=scene.candidateArchetypes.filter(a=>!forbidden.includes(a));
+  /** Preflight: an archetype the compiler cannot lay out is never selectable,
+   *  so the director model call is not spent on a scene that cannot compile. */
+  const unsupported=requested.filter(a=>!supportedArchetype(a));
+  const candidates=requested.filter(a=>supportedArchetype(a)&&allowed.includes(a));
   /** The director directs the first candidate: put one that can hold every
    *  primary representation first, so a scene is never sent to a family whose
    *  compiler will reject its object count. */
@@ -33,7 +38,7 @@ export function selectVisualModel(scene:SemanticScenePlan,registry:ConceptIdenti
   const closes=cycleRelationsClose(scene);
   const ranked=(a:VisualArchetype)=>archetypeFits(a,count)&&(a!=='cycle'||closes);
   const ordered=[...candidates.filter(ranked),...candidates.filter(a=>!ranked(a))];
-  if(!candidates.length)throw new Error(`No feasible archetype for ${scene.id}`);
+  if(!candidates.length)throw new Error(unsupported.length?`No supported archetype for ${scene.id}: ${[...new Set(unsupported)].join(', ')} declared but not implemented by the compiler`:`No feasible archetype for ${scene.id}`);
   const concepts=scene.requiredConceptIds.map(id=>{const c=registry.find(c=>c.id===id);if(!c)throw new Error(`Unknown concept: ${id}`);return c;});
   for(const id of scene.continuity.keepFromPrevious)if(!previous.prepareForNext.includes(id))throw new Error(`Continuity unavailable: ${id}`);
   const hero=scene.centralConceptId;

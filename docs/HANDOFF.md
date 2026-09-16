@@ -2,12 +2,34 @@
 
 Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audits. Structure reference: `docs/ARCHITECTURE.md`. Philosophy and non-goals: `AGENTS.md`.
 
+## Waves landed
+
+| wave | commit | result |
+|---|---|---|
+| **S0** baseline | `9905c41` | layout spacing fix, gate-before-teaching, docs reset, `test/layout-invariants.test.js` |
+| **S1** failure ownership | *(this commit)* | `classifyFailure` + harness ownership gate; preflight; `test/harness-routing.test.js` |
+
+Tests: **432/432**. Code graph: **1,736 nodes / 3,737 edges** (`graphify update . --force`).
+
+### S1 measured effect (same prompt, live paid route, 1 scene)
+
+| | before (`s1-smoke`) | after (`s1-smoke-after`) |
+|---|---|---|
+| director model calls | **2** | **1** |
+| director ms | 37,858 | 16,122 |
+| routed failures | 0 | 1 (`→ representation-guide`) |
+| retries on a non-director failure | 2 | **0** |
+
+The failure was unchanged (`Critical representation degraded: object_sensory-experience`) — which is the point: S1 stops the pipeline from *paying twice* for a defect the director cannot fix, and attributes it to the owner that can. The job still fails; that defect is real work for S3/S4.
+
+Structural proof: `classifyFailure()` now has a production caller (`executeStage`, `stage.ts:91`). Before S1 the classifier had **zero** production callers — it existed only for tests.
+
 ## 0. Cleanup performed this session
 
 - Removed `output/` (415 MB), `.data/` (13 MB), `dist/` (1.2 MB). Rebuilt `dist/`.
 - Deleted stale docs. `docs/` now holds only: `ARCHITECTURE.md`, `HANDOFF.md`, `ICON_SYSTEM_PLAN.md`. Root: `README.md`, `AGENTS.md`, `PLAN_TO_IMPLEMENT.md`.
 - `tasks.md` deleted (its content was duplicated in the old `V4_IMPLEMENTATION.md`).
-- Build: `tsc` clean. Tests: `361/361` pass (all fixture-based, see §4).
+- Code graph adopted: `graphify` MCP in `opencode.json`, regenerate with `graphify update . --force`.
 
 ## 1. What genuinely works (verified)
 
@@ -88,16 +110,24 @@ This is the gap between us and a system that can visually explain arbitrary conc
 4. **Latency target:** what is "Lamina-level" for a 1-minute video — 30s? 60s? This determines how aggressively to cut `maxScenes` and windows.
 5. **Budget:** the OpenRouter account's monthly spend cap blocks paid routes; only free routes work, and they are too slow/unreliable for the knowledge stage. This must be raised before any real end-to-end run.
 
-## 8. Uncommitted changes in the worktree (from this session)
+## 8. Wave S1 — what changed
 
 ```
-src/semantic/compiler/archetypes.ts         layered grid replaces 400/n pitch (fixes Illegal overlap)
-src/semantic/compiler/compile-scene.ts      zone-relocation fallback in general overlap repair
-src/semantic/harness/registry.ts            persistence binds after first observation
-src/semantic/planning/knowledge-compiler.ts visualFamily healed from semanticType
-src/semantic/planning/visual-director.ts    resolver candidates no longer dropped by archetype filter
-src/semantic/planning/generate.ts           concept graph gated before teaching; knowledge re-bought only on graph failure
-src/semantic/planning/validate.ts           action target-kind heal (scoped; does not touch valid mixed-target actions)
+src/semantic/harness/contracts.ts   STAGE_OWNERS: the one stage→owner map
+src/semantic/repair.ts              classifyFailure(), RoutedStageFailure; RepairOwner retired to = StageOwner
+src/semantic/harness/stage.ts       repairIfOwned(): a foreign failure is routed, never repaired
+src/semantic/compiler/zones.ts      SUPPORTED_ARCHETYPES is the executable subset
+src/semantic/planning/visual-model.ts  unsupported archetypes are rejected before the director call
+src/semantic/planning/generate.ts   preflight: archetype capacity + board beat count before the director
+src/semantic/planning/visual-director.ts  post-compile integrity failures typed REPRESENTATION (routed)
+test/harness-routing.test.js        eight routing acceptance tests
+test/layout-invariants.test.js      layered-layout regression (S0)
 ```
 
-Build clean, 361/361. Nothing committed.
+Routing rules, in precedence order: a gate finding names its own stage → `PipelineError.failureClass` names the class → a provider/budget error is `harness`-owned → otherwise the running stage owns it. Rule 4 preserves genuinely stage-owned repairs (the teaching repair executed inside the knowledge stage still works).
+
+Committed. Working tree clean apart from generated artifacts.
+
+### Next: S2 (heal audit + visibility)
+
+`healSchema` (`schemas.ts:54-129`) silently mutates model output with zero logging; ~24 `*-heal` sites in `semantic/`, 23 in the V1 planner. S2 classifies each as NORMALIZATION / SAFE-DETERMINISTIC / SEMANTIC, instruments the semantic ones, and freezes new heal rules. Then S3 makes runtime contracts truthful (static relations, unsupported motions, ignored transitions).

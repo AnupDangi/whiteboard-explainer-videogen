@@ -16,6 +16,7 @@ import {selectVisualModel} from './visual-model.js';
 import {directVisual} from './visual-director.js';
 import {finalizeNarration} from './narration.js';
 import {compileScene} from '../compiler/compile-scene.js';
+import {archetypeFits} from '../compiler/archetypes.js';
 import {criticRepair} from '../critic-repair.js';
 import {canonicalizeVisualScene} from '../identity/canonicalize.js';
 import {assetCandidates,healPreservedRedraws} from './visual-director.js';
@@ -175,7 +176,16 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   let at=performance.now();
   telemetry('visual-model','started');
   let mentalModel;
-  try{mentalModel=selectVisualModel(semantic,plan.conceptRegistry,{keepFromPrevious:[],prepareForNext:previous?.scene.objects.map(o=>o.conceptId).filter((id):id is string=>Boolean(id))??[]},input.allowedArchetypes);telemetry('visual-model','success',{elapsedMs:performance.now()-at});}catch(e){telemetry('visual-model','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-at});throw stageFailure(e,'visual-model');}
+   try{
+    mentalModel=selectVisualModel(semantic,plan.conceptRegistry,{keepFromPrevious:[],prepareForNext:previous?.scene.objects.map(o=>o.conceptId).filter((id):id is string=>Boolean(id))??[]},input.allowedArchetypes);
+    /** Deterministic preconditions for the director model call. Capacity is a
+     *  compiler error and the beat count is a board-alignment gate error; both
+     *  would otherwise be discovered *after* paying for a director call, and
+     *  neither is repairable by the director. */
+    const preferredArchetype=mentalModel.candidateArchetypes[0];
+    if(!archetypeFits(preferredArchetype,semantic.requiredConceptIds.length))throw new Error(`Archetype ${preferredArchetype} cannot hold ${semantic.requiredConceptIds.length} required representations`);
+    if(board.beats.length!==semantic.beats.length)throw new Error(`Whiteboard plan covers ${board.beats.length} beats but the scene has ${semantic.beats.length}`);
+    telemetry('visual-model','success',{elapsedMs:performance.now()-at});}catch(e){telemetry('visual-model','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-at});throw stageFailure(e,'visual-model');}
   const visualModelMs=performance.now()-at;
   at=performance.now();
   telemetry('representation','started');

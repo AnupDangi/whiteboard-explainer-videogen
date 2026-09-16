@@ -31,9 +31,9 @@ test('V2 provider exposes HTTP failures without fixture fallback or retry spend'
 test('typed repair failures route to the owning subsystem',()=>{
   const failure=toRepairFailure(new Error('missing semantic anchor'),'representation');
   assert.equal(failure.class,'REPRESENTATION');
-  assert.equal(repairOwner(failure),'representation-resolver');
+  assert.equal(repairOwner(failure),'representation-guide');
   assert.equal(repairOwner({class:'GEOMETRY'}),'compiler');
-  assert.equal(repairOwner({class:'TIMING'}),'timeline');
+  assert.equal(repairOwner({class:'TIMING'}),'speech-layer');
 });
 test('V2 provider refuses an unpriced or unaffordable model before generation',async()=>{let posts=0;const m=createJsonModel({env:{OPENROUTER_API_KEY:'test',OPENROUTER_MODEL:'expensive'},maxCostUsd:.001,fetcher:async url=>{if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:[{id:'expensive',pricing:{prompt:'1',completion:'1'}}]}));posts++;throw new Error('Unexpected request');}});await assert.rejects(planTeaching(input,m),/budget/);assert.equal(posts,0);});
 
