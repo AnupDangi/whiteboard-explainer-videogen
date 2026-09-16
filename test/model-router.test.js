@@ -71,6 +71,7 @@ test('three consecutive successes forgive one recorded timeout',async()=>{
  let hang=true;
  const m=createJsonModel({env:{OPENROUTER_API_KEY:'test',OPENROUTER_MODEL:'test/solo'},maxCostUsd:1,fetcher:async(url,init)=>{
   if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:[{id:'test/solo',pricing:{prompt:'0.0000001',completion:'0.0000001'}}]}));
+  if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:[{id:'test/solo',pricing:{prompt:'0.0000001',completion:'0.0000001'}}]}));
   if(hang){hang=false;throw new Error('The operation was aborted due to timeout');}
   return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{"ok":true}'}}],usage:{prompt_tokens:10,completion_tokens:10,cost:.000001}}));
  }});

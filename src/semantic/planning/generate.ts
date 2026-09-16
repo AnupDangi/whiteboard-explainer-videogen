@@ -100,16 +100,24 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
       const sceneBudget=input.maxScenes??1;
       const selectedKnowledgeWindows=selectRelevantWindows(knowledgeWindows,input.prompt,Math.max(1,Math.min(knowledgeWindows.length,sceneBudget)));
       if(selectedKnowledgeWindows.length<knowledgeWindows.length)log('v2.knowledge.window-budget',{planned:knowledgeWindows.length,kept:selectedKnowledgeWindows.length,maxScenes:input.maxScenes??1});
+       /** Knowledge windows are independent (the shared scope is read-only):
+        *  compiling them concurrently halves knowledge latency for the common
+        *  two-window lesson. Identical windows coalesce on one in-flight call
+        *  and memo hits skip the call entirely. */
        const graphs:ConceptGraph[]=[];
-       for(const [index,window] of selectedKnowledgeWindows.entries()){
-        signal?.throwIfAborted();
+       const inFlight=new Map<string,Promise<ConceptGraph>>();
+       const windowTasks=selectedKnowledgeWindows.map((window,index)=>{
         log('v2.knowledge.window',{index:index+1,count:selectedKnowledgeWindows.length,chars:window.text.length});
          const windowMemoKey=memoKey('knowledge-window',{text:window.text,prompt:input.prompt,language:input.language,sourceId:input.sourceId});
          const cachedGraph=memoGet<ConceptGraph>(windowMemoKey);
-         if(cachedGraph){graphs.push(cachedGraph);continue;}
-         const graph=await compileKnowledge({prompt:input.prompt,sourceText:window.text,evidenceScope:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model,{},signal);
-         memoPut(windowMemoKey,graph);graphs.push(graph);
-       }
+         if(cachedGraph)return Promise.resolve(cachedGraph);
+         const running=inFlight.get(windowMemoKey);
+         if(running)return running;
+         const task=compileKnowledge({prompt:input.prompt,sourceText:window.text,evidenceScope:knowledgeText,sourceId:input.sourceId,language:input.language,repairFindings},model,{},signal).then(graph=>{memoPut(windowMemoKey,graph);inFlight.delete(windowMemoKey);return graph;});
+         inFlight.set(windowMemoKey,task);
+         return task;
+       });
+       graphs.push(...await Promise.all(windowTasks));
       const graph=attachSourceVisuals(graphs.length>1?mergeConceptGraphs(graphs):graphs[0],input.sourceFigures,input.sourceId);
       const teachingWindows=chapterWindows(knowledgeText);
       const windows=selectRelevantWindows(teachingWindows,input.prompt,Math.max(1,Math.min(teachingWindows.length,sceneBudget)));
