@@ -17,9 +17,28 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **P0** palette | `9534f0f` | theme roles + fill modes; golden SVG hashes pin byte-identity |
 | **P1** normalizer | `3f900c4` | fail-closed sanitizer, path grammar, flattening, transforms, converter |
 | **P2** embedded catalog | `4a6eda4` | `CompiledSceneV2.assetCatalog` + `resolveAsset(ref,catalog?)` threaded through compile and renderer |
-| **P3a** retrieval policy | *(this commit)* | fail-closed licence gate, collection profiles, retrieval modes, deterministic ranker |
+| **P3a** retrieval policy | `15bb8c7` | fail-closed licence gate, collection profiles, retrieval modes, deterministic ranker |
+| **S3b** routing before search | *(this commit)* | `equation` concepts are not icon-searched and are not counted as degradations |
 
-Tests: **477/477**. Code graph: **1,803 nodes / 3,877 edges** (`graphify update . --force`).
+Tests: **480/480**. Code graph: **1,803 nodes / 3,877 edges** (`graphify update . --force`).
+
+### S3b — and a correction the live logs forced
+
+`resolveRepresentation` ignored `semanticType` and went straight to icon search, so an `equation` concept searched for an icon, failed, and emitted `REPRESENTATION_DEGRADATION` for something that was never an icon. It now returns `fallback: 'not-applicable'` with no warning, and the representation gate excludes that from both the hero check and the findings — **the false signal is what hid the real gaps**.
+
+**The synthetic measurement was wrong, and the live logs corrected it.** My fixture sweep (below) suggested equations were 6 of 11 misses, so I built the routing fix first. Then I counted the actual `primitive-heal` events in the live runs:
+
+| run | objects healed to a label primitive |
+|---|---|
+| `s8-live` (how a bill becomes law) | **legislature, bill, committee, floor** — concrete nouns |
+| `s3-live` | world-model, sensory-experience, discovery-process — abstract nouns |
+| `narrated-2sc-f` | discovery-process, world-model |
+
+**Not one equation.** The live misses are `entity`-typed nouns. So the routing fix is correct but low-impact, and **icon breadth (P3) is the real lever** — exactly the opposite of what the fixture sweep implied. The lesson: fixture objects are hand-authored and already carry their representation, so sweeping them measures the resolver against concepts it never actually resolves.
+
+### Fixture sweep (kept for the record, with its caveat)
+
+Across 50 hand-authored fixture objects the resolver reaches a trusted asset for **39 (78%)**; of the 11 misses, 6 are equations/symbols, 3 are annotation labels and 2 are genuine entity gaps (`Client`, `CPU registers`). Treat this as a lower bound on need, not as evidence of live behaviour.
 
 ### P3a — the deterministic half of external retrieval
 
@@ -34,6 +53,8 @@ Nothing here performs I/O, so the decisions a future fetch depends on are testab
 **Measured before building it** (and it changed the plan): across 50 fixture objects the resolver already reaches a trusted asset for **39 (78%)**. Of the 11 misses, **6 are equations/symbols**, **3 are annotation labels**, and only **2 are genuine entity gaps** (`Client`, `CPU registers`). Icon *breadth* is therefore a smaller lever than it looked — the resolver is asked for an icon for things that were never entities, and that false `REPRESENTATION_DEGRADATION` signal is what hides the real gaps.
 
 **Honest limit:** icon libraries do not fix abstract concepts. There is no icon for "abduction"; Iconify would supply a *symbol* (lightbulb, brain, network). For abstract topics the composition families remain the primary representation.
+
+**Next, with the corrected priority:** **P3 (the network half)** is the real lever — the live misses are concrete nouns (`bill`, `committee`, `floor`, `legislature`) that an icon collection would cover directly. It needs three decisions: the `VISUAL_ICONS` rollout (`off` default then `balanced`?), whether to use OpenMoji (share-alike), and who signs off P7 promotion. After that, **S6/S7** for throughput.
 
 ### Icon system P0–P2 — representation can now come from outside the static registry
 

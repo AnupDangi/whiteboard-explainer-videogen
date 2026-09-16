@@ -24,8 +24,11 @@ export interface RepresentationDecision {
   /** Curated asset candidates (may be empty when falling back). */
   candidates: { id: string }[];
   representation?:RepresentationSpec;
-  /** Non-null when the resolver degraded to a non-curated representation. */
-  fallback: 'asset' | 'primitive-label' | 'composition' | null;
+  /** Non-null when the resolver degraded to a non-curated representation.
+   *  `not-applicable` is not a degradation: the concept is one an icon could
+   *  never represent (an equation), so no search is attempted and no warning is
+   *  raised — the director supplies the matching primitive instead. */
+  fallback: 'asset' | 'primitive-label' | 'composition' | 'not-applicable' | null;
   /** Asset chosen by the tier-2 substring match (when fallback === 'asset'). */
   fallbackAssetId?: string;
   warnings: string[];
@@ -99,6 +102,14 @@ export function resolveRepresentation(
   concept: RepresentationConcept,
   archetypes: readonly VisualArchetype[],
 ): RepresentationDecision {
+  /** Routing before search. An equation is not an entity: no icon library holds
+   *  a glyph for `2x + 3 = 11`, so searching wastes a tier and then reports a
+   *  degradation that is not one — which is precisely what hides the genuine
+   *  gaps in the degradation metric. The director renders equations with the
+   *  equation primitive. */
+  if (concept.semanticType === 'equation') {
+    return { candidates: [], fallback: 'not-applicable', warnings: [] };
+  }
   const strict = strictCandidates(concept, archetypes);
   if (strict.length > 0) return { candidates: strict, fallback: null, warnings: [] };
   const fallbackAssetId = substringFallback(concept, archetypes);
