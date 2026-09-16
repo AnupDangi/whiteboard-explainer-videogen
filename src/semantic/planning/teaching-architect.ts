@@ -45,7 +45,12 @@ export function validateArchitectOutput(raw:unknown,input:ArchitectStageInput):T
   for(const concept of [...entry.learnerDelta.newConcepts,...entry.learnerDelta.reinforcedConcepts])if(!allowed.has(concept))throw new Error(`Contract ${beat.id} references concept ${concept} outside its beat`);
   for(const prerequisite of entry.prerequisites)if(!concepts.has(prerequisite))throw new Error(`Unknown prerequisite ${prerequisite}`);
   for(const mechanism of entry.mechanismIds)if(!mechanisms.has(mechanism))throw new Error(`Unknown mechanism ${mechanism}`);
-  for(const ref of entry.evidenceRefs)if(!evidence.has(ref))throw new Error(`Unknown evidence ${ref}`);
+  /** Architect evidence references outside the compiled inventory are dropped
+   *  (recorded) - the contract keeps its beat, timing and concepts; the
+   *  grounding that the knowledge compiler could not provide was never real. */
+  const knownEvidenceRefs=entry.evidenceRefs.filter(ref=>evidence.has(ref));
+  if(knownEvidenceRefs.length<entry.evidenceRefs.length)log('v2.architect.evidence-heal',{contract:beat.id,dropped:entry.evidenceRefs.filter(ref=>!evidence.has(ref))},'warn');
+  entry={...entry,evidenceRefs:knownEvidenceRefs};
   return {
    id:`contract:${scene.id}:${index+1}`,sceneId:scene.id,objective:entry.objective,motivation:entry.motivation,
    prerequisites:[...new Set(entry.prerequisites)],learnerDelta:{before:entry.learnerDelta.before,after:entry.learnerDelta.after,newConcepts:[...new Set(entry.learnerDelta.newConcepts)],reinforcedConcepts:[...new Set(entry.learnerDelta.reinforcedConcepts)]},
