@@ -39,13 +39,14 @@ export function healPreservedRedraws(scene:VisualSceneV2,board:WhiteboardPlan):n
  }
  return healed;
 }
-/** Resolver results already support at least one candidate archetype; drop
- *  nothing. Primary-archetype-compatible picks sort first so the director
- *  prefers them, and a non-primary pick still survives (the compiler degrades
- *  an incompatible final pick to a labeled primitive instead of leaving the
- *  concept unrepresented). */
+/** Resolver results are scoped to the archetype the director will actually use.
+ *  Resolving against the whole `candidateArchetypes` union offered assets that
+ *  the selected archetype cannot carry (measured: `data.value.v2` for a
+ *  `cause_effect` scene), which the compiler then stripped to a label — read
+ *  downstream as an unexplained representation degradation. `candidateArchetypes[0]`
+ *  is the one the director is instructed to use and the one validate clamps to. */
 function archetypeSort(model:VisualModel){const primary=model.candidateArchetypes[0];return (a:{archetypes:string[]},b:{archetypes:string[]})=>(b.archetypes.includes(primary)?1:0)-(a.archetypes.includes(primary)?1:0);}
-export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},model.candidateArchetypes);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}).sort(archetypeSort(model)),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
+export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){const selected=[model.candidateArchetypes[0]];return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},selected);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}).sort(archetypeSort(model)),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
 export function representationWarnings(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel):string[]{return assetCandidates(scene,registry,model).flatMap(c=>c.warnings);}
 /** Every initial or repaired direction passes this same teaching contract. */
 export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,allowedAssets:Set<string>,previous?:CompiledSceneV2):VisualSceneV2{
@@ -97,6 +98,10 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
    }
   }
  for(const o of visual.objects)if(o.assetRef&&!allowedAssets.has(o.assetRef))throw new Error(`Director invented asset ${o.assetRef}`);
+  /** Defence in depth for the resolver/compiler contract: an asset the selected
+   *  archetype cannot carry must be rejected as a director choice (repairable
+   *  once) rather than silently stripped by the compiler's fallback. */
+  for(const o of visual.objects)if(o.assetRef&&!getAsset(o.assetRef).archetypes.includes(visual.archetype))throw new Error(`${o.assetRef} does not support ${visual.archetype}; choose a candidate whose archetypes include it, or a semantic composition`);
  for(const id of scene.requiredConceptIds)if(!visual.objects.some(o=>o.conceptId===id))throw new Error(`Director omitted concept ${id}`);
  if(visual.beats.length!==scene.beats.length)throw new Error('Director changed beat count');
  for(const [i,b] of scene.beats.entries())if(visual.beats[i].id!==b.id||visual.beats[i].narration!==b.narrationDraft)throw new Error(`Director changed narration/beat ${b.id}`);
