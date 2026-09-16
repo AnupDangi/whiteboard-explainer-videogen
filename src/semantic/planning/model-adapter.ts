@@ -1,12 +1,16 @@
 import {loggedFetch,log} from '../../shared/logger.js';
 import {DEFAULT_FAST_MODEL,loadModelFallbacks,loadModelRouter} from '../../shared/model-router.js';
-import {assertSchema,healSchema,type Schema} from '../schemas.js';
+import {assertSchema,healSchema,type Schema,type HealClass,type HealEvent} from '../schemas.js';
 export type Stage='teaching'|'knowledge'|'architect'|'director';
 export interface StageCall {stage:Stage;model:string;elapsedMs:number;promptTokens:number;completionTokens:number;costUsd:number;attempt:number}
 export interface StageEvent {
   stage:Stage;
   attempt:number;
-  kind:'raw'|'healed'|'failure'|'provider-failure';
+  kind:'raw'|'healed'|'heal'|'failure'|'provider-failure';
+  /** Present on `heal` events: which deterministic rule fired and how it is
+   *  classified. A SEMANTIC-class heal alters instructional content and must
+   *  never be silent. */
+  healClass?:HealClass;
   model:string;
   elapsedMs:number;
   promptTokens?:number;
@@ -78,7 +82,11 @@ export function createJsonModel(options:{env?:NodeJS.ProcessEnv;fetcher?:typeof 
     let raw:unknown;try{
      raw=JSON.parse(response.choices[0].message.content);
      emit({stage,attempt,kind:'raw',model,elapsedMs,promptTokens,completionTokens,costUsd,finishReason,payload:raw});
-     const healed=healSchema(raw,schema);
+     /** Every deterministic correction is reported individually. Shape-only
+      *  normalisation is logged; a SEMANTIC heal (one that invents or alters
+      *  instructional content) is additionally counted so the caller can refuse
+      *  to present corrected output as if the model produced it. */
+     const healed=healSchema(raw,schema,'$',(event:HealEvent)=>{emit({stage,attempt,kind:'heal',model,elapsedMs,promptTokens,completionTokens,costUsd,finishReason,payload:event,healClass:event.classification});});
      if(JSON.stringify(raw)!==JSON.stringify(healed))emit({stage,attempt,kind:'healed',model,elapsedMs,promptTokens,completionTokens,costUsd,finishReason,payload:healed});
      await options.onOutput?.(stage,attempt,healed);
      assertSchema(healed,schema);
@@ -93,4 +101,19 @@ export function createJsonModel(options:{env?:NodeJS.ProcessEnv;fetcher?:typeof 
     }
    }throw new Error('Unreachable stage');
   }};
+}
+
+/** Deterministic-correction tally by class. `semantic` should be zero for a
+ *  trustworthy run: a non-zero value means the pipeline invented or altered
+ *  instructional content the model never produced, and that must be visible
+ *  rather than presented as model output. */
+export function healCounts(events:StageEvent[]|undefined):{normalization:number;safeDeterministic:number;semantic:number}{
+ const counts={normalization:0,safeDeterministic:0,semantic:0};
+ for(const event of events??[]){
+  if(event.kind!=='heal'||!event.healClass)continue;
+  if(event.healClass==='NORMALIZATION')counts.normalization++;
+  else if(event.healClass==='SAFE_DETERMINISTIC')counts.safeDeterministic++;
+  else counts.semantic++;
+ }
+ return counts;
 }

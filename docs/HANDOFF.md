@@ -11,9 +11,24 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **S1b** resolver/compiler contract | `a07bce9` | candidates scoped to the selected archetype; `test/representation-archetype.test.js` |
 | **S1c** narrated end-to-end | `ecff8cb` | four more contract defects fixed; **a narrated 2-scene lesson now completes** |
 | **V2 default** | `08e08a5` | semantic is the default; V1 frozen legacy (not deleted) |
-| **S3** contract truthfulness | *(this commit)* | static relations render; unimplemented motions removed; continuity realisation documented + tested |
+| **S3** contract truthfulness | `528842e` | static relations render; unimplemented motions removed; continuity realisation documented + tested |
+| **S2** heal visibility | *(this commit)* | every `healSchema` rule reports `{path,rule,classification,before,after}`; SEMANTIC heals counted on the job snapshot |
 
-Tests: **442/442**. Code graph: **1,740 nodes / 3,740 edges** (`graphify update . --force`).
+Tests: **447/447**. Code graph: **1,742 nodes / 3,743 edges** (`graphify update . --force`).
+
+### S2 — no deterministic correction is silent any more
+
+`healSchema` (`schemas.ts`) rewrote model output with ~12 rules and **zero reporting**. Every rule now reports, classified:
+
+| class | meaning | rules |
+|---|---|---|
+| `NORMALIZATION` | shape only, same meaning | unknown-key-dropped, empty-optional-dropped, number-clamped, version-defaulted, hidden-state-normalised, list-joined, object-to-array, part-of-normalised, motion-alias |
+| `SAFE_DETERMINISTIC` | the contract already implied it | parent-child-linked, orphan-children-dropped, relative-policy-degraded, mixed-target-pruned, object-action-to-trace, relation-action-to-reveal |
+| `SEMANTIC` | invents or alters instructional content | required-concepts-derived |
+
+Each event is emitted at the model boundary as a `heal` stage event and tallied by `healCounts()`; `semanticRepairCount` is persisted on the job snapshot. Verified on a real run: **6 heal events, all classified, `semantic: 0`**.
+
+**Drift caught by this work:** `MOTION_ALIASES` mapped `move_to → 'move'`, but S3.2 had removed `move` from `MOTIONS` — so that alias would heal valid-looking output onto a motion the renderer cannot animate. Removed, with a permanent test asserting every alias target is an implemented motion.
 
 ### S3 — advertised capability now equals runtime capability
 
@@ -161,6 +176,6 @@ Synthesis rules, both recorded: an *entirely absent* required relation is realiz
 
 The lesson completes but reads thin: on the same run, four of five concepts render as bare label pills because **no asset exists for `abduction`, `axiom`, `induction`, `deduction`**. That is the 43-asset static-registry ceiling, not a layout or routing defect. Relations also render only when an action animates them (`renderer/relations.ts:8`), so the graph is richer than the picture.
 
-### Next: S2 (heal audit + visibility), then the icon system
+### Next: S8 (structured director contract), then the icon system
 
-S3 closed the advertised-vs-implemented gap. Next is **S2**: produce the HEAL INVENTORY, instrument `healSchema` (`schemas.ts:54-129` is still 100% silent), emit `{stage,healType,reason,before,after}` for every SEMANTIC heal, and freeze new heal rules. Then the icon system (P0–P2, no network) — the actual capability ceiling, since four of five concepts on the live lesson still render as bare label pills.
+S2 closed heal visibility. The remaining reliability gap is **director model variance**: a live run on a different prompt failed twice on `Missing semantic relation rel-bill-to-committee` because the model emitted the right concept pair with the wrong relation type, and the single targeted repair did not converge. That is an honest failure under the one-repair policy, but it costs a job. The fix is **S8**: give the model the required relations as a **structured** contract (the prompt currently serialises them into a sentence) so prompt, schema, validator and compiler all express the same shape. After that, the icon system (P0–P2, no network) is the capability ceiling — four of five concepts on the live lesson still render as bare label pills.

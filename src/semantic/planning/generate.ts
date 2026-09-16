@@ -20,6 +20,7 @@ import {archetypeFits} from '../compiler/archetypes.js';
 import {criticRepair} from '../critic-repair.js';
 import {canonicalizeVisualScene} from '../identity/canonicalize.js';
 import {assetCandidates,healPreservedRedraws} from './visual-director.js';
+import {healCounts} from './model-adapter.js';
 import type {JsonModel} from './model-adapter.js';
 import type {CompiledSceneV2,VisualTiming} from '../types.js';
 import type {VisionJudge} from '../vision-judge.js';
@@ -262,6 +263,6 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   previous=compiled;
   log('v2.scene',{sceneId:compiled.scene.id,archetype:compiled.scene.archetype,objects:compiled.objects.length,relations:compiled.relations.length,beats:compiled.scene.beats.length,durationMs:compiled.durationMs,timingKind:compiled.timing.kind,timingSource:compiled.timing.timingSource??null,narrated:Boolean(speech),wordCount:compiled.timing.words.length,sceneReadyMs:Math.round(performance.now()-start),costUsdSoFar:Number(model.calls.reduce((sum,call)=>sum+call.costUsd,0).toFixed(6)),callsSoFar:model.calls.length,diagnostics:compiled.diagnostics.length});
   const manifest=harness.manifest({config:{learnerProfile,criticEnabled,groundingPolicy:input.groundingPolicy??'source-only'},schema:{planVersion:plan.version,sceneVersion:directed.scene.version},assets:directed.scene.objects.map(o=>o.assetRef??o.primitiveRef),promptSkills:{stages:['knowledge-compiler','teaching-architect','whiteboard-planner','visual-director','pedagogy-critic']},costUsd:model.calls.reduce((n,c)=>n+c.costUsd,0)});
-  yield {plan,semantic,mentalModel,directed,narration,compiled,speech,conceptGraph,learnerBefore,learnerAfter:structuredClone(learnerState),teachingContracts:contracts,whiteboardPlan:board,registry:semanticRegistry.snapshot(),gates:[...gates],manifest,metrics:{teachingMs,visualModelMs,directorMs,narrationFinalizeMs,ttsMs,compileMs,sceneReadyMs:performance.now()-start,criticMs,criticRepairs} satisfies StageMetrics};
+  yield {plan,semantic,mentalModel,directed,narration,compiled,speech,conceptGraph,learnerBefore,learnerAfter:structuredClone(learnerState),teachingContracts:contracts,whiteboardPlan:board,registry:semanticRegistry.snapshot(),gates:[...gates],manifest,metrics:{teachingMs,visualModelMs,directorMs,narrationFinalizeMs,ttsMs,compileMs,sceneReadyMs:performance.now()-start,criticMs,criticRepairs} satisfies StageMetrics,healCounts:healCounts(model.events)};
  }
 }
