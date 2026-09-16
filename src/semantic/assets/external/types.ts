@@ -42,6 +42,10 @@ export interface ExternalCandidateMetadata{
  duotone?:boolean;
  /** Number of path commands, when the search result reports it. */
  partCount?:number;
+ /** Position in the provider's own result list. The provider ranks by textual
+  *  relevance; discarding that would let a style tie-break pick a less apt
+  *  icon, so it is carried through as a scoring signal. */
+ providerRank?:number;
 }
 
 export interface CandidateScore{

@@ -20,6 +20,8 @@ import {archetypeFits} from '../compiler/archetypes.js';
 import {criticRepair} from '../critic-repair.js';
 import {canonicalizeVisualScene} from '../identity/canonicalize.js';
 import {assetCandidates,healPreservedRedraws} from './visual-director.js';
+import {representationCandidates,retrievalMode,externalClientFor} from './representation-external.js';
+import type {AssetDefinition} from '../assets/types.js';
 import {healCounts} from './model-adapter.js';
 import type {JsonModel} from './model-adapter.js';
 import type {CompiledSceneV2,VisualTiming} from '../types.js';
@@ -156,6 +158,8 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   telemetry('teaching','success',{elapsedMs:performance.now()-teachingStart,details:{harnessStage:'knowledge-compiler',harnessVersion:HARNESS_VERSION}});
  }catch(e){telemetry('teaching','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-teachingStart});throw stageFailure(e,'teaching');}
  const teachingMs=performance.now()-teachingStart;
+ /** External representation is opt-in: with VISUAL_ICONS=off no client is constructed. */
+ const iconEnv=options.criticEnv??process.env,iconMode=retrievalMode(iconEnv.VISUAL_ICONS),iconClient=externalClientFor(iconMode,iconEnv);
  const semanticRegistry=new LessonSemanticRegistry(conceptGraph);
  const criticEnabled=(options.criticEnv??process.env).V2_CRITIC==='on'&&Boolean(options.judge);
  const lessonArchitecture=[];let projectedState=structuredClone(learnerState);
@@ -190,12 +194,12 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   const visualModelMs=performance.now()-at;
   at=performance.now();
   telemetry('representation','started');
-  let candidates:ReturnType<typeof assetCandidates>,groundedSourceVisualIds:string[]=[];
+  let candidates:ReturnType<typeof assetCandidates>,groundedSourceVisualIds:string[]=[],catalog:Record<string,AssetDefinition>={};
   try{
-   const representationStage=await harness.execute({resume:options.resume,stage:'representation-guide',input:{semantic,mentalModel},run:()=>assetCandidates(semantic,plan.conceptRegistry,mentalModel),gate:value=>{/** `not-applicable` means the resolver established the concept is not
+   const representationStage=await harness.execute({resume:options.resume,stage:'representation-guide',input:{semantic,mentalModel},run:()=>representationCandidates(semantic,plan.conceptRegistry,mentalModel,{mode:iconMode,...(iconClient?{client:iconClient}:{}),fetchedAt:new Date().toISOString(),...(options.signal?{signal:options.signal}:{})}),gate:stage=>{const value=stage.candidates;/** `not-applicable` means the resolver established the concept is not
      *  something an icon represents (an equation). That is not a degradation:
      *  counting it would drown the real gaps in the metric. */
-    const missing=value.filter(candidate=>!candidate.candidates.length&&!candidate.representation&&candidate.fallback!=='not-applicable');const heroMissing=missing.some(candidate=>candidate.conceptId===semantic.centralConceptId);return {stage:'representation-guide',passed:!heroMissing,findings:missing.map(candidate=>({stage:'representation-guide' as const,code:'REPRESENTATION_DEGRADATION' as const,severity:candidate.conceptId===semantic.centralConceptId?'hard' as const:'advisory' as const,message:`No representation for ${candidate.conceptId}`}))};}});candidates=representationStage.output;
+    const missing=value.filter(candidate=>!candidate.candidates.length&&!candidate.representation&&candidate.fallback!=='not-applicable');const heroMissing=missing.some(candidate=>candidate.conceptId===semantic.centralConceptId);return {stage:'representation-guide',passed:!heroMissing,findings:missing.map(candidate=>({stage:'representation-guide' as const,code:'REPRESENTATION_DEGRADATION' as const,severity:candidate.conceptId===semantic.centralConceptId?'hard' as const:'advisory' as const,message:`No representation for ${candidate.conceptId}`}))};}});candidates=representationStage.output.candidates;catalog=representationStage.output.catalog;for(const w of representationStage.output.warnings)log('v2.icons.warning',{scene:semantic.id,warning:w},'warn');
    const warnings=candidates.flatMap(candidate=>candidate.warnings);
     const groundingStage=await harness.execute({resume:options.resume,stage:'source-visual-grounding',input:{semantic,conceptGraph,representationWarnings:warnings,groundingPolicy:input.groundingPolicy??'source-only'},run:()=>{const selection=selectSourceVisuals(semantic,conceptGraph);return {policy:input.groundingPolicy??'source-only',sourceVisualIds:selection.selected.map(entry=>entry.id),selection};},gate:value=>({stage:'source-visual-grounding',passed:value.policy==='source-only'||Boolean(value.sourceVisualIds.length)||value.selection.rejected.length===0,findings:value.selection.rejected.length===0||value.sourceVisualIds.length?[]:[{stage:'source-visual-grounding' as const,code:'GROUNDING' as const,severity:'advisory' as const,message:'No source figure matched a required concept'}]})});groundedSourceVisualIds=groundingStage.output.sourceVisualIds;
    telemetry('representation','success',{elapsedMs:performance.now()-at,details:{warnings,fallbackCount:warnings.length}});
@@ -203,7 +207,7 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   at=performance.now();
   telemetry('director','started');
   let directed:Awaited<ReturnType<typeof directVisual>>;
-  try{const beforeDirectorCalls=model.calls.length;const buildDirected=async(repairNotes?:string[],signal?:AbortSignal)=>{const value=await directVisual(semantic,plan.conceptRegistry,mentalModel,model,previous,input.language,{candidates,sourceVisualIds:groundedSourceVisualIds,repairNotes,whiteboardPlan:board,signal});value.scene=canonicalizeVisualScene(semantic.id,value.scene,plan.conceptRegistry);
+  try{const beforeDirectorCalls=model.calls.length;const buildDirected=async(repairNotes?:string[],signal?:AbortSignal)=>{const value=await directVisual(semantic,plan.conceptRegistry,mentalModel,model,previous,input.language,{candidates,sourceVisualIds:groundedSourceVisualIds,repairNotes,whiteboardPlan:board,catalog,signal});value.scene=canonicalizeVisualScene(semantic.id,value.scene,plan.conceptRegistry);
     const preservedHealed=healPreservedRedraws(value.scene,board);if(preservedHealed)log('v2.continuity.preserve-heal',{scene:semantic.id,count:preservedHealed});
     // Bridge semantic continuity (concept keys) to runtime continuity (object ids).
     // Per-scene canonical ids differ, so resolve each kept concept to the current
@@ -235,13 +239,13 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
   telemetry('tts','started');telemetry('compile','started');
   const ttsStart=performance.now(),compileStart=performance.now();
   const ttsPromise=(async()=>{try{const s=options.speech?await narratedSpeech(narration,options.speech,options.signal):undefined;telemetry('tts','success',{elapsedMs:performance.now()-ttsStart,timingKind:s?.timing.kind,timingSource:s?.timingSource});return s;}catch(e){telemetry('tts','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-ttsStart});throw stageFailure(e,'tts');}})();
-  const visualPromise=(async()=>{try{const c=compileScene(directed.scene,undefined,previous);telemetry('compile','success',{elapsedMs:performance.now()-compileStart,diagnostics:c.diagnostics,preliminary:true});return c;}catch(e){telemetry('compile','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-compileStart});throw stageFailure(e,'compile');}})();
+  const visualPromise=(async()=>{try{const c=compileScene(directed.scene,undefined,previous,catalog);telemetry('compile','success',{elapsedMs:performance.now()-compileStart,diagnostics:c.diagnostics,preliminary:true});return c;}catch(e){telemetry('compile','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-compileStart});throw stageFailure(e,'compile');}})();
   let speech:Awaited<typeof ttsPromise>,compiled:Awaited<typeof visualPromise>;
   try{[speech,compiled]=await Promise.all([ttsPromise,visualPromise]);}catch(e){options.signal?.throwIfAborted();throw e;}
   const ttsMs=performance.now()-ttsStart;
   if(speech?.timing){
    options.signal?.throwIfAborted();const rebindStart=performance.now();
-   try{compiled=compileScene(directed.scene,speech.timing,previous);telemetry('compile','success',{elapsedMs:performance.now()-rebindStart,diagnostics:compiled.diagnostics});}catch(e){telemetry('compile','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-rebindStart});throw stageFailure(e,'compile');}
+   try{compiled=compileScene(directed.scene,speech.timing,previous,catalog);telemetry('compile','success',{elapsedMs:performance.now()-rebindStart,diagnostics:compiled.diagnostics});}catch(e){telemetry('compile','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-rebindStart});throw stageFailure(e,'compile');}
   }
   let compileMs=performance.now()-compileStart;
   await harness.execute({resume:options.resume,stage:'compiler',input:directed.scene,run:()=>compiled,gate:gateCompiled});

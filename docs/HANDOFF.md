@@ -18,9 +18,30 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **P1** normalizer | `3f900c4` | fail-closed sanitizer, path grammar, flattening, transforms, converter |
 | **P2** embedded catalog | `4a6eda4` | `CompiledSceneV2.assetCatalog` + `resolveAsset(ref,catalog?)` threaded through compile and renderer |
 | **P3a** retrieval policy | `15bb8c7` | fail-closed licence gate, collection profiles, retrieval modes, deterministic ranker |
-| **S3b** routing before search | *(this commit)* | `equation` concepts are not icon-searched and are not counted as degradations |
+| **S3b** routing before search | `f880e46` | `equation` concepts are not icon-searched and are not counted as degradations |
+| **P3** external retrieval | *(this commit)* | Iconify client, bounded per-concept resolution, wired into `representation-guide`; 13 failure-injection tests |
 
-Tests: **480/480**. Code graph: **1,803 nodes / 3,877 edges** (`graphify update . --force`).
+Tests: **492/492**. Code graph: **1,841 nodes / 3,957 edges** (`graphify update . --force`).
+
+### P3 — external retrieval, and what the live run taught us
+
+Built: `external/iconify.ts` (the only network boundary — injectable fetch, per-request timeouts, aborts, size caps), `external/search.ts` (hits → metadata, licences taken from the reviewed profiles, never the provider), `external/resolve.ts` (one search, ≤3 fetches, convert, validate, every rejection reported), `planning/representation-external.ts` (bounded to 4 concepts per scene, builds the embedded catalog). `VISUAL_ICONS=off|strict|balanced|broad`, default `off`; with `off` no client is constructed and no request is made.
+
+**Live verification (`VISUAL_ICONS=balanced`, "how a bill becomes law", 1 scene):** job **completed**, 1 scene exported, $0.017, and **zero external icons landed.** The single concept that reached the external tier (`reconciliation`) had no Iconify match. The final scene:
+
+```
+legislature  → composition:system      floor debate → composition:signal
+bill         → composition:quantity    law          → composition:quantity
+committee    → composition:container   reconciliation → primitive:label
+```
+
+**The finding: the external tier is consulted too late.** It only sees concepts the local resolver could not represent *at all*. On this scene five of six concepts received a **composition** — a procedural shape — so they never reached the external tier even though `bill`, `committee` and `legislature` are exactly the concrete nouns an icon collection covers. The earlier `primitive-heal` events I read as resolver failures were in fact the *director* choosing primitives.
+
+**A real bug found by the live run:** the ranker scored every candidate from a collection identically, so `rankCandidates` fell through to its `collection`/`name` tie-break and **discarded the provider's own relevance order**. Fixed: `providerRank` is carried from the search response and adds up to +12. It cannot override a licence or collection refusal.
+
+**A quality risk the probes exposed:** Iconify name-matching is literal. `floor` returns `floor-lamp` and `floor-plan`; `legislature`, `committee`, `sensory` and `abduction` return **nothing**. So external icons help concrete technical nouns (`database`, `server`, `client` all return good stroke sets) and can be actively wrong for others.
+
+**Recommended next step (not done):** change the tier policy so an `entity`-typed concept prefers a concrete icon over a procedural composition, with a semantic suitability check before adopting it. That is what would make the picture genuinely richer — and it is exactly where the `floor`→`floor-lamp` risk has to be handled (the plan's P5 suitability gate).
 
 ### S3b — and a correction the live logs forced
 

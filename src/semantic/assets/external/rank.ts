@@ -27,6 +27,10 @@ function score(meta:ExternalCandidateMetadata,order:string[]):CandidateScore{
   if(meta.partCount>40){value-=15;reasons.push('very complex');}
   else if(meta.partCount>20){value-=5;reasons.push('complex');}
  }
+ if(meta.providerRank!==undefined){
+  const relevance=Math.max(0,12-meta.providerRank);
+  if(relevance){value+=relevance;reasons.push(`provider relevance #${meta.providerRank+1}`);}
+ }
  const index=order.indexOf(meta.collection);
  if(index>=0){const bonus=Math.max(0,10-index);if(bonus){value+=bonus;reasons.push('preferred collection');}}
  return {collection:meta.collection,name:meta.name,score:value,reasons};

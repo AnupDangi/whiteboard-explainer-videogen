@@ -6,7 +6,8 @@ import {visualSceneSchema,type Schema} from '../schemas.js';
 import {validateVisualScene} from './validate.js';
 import {directorPrompt} from './prompt-builder.js';
 import {resolveRepresentation,primitiveFallbackNote} from '../identity/representation.js';
-import {getAsset,canonicalAnchor} from '../assets/registry.js';
+import {getAsset,resolveAsset,canonicalAnchor} from '../assets/registry.js';
+import type {AssetDefinition} from '../assets/types.js';
 import {compileScene} from '../compiler/compile-scene.js';
 import {zoneRect} from '../compiler/zones.js';
 import {archetypePlacements} from '../compiler/archetypes.js';
@@ -49,7 +50,7 @@ function archetypeSort(model:VisualModel){const primary=model.candidateArchetype
 export function assetCandidates(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel){const selected=[model.candidateArchetypes[0]];return scene.requiredConceptIds.map(id=>{const concept=registry.find(c=>c.id===id)!;const decision=resolveRepresentation({id:concept.id,canonicalName:concept.canonicalName,aliases:concept.aliases,semanticType:concept.semanticType,visualFamily:concept.visualFamily},selected);return {conceptId:id,candidates:decision.candidates.map(c=>{const a=getAsset(c.id);return {id:a.id,aliases:a.aliases,anchors:Object.keys(a.anchors),semanticAnchorAliases:a.anchorAliases??{},states:Object.keys(a.states),archetypes:a.archetypes};}).sort(archetypeSort(model)),fallback:decision.fallback,representation:decision.representation,warnings:decision.warnings};});}
 export function representationWarnings(scene:SemanticScenePlan,registry:ConceptIdentity[],model:VisualModel):string[]{return assetCandidates(scene,registry,model).flatMap(c=>c.warnings);}
 /** Every initial or repaired direction passes this same teaching contract. */
-export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,allowedAssets:Set<string>,previous?:CompiledSceneV2):VisualSceneV2{
+export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,allowedAssets:Set<string>,previous?:CompiledSceneV2,catalog?:Record<string,AssetDefinition>):VisualSceneV2{
  const visual=validateVisualScene(raw,new Set(registry.map(c=>c.id)),new Set(previous?.objects.map(o=>o.id)));
  if(visual.id!==scene.id)throw new Error('Director changed scene identity');
  if(!mentalModel.candidateArchetypes.includes(visual.archetype))throw new Error('Director chose unavailable mental model');
@@ -101,14 +102,14 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
   /** Defence in depth for the resolver/compiler contract: an asset the selected
    *  archetype cannot carry must be rejected as a director choice (repairable
    *  once) rather than silently stripped by the compiler's fallback. */
-  for(const o of visual.objects)if(o.assetRef&&!getAsset(o.assetRef).archetypes.includes(visual.archetype))throw new Error(`${o.assetRef} does not support ${visual.archetype}; choose a candidate whose archetypes include it, or a semantic composition`);
+  for(const o of visual.objects)if(o.assetRef&&!resolveAsset(o.assetRef,catalog).archetypes.includes(visual.archetype))throw new Error(`${o.assetRef} does not support ${visual.archetype}; choose a candidate whose archetypes include it, or a semantic composition`);
  for(const id of scene.requiredConceptIds)if(!visual.objects.some(o=>o.conceptId===id))throw new Error(`Director omitted concept ${id}`);
  if(visual.beats.length!==scene.beats.length)throw new Error('Director changed beat count');
  for(const [i,b] of scene.beats.entries())if(visual.beats[i].id!==b.id||visual.beats[i].narration!==b.narrationDraft)throw new Error(`Director changed narration/beat ${b.id}`);
  for(const r of visual.relations)for(const ref of [r.from,r.to]){
   const object=visual.objects.find(o=>o.id===ref.objectId)!;
   if(object.assetRef)ref.anchor=canonicalAnchor(object.assetRef,ref.anchor);
-  const anchors=object.assetRef?Object.keys(getAsset(object.assetRef).anchors):['input','output','center','top','bottom'];
+  const anchors=object.assetRef?Object.keys(resolveAsset(object.assetRef,catalog).anchors):['input','output','center','top','bottom'];
   if(!anchors.includes(ref.anchor)){
    /** A named anchor the asset does not implement (the live model said
     *  'exterior') degrades to 'center' with a diagnostic, mirroring the
@@ -140,7 +141,7 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
      *  it, otherwise the wrong arc would render alongside a synthesized one. */
     const pairPresent=visual.relations.some(r=>{const a=visual.objects.find(o=>o.id===r.from.objectId),b=visual.objects.find(o=>o.id===r.to.objectId);return Boolean(a&&b&&((a.conceptId===required.fromConceptId&&b.conceptId===required.toConceptId)||(a.conceptId===required.toConceptId&&b.conceptId===required.fromConceptId)));});
     if(pairPresent)throw new Error(`Missing semantic relation ${required.id}: direction, type and target part are required`);
-    const anchorNames=to.assetRef?Object.keys(getAsset(to.assetRef).anchors):['input','output','center','top','bottom'];
+    const anchorNames=to.assetRef?Object.keys(resolveAsset(to.assetRef,catalog).anchors):['input','output','center','top','bottom'];
     const requested=required.targetAnchor?(to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor):required.targetAnchor):'center';
     /** Mirrors intent-adapter's relationType -> visualForm mapping. */
     const visualForm=required.relationType==='contains'||required.relationType==='part_of'?'containment':required.relationType==='flows_to'?'flow':required.relationType==='labels'?'leader':required.relationType==='compares_with'?'brace':'arrow';
@@ -159,7 +160,7 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
  }
  return visual;
 }
-export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:{candidates?:ReturnType<typeof assetCandidates>;sourceVisualIds?:string[];repairNotes?:string[];whiteboardPlan?:WhiteboardPlan;signal?:AbortSignal}):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
+export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdentity[],mentalModel:VisualModel,model:JsonModel,previous?:CompiledSceneV2,language?:string,resolved?:{candidates?:ReturnType<typeof assetCandidates>;sourceVisualIds?:string[];repairNotes?:string[];whiteboardPlan?:WhiteboardPlan;catalog?:Record<string,AssetDefinition>;signal?:AbortSignal}):Promise<{scene:VisualSceneV2;decisions:DirectionDecisions}>{
  const candidates=resolved?.candidates??assetCandidates(scene,registry,mentalModel),allowedAssets=new Set(candidates.flatMap(c=>c.candidates.map(a=>a.id)));
   /** The teaching contract the validator enforces, given to the model in the
    *  EXACT shape it must echo. Previously these were serialised into a sentence
@@ -186,10 +187,10 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
    const choice=candidates.find(c=>c.conceptId===o.conceptId);
    if(choice?.representation&&!o.assetRef){o.representation=o.representation??choice.representation;if(o.representation.family!==choice.representation.family)throw new Error('Representation family changed');o.primitiveRef='rectangle';}
   }
-  return {...result,scene:validateDirectedScene(result.scene,scene,registry,mentalModel,allowedAssets,previous)};
+  return {...result,scene:validateDirectedScene(result.scene,scene,registry,mentalModel,allowedAssets,previous,resolved?.catalog)};
  },{signal:resolved?.signal}) as {scene:VisualSceneV2;decisions:DirectionDecisions};
  // Deterministic geometry repair belongs to the compiler, never another model call.
- let compiled;try{compiled=compileScene(directed.scene,undefined,previous);}catch(e){
+ let compiled;try{compiled=compileScene(directed.scene,undefined,previous,resolved?.catalog);}catch(e){
    /** Phase 8: failed critical gates retain diagnostic partial artifacts. The
     *  directed geometry is dumped compactly so a layout wall can be analyzed
     *  without re-paying for the model call. */
@@ -199,7 +200,7 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
    let placementMap;try{placementMap=archetypePlacements(directed.scene);}catch{placementMap=new Map();}
    log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>{const rect=placementMap.get(o.id);const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(directed.scene.archetype);const w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;const zone=o.preferredZone??(o.role==='hero'?'center':'upper_left');return {id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef,root:!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support',placed:Boolean(rect),rect:rect?{x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.w),h:Math.round(rect.h)}:zoneRect(zone,w,h)};}),relations:directed.scene.relations.map(r=>`${r.from.objectId}->${r.to.objectId}:${r.relationType}:${r.visualForm}`),directedScene:directed.scene,compiledObjects:(e as {compiledObjects?:unknown}).compiledObjects??null},'error');
    throw stageFailure(e,'compile');}
- validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous);
+ validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous,resolved?.catalog);
   /** Post-compile integrity checks are owned by the representation resolver and
    *  the compiler, not by the director: the director cannot redraw pixels, and a
    *  repair call reproduced this failure byte-identically on the live run while

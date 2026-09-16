@@ -109,3 +109,23 @@ test('a complexity budget penalises busy glyphs and the cap is enforced', () => 
   assert.equal(rankCandidates(Array.from({length: 20}, (_, i) => candidate({name: `n${i}`})), 'balanced', {maxCandidates: 3}).ranked.length, 3);
   assert.throws(() => rankCandidates([], 'balanced', {maxCandidates: 0}), /maxCandidates/);
 });
+
+test('the provider’s own relevance order is preserved as a scoring signal', () => {
+  // Same collection, same style: only the provider's ranking distinguishes them.
+  const outcome = rankCandidates([
+    candidate({name: 'third', providerRank: 2}),
+    candidate({name: 'first', providerRank: 0}),
+    candidate({name: 'second', providerRank: 1}),
+  ], 'balanced');
+  assert.deepEqual(outcome.ranked.map(r => r.name), ['first', 'second', 'third']);
+  assert.ok(outcome.ranked[0].reasons.some(r => /provider relevance #1/.test(r)));
+});
+
+test('provider relevance cannot override a licence or collection refusal', () => {
+  const outcome = rankCandidates([
+    candidate({name: 'blocked-but-first', collection: 'openmoji', licenseId: 'CC-BY-SA-4.0', providerRank: 0}),
+    candidate({name: 'permitted-later', providerRank: 4}),
+  ], 'broad');
+  assert.deepEqual(outcome.ranked.map(r => r.name), ['permitted-later']);
+  assert.equal(outcome.rejected.length, 1);
+});
