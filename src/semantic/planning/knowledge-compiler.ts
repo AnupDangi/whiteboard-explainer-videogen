@@ -18,7 +18,7 @@ const en=(values:readonly string[]):Schema=>({type:'string',enum:values});
 const obj=(properties:Record<string,Schema>,optional:string[]=[]):Schema=>({type:'object',properties,required:Object.keys(properties).filter(k=>!optional.includes(k)),additionalProperties:false});
 const SEMANTIC_TYPES=['entity','material','process','state','quantity','equation','location','role'] as const;
 const concept=obj({key:id,canonicalName:str(120),aliases:arr(str(120),12),semanticType:en(SEMANTIC_TYPES),visualFamily:str(80),evidenceRefs:arr(id)},['visualFamily','evidenceRefs','aliases']);
-const prerequisite=obj({before:id,after:id,reason:str(160)});
+const prerequisite=obj({before:id,after:id,reason:str(160)},['reason']);
 const mechanism=obj({id,statement:str(400),conceptIds:arr(id,16,1),requiresStateChange:{type:'boolean'},evidenceRefs:arr(id)});
 const claim=obj({id,statement:str(400),critical:{type:'boolean'},evidenceRefs:arr(id)});
 const quantity=obj({conceptKey:id,value:str(120),evidenceRefs:arr(id)});
@@ -226,7 +226,7 @@ export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
   if(snapped){log('v2.evidence.snapped',{id:item.id,paraphrase:item.quote.slice(0,80),source:snapped.slice(0,80)});item.quote=snapped;continue;}
   throw new Error(`Fabricated evidence: ${item.id} ("${item.quote.slice(0,80)}") is not present in the ingested source; quote the source verbatim.`);
  }
- const graph:ConceptGraph={version:1,concepts,aliases,prerequisites:value.prerequisites.filter((edge,index,all)=>all.findIndex(other=>other.before===edge.before&&other.after===edge.after)===index),mechanisms:value.mechanisms.map(m=>({...m,conceptIds:[...new Set(m.conceptIds)],evidenceRefs:[...new Set(m.evidenceRefs)]})),claims:value.claims.map(c=>({id:c.id,statement:c.statement,critical:c.critical,evidenceRefs:[...new Set(c.evidenceRefs)]})) satisfies KnowledgeClaim[] as KnowledgeClaim[],terminology:Object.fromEntries(knownTerminology.map(t=>[t.key,{definition:t.definition}])),quantities:value.quantities.map(q=>({conceptId:q.conceptKey,value:q.value,evidenceRefs:[...new Set(q.evidenceRefs)]})),evidence:value.evidence.map(e=>({id:e.id,sourceId:e.sourceId??'source',quote:e.quote,section:e.section})),sourceVisuals:[]};
+ const graph:ConceptGraph={version:1,concepts,aliases,prerequisites:value.prerequisites.filter((edge,index,all)=>all.findIndex(other=>other.before===edge.before&&other.after===edge.after)===index).map(edge=>({...edge,reason:edge.reason||'required by the source'})),mechanisms:value.mechanisms.map(m=>({...m,conceptIds:[...new Set(m.conceptIds)],evidenceRefs:[...new Set(m.evidenceRefs)]})),claims:value.claims.map(c=>({id:c.id,statement:c.statement,critical:c.critical,evidenceRefs:[...new Set(c.evidenceRefs)]})) satisfies KnowledgeClaim[] as KnowledgeClaim[],terminology:Object.fromEntries(knownTerminology.map(t=>[t.key,{definition:t.definition}])),quantities:value.quantities.map(q=>({conceptId:q.conceptKey,value:q.value,evidenceRefs:[...new Set(q.evidenceRefs)]})),evidence:value.evidence.map(e=>({id:e.id,sourceId:e.sourceId??'source',quote:e.quote,section:e.section})),sourceVisuals:[]};
  return graph;
 }
 
