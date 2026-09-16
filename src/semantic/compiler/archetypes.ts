@@ -17,7 +17,12 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
  }else if(scene.archetype==='cycle'){
   if(roots.length<3||roots.length>6)throw new Error('Cycle requires 3–6 primary representations');
   const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback),order:string[]=[];let id=[...ids].sort()[0];
-  for(let i=0;i<roots.length;i++){if(order.includes(id))throw new Error('Cycle must visit every primary representation');order.push(id);const next=edges.filter(e=>e.from.objectId===id);if(next.length!==1)throw new Error('Cycle requires one outgoing relation per primary representation');id=next[0].to.objectId;}
+ for(let i=0;i<roots.length;i++){
+  if(order.includes(id))throw new Error(`Cycle must visit every primary representation (walk revisits ${id} before completing the ring)`);
+  order.push(id);
+  const next=edges.filter(e=>e.from.objectId===id);
+  if(next.length!==1)throw new Error(`Cycle requires one outgoing relation per primary representation (${id} has ${next.length} outgoing relations within the cycle; name the offenders so the owner can repair)`);
+  id=next[0].to.objectId;}
   if(id!==order[0])throw new Error('Cycle must close');order.forEach((id,i)=>{const a=-Math.PI/2+i*Math.PI*2/order.length;placements.set(id,{x:640+380*Math.cos(a)-60,y:340+155*Math.sin(a)-45,w:120,h:90});});
  }else if(scene.archetype==='transformation'||scene.archetype==='comparison'){
   if(roots.length<2||roots.length>4)throw new Error('Transformation/comparison requires 2–4 primary representations');
