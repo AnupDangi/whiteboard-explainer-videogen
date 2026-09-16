@@ -95,7 +95,6 @@ export function validateVisualScene(input:unknown,conceptIds?:Set<string>,previo
     if(!a.objectIds.length&&!a.relationIds.length)throw new Error('Action has no target');
     if(['trace','flow'].includes(a.type)&&(!a.relationIds.length||a.objectIds.length))throw new Error('Trace/flow require relation targets only');
     if(['draw','reveal','fill'].includes(a.type)&&(!a.objectIds.length||a.relationIds.length))throw new Error('Object action requires object targets only');
-    if(a.type==='move'&&!a.destination)throw new Error('Move requires destination');
     if(['replace','morph'].includes(a.type)&&!a.toState)throw new Error('State action requires toState');
     for(const id of a.objectIds){const o=s.objects.find(x=>x.id===id)!;for(const state of [a.fromState,a.toState])if(state&&!o.allowedStates.includes(state))throw new Error(`Unsupported state: ${state}`);}
   }

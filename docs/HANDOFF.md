@@ -10,8 +10,20 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **S1** failure ownership | `7041c86` | `classifyFailure` + harness ownership gate; preflight; `test/harness-routing.test.js` |
 | **S1b** resolver/compiler contract | `a07bce9` | candidates scoped to the selected archetype; `test/representation-archetype.test.js` |
 | **S1c** narrated end-to-end | `ecff8cb` | four more contract defects fixed; **a narrated 2-scene lesson now completes** |
+| **V2 default** | `08e08a5` | semantic is the default; V1 frozen legacy (not deleted) |
+| **S3** contract truthfulness | *(this commit)* | static relations render; unimplemented motions removed; continuity realisation documented + tested |
 
-Tests: **438/438**. Code graph: **1,740 nodes / 3,740 edges** (`graphify update . --force`).
+Tests: **442/442**. Code graph: **1,740 nodes / 3,740 edges** (`graphify update . --force`).
+
+### S3 — advertised capability now equals runtime capability
+
+| change | before | after |
+|---|---|---|
+| relations with no animating action | silently not drawn (`relations.ts` returned early) | **VISIBLE_STATIC** — drawn fully once both endpoints are visible |
+| `move` / `split` / `merge` | in the prompt + schema, **no renderer branch** | removed from `MOTIONS`; rejected by both schemas; dead `destination` field deleted |
+| continuity actions | computed + validated, renderer read none | realisation documented in `ContinuityAction` and proven by test for KEEP/REMOVE/REINTRODUCE |
+
+Live verification (same prompt, 2 scenes, narrated): complete, 2/2 exported, 37.4s + 29.4s = 66.8s, 6 calls, $0.069. The scene now draws **4 flow relations** where the previous run drew 1 arrow.
 
 ### First complete narrated lesson (live paid route)
 
@@ -149,6 +161,6 @@ Synthesis rules, both recorded: an *entirely absent* required relation is realiz
 
 The lesson completes but reads thin: on the same run, four of five concepts render as bare label pills because **no asset exists for `abduction`, `axiom`, `induction`, `deduction`**. That is the 43-asset static-registry ceiling, not a layout or routing defect. Relations also render only when an action animates them (`renderer/relations.ts:8`), so the graph is richer than the picture.
 
-### Next: S3 (contract truthfulness), then S2
+### Next: S2 (heal audit + visibility), then the icon system
 
-S3 makes runtime match the advertised contract: static relations render, unsupported motions are rejected, continuity transitions are consumed or rejected, unsupported archetypes fail early. It is the largest remaining visual-quality lever per unit of work, and it completes the unimplemented Phase 4 clause of `PLAN_TO_IMPLEMENT.md`. S2 (heal inventory + visibility) follows; the icon system (P0–P2, no network) is the capability ceiling after that.
+S3 closed the advertised-vs-implemented gap. Next is **S2**: produce the HEAL INVENTORY, instrument `healSchema` (`schemas.ts:54-129` is still 100% silent), emit `{stage,healType,reason,before,after}` for every SEMANTIC heal, and freeze new heal rules. Then the icon system (P0–P2, no network) — the actual capability ceiling, since four of five concepts on the live lesson still render as bare label pills.

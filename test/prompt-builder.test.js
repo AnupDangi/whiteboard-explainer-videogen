@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {teachingPrompt,directorPrompt,criticRepairPrompt,TEACHER_VOICE_RULES,MATH_TEACHING_RULES,STYLE_FAMILY,assertPromptVocabulary} from '../dist/src/semantic/planning/prompt-builder.js';
 import {lintTeacherVoice} from '../dist/src/semantic/planning/validate.js';
+import {MOTIONS} from '../dist/src/semantic/types.js';
 
 test('teaching prompt contains pedagogy, vocabulary and source rules',()=>{
   const p=teachingPrompt({maxScenes:3,hasSource:true});
@@ -18,7 +19,7 @@ test('teaching prompt forbids inventing sources when absent',()=>{
 });
 test('director prompt carries richness, style and archetype guidance',()=>{
   const p=directorPrompt({archetype:'equation_walkthrough'});
-  assert.ok(p.includes('Supported actions: draw,reveal,trace,flow,move,fill,highlight,pulse,split,merge,morph,replace,fade'));
+  assert.ok(p.includes(`Supported actions: ${MOTIONS.join(',')}`),'the prompt must advertise exactly the implemented motions');
   assert.ok(p.includes(STYLE_FAMILY));
   assert.ok(p.includes('equation_walkthrough archetype'));
   assert.ok(p.includes('persistent context visible'));

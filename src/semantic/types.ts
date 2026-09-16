@@ -2,7 +2,11 @@ import type {RepresentationSpec,RepresentationProvenance} from './representation
 /** V2 semantic contracts. Models never own pixel geometry. */
 export const ARCHETYPES = ['simple_explanation','numbered_steps','flow','cause_effect','branch','convergence','comparison','hierarchy','timeline','cycle','structural_diagram','cross_section','spatial_process','transformation','state_machine','equation_walkthrough','matrix_operation','chart','trajectory'] as const;
 export type VisualArchetype = typeof ARCHETYPES[number];
-export const MOTIONS = ['draw','reveal','trace','flow','move','fill','highlight','pulse','split','merge','morph','replace','fade'] as const;
+/** Advertised motions must equal implemented motions. `move`, `split` and
+ *  `merge` were advertised in the prompt and accepted by the schema, but the
+ *  renderer's state machine has no branch for them, so an emitted one simply
+ *  timed its beat and animated nothing. They are removed until implemented. */
+export const MOTIONS = ['draw','reveal','trace','flow','fill','highlight','pulse','morph','replace','fade'] as const;
 export type MotionKind = typeof MOTIONS[number];
 export const ROLES = ['hero','support','structure','material','data','equation','annotation','label','decorative_support'] as const;
 export const ZONES = ['center','upper_left','upper_right','lower_left','lower_right','left','right','bottom','top'] as const;
@@ -25,8 +29,18 @@ export interface ObjectAnchorRef {objectId:string;anchor:string}
 export interface VisualObject {representation?:RepresentationSpec;representationProvenance?:RepresentationProvenance;id:string;conceptId?:string;label:string;role:typeof ROLES[number];assetRef?:AssetRef;primitiveRef?:'label'|'rectangle'|'circle'|'equation';parentId?:string;children:string[];state:ObjectState;allowedStates:ObjectState[];importance:'primary'|'secondary'|'tertiary';preferredZone?:LayoutZone;collisionPolicy:CollisionPolicy}
 export interface VisualRelation {layoutFeedback?:boolean;id:string;from:ObjectAnchorRef;to:ObjectAnchorRef;relationType:typeof RELATIONS[number];visualForm:'arrow'|'flow'|'leader'|'brace'|'containment'|'none';label?:string}
 export interface SpokenAnchor {text:string;occurrence:number}
-export interface VisualAction {id:string;type:MotionKind;objectIds:string[];relationIds:string[];anchor?:SpokenAnchor;durationMs:number;leadMs:number;easing:EasingKind;fromState?:ObjectState;toState?:ObjectState;destination?:LayoutZone}
+export interface VisualAction {id:string;type:MotionKind;objectIds:string[];relationIds:string[];anchor?:SpokenAnchor;durationMs:number;leadMs:number;easing:EasingKind;fromState?:ObjectState;toState?:ObjectState}
 export interface VisualBeat {id:string;narration:string;actions:VisualAction[];intentionalPause?:string}
+/** How each continuity action is realised at runtime — no action may be
+ *  computed, validated and then ignored:
+ *   KEEP        persistent object, visible from t=0 (continuity.keepFromPrevious)
+ *   REMOVE      the concept is absent from this scene, so nothing is drawn
+ *   REINTRODUCE the concept returns as a new object with a reveal/draw action
+ *   TRANSFORM   a state-changing action (morph/replace) reaches toState
+ *   REPLACE     the object is drawn as toRepresentation
+ *   MOVE        the object is kept and placed at its newly computed position
+ *  MOVE expresses the planner's position intent, not an animated tween: the
+ *  renderer has no positional interpolation, and none is promised. */
 export type ContinuityAction = 'KEEP'|'MOVE'|'TRANSFORM'|'REPLACE'|'REMOVE'|'REINTRODUCE';
 export interface ContinuityDecision {conceptId:string;action:ContinuityAction;fromRepresentation?:string;toRepresentation?:string;fromState?:ObjectState;toState?:ObjectState}
 export interface SceneContinuity {keepFromPrevious:string[];prepareForNext:string[];transitions?:ContinuityDecision[]}

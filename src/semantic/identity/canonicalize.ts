@@ -111,7 +111,6 @@ export function canonicalizeVisualScene(
       easing: a.easing,
       ...(a.fromState ? {fromState: a.fromState} : {}),
       ...(a.toState ? {toState: a.toState} : {}),
-      ...(a.destination ? {destination: a.destination} : {}),
     })),
     ...(b.intentionalPause ? {intentionalPause: b.intentionalPause} : {}),
   }));

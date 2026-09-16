@@ -31,5 +31,5 @@ ap.conceptKeys=array(key,32);ap.relationRefs=array(relationRefSchema);
 export const resolvedDirectionSchema=object({
  title:text,teachingGoal:text,mentalModel:text,archetype:{type:'string',enum:ARCHETYPES},
  objects:array(semanticObjectSchema,32,1),relations:array(relationRefSchema),
- beats:array(object({key,narration:text,actions:array(object(ap,['anchor','fromState','toState','destination']),32,1),intentionalPause:text},['intentionalPause']),24,1)
+ beats:array(object({key,narration:text,actions:array(object(ap,['anchor','fromState','toState']),32,1),intentionalPause:text},['intentionalPause']),24,1)
 });
