@@ -20,8 +20,8 @@ Select an offline fixture and generate; press Play after the first scene arrives
 
 Selected by `VISUAL_PIPELINE` (`src/semantic/pipeline.ts:4`):
 
-- `explainer` (default) — the original node/edge planner → `explainer/planner.ts`.
-- `semantic` — the V2 teaching pipeline → `planning/generate.ts`. **This is the one under active research.**
+- **`semantic` (default)** — the V2 teaching pipeline → `planning/generate.ts`. All current work targets this.
+- `explainer` — the original node/edge planner → `explainer/planner.ts`. **FROZEN LEGACY**: kept as the comparison baseline and documented fallback until the migration gates in `PLAN_TO_IMPLEMENT.md` pass, but it receives no new capability work. Select it with `VISUAL_PIPELINE=explainer`.
 
 V2 runs four model calls per scene (knowledge → teaching → architect → director) and compiles everything else deterministically. Models emit validated semantic data only; geometry is built by trusted code and rendered by a pure `renderSVG(scene, timeMs)` shared by browser and export.
 

@@ -28,9 +28,9 @@ src/
 
 ## Which pipeline am I looking at?
 
-- `explainer` is the release default and powers the main UI (`public/index.html`, `public/app.ts`).
-- `semantic` is the V4 research pipeline (`public/semantic.html`, `public/semantic-viewer.ts`).
-  It is enabled with `VISUAL_PIPELINE=semantic`; `v2`/`v1` are accepted as legacy aliases.
+- `semantic` is the default and the active research pipeline (`public/semantic.html`, `public/semantic-viewer.ts`).
+- `explainer` is **FROZEN LEGACY**: the comparison baseline and documented fallback. It powers the old UI
+  (`public/index.html`, `public/app.ts`) and is selected explicitly with `VISUAL_PIPELINE=explainer`; `v2`/`v1`/`classic` are accepted as legacy aliases.
 
 ## Rules
 

@@ -15,4 +15,6 @@ This is Anup Dangi's independent research prototype, not Lamina Labs source code
 11. The user welcomes future-agent continuation; this file is a handoff, not a request to spawn agents automatically.
 12. Use the code graph for orientation before reading files: `graphify` MCP tools (wired in `opencode.json`) or `graphify query "<question>"`. Regenerate it after any wave that touches `src/` with `graphify update . --force`, and record the node/edge delta in `docs/HANDOFF.md`. The graph proves *structure* (extracted from syntax), not semantics — confirm behavioural claims by reading the file.
 
+13. The `semantic` (V2) pipeline is the default and the only one receiving new work. `explainer` (V1) is **FROZEN LEGACY**: security and critical-regression fixes only, no new capability work, and it is not deleted until the migration gates in `PLAN_TO_IMPLEMENT.md` pass. Do not spread effort across both pipelines.
+
 Keep this a focused local research application. Authentication, billing, a cloud deployment and an infinite canvas editor are outside v0.1 scope.

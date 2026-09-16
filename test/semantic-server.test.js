@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {makeServer} from '../dist/src/server.js';
 import {visualPipeline} from '../dist/src/semantic/pipeline.js';
-test('explainer is the default; semantic flag is accepted with aliases',()=>{assert.equal(visualPipeline({}),'explainer');assert.equal(visualPipeline({VISUAL_PIPELINE:'semantic'}),'semantic');assert.equal(visualPipeline({VISUAL_PIPELINE:'v2'}),'semantic');assert.equal(visualPipeline({VISUAL_PIPELINE:'classic'}),'explainer');assert.equal(visualPipeline({VISUAL_PIPELINE:'v1'}),'explainer');assert.throws(()=>visualPipeline({VISUAL_PIPELINE:'bogus'}));});
+test('semantic is the default; explainer is explicit through aliases',()=>{assert.equal(visualPipeline({}),'semantic');assert.equal(visualPipeline({VISUAL_PIPELINE:'explainer'}),'explainer');assert.equal(visualPipeline({VISUAL_PIPELINE:'v2'}),'semantic');assert.equal(visualPipeline({VISUAL_PIPELINE:'classic'}),'explainer');assert.equal(visualPipeline({VISUAL_PIPELINE:'v1'}),'explainer');assert.throws(()=>visualPipeline({VISUAL_PIPELINE:'bogus'}));});
 test('semantic preview serves the canonical browser renderer and validates compile requests',async()=>{
  const root=await mkdtemp(join(tmpdir(),'semantic-server-')),old=process.env.VISUAL_PIPELINE;process.env.VISUAL_PIPELINE='semantic';const {server,store}=makeServer({dataRoot:root});if(old===undefined)delete process.env.VISUAL_PIPELINE;else process.env.VISUAL_PIPELINE=old;
  try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});const base=`http://127.0.0.1:${server.address().port}`;
