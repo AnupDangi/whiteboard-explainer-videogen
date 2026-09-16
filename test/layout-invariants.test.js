@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {compileScene} from '../dist/src/semantic/compiler/compile-scene.js';
+import {directionToScene} from '../dist/src/semantic/identity/intent-adapter.js';
 import {renderSVG} from '../dist/src/semantic/renderer/render-svg.js';
 import {findCollisions, contains} from '../dist/src/semantic/compiler/collisions.js';
 import {visualBounds} from '../dist/src/semantic/compiler/text.js';
@@ -99,14 +100,14 @@ for (const archetype of LAYERED) {
         assertSeparated(compileScene(scene(archetype, count, labels)), `${archetype} ${count} flat ${labelKind}`);
       });
 
-      if (count <= 4) {
+      if (count <= 6) {
         test(`layered layout separates ${count} nodes: ${archetype} / ${labelKind} labels / chained ranks`, () => {
           assertSeparated(compileScene(scene(archetype, count, labels, {chain: true})), `${archetype} ${count} chain ${labelKind}`);
         });
       } else {
         test(`layered layout refuses a ${count}-deep chain instead of misplacing it: ${archetype}`, () => {
           assert.throws(() => compileScene(scene(archetype, count, labels, {chain: true})),
-            /exceeds four readable layers/,
+            /exceeds \d+ readable layers/,
             'a chain deeper than the readability cap must fail loudly, not silently overlap');
         });
       }
@@ -119,3 +120,69 @@ for (const archetype of LAYERED) {
       'an unrenderable hero label must fail loudly rather than ship a truncated hero');
   });
 }
+
+/** A child is placed INSIDE its parent's rect, so a child left on the default
+ *  `forbid` collision policy is an unconditional illegal overlap: only
+ *  contain/overlay/allow/touch short-circuit the collision check. Containment
+ *  parenting is implicit in the direction contract, so the policy is normalised
+ *  when the parent is assigned. Measured on a live run: `object_axiom` was a
+ *  child of the hero with `forbid`, which failed a structural_diagram scene. */
+test('a parented child is normalised to a relative collision policy and never overlaps its parent', () => {
+  const direction = {
+    archetype: 'structural_diagram', title: 'Grounding', teachingGoal: 'g', mentalModel: 'm',
+    objects: [
+      {conceptKey: 'world-model', label: 'World Model', role: 'hero', state: 'neutral', allowedStates: ['neutral'], importance: 'primary', collisionPolicy: 'forbid', children: ['axiom']},
+      {conceptKey: 'axiom', label: 'Axiom', role: 'support', state: 'neutral', allowedStates: ['neutral'], importance: 'secondary', collisionPolicy: 'forbid', children: []},
+      {conceptKey: 'induction', label: 'Induction', role: 'support', state: 'neutral', allowedStates: ['neutral'], importance: 'secondary', collisionPolicy: 'forbid', preferredZone: 'lower_right', children: []},
+    ],
+    relations: [
+      {fromConcept: 'world-model', relation: 'contains', toConcept: 'axiom'},
+      {fromConcept: 'world-model', relation: 'activates', toConcept: 'induction'},
+    ],
+    beats: [{key: 'beat_1', narration: 'probe', actions: [
+      {type: 'reveal', durationMs: 600, leadMs: 0, easing: 'linear', conceptKeys: ['world-model'], relationRefs: []},
+      {type: 'reveal', durationMs: 600, leadMs: 0, easing: 'linear', conceptKeys: ['axiom'], relationRefs: []},
+      {type: 'reveal', durationMs: 600, leadMs: 0, easing: 'linear', conceptKeys: ['induction'], relationRefs: []},
+    ]}],
+  };
+  const semantic = {id: 'grounding', beats: [{id: 'beat_1', transform: []}], requiredRelations: []};
+  const scene = directionToScene(direction, semantic);
+  const child = scene.objects.find(o => o.conceptId === 'axiom');
+  assert.equal(child.parentId, 'object_world-model');
+  assert.equal(child.collisionPolicy, 'contain', 'a parented child must not stay on forbid');
+  assertSeparated(compileScene(scene), 'containment child');
+});
+
+/** Continuity reuses a root's previous geometry verbatim, but a child's geometry
+ *  is derived from its parent. Reusing a child's rect places it outside a parent
+ *  that moved or resized, and children are excluded from every repair pass, so
+ *  the scene failed with an unrepairable containment violation. Measured on
+ *  scene 2 of a narrated run. */
+test('a kept child is re-derived from its parent instead of reusing moved geometry', () => {
+  const build = (parentZone, keep = []) => ({
+    version: 2, id: 'cont', title: 'Continuity', teachingGoal: 'g', mentalModel: 'm',
+    archetype: 'structural_diagram',
+    objects: [
+      {id: 'p', label: 'Parent', role: 'hero', children: ['c'], state: 'neutral', allowedStates: ['neutral'], importance: 'primary', preferredZone: parentZone, collisionPolicy: 'forbid', primitiveRef: 'rectangle'},
+      {id: 'c', label: 'Child', role: 'support', parentId: 'p', children: [], state: 'neutral', allowedStates: ['neutral'], importance: 'secondary', collisionPolicy: 'contain', primitiveRef: 'label'},
+    ],
+    relations: [{id: 'r', from: {objectId: 'p', anchor: 'center'}, to: {objectId: 'c', anchor: 'center'}, relationType: 'contains', visualForm: 'containment'}],
+    beats: [{id: 'b', narration: 'probe', actions: [
+      {id: 'a1', type: 'reveal', objectIds: ['p'], relationIds: [], durationMs: 600, leadMs: 0, easing: 'linear'},
+      {id: 'a2', type: 'reveal', objectIds: ['c'], relationIds: [], durationMs: 600, leadMs: 0, easing: 'linear'},
+    ]}],
+    continuity: {keepFromPrevious: keep, prepareForNext: []},
+  });
+  const previous = compileScene(build('center'));
+  // Simulate the parent having moved/resized: the previous child rect is now
+  // outside its parent, which is exactly what verbatim reuse would restore.
+  const stale = previous.objects.find(o => o.id === 'c');
+  stale.x = 1200; stale.y = 100;
+  const compiled = compileScene(build('center', ['c']), undefined, previous);
+  assert.equal(findCollisions(compiled.objects).length, 0, 'a kept child must not overlap its parent');
+  const parent = compiled.objects.find(o => o.id === 'p');
+  const child = compiled.objects.find(o => o.id === 'c');
+  assert.ok(contains(parent, child), 'the child must remain inside its parent');
+  assert.ok(compiled.diagnostics.some(d => d.includes('re-derived child c')),
+    'dropping the reused child geometry must be recorded');
+});

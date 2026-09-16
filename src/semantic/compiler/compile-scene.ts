@@ -42,7 +42,13 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
    const py=zone.includes('upper')?.18+[0,.34][slot%2]! as number:zone.includes('lower')?.58+[0,.26][slot%2]! as number:.4;
    rect={x:parent.x+(parent.w-cw)*px,y:parent.y+(parent.h-ch)*Math.min(1,py),w:cw,h:ch};if(o.collisionPolicy==='touch')rect.x=parent.x+parent.w;
   }
-  const old=scene.continuity.keepFromPrevious.includes(o.id)?previous?.objects.find(x=>x.id===o.id):undefined;
+  /** A child's geometry is derived from its parent, so reusing the previous
+   *  scene's rect would place it outside a parent that has moved or resized —
+   *  an illegal containment violation with no repair path (children are excluded
+   *  from every repair pass). Only roots may persist their geometry verbatim.
+   *  Measured: scene 2 of a narrated run failed on exactly this. */
+  if(parent&&scene.continuity.keepFromPrevious.includes(o.id))diagnostics.push(`continuity: re-derived child ${o.id} from its parent`);
+  const old=!parent&&scene.continuity.keepFromPrevious.includes(o.id)?previous?.objects.find(x=>x.id===o.id):undefined;
   if(old){if(old.conceptId!==o.conceptId||old.assetRef!==o.assetRef)throw new Error('Persistent identity changed');rect={x:old.x,y:old.y,w:old.w,h:old.h};}
   const baseFontSize=scene.archetype==='numbered_steps'?24:scene.archetype==='equation_walkthrough'?24:labelOnly?22:20;
   const fitted=fitLabel(o.label,labelOnly?rect.w:Math.max(rect.w,180),baseFontSize);
@@ -111,7 +117,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
     }
    }
   }
- const collisions=findCollisions(objects);if(collisions.length)throw new Error(`Illegal overlap: ${collisions.join(', ')}`);
+ const collisions=findCollisions(objects);if(collisions.length)throw Object.assign(new Error(`Illegal overlap: ${collisions.join(', ')}`),{compiledObjects:objects.map(o=>({id:o.id,role:o.role,parentId:o.parentId,collisionPolicy:o.collisionPolicy,x:Math.round(o.x),y:Math.round(o.y),w:o.w,h:o.h}))});
  for(const o of objects)if(!contains(BOARD.safe,visualBounds(o)))throw new Error(`Canvas escape: ${o.id}`);
  resolveAnchors();
  // Non-directional symbols expose facing flow ports; physical subpart anchors stay fixed.

@@ -23,7 +23,13 @@ export function directionToScene(direction:any,semantic:SemanticScenePlan):Visua
    if(parent&&child&&!child.parentId)child.parentId=parent.id;
   }
  }
- if(dropped.length)log('v2.direction.parenting-heal',{scene:semantic.id,dropped:[...new Set(dropped)],archetype:direction.archetype});
+  if(dropped.length)log('v2.direction.parenting-heal',{scene:semantic.id,dropped:[...new Set(dropped)],archetype:direction.archetype});
+  /** Parenting can arrive two ways (a `parentConceptKey`, or a parent's
+   *  `children` list). The compiler places a child INSIDE its parent's rect, so
+   *  a child left on the default `forbid` policy is an unconditional illegal
+   *  overlap — only contain/overlay/allow/touch short-circuit the collision
+   *  check. Normalise every parented object in one place. Recorded. */
+  for(const o of objects)if(o.parentId&&o.collisionPolicy==='forbid'){o.collisionPolicy='contain';log('v2.direction.collision-policy-heal',{scene:semantic.id,object:o.id,parent:o.parentId,to:'contain'},'warn');}
  /** An object with neither asset nor primitive is not renderable: a labeled
   *  concept degrades to the tier-7 labeled abstraction, an unlabeled one to a
   *  rectangle (recorded), instead of failing the stage. */

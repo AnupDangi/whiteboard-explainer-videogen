@@ -16,6 +16,22 @@ test('teaching contract rejects reversed relationships, wrong types, parts and c
   const s=fresh();mutate(s);assert.throws(()=>validate(s));
  }
 });
+test('an entirely absent required relation is synthesized, a reversed one still fails',()=>{
+ const required=semantic.requiredRelations[0];
+ const inScene=(s,r,req)=>{const a=s.objects.find(o=>o.id===r.from.objectId),b=s.objects.find(o=>o.id===r.to.objectId);return Boolean(a&&b&&a.conceptId===req.fromConceptId&&b.conceptId===req.toConceptId&&r.relationType===req.relationType);};
+ const absent=fresh();
+ const at=absent.relations.findIndex(r=>inScene(absent,r,required));
+ assert.ok(at>=0,'fixture must contain the required relation to remove it');
+ const removed=absent.relations[at].id;
+ absent.relations.splice(at,1);
+ for(const beat of absent.beats)beat.actions=beat.actions.filter(action=>{action.relationIds=action.relationIds.filter(id=>id!==removed);return action.objectIds.length>0||action.relationIds.length>0;});
+ const result=validate(absent);
+ const synthesized=result.relations.find(r=>r.id===`relation_synth_${required.id}`);
+ assert.ok(synthesized,'a required relation that is entirely absent must be realized by the harness');
+ assert.equal(synthesized.relationType,required.relationType);
+ assert.ok(result.objects.some(o=>o.id===synthesized.from.objectId));
+ assert.ok(result.objects.some(o=>o.id===synthesized.to.objectId));
+});
 test('ID canonicalization preserves relation anchors, forms and object topology',()=>{
  const s=fresh(),result=canonicalizeVisualScene(s.id,s,plan.conceptRegistry);
  for(const [i,r] of result.relations.entries()){

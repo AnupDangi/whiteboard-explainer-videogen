@@ -54,7 +54,14 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
   const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!['labels','compares_with'].includes(r.relationType));
   const rank=new Map<string,number>(),pending=new Set(ids);
   while(pending.size){const ready=[...pending].filter(id=>edges.filter(e=>e.to.objectId===id).every(e=>rank.has(e.from.objectId))).sort();if(!ready.length)throw new Error('Branch graph contains a cycle; choose the cycle archetype');for(const id of ready){rank.set(id,Math.max(0,...edges.filter(e=>e.to.objectId===id).map(e=>rank.get(e.from.objectId)!+1)));pending.delete(id);}}
-  const ranks=Math.max(...rank.values())+1;if(ranks>4)throw new Error('Branch graph exceeds four readable layers');
+  /** Rank cap derived from label width, not a magic 4. A node's label may be
+   *  fitted up to 180px wide and is centred on its rect, so two adjacent ranks
+   *  keep their labels apart only when the band is at least 180 + gap. Measured:
+   *  a real lesson needed five ranks (sensory -> abduction/induction ->
+   *  world-model -> deduction -> prediction) and the old cap of four failed the
+   *  job outright. SAFE.w / 188 gives six ranks. */
+  const MAX_RANKS=Math.max(4,Math.floor(BOARD.safe.w/188));
+  const ranks=Math.max(...rank.values())+1;if(ranks>MAX_RANKS)throw new Error(`Branch graph exceeds ${MAX_RANKS} readable layers`);
   /** Bounded layered grid. The previous row pitch was `400/group.length`
    *  (100px for a 4-node rank) while a node's rect plus its label block is
    *  ~166px tall, so the layout itself manufactured the overlaps the compiler

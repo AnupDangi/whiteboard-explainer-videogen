@@ -118,14 +118,36 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
   }
  }
  for(const required of scene.requiredRelations){
-  const relation=visual.relations.find(r=>{
+  let relation=visual.relations.find(r=>{
    const from=visual.objects.find(o=>o.id===r.from.objectId)!,to=visual.objects.find(o=>o.id===r.to.objectId)!;
    if(from.conceptId!==required.fromConceptId||to.conceptId!==required.toConceptId||r.relationType!==required.relationType)return false;
    if(!required.targetAnchor)return true;
    const target=to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor):required.targetAnchor;
    return r.to.anchor===target;
   });
-  if(!relation)throw new Error(`Missing semantic relation ${required.id}: direction, type and target part are required`);
+   /** A required relation is part of the teaching contract — the plan asserts
+    *  the lesson needs it — so the harness realizes it when the direction omits
+    *  it, exactly as cycle ring synthesis closes a ring. Measured: the director
+    *  omitted a required relation on both scenes of a live run and the single
+    *  targeted repair did not converge, failing the job. Recorded, never silent;
+    *  relation coverage is a migration gate (100%). */
+   if(!relation){
+    const from=visual.objects.find(o=>o.conceptId===required.fromConceptId),to=visual.objects.find(o=>o.conceptId===required.toConceptId);
+    if(!from||!to)throw new Error(`Missing semantic relation ${required.id}: a concept object is absent`);
+    /** Only a relation *entirely absent* between the two concepts is synthesized.
+     *  A relation that is present but reversed, mistyped or mis-anchored is a
+     *  real direction error and stays strict: the one targeted repair must fix
+     *  it, otherwise the wrong arc would render alongside a synthesized one. */
+    const pairPresent=visual.relations.some(r=>{const a=visual.objects.find(o=>o.id===r.from.objectId),b=visual.objects.find(o=>o.id===r.to.objectId);return Boolean(a&&b&&((a.conceptId===required.fromConceptId&&b.conceptId===required.toConceptId)||(a.conceptId===required.toConceptId&&b.conceptId===required.fromConceptId)));});
+    if(pairPresent)throw new Error(`Missing semantic relation ${required.id}: direction, type and target part are required`);
+    const anchorNames=to.assetRef?Object.keys(getAsset(to.assetRef).anchors):['input','output','center','top','bottom'];
+    const requested=required.targetAnchor?(to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor):required.targetAnchor):'center';
+    /** Mirrors intent-adapter's relationType -> visualForm mapping. */
+    const visualForm=required.relationType==='contains'||required.relationType==='part_of'?'containment':required.relationType==='flows_to'?'flow':required.relationType==='labels'?'leader':required.relationType==='compares_with'?'brace':'arrow';
+    relation={id:`relation_synth_${required.id}`,from:{objectId:from.id,anchor:'center'},to:{objectId:to.id,anchor:anchorNames.includes(requested)?requested:'center'},relationType:required.relationType,visualForm} as VisualSceneV2['relations'][number];
+    visual.relations.push(relation);
+    log('v2.director.relation-synthesis',{scene:scene.id,relation:required.id,from:from.id,to:to.id,type:required.relationType,anchor:relation.to.anchor},'warn');
+   }
   for(const b of scene.beats.filter(b=>b.relationFocus.includes(required.id))){
    const beat=visual.beats.find(v=>v.id===b.id)!;
    if(beat.actions.some(a=>a.relationIds.includes(relation.id)))continue;
@@ -165,8 +187,11 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
    /** Phase 8: failed critical gates retain diagnostic partial artifacts. The
     *  directed geometry is dumped compactly so a layout wall can be analyzed
     *  without re-paying for the model call. */
-   const placementMap=archetypePlacements(directed.scene);
-   log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>{const rect=placementMap.get(o.id);const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(directed.scene.archetype);const w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;const zone=o.preferredZone??(o.role==='hero'?'center':'upper_left');return {id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef,root:!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support',placed:Boolean(rect),rect:rect?{x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.w),h:Math.round(rect.h)}:zoneRect(zone,w,h)};}),relations:directed.scene.relations.map(r=>`${r.from.objectId}->${r.to.objectId}:${r.relationType}:${r.visualForm}`)},'error');
+   /** The placement pass runs the same layout that just failed, so it can throw
+    *  again and swallow the original diagnostic. A missing placement map only
+    *  costs the zone-rect fallback in the dump. */
+   let placementMap;try{placementMap=archetypePlacements(directed.scene);}catch{placementMap=new Map();}
+   log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>{const rect=placementMap.get(o.id);const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(directed.scene.archetype);const w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;const zone=o.preferredZone??(o.role==='hero'?'center':'upper_left');return {id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef,root:!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support',placed:Boolean(rect),rect:rect?{x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.w),h:Math.round(rect.h)}:zoneRect(zone,w,h)};}),relations:directed.scene.relations.map(r=>`${r.from.objectId}->${r.to.objectId}:${r.relationType}:${r.visualForm}`),directedScene:directed.scene,compiledObjects:(e as {compiledObjects?:unknown}).compiledObjects??null},'error');
    throw stageFailure(e,'compile');}
  validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous);
   /** Post-compile integrity checks are owned by the representation resolver and
