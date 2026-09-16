@@ -281,6 +281,20 @@ export function mergeConceptGraphs(graphs:ConceptGraph[]):ConceptGraph{
 export async function compileKnowledge(input:KnowledgeInput,model:JsonModel,promptOptions:KnowledgePromptOptions={},signal?:AbortSignal):Promise<ConceptGraph>{
  if(!input.sourceText?.trim())throw new Error('Knowledge compilation requires source text');
  const instructions=[knowledgePrompt({language:input.language,repairNotes:input.repairFindings,...promptOptions}),skillDocInstruction('teaching-architect/references/knowledge-compiler.md')].filter(Boolean).join(' ');
- const value=await model.generate('knowledge',instructions,{prompt:input.prompt,sourceId:input.sourceId??'source',sourceText:input.sourceText},knowledgeGraphSchema,raw=>validateKnowledge(raw,input.evidenceScope??input.sourceText),{signal});
+ const value=await model.generate('knowledge',instructions,{prompt:input.prompt,sourceId:input.sourceId??'source',sourceText:input.sourceText},knowledgeGraphSchema,raw=>{
+  const payload=raw as {evidence?:{id:string}[];claims?:{evidenceRefs?:string[]}[];mechanisms?:{evidenceRefs?:string[]}[];quantities?:{evidenceRefs?:string[]}[];concepts?:{evidenceRefs?:string[]}[]};
+  /** Items referencing evidence the model never declared cannot be verified:
+   *  drop those references (recorded) instead of failing the window. */
+  const declared=new Set((payload.evidence??[]).map(e=>e.id));
+  let dropped=0;
+  for(const item of [...(payload.claims??[]),...(payload.mechanisms??[]),...(payload.quantities??[]),...(payload.concepts??[])]){
+   const refs=item.evidenceRefs??[];
+   const kept=refs.filter(id=>declared.has(id));
+   dropped+=refs.length-kept.length;item.evidenceRefs=kept;
+  }
+  if(dropped)log('v2.knowledge.evidence-ref-heal',{dropped},'warn');
+  return validateKnowledge(raw,input.evidenceScope??input.sourceText);
+ },{signal});
+ return value as ConceptGraph;
  return value as ConceptGraph;
 }
