@@ -75,12 +75,13 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
  const modelInput={...input,evidenceScope:undefined};
  return await model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes:options.repairFindings,knowledge,chapter}),modelInput,teachingIntentSchema,value=>{
    spreadExcessIntroductions(value);healStateMechanisms(value);
+   const intent=value as {evidenceRefs?:{id:string}[];scenes?:{key:string;beats?:{key?:string;evidenceRefs?:string[]}[]}[]};
    /** Beats referencing evidence the plan itself never declared are dropped
     *  (recorded) - an undeclared reference cannot be verified. */
-   const declaredEvidence=new Set((value.evidenceRefs??[]).map((e:any)=>e.id));
-   for(const scene of value.scenes??[])for(const beat of scene.beats??[]){
+   const declaredEvidence=new Set((intent.evidenceRefs??[]).map(e=>e.id));
+   for(const scene of intent.scenes??[])for(const beat of scene.beats??[]){
     const before=(beat.evidenceRefs??[]).length;
-    if(beat.evidenceRefs)beat.evidenceRefs=beat.evidenceRefs.filter((id:string)=>declaredEvidence.has(id));
+    if(beat.evidenceRefs)beat.evidenceRefs=beat.evidenceRefs.filter(id=>declaredEvidence.has(id));
     if(before>(beat.evidenceRefs??[]).length)log('v2.plan.evidence-ref-heal',{scene:scene.key,beat:beat.key,dropped:before-(beat.evidenceRefs??[]).length},'warn');
    }
    const {plan}=validateTeachingPlan(teachingIntentToPlan(value),new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
