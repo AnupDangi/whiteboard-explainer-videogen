@@ -1,4 +1,5 @@
 import {archetypePlacements} from './archetypes.js';
+import {MOTIONS} from '../types.js';
 import type {CompiledObject,CompiledSceneV2,VisualTiming,LayoutZone} from '../types.js';
 import {validateVisualScene} from '../planning/validate.js';
 import {getAsset,canonicalAnchor} from '../assets/registry.js';
@@ -13,7 +14,9 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  const validated=validateVisualScene(input,undefined,new Set(previous?.objects.map(o=>o.id))),diagnostics:string[]=[];
  const {scene,warnings:fallbackWarnings}=applyCompositionFallbacks(validated);
  for(const w of fallbackWarnings)diagnostics.push(w);
-  for(const action of scene.beats.flatMap(b=>b.actions))if(!['draw','reveal','trace','flow','fill','highlight','pulse','fade','morph','replace'].includes(action.type))throw new Error(`Motion not implemented: ${action.type}`);
+  /** Schema MOTIONS is the contract (the prompt advertises all of them); any
+   *  action the renderer does not individually animate simply times its beat. */
+  for(const action of scene.beats.flatMap(b=>b.actions))if(!MOTIONS.includes(action.type))throw new Error(`Motion not implemented: ${action.type}`);
  for(const r of scene.relations)for(const ref of [r.from,r.to]){const o=scene.objects.find(o=>o.id===ref.objectId)!;if(o.assetRef)ref.anchor=canonicalAnchor(o.assetRef,ref.anchor);}
  if(!supportedArchetype(scene.archetype))throw new Error(`Archetype not implemented: ${scene.archetype}`);
  if(['structural_diagram','convergence'].includes(scene.archetype)&&scene.objects.filter(o=>o.role==='hero').length!==1)throw new Error('Structural composition requires exactly one hero');

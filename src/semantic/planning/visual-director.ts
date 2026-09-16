@@ -8,6 +8,8 @@ import {directorPrompt} from './prompt-builder.js';
 import {resolveRepresentation,primitiveFallbackNote} from '../identity/representation.js';
 import {getAsset,canonicalAnchor} from '../assets/registry.js';
 import {compileScene} from '../compiler/compile-scene.js';
+import {zoneRect} from '../compiler/zones.js';
+import {archetypePlacements} from '../compiler/archetypes.js';
 import type {ConceptIdentity,SemanticScenePlan,VisualSceneV2,CompiledSceneV2} from '../types.js';
 import type {VisualModel} from './visual-model.js';
 import type {JsonModel} from './model-adapter.js';
@@ -99,7 +101,8 @@ export async function directVisual(scene:SemanticScenePlan,registry:ConceptIdent
    /** Phase 8: failed critical gates retain diagnostic partial artifacts. The
     *  directed geometry is dumped compactly so a layout wall can be analyzed
     *  without re-paying for the model call. */
-   log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>({id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef})),relations:directed.scene.relations.length,actions:directed.scene.beats.flatMap(b=>b.actions.length)},'error');
+   const placementMap=archetypePlacements(directed.scene);
+   log('v2.director.compile-failure',{scene:scene.id,archetype:directed.scene.archetype,error:e instanceof Error?e.message:String(e),objects:directed.scene.objects.map(o=>{const rect=placementMap.get(o.id);const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(directed.scene.archetype);const w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;const zone=o.preferredZone??(o.role==='hero'?'center':'upper_left');return {id:o.id,role:o.role,parentId:o.parentId,zone:o.preferredZone,primitive:o.primitiveRef,asset:o.assetRef,root:!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support',placed:Boolean(rect),rect:rect?{x:Math.round(rect.x),y:Math.round(rect.y),w:Math.round(rect.w),h:Math.round(rect.h)}:zoneRect(zone,w,h)};}),relations:directed.scene.relations.map(r=>`${r.from.objectId}->${r.to.objectId}:${r.relationType}:${r.visualForm}`)},'error');
    throw stageFailure(e,'compile');}
  validateDirectedScene(compiled.scene,scene,registry,mentalModel,allowedAssets,previous);
  for(const o of directed.scene.objects)if(scene.requiredConceptIds.includes(o.conceptId??'')){const actual=compiled.objects.find(c=>c.id===o.id);if(actual?.assetRef!==o.assetRef||actual?.representation?.family!==o.representation?.family)throw new Error(`Critical representation degraded: ${o.id}`);}
