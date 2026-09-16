@@ -96,6 +96,7 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
     const compiled=new Map<string,{id:string;sourceId?:string;quote:string}>();
     for(const e of options.conceptGraph.evidence)compiled.set(e.id,{id:e.id,sourceId:e.sourceId??'source',quote:e.quote});
     for(const v of options.conceptGraph.sourceVisuals)compiled.set(v.id,{id:v.id,sourceId:v.sourceId,quote:v.caption??''});
+    const requirements=new Set([...options.conceptGraph.claims,...options.conceptGraph.mechanisms].map(r=>r.id));
     const declaredIds=new Set(intent.evidenceRefs?.map(e=>e.id)??[]);
     planDraft.evidenceRefs=(planDraft.evidenceRefs??[]).filter(e=>compiled.has(e.id)).map(e=>{
      const compiledEntry=compiled.get(e.id);
@@ -105,6 +106,16 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
     for(const scene of planDraft.scenes)for(const beat of scene.beats)beat.evidenceRefs=(beat.evidenceRefs??[]).filter(id=>grounded.has(id));
     for(const concept of planDraft.conceptRegistry)concept.evidenceRefs=(concept.evidenceRefs??[]).filter(id=>grounded.has(id));
     for(const requirement of [...planDraft.requiredClaims,...planDraft.requiredMechanisms])requirement.evidenceRefs=(requirement.evidenceRefs??[]).filter(id=>grounded.has(id));
+    /** Requirements outside the compiled inventory (invented claims/mechanisms)
+     *  are dropped (recorded); beats reference kept requirements only. */
+    const beforeReq=planDraft.requiredClaims.length+planDraft.requiredMechanisms.length;
+    planDraft.requiredClaims=planDraft.requiredClaims.filter(r=>requirements.has(r.id));
+    planDraft.requiredMechanisms=planDraft.requiredMechanisms.filter(r=>requirements.has(r.id));
+    const keptRequirements=new Set([...planDraft.requiredClaims,...planDraft.requiredMechanisms].map(r=>r.id));
+    for(const scene of planDraft.scenes)for(const beat of scene.beats){
+     beat.requirementIds=(beat.requirementIds??[]).filter(id=>keptRequirements.has(id));
+    }
+    if(beforeReq>planDraft.requiredClaims.length+planDraft.requiredMechanisms.length)log('v2.plan.requirement-heal',{dropped:beforeReq-(planDraft.requiredClaims.length+planDraft.requiredMechanisms.length)},'warn');
    }
    const {plan}=validateTeachingPlan(planDraft,new Set(options.chapter?.priorConcepts??[]));if(plan.scenes.length>maxScenes)throw new Error('Too many scenes');
   for(const s of plan.scenes){
