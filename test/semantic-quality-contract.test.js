@@ -58,3 +58,34 @@ test('AV metrics use request-relative readiness, never compile duration or fabri
  const m=computeRunMetrics([{stage:'compile',status:'success',elapsedMs:2,atMs:9000},{stage:'tts',status:'success',elapsedMs:3000,atMs:9500}],[],[],[{timingKind:'engine',stageMetrics:{sceneReadyMs:9502},diagnostics:['Narrated static interval 5000ms'],compileFindings:[{severity:'hard',code:'clipping'}]}],'complete');
  assert.equal(m.firstVisualReadyMs,9000);assert.equal(m.firstAVPlayableMs,9502);assert.equal(m.firstAudioByteMs,null);assert.equal(m.ttsCompleteMs,9500);assert.equal(m.invalidReferenceCount,0);assert.equal(m.timelineRepairCount,0);assert.equal(m.staticIntervalCount,1);
 });
+
+test('the board contract heal supplies a missing INTRODUCE reveal and TRANSFORM morph',async()=>{
+ const {healBoardContract}=await import('../dist/src/semantic/planning/visual-director.js');
+ const {gateBoardAlignment}=await import('../dist/src/semantic/harness/gates.js');
+ const object=(id,conceptId,extra={})=>({id,conceptId,label:id,role:'support',children:[],state:'neutral',allowedStates:['neutral'],importance:'secondary',collisionPolicy:'forbid',primitiveRef:'rectangle',...extra});
+ const scene={
+  version:2,id:'s',title:'S',teachingGoal:'g',mentalModel:'m',archetype:'flow',
+  objects:[object('a','alpha'),object('b','beta')],
+  relations:[],
+  beats:[
+   {id:'b1',narration:'one',actions:[{id:'x1',type:'reveal',objectIds:['b'],relationIds:[],durationMs:400,leadMs:0,easing:'linear'}]},
+   {id:'b2',narration:'two',actions:[{id:'x2',type:'reveal',objectIds:['b'],relationIds:[],durationMs:400,leadMs:0,easing:'linear'}]},
+  ],
+  continuity:{keepFromPrevious:[],prepareForNext:[]},
+ };
+ const board={sceneId:'s',archetypes:['flow'],beats:[
+  {contractId:'c1',narration:'one',semanticKeys:['alpha'],relations:[],diffs:[{operation:'INTRODUCE',semanticKeys:['alpha'],reason:'first sight'}]},
+  {contractId:'c2',narration:'two',semanticKeys:['beta'],relations:[],diffs:[{operation:'TRANSFORM',semanticKeys:['beta'],reason:'activates',fromState:'neutral',toState:'activated'}]},
+ ]};
+ const before=gateBoardAlignment(board,scene);
+ assert.equal(before.passed,false,'the fixture must start out violating the board contract');
+ const healed=healBoardContract(scene,board);
+ assert.equal(healed.introduced,1,'a missing INTRODUCE reveal is supplied');
+ assert.equal(healed.transformed,1,'a missing TRANSFORM morph is supplied');
+ const reveal=scene.beats[0].actions.find(a=>a.type==='reveal'&&a.objectIds.includes('a'));
+ assert.ok(reveal,'alpha is now introduced in its beat');
+ const morph=scene.beats[1].actions.find(a=>a.type==='morph'&&a.toState==='activated');
+ assert.ok(morph,'beta now reaches activated');
+ assert.ok(scene.objects.find(o=>o.id==='b').allowedStates.includes('activated'),'the promised state must be allowed');
+ assert.equal(gateBoardAlignment(board,scene).passed,true,'the board contract now holds');
+});

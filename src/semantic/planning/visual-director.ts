@@ -24,22 +24,51 @@ export const directorResponseSchema:Schema={type:'object',additionalProperties:f
 /** Deterministic continuity heal: a PRESERVE diff whose visual re-draws the
  *  concept is converted to a highlight, so the preserved object is emphasized
  *  instead of re-introduced (recorded by the caller). */
-export function healPreservedRedraws(scene:VisualSceneV2,board:WhiteboardPlan):number{
- if(board.beats.length!==scene.beats.length)return 0;
- let healed=0;
+export function healPreservedRedraws(scene:VisualSceneV2,board:WhiteboardPlan):number{return healBoardContract(scene,board).preserved;}
+
+/** Bring a directed scene up to the whiteboard plan's per-beat contract.
+ *
+ *  Every diff is a promise about a beat, and the board-alignment gate holds the
+ *  director to all three. Two of them are mechanically recoverable and used to
+ *  fail a whole lesson on a single omission:
+ *   PRESERVE   a re-drawn concept becomes a highlight (it persists, so it must
+ *              not be introduced again)
+ *   INTRODUCE  a concept the plan introduces in this beat but the direction
+ *              never draws gets the reveal it is missing
+ *   TRANSFORM  a promised state change with no action reaching it gets a morph
+ *  Each is recorded and counted. A concept with no object in the scene is left
+ *  alone: that is a coverage failure the director gate already reports. */
+export function healBoardContract(scene:VisualSceneV2,board:WhiteboardPlan):{preserved:number;introduced:number;transformed:number}{
+ const counts={preserved:0,introduced:0,transformed:0};
+ if(board.beats.length!==scene.beats.length)return counts;
  for(const [index,boardBeat] of board.beats.entries()){
   const visual=scene.beats[index];
-  const conceptOf=(objectId:string)=>scene.objects.find(object=>object.id===objectId)?.conceptId;
+  const objectFor=(conceptKey:string)=>scene.objects.find(object=>object.conceptId===conceptKey);
+  const targets=(key:string)=>(action:VisualSceneV2['beats'][number]['actions'][number])=>action.objectIds.some(id=>scene.objects.find(o=>o.id===id)?.conceptId===key);
   for(const diff of boardBeat.diffs){
-   if(diff.operation!=='PRESERVE')continue;
-   for(const key of diff.semanticKeys)for(const action of visual.actions){
-    if(action.type!=='draw')continue;
-    if(!action.objectIds.some(id=>conceptOf(id)===key))continue;
-    action.type='highlight';action.id=`${action.id}_preserved`;healed++;
+   for(const key of diff.semanticKeys){
+    const object=objectFor(key);
+    if(!object)continue;
+    if(diff.operation==='PRESERVE'){
+     for(const action of visual.actions){if(action.type!=='draw'||!targets(key)(action))continue;action.type='highlight';action.id=`${action.id}_preserved`;counts.preserved++;}
+     continue;
+    }
+    if(diff.operation==='INTRODUCE'){
+     if(visual.actions.some(action=>['draw','reveal'].includes(action.type)&&targets(key)(action)))continue;
+     visual.actions.unshift({id:`${visual.id}_introduce_${key}`,type:'reveal',objectIds:[object.id],relationIds:[],durationMs:800,leadMs:0,easing:'linear'});
+     counts.introduced++;
+     continue;
+    }
+    if(diff.operation==='TRANSFORM'&&diff.toState){
+     if(visual.actions.some(action=>action.toState===diff.toState&&targets(key)(action)))continue;
+     object.allowedStates=[...new Set([...object.allowedStates,diff.toState])];
+     visual.actions.push({id:`${visual.id}_transform_${key}`,type:'morph',objectIds:[object.id],relationIds:[],durationMs:1500,leadMs:0,easing:'linear',...(diff.fromState?{fromState:diff.fromState}:{}),toState:diff.toState});
+     counts.transformed++;
+    }
    }
   }
  }
- return healed;
+ return counts;
 }
 /** Resolver results are scoped to the archetype the director will actually use.
  *  Resolving against the whole `candidateArchetypes` union offered assets that
