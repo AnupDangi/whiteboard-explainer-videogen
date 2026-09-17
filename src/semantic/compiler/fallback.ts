@@ -26,8 +26,15 @@ function roots(scene: VisualSceneV2): VisualObject[] {
 
 /** Demote an object to an annotation label so it leaves the primary count but
  *  stays on the board and keeps its ID (beat actions keep resolving). */
-function demoteToAnnotation(o: VisualObject): void {
-  if(o.importance==='primary'||o.role==='hero')throw new Error(`Critical representation overflow: ${o.id}`);
+function demoteToAnnotation(o: VisualObject, warnings: string[] = []): void {
+  /** The archetype is full and every remaining object is primary. There is no
+   *  other way to keep the composition: the extra object loses its role but stays
+   *  on the board with its id, so beat actions still resolve, and the demotion is
+   *  recorded. The HERO is never demoted - that would remove the central system.
+   *  Measured: `Critical representation overflow: object_mla` ended a run whose
+   *  director had added one primary beyond the archetype's capacity. */
+  if(o.role==='hero')throw new Error(`Cannot demote the hero: ${o.id}`);
+  if(o.importance==='primary')warn(warnings, `${o.conceptId ?? o.id} is primary but ${'the archetype'} is full; demoted to annotation`);
   o.role = 'annotation';
   delete o.assetRef;
   o.primitiveRef = 'label';
@@ -158,7 +165,7 @@ function fallbackArchetype(scene: VisualSceneV2, warnings: string[], reason: str
 function capPrimaries(scene: VisualSceneV2, warnings: string[], max: number): void {
   const primaries = roots(scene).sort((a, b) => a.id.localeCompare(b.id));
   for (const extra of primaries.slice(max)) {
-    demoteToAnnotation(extra);
+    demoteToAnnotation(extra, warnings);
     ensureRevealed(scene, extra.id);
     warn(warnings, `${scene.archetype} exceeds ${max} primaries; demoted ${extra.conceptId ?? extra.id} to annotation`);
   }
