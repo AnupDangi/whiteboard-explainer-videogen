@@ -179,6 +179,26 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
    diagnostics.push(`geometry repair: re-seated child ${o.id} inside ${parent.id}`);
   }
  }
+ // A child still colliding after re-seating inside its own parent means the
+ // PARENTS are too close to each other, not the children. Relocate the parent
+ // (never a hero or a persisted object) and re-seat the child inside it.
+ // Measured: `Illegal overlap: concept_1_kv_cache_1/concept_1_latent_vector_1`,
+ // two subparts of two different ring nodes.
+ for(const o of objects.filter(o=>o.parentId)){
+  if(!findCollisions(objects).some(pair=>pair.split('/').includes(o.id)))continue;
+  const parent=objects.find(p=>p.id===o.parentId);
+  if(!parent||parent.role==='hero'||scene.continuity.keepFromPrevious.includes(parent.id))continue;
+  const original={x:parent.x,y:parent.y};
+  for(const [dx,dy] of [[0,32],[0,-32],[32,0],[-32,0],[0,64],[0,-64],[64,0],[-64,0]]){
+   parent.x=original.x+dx;parent.y=original.y+dy;
+   o.x=Math.round(parent.x+(parent.w-o.w)*.5);o.y=Math.round(parent.y+(parent.h-o.h)*.5);
+   const clear=findCollisions(objects).filter(pair=>pair.split('/').includes(o.id)||pair.split('/').includes(parent.id));
+   if(!clear.length&&contains(BOARD.safe,visualBounds(parent))&&contains(BOARD.safe,visualBounds(o))){
+    diagnostics.push(`geometry repair: relocated parent ${parent.id} for child ${o.id}`);break;
+   }
+   parent.x=original.x;parent.y=original.y;
+  }
+ }
  const collisions=findCollisions(objects);if(collisions.length)throw Object.assign(new Error(`Illegal overlap: ${collisions.join(', ')}`),{compiledObjects:objects.map(o=>({id:o.id,role:o.role,parentId:o.parentId,collisionPolicy:o.collisionPolicy,x:Math.round(o.x),y:Math.round(o.y),w:o.w,h:o.h}))});
  for(const o of objects)if(!contains(BOARD.safe,visualBounds(o)))throw new Error(`Canvas escape: ${o.id}`);
  resolveAnchors();

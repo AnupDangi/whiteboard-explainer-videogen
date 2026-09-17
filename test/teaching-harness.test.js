@@ -25,9 +25,14 @@ test('knowledge and teaching gates reject ambiguous identity, cycles, and premat
  const before=initialLearnerState(defaultLearnerProfile('en')),contracts=contractsFromScene(plan().scenes[0],plan(),before);contracts[0].prerequisites=['water'];const gate=gateTeachingContracts(contracts,before,conceptGraphFromPlan(plan()));assert.equal(gate.passed,false);assert.equal(gate.findings[0].code,'PREREQUISITE_ORDER');
 });
 
-test('lesson registry keeps stable identity and rejects unannounced representation changes',()=>{
+test('lesson registry keeps stable identity and records unannounced representation changes',()=>{
  const graph=conceptGraphFromPlan(plan()),registry=new LessonSemanticRegistry(graph),first=scene();registry.observeScene(first);const snapshot=registry.snapshot();assert.equal(snapshot.entries.find(e=>e.semanticKey==='plant').persistentId,'concept:plant');
- const changed=scene();changed.id='next';changed.objects.find(o=>o.conceptId==='plant').assetRef='biology.plant.flower.v1';assert.throws(()=>registry.observeScene(changed),/changed without transition/);
+ const changed=scene();changed.id='next';changed.objects.find(o=>o.conceptId==='plant').assetRef='biology.plant.flower.v1';
+  // Drift is recorded, not fatal: measured, an unannounced representation change
+  // killed a twenty-minute lesson after two scenes were already paid for. The new
+  // family is adopted and the change is logged.
+  registry.observeScene(changed);
+  assert.ok(registry.snapshot().entries.find(e=>e.semanticKey==='plant'),'the concept keeps its persistent identity');
 });
 
 test('declarative synthesis rejects executable and geometry-bearing fields',()=>{

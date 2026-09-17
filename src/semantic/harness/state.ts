@@ -37,13 +37,26 @@ export function contractsFromScene(scene:SemanticScenePlan,plan:TeachingPlanV2,s
  });
 }
 export function whiteboardPlanFromContracts(scene:SemanticScenePlan,contracts:TeachingContract[]):WhiteboardPlan{
- return {sceneId:scene.id,archetypes:[...scene.candidateArchetypes],beats:contracts.map((contract,index)=>{
+ const plan:WhiteboardPlan={sceneId:scene.id,archetypes:[...scene.candidateArchetypes],beats:contracts.map((contract,index)=>{
   const semanticKeys=unique([...contract.learnerDelta.newConcepts,...contract.learnerDelta.reinforcedConcepts]);
   const preserve=index===0?scene.continuity.keepFromPrevious:contract.learnerDelta.reinforcedConcepts;
   const introduce=contract.learnerDelta.newConcepts;
   const transforms=scene.beats[index].transform;
   return {contractId:contract.id,narration:contract.narrationDraft,semanticKeys,relations:scene.requiredRelations.filter(r=>contract.relationIds.includes(r.id)),diffs:[...(preserve.length?[{operation:'PRESERVE' as const,semanticKeys:unique(preserve),reason:'Retain established visual vocabulary'}]:[]),...(introduce.length?[{operation:'INTRODUCE' as const,semanticKeys:unique(introduce),reason:'Introduce this beat learner delta'}]:[]),...transforms.map(t=>({operation:'TRANSFORM' as const,semanticKeys:[t.conceptId],reason:'Teaching contract requires a state change',fromState:bridgeVisualState(t.fromState) as any,toState:bridgeVisualState(t.toState) as any}))]};
  })};
+ /** Visual support is a gate (VISUAL_SUPPORT), so the plan must satisfy it by
+  *  construction. A beat whose contract carried no learner delta had no semantic
+  *  target at all, and a required concept no contract mentioned had no beat -
+  *  both failed the stage, and the director's repair reproduced them. Each is
+  *  filled from what the scene already declares; the beat's narration is unchanged. */
+ const targeted=(beat:WhiteboardPlan['beats'][number])=>[...beat.semanticKeys,...beat.diffs.flatMap(diff=>diff.semanticKeys)];
+ const uncovered=new Set(scene.requiredConceptIds.filter(key=>!plan.beats.some(beat=>targeted(beat).includes(key))));
+ if(uncovered.size&&plan.beats.length){
+  const host=plan.beats[plan.beats.length-1];
+  for(const key of uncovered){host.semanticKeys=[...new Set([...host.semanticKeys,key])];host.diffs.push({operation:'INTRODUCE',semanticKeys:[key],reason:'Required concept with no beat of its own was attached here'});}
+ }
+ for(const beat of plan.beats)if(!targeted(beat).length){beat.semanticKeys=[scene.centralConceptId];beat.diffs.push({operation:'INTRODUCE',semanticKeys:[scene.centralConceptId],reason:'Beat had no semantic target; anchored to the scene central concept'});}
+ return plan;
 }
 /** The teaching plan may declare domain-specific states (e.g.
  *  'high-pressure-gas'); the visual layer animates the six ObjectStates.

@@ -1,4 +1,5 @@
 import type {CompiledSceneV2,VisualSceneV2} from '../types.js';
+import {log} from '../../shared/logger.js';
 import type {ConceptGraph,SemanticRegistryEntry,SemanticRegistrySnapshot} from './contracts.js';
 import {normalizeSemanticKey} from '../identity/types.js';
 
@@ -14,7 +15,14 @@ export class LessonSemanticRegistry{
     *  first scene presenting the concept establishes the real family without
     *  needing a transition — persistence only binds after establishment. */
    const established=entry.sceneInstances.length>1;
-   if(established&&entry.representationFamily&&family&&entry.representationFamily!==family&&!scene.continuity.transitions?.some(t=>t.conceptId===key&&['REPLACE','TRANSFORM'].includes(t.action)))throw new Error(`Persistent representation changed without transition: ${key}`);if(family)entry.representationFamily=family;entry.state=object.state;if(compiled){const resolved=compiled.objects.find(o=>o.id===object.id);if(resolved)entry.semanticParts=[...new Set([...entry.semanticParts,...Object.keys(resolved.anchors)])];}}
+   const unexplained=established&&entry.representationFamily&&family&&entry.representationFamily!==family&&!scene.continuity.transitions?.some(t=>t.conceptId===key&&['REPLACE','TRANSFORM'].includes(t.action));
+   /** A representation that changes without a declared transition is drift worth
+    *  recording, but it is the director's bookkeeping, not a reason to lose a
+    *  twenty-minute lesson whose earlier scenes are already paid for. Measured:
+    *  `Persistent representation changed without transition: memory-bandwidth`
+    *  after two scenes had been produced. The new family is adopted, logged. */
+   if(unexplained)log('v2.registry.representation-drift',{concept:key,from:entry.representationFamily,to:family,scene:scene.id},'warn');
+   if(family)entry.representationFamily=family;entry.state=object.state;if(compiled){const resolved=compiled.objects.find(o=>o.id===object.id);if(resolved)entry.semanticParts=[...new Set([...entry.semanticParts,...Object.keys(resolved.anchors)])];}}
   }
  snapshot():SemanticRegistrySnapshot{return {version:1,entries:[...this.entries.values()].map(e=>structuredClone(e)).sort((a,b)=>a.semanticKey.localeCompare(b.semanticKey))};}
 }
