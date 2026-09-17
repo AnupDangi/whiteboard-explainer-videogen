@@ -144,7 +144,10 @@ export function documentIdentity(options: {
       const nextRaw = raw.slice(index + 1).find(entry => entry.trim()) ?? '';
       const continues = /:$/.test(line) || (/^[a-z]/.test(nextRaw.trim()) && nextRaw.trim().length < 90);
       const next = continues ? cleanTitle(nextRaw) : '';
-      title = continues && next ? `${candidate}: ${next.replace(/^:\s*/, '')}` : candidate;
+      const needsColon = /:$/.test(line);
+      title = continues && next
+        ? (needsColon ? `${candidate}: ${next.replace(/^:\s*/, '')}` : `${candidate} ${next}`)
+        : candidate;
       titleSource = 'leading-line';
       break;
     }
