@@ -193,7 +193,20 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
      arc.visualForm=visualForm;
      relation=arc;
     }else if(pairArcs.length>1){
-     throw new Error(`Missing semantic relation ${required.id}: ${pairArcs.length} candidate arcs between the same concepts; direction, type and target part are required`);
+     /** The model drew the pair more than once. The plan names exactly one arc,
+      *  so the arc that already carries the contract wins; otherwise the first
+      *  by id is corrected. Every other arc for the pair is neutralised rather
+      *  than rendered as a duplicate. Recorded. */
+     const exact=pairArcs.find(arc=>arc.relationType===required.relationType);
+     const winner=exact??[...pairArcs].sort((a,b)=>a.id.localeCompare(b.id))[0];
+     const targets=anchorNames.includes(requested)?requested:'center';
+     log('v2.director.relation-deduplicated',{scene:scene.id,relation:required.id,kept:winner.id,neutralised:pairArcs.filter(arc=>arc!==winner).map(arc=>arc.id),exact:Boolean(exact)},'warn');
+     winner.from={objectId:from.id,anchor:'center'};
+     winner.to={objectId:to.id,anchor:targets};
+     winner.relationType=required.relationType;
+     winner.visualForm=visualForm;
+     for(const arc of pairArcs)if(arc!==winner&&arc.visualForm!=='none'){arc.visualForm='none';}
+     relation=winner;
     }else{
      relation={id:`relation_synth_${required.id}`,from:{objectId:from.id,anchor:'center'},to:{objectId:to.id,anchor:anchorNames.includes(requested)?requested:'center'},relationType:required.relationType,visualForm} as VisualSceneV2['relations'][number];
     visual.relations.push(relation);

@@ -89,3 +89,20 @@ test('the board contract heal supplies a missing INTRODUCE reveal and TRANSFORM 
  assert.ok(scene.objects.find(o=>o.id==='b').allowedStates.includes('activated'),'the promised state must be allowed');
  assert.equal(gateBoardAlignment(board,scene).passed,true,'the board contract now holds');
 });
+
+test('duplicate arcs for a required pair are deduplicated, not fatal',()=>{
+ const s=fresh();
+ const duplicate=JSON.parse(JSON.stringify(s.relations[0]));
+ duplicate.id='duplicate_arc';duplicate.relationType='inhibits';
+ s.relations.push(duplicate);
+ const required=semantic.requiredRelations[0];
+ const result=validate(s);
+ const objectOf=(id)=>s.objects.find(o=>o.id===id);
+ const arcs=result.relations.filter(r=>{
+  const a=objectOf(r.from.objectId),b=objectOf(r.to.objectId);
+  return a&&b&&a.conceptId===required.fromConceptId&&b.conceptId===required.toConceptId;
+ });
+ assert.ok(arcs.length>=2,'the fixture must present two arcs for one pair');
+ assert.ok(arcs.some(r=>r.relationType===required.relationType),'the contract arc must remain');
+ assert.ok(arcs.filter(r=>r.visualForm==='none').length>=1,'the surplus arc must be neutralised, not rendered twice');
+});
