@@ -88,11 +88,15 @@ test('resolver substring-matches double_helix to the helix asset', () => {
   assert.match(d.warnings[0], /representation fallback/);
 });
 
-test('resolver degrades unknown concepts to a labeled primitive', () => {
-  const d = resolveRepresentation(
-    { id: 'web_browser', canonicalName: 'Web browser', aliases: [], semanticType: 'entity' },
-    ['flow'],
-  );
+test('resolver gives a typed concept a composition and an untyped one a bare label', () => {
+  // A typed concept with no asset gets a real composition: a label pill is not
+  // a representation, and a hero reaching one failed the whole job.
+  const typed = resolveRepresentation({ id: 'web_browser', canonicalName: 'Web browser', aliases: [], semanticType: 'entity' }, ['flow']);
+  assert.equal(typed.fallback, 'composition');
+  assert.ok(typed.representation, 'a composition family must be chosen');
+  assert.match(typed.warnings.join(' '), /no visualFamily/);
+  // With nothing to derive from there is still an honest bare label.
+  const d = resolveRepresentation({ id: 'web_browser_untyped', canonicalName: 'Web browser', aliases: [] }, ['flow']);
   assert.equal(d.fallback, 'primitive-label');
   assert.deepEqual(d.candidates, []);
   assert.match(d.warnings[0], /no curated asset for web_browser/);

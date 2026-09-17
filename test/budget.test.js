@@ -13,12 +13,12 @@ import {DEFAULT_STAGE_POLICIES} from '../dist/src/semantic/harness/stage.js';
 const clock = (start = 0) => { let t = start; return {now: () => t, advance: (ms) => { t += ms; }}; };
 
 test('the default allowance scales with the requested lesson length', () => {
-  assert.equal(jobBudgetMs(1, {}), 120_000, 'one minute allows two');
-  assert.equal(jobBudgetMs(2, {}), 240_000);
-  assert.equal(jobBudgetMs(undefined, {}), 120_000, 'an unspecified target is treated as one minute');
-  assert.equal(jobBudgetMs(1, {V2_JOB_BUDGET_FACTOR: '3'}), 180_000);
+  assert.equal(jobBudgetMs(1, {}), 180_000, 'one minute allows three');
+  assert.equal(jobBudgetMs(2, {}), 360_000);
+  assert.equal(jobBudgetMs(undefined, {}), 180_000, 'an unspecified target is treated as one minute');
+  assert.equal(jobBudgetMs(1, {V2_JOB_BUDGET_FACTOR: '2'}), 120_000);
   assert.equal(jobBudgetMs(1, {V2_JOB_BUDGET_MS: '45000'}), 45_000, 'an explicit budget wins');
-  assert.equal(jobBudgetMs(1, {V2_JOB_BUDGET_FACTOR: 'nonsense'}), 120_000, 'a bad factor falls back');
+  assert.equal(jobBudgetMs(1, {V2_JOB_BUDGET_FACTOR: 'nonsense'}), 180_000, 'a bad factor falls back');
   assert.throws(() => jobBudgetMs(0, {}), /greater than zero/);
 });
 
@@ -40,7 +40,7 @@ test('the budget shrinks as the job consumes time and never starves a stage belo
   c.advance(100_000);
   const later = budget.policyFor('knowledge-compiler').timeoutMs;
   assert.ok(later < first, 'a later stage sees less time');
-  assert.ok(later >= 8_000, 'but never below the per-stage floor');
+  assert.ok(later >= 30_000, 'never below the knowledge floor: a truncated model call is a guaranteed failure');
   assert.equal(budget.remainingMs(), 20_000);
   assert.equal(budget.expired(), false);
 });
@@ -49,7 +49,7 @@ test('repairs are shed before a stage is allowed to overrun', () => {
   const c = clock();
   const budget = new StageBudget({totalMs: 120_000, now: c.now});
   assert.equal(budget.policyFor('knowledge-compiler').maxRepairs, 1, 'repairs are available while there is time');
-  c.advance(110_000);
+  c.advance(100_000);
   assert.equal(budget.policyFor('knowledge-compiler').maxRepairs, 0, 'a thin remainder drops the second model call');
 });
 

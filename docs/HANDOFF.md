@@ -47,6 +47,19 @@ Measured after: the two director calls start 2.5s apart and overlap. **Serial su
 
 **S9b live matrix** (`scripts/live-matrix.ts`, `npm run matrix:live`) — one command produces job success rate, compile success, P50/P95 wall and first-playable latency, cost, model calls, top failure reasons and a PASS/FAIL line per measurable migration gate. Failed runs stay in the denominator; unmeasurable gates report PENDING rather than being faked.
 
+### Measured: one narrated 1-minute lesson
+
+| run | status | scenes | wall | cost | calls |
+|---|---|---|---|---|---|
+| `narrated-2sc-f` (before concurrency) | complete | 2 | **75.1s** | **$0.039** | 3 |
+| `final6` (after, "how a bill becomes law") | complete | 2 | **127.0s** | **$0.070** | 5 |
+
+Both exported narrated MP4s (scene 1 is 27.25s h264+aac). `final6` drew **53.8s of overlap** (serial sum 119.9s against a 66.1s model wall span) — the concurrency works. Its wall is longer because the first teaching call took **66.1s** against 21–24s in earlier runs, and it needed two repairs: **provider latency variance dominates, not our serialisation.**
+
+**Job success rate is the real problem, not speed.** Six consecutive attempts at a 2-scene narrated lesson produced four different failure modes, every one a model-output contract violation: an unresolvable spoken anchor, an omitted required relation, a hero with no representation, and a repair whose window was truncated. Two of those are now healed deterministically (composition derived from `semanticType`; a single wrong arc for a required concept pair corrected in place). The budget's per-stage floors were also wrong at first — it cut a repair off at 10.5s against a call that needs ~15s, which is a guaranteed failure; floors are now 20–30s for model stages and the default allowance is 3× the lesson length (180s for one minute).
+
+**Next bounded task:** the remaining hard gates. `gateVisual`'s hero degradation and the board-alignment checks fail a whole job on a single model omission. Each needs either a deterministic recovery like the two above, or a downgrade from hard to advisory with a recorded degradation, so one bad field cannot cost a lesson.
+
 ### Parallel wave — S4, X1/X2, P5, S9a
 
 Four file-disjoint workstreams run in parallel, then built and verified centrally. **525/525** (was 511).

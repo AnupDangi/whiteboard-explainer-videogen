@@ -16,8 +16,8 @@ test('an equation is not searched for and is not reported as a degradation', () 
 
 test('every other semantic type keeps searching, including one that fails', () => {
   const entity = resolveRepresentation({id: 'zzz', canonicalName: 'Zzz', aliases: [], semanticType: 'entity'}, ['flow']);
-  assert.equal(entity.fallback, 'primitive-label', 'an entity with no asset still degrades visibly');
-  assert.match(entity.warnings.join(' '), /no curated asset/);
+  assert.equal(entity.fallback, 'composition', 'an entity with no asset gets a composition, not a bare label');
+  assert.match(entity.warnings.join(' '), /no visualFamily/);
 
   const quantity = resolveRepresentation({id: 'q1', canonicalName: 'Elasticity', aliases: [], semanticType: 'quantity'}, ['flow']);
   assert.notEqual(quantity.fallback, 'not-applicable', 'quantity is not special-cased away');

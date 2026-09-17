@@ -10,11 +10,26 @@ const fresh=()=>{const s=JSON.parse(readFileSync('examples/semantic/photosynthes
 const semantic=plan.scenes[0],mental=selectVisualModel(semantic,plan.conceptRegistry,{keepFromPrevious:[],prepareForNext:[]},semantic.candidateArchetypes);
 const allowed=new Set(assetCandidates(semantic,plan.conceptRegistry,mental).flatMap(c=>c.candidates.map(a=>a.id)));
 const validate=s=>validateDirectedScene(s,semantic,plan.conceptRegistry,mental,allowed);
-test('teaching contract rejects reversed relationships, wrong types, parts and changed prose',()=>{
+test('a single wrong arc for a required relation is corrected to the contract, and prose is still rejected',()=>{
  assert.ok(validate(fresh()));
- for(const mutate of [s=>{[s.relations[0].from,s.relations[0].to]=[s.relations[0].to,s.relations[0].from];},s=>s.relations[0].relationType='inhibits',s=>s.relations[0].to.anchor='center',s=>s.beats[0].narration='Different teaching']){
-  const s=fresh();mutate(s);assert.throws(()=>validate(s));
+ const required=semantic.requiredRelations[0];
+ const pairOf=(s)=>{const a=s.objects.find(o=>s.relations.find(r=>r.from.objectId===o.id&&r.to.objectId===s.objects[1].id)||true);return s;};
+ /** The plan's relation is the contract. A single arc between the required
+  *  concepts that carries the wrong direction, type or anchor is corrected in
+  *  place and recorded, rather than rendering a wrong arrow or failing the job.
+  *  Two or more candidate arcs stay ambiguous and are rejected. */
+ for(const mutate of [
+  s=>{[s.relations[0].from,s.relations[0].to]=[s.relations[0].to,s.relations[0].from];},
+  s=>{s.relations[0].relationType='inhibits';},
+  s=>{s.relations[0].to.anchor='center';},
+ ]){
+  const s=fresh();mutate(s);
+  const result=validate(s);
+  const corrected=result.relations.find(r=>r.relationType===required.relationType&&r.to.anchor===required.targetAnchor);
+  assert.ok(corrected,'the required relation must be realized with the contract type and target');
  }
+ // Prose the plan never wrote is still a hard failure.
+ assert.throws(()=>validate((()=>{const s=fresh();s.beats[0].narration='Different teaching';return s;})()));
 });
 test('an entirely absent required relation is synthesized, a reversed one still fails',()=>{
  const required=semantic.requiredRelations[0];

@@ -136,19 +136,33 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
    if(!relation){
     const from=visual.objects.find(o=>o.conceptId===required.fromConceptId),to=visual.objects.find(o=>o.conceptId===required.toConceptId);
     if(!from||!to)throw new Error(`Missing semantic relation ${required.id}: a concept object is absent`);
-    /** Only a relation *entirely absent* between the two concepts is synthesized.
-     *  A relation that is present but reversed, mistyped or mis-anchored is a
-     *  real direction error and stays strict: the one targeted repair must fix
-     *  it, otherwise the wrong arc would render alongside a synthesized one. */
-    const pairPresent=visual.relations.some(r=>{const a=visual.objects.find(o=>o.id===r.from.objectId),b=visual.objects.find(o=>o.id===r.to.objectId);return Boolean(a&&b&&((a.conceptId===required.fromConceptId&&b.conceptId===required.toConceptId)||(a.conceptId===required.toConceptId&&b.conceptId===required.fromConceptId)));});
-    if(pairPresent)throw new Error(`Missing semantic relation ${required.id}: direction, type and target part are required`);
     const anchorNames=to.assetRef?Object.keys(resolveAsset(to.assetRef,catalog).anchors):['input','output','center','top','bottom'];
     const requested=required.targetAnchor?(to.assetRef?canonicalAnchor(to.assetRef,required.targetAnchor,catalog):required.targetAnchor):'center';
     /** Mirrors intent-adapter's relationType -> visualForm mapping. */
     const visualForm=required.relationType==='contains'||required.relationType==='part_of'?'containment':required.relationType==='flows_to'?'flow':required.relationType==='labels'?'leader':required.relationType==='compares_with'?'brace':'arrow';
-    relation={id:`relation_synth_${required.id}`,from:{objectId:from.id,anchor:'center'},to:{objectId:to.id,anchor:anchorNames.includes(requested)?requested:'center'},relationType:required.relationType,visualForm} as VisualSceneV2['relations'][number];
+    /** The pair may already be drawn, but with the wrong type, direction or
+     *  anchor. The plan's relation is the contract, so a single existing arc for
+     *  the pair is CORRECTED in place rather than duplicated (which would render
+     *  two arrows) or fatal. This is a semantic change, so it is recorded; the
+     *  alternative measured live was a failed job when the model typed the arc
+     *  `flows_to` where the plan required `causes`. More than one candidate arc
+     *  stays ambiguous and is left to the targeted repair. */
+    const pairArcs=visual.relations.filter(r=>{const a=visual.objects.find(o=>o.id===r.from.objectId),b=visual.objects.find(o=>o.id===r.to.objectId);return Boolean(a&&b&&((a.conceptId===required.fromConceptId&&b.conceptId===required.toConceptId)||(a.conceptId===required.toConceptId&&b.conceptId===required.fromConceptId)));});
+    if(pairArcs.length===1){
+     const arc=pairArcs[0];
+     log('v2.director.relation-corrected',{scene:scene.id,relation:required.id,arc:arc.id,from:arc.relationType,to:required.relationType,target:anchorNames.includes(requested)?requested:'center'},'warn');
+     arc.from={objectId:from.id,anchor:'center'};
+     arc.to={objectId:to.id,anchor:anchorNames.includes(requested)?requested:'center'};
+     arc.relationType=required.relationType;
+     arc.visualForm=visualForm;
+     relation=arc;
+    }else if(pairArcs.length>1){
+     throw new Error(`Missing semantic relation ${required.id}: ${pairArcs.length} candidate arcs between the same concepts; direction, type and target part are required`);
+    }else{
+     relation={id:`relation_synth_${required.id}`,from:{objectId:from.id,anchor:'center'},to:{objectId:to.id,anchor:anchorNames.includes(requested)?requested:'center'},relationType:required.relationType,visualForm} as VisualSceneV2['relations'][number];
     visual.relations.push(relation);
     log('v2.director.relation-synthesis',{scene:scene.id,relation:required.id,from:from.id,to:to.id,type:required.relationType,anchor:relation.to.anchor},'warn');
+    }
    }
   for(const b of scene.beats.filter(b=>b.relationFocus.includes(required.id))){
    const beat=visual.beats.find(v=>v.id===b.id)!;

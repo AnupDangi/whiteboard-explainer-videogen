@@ -36,6 +36,9 @@ interface RepresentationDecision {
 }
 
 const STYLE_FAMILY = 'chalk-ink-v2';
+/** The last-resort composition for a concept that declares no visualFamily.
+ *  Mirrors the heal the knowledge path already applies. */
+const FAMILY_BY_SEMANTIC_TYPE:Record<string,string>={process:'signal',state:'container',quantity:'quantity',entity:'component_group',material:'component_group',location:'container',role:'component_group'};
 
 function wordsOf(s: string): Set<string> {
   return new Set(
@@ -126,6 +129,14 @@ export function resolveRepresentation(
   }
   const family=REPRESENTATION_FAMILIES.find(f=>f===concept.visualFamily);
   if(family)return {candidates:[],representation:{family},fallback:'composition',warnings:[]};
+  /** No usable visualFamily. The knowledge path heals one from semanticType,
+   *  but the teaching path does not, so a hero with neither an asset nor a
+   *  family reached a bare label and tripped the hard "hero has no
+   *  representation" gate, failing the whole job (measured live). A composition
+   *  is a real representation, so derive the family here where BOTH paths pass.
+   *  Recorded, because it is a change to what the scene shows. */
+  const derived=FAMILY_BY_SEMANTIC_TYPE[concept.semanticType??''];
+  if(derived)return {candidates:[],representation:{family:derived as typeof REPRESENTATION_FAMILIES[number]},fallback:'composition',warnings:[`representation fallback: ${concept.id} has no visualFamily; using the ${derived} composition for ${concept.semanticType}`]};
   return {
     candidates: [],
     fallback: 'primitive-label',
@@ -149,12 +160,14 @@ export function resolveRepresentationRequest(request:RepresentationRequest):Repr
     return [{source:asset.type==='diagram_template'?'template':'asset',ref:asset.id,semanticScore:1,archetypeScore:asset.archetypes.includes(archetype)?1:0,anchors:Object.keys(asset.anchors),states:Object.keys(asset.states),confidence:.95} satisfies RepresentationCandidate];
   });
   if(candidates.length)return {request,candidates,selected:candidates[0],warnings};
+  /** The archetype's own composition family is more specific than one derived
+   *  from semanticType, so it is tried first on the typed path. */
+  const family=(Object.entries(COMPOSITION_FAMILIES) as [CompositionFamily,readonly string[]][]).find(([,archetypes])=>archetypes.includes(request.archetype))?.[0];
+  if(family){const composition:RepresentationCandidate={source:'composition',ref:`composition:${family}`,semanticScore:.72,archetypeScore:1,anchors:[...(request.requiredAnchors??[])],states:['neutral','highlighted','activated'],confidence:.7};return {request,candidates:[composition],selected:composition,warnings};}
   if(decision.representation){
     const composition:RepresentationCandidate={source:'composition',ref:`family:${decision.representation.family}`,semanticScore:.8,archetypeScore:1,anchors:[],states:['neutral','highlighted','activated'],confidence:.75};
     return {request,candidates:[composition],selected:composition,warnings};
   }
-  const family=(Object.entries(COMPOSITION_FAMILIES) as [CompositionFamily,readonly string[]][]).find(([,archetypes])=>archetypes.includes(request.archetype))?.[0];
-  if(family){const composition:RepresentationCandidate={source:'composition',ref:`composition:${family}`,semanticScore:.72,archetypeScore:1,anchors:[...(request.requiredAnchors??[])],states:['neutral','highlighted','activated'],confidence:.7};return {request,candidates:[composition],selected:composition,warnings};}
   const template=ASSETS.find(asset=>asset.type==='diagram_template'&&asset.archetypes.includes(archetype));
   if(template){const candidate:RepresentationCandidate={source:'template',ref:template.id,semanticScore:.6,archetypeScore:1,anchors:Object.keys(template.anchors),states:Object.keys(template.states),confidence:.65};return {request,candidates:[candidate],selected:candidate,warnings};}
   if(['entity','material','process','state'].includes(request.semanticType)){
