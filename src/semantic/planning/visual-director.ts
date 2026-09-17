@@ -20,7 +20,14 @@ export interface DirectionDecisions {centralTeachingObject:string;firstFocus:str
 const decisionKeys=['centralTeachingObject','firstFocus','illustratedConcepts','labelsOnly','movingRelations','persistentContext','stateChanges','omit'];
 const decisionSchema:Schema={type:'object',additionalProperties:false,required:decisionKeys,properties:Object.fromEntries(decisionKeys.map(k=>[k,{type:'string',maxLength:600}]))};
 /** The director's full response contract. Exported so a replay (the real-output regression corpus) heals against exactly what the model was asked for. */
-export const directorResponseSchema:Schema={type:'object',additionalProperties:false,required:['direction','decisions'],properties:{direction:resolvedDirectionSchema,decisions:decisionSchema}};
+export const directorResponseSchema:Schema={type:'object',additionalProperties:false,required:['direction'],properties:{direction:resolvedDirectionSchema,decisions:decisionSchema}};
+/** `decisions` is the director's self-report; nothing consumes it, so a model
+ *  that omits it entirely is not worth failing a lesson over (measured: the
+ *  omission survived its one repair and killed the job). The default is derived
+ *  from the scene, and the absence is recorded. */
+function defaultDecisions(scene:SemanticScenePlan):DirectionDecisions{
+ return {centralTeachingObject:scene.centralConceptId,firstFocus:scene.centralConceptId,illustratedConcepts:scene.requiredConceptIds.join(', '),labelsOnly:'(not reported)',movingRelations:'(not reported)',persistentContext:'(not reported)',stateChanges:'(not reported)',omit:'(not reported)'};
+}
 /** Deterministic continuity heal: a PRESERVE diff whose visual re-draws the
  *  concept is converted to a highlight, so the preserved object is emphasized
  *  instead of re-introduced (recorded by the caller). */
@@ -239,7 +246,7 @@ export async function directScene(scene:SemanticScenePlan,registry:ConceptIdenti
     // compatibility, recorded here so removal has data. Not silent.
     log('v2.director.legacy-scene-passthrough',{scene:scene.id,hasDirection:'direction' in response});
    }
-   const result={scene:response.scene??directionToScene(response.direction,scene),decisions:response.decisions};
+   const result={scene:response.scene??directionToScene(response.direction,scene),decisions:response.decisions??(log('v2.director.decisions-absent',{scene:scene.id},'warn'),defaultDecisions(scene))};
   for(const o of result.scene.objects){
    if(scene.requiredConceptIds.includes(o.conceptId??''))o.importance='primary';
    const choice=candidates.find(c=>c.conceptId===o.conceptId);
