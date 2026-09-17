@@ -364,6 +364,16 @@ export function applyCompositionFallbacks(input: VisualSceneV2, catalog?: Record
     case 'state_machine':
       if (count > 10) capPrimaries(scene, warnings, 10);
       else if (count < 2) fallbackArchetype(scene, warnings, `needs 2–10 primaries (has ${count})`);
+      /** The layered ranking cannot rank a graph with a cycle and the layout then
+       *  refuses the scene outright (`Branch graph contains a cycle; choose the
+       *  cycle archetype`). Measured: a source-grounded run ended there having
+       *  produced nothing. The same deterministic demotion flow uses breaks it -
+       *  the smallest-id feedback edge becomes a direct return arc and drops out
+       *  of ranking, keeping the composition and every relation. */
+      else if (flowHasCycle(scene)) {
+        breakFlowCycle(scene, warnings);
+        if (flowHasCycle(scene)) fallbackArchetype(scene, warnings, 'relations still form a cycle after edge repair');
+      }
       break;
     case 'hierarchy':
       if (count > 12) capPrimaries(scene, warnings, 12);
