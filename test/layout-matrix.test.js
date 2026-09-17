@@ -115,10 +115,10 @@ for (const archetype of SUPPORTED_ARCHETYPES) {
  *   - flow: a flat scene puts every root in one column; four or five rows plus a
  *     long label exceeds the safe band. */
 const KNOWN_DEFECTS = new Set([
-  'convergence n=12 long chain', 'convergence n=12 long flat', 'convergence n=12 short chain', 'convergence n=12 short flat',
+  'convergence n=12 short chain', 'convergence n=12 short flat',
   'equation_walkthrough n=6 long chain', 'equation_walkthrough n=6 long flat', 'equation_walkthrough n=6 short chain', 'equation_walkthrough n=6 short flat',
   'spatial_process n=12 long chain', 'spatial_process n=12 long flat',
-  'structural_diagram n=12 long chain', 'structural_diagram n=12 long flat', 'structural_diagram n=12 short chain', 'structural_diagram n=12 short flat',
+  'structural_diagram n=12 short chain', 'structural_diagram n=12 short flat',
 ]);
 
 test('no archetype manufactures its own illegal overlap or canvas escape', () => {
@@ -134,5 +134,5 @@ test('no archetype manufactures its own illegal overlap or canvas escape', () =>
   // 36 -> 26: the fit-to-safe repair fixed the structural hero escape and the
   // crowded-flow column shrink cases, so their entries were removed rather than
   // left to rot. The assertion is bidirectional, so this list can only shrink.
-  assert.equal(KNOWN_DEFECTS.size, 14, 'the register is a fixed list; update it deliberately');
+  assert.equal(KNOWN_DEFECTS.size, 10, 'the register is a fixed list; update it deliberately');
 });

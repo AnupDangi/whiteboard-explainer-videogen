@@ -32,7 +32,15 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  while(remaining.length){const index=remaining.findIndex(o=>!o.parentId||objects.some(p=>p.id===o.parentId));if(index<0)throw new Error('Unresolved parent');const o=remaining.splice(index,1)[0];
   const asset=o.assetRef?resolveAsset(o.assetRef,catalog):undefined;if(asset&&!asset.archetypes.includes(scene.archetype))throw new Error(`Asset incompatible with archetype: ${o.id}`);
   if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!['before','after'].includes(state)&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
-  const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(scene.archetype),w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;
+  /** A structural hero has to share the band with its supports. At the fixed
+   *  330x440 it filled the centre and left no room for eleven of them, so the
+   *  supports landed on it (measured: `structural_diagram n=12` overlapped
+   *  n0/n7, n0/n8). Past eight supports the hero gives ground; the golden
+   *  structural fixture has five, so its geometry is untouched. */
+  const STRUCTURAL_SUPPORT_LIMIT=8;
+  const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(scene.archetype);
+  const structuralCrowded=structuralHero&&scene.objects.filter(x=>!x.parentId&&x.role!=='hero'&&x.role!=='annotation'&&x.role!=='decorative_support').length>STRUCTURAL_SUPPORT_LIMIT;
+  const w=structuralHero?(structuralCrowded?220:330):labelOnly?250:132,h=structuralHero?(structuralCrowded?300:440):labelOnly?44:132;
   /** `nest` is how many objects already claimed this zone. It was ignored, so
    *  the ninth unplaced object reused zone 0 and landed on the same rect as the
    *  first. nest 0 is `zoneRect` unchanged, so existing scenes keep byte-identical
