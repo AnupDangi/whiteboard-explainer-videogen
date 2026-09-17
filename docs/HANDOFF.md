@@ -278,6 +278,28 @@ emitted as `v2.telemetry` (28 events on `final13`).
 
 Tests: **535/535**.
 
+#### Wave 6d - the layout register is 36 -> 8
+
+Five repairs, each preserving byte-identical output for scenes that already fit
+(the golden hashes are the guard, and they caught one attempt that changed a
+working fixture - it was rewritten to leave that fixture alone):
+
+| repair | site | fixed |
+|---|---|---|
+| fit-to-safe: shrink an object whose `visualBounds` leave the band, about its own centre, and re-fit | `compile-scene.ts` | structural/convergence n=2/n=4 long, flow n=4/n=5 long flat |
+| nested zones: `nestedZoneRect` - `nest` 0 is `zoneRect`, so the ninth unplaced object no longer lands on the first | `zones.ts` | (enabler) |
+| equation pitch from the measured label block, not a fixed 14px gap | `archetypes.ts` | equation n=4, n=6 short |
+| label width bounded by the NEARER safe edge, not a flat 180px | `compile-scene.ts` | cross_section, spatial_process n=2/n=4 long |
+| crowded structural hero: past 8 supports the hero gives ground (330x440 -> 220x300) | `compile-scene.ts` | structural/convergence n=12 long |
+| `COLLISION_GAP` shared, and the row pitch clears label block + gap | `collisions.ts` | equation n=6 short |
+
+**Remaining 8:** `structural_diagram`/`convergence` n=12 short (4) - eleven
+supports against eight zones cannot be resolved while the hero's own label reaches
+into the bottom zone, so these need the real grid placement rather than a wider
+hero. `spatial_process` n=12 long (2) and `equation_walkthrough` n=6 long (2) - the
+scaled pitch rounds to 503px against a 498px band, so the last row is one
+rounding step outside; the scale needs to be applied to the total, not row by row.
+
 #### Wave 6c - fit-to-safe repair, nested zones, and a register that shrinks
 
 **10 of the 36 layout defects are fixed and removed from the register (36 -> 26).**

@@ -3,6 +3,7 @@ import {BOARD} from './zones.js';
 import {NON_STRUCTURAL_RELATIONS} from '../types.js';
 import {maxLabelBlock,labelBlock,fitLabel} from './text.js';
 const MIN_NOTE=24;
+import {COLLISION_GAP} from './collisions.js';
 /** Primary-representation bounds each family enforces below. Shared so plan
  *  validation and archetype selection agree with the compiler instead of
  *  discovering the limit as a render-time failure. */
@@ -67,7 +68,7 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
    *  the safe band. */
   const widths=roots.map(o=>o.primitiveRef==='equation'?820:680);
   const blocks=roots.map((o,i)=>o.primitiveRef==='label'||o.primitiveRef==='equation'?0:labelBlock(fitLabel(o.label,Math.max(widths[i],180),20).lines.length,20));
-  let gap=Math.max(14,...blocks),rowHeights:number[]=roots.map(o=>o.primitiveRef==='equation'?64:34);
+  let gap=Math.max(14,...blocks.map(b=>b+COLLISION_GAP)),rowHeights:number[]=roots.map(o=>o.primitiveRef==='equation'?64:34);
   let total=rowHeights.reduce((a,b)=>a+b,0)+(roots.length-1)*gap,top=(720-total)/2;
   if(total>BOARD.safe.h){const scale=BOARD.safe.h/total;gap=Math.max(14,Math.round(gap*scale));rowHeights=rowHeights.map(h=>Math.max(MIN_NOTE,Math.round(h*scale)));total=rowHeights.reduce((a,b)=>a+b,0)+(roots.length-1)*gap;top=BOARD.safe.y+Math.max(0,Math.round((BOARD.safe.h-total)/2));}
   let y=top;
