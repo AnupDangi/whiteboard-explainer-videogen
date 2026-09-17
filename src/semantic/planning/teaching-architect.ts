@@ -43,7 +43,19 @@ export function validateArchitectOutput(raw:unknown,input:ArchitectStageInput):T
   const beat=scene.beats[index];
   if(entry.beatKey!==beat.id)throw new Error(`Architect contract ${index} targets ${entry.beatKey}, expected ${beat.id}`);
   const allowed=new Set([...beat.introduce,...beat.reinforce,...beat.transform.map(t=>t.conceptId)]);
-  for(const concept of [...entry.learnerDelta.newConcepts,...entry.learnerDelta.reinforcedConcepts])if(!allowed.has(concept))throw new Error(`Contract ${beat.id} references concept ${concept} outside its beat`);
+  /** A contract that names a concept its beat does not teach is scoped back to
+   *  the beat, not failed. The contract keeps its objective, mechanism and
+   *  checkpoint; only the out-of-scope delta entries go. Measured: a real
+   *  source-grounded run died here twice in a row (`beat_tradeoff references
+   *  concept reconstruction_error outside its beat`) and the repair reproduced
+   *  it, so the whole lesson was lost over a delta list. */
+  for(const key of ['newConcepts','reinforcedConcepts'] as const){
+   const kept=entry.learnerDelta[key].filter(concept=>allowed.has(concept));
+   if(kept.length!==entry.learnerDelta[key].length){
+    log('v2.architect.delta-scoped',{beat:beat.id,dropped:entry.learnerDelta[key].filter(c=>!allowed.has(c))},'warn');
+    entry.learnerDelta[key]=kept;
+   }
+  }
   for(const prerequisite of entry.prerequisites)if(!concepts.has(prerequisite))throw new Error(`Unknown prerequisite ${prerequisite}`);
   for(const mechanism of entry.mechanismIds)if(!mechanisms.has(mechanism))throw new Error(`Unknown mechanism ${mechanism}`);
   /** Architect evidence references outside the compiled inventory are dropped

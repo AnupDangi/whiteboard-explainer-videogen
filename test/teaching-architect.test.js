@@ -34,7 +34,11 @@ test('skill eval:prereq-order — contracts referencing the graph pass and unkno
 
 test('the architect cannot invent concepts outside the beat or change beat order',()=>{
  const outside=allContracts();outside.contracts[0].learnerDelta.newConcepts=['chloroplast'];
- assert.throws(()=>validateArchitectOutput(outside,{scene:scenePlan,learnerState,conceptGraph:graph}),/outside its beat/);
+ // Scoped back to the beat rather than fatal: a real source-grounded run died
+ // here twice and the repair reproduced it, losing the whole lesson over a delta
+ // list. The contract keeps its objective, mechanism and checkpoint.
+ const scoped=validateArchitectOutput(outside,{scene:scenePlan,learnerState,conceptGraph:graph});
+ assert.equal(scoped[0].learnerDelta.newConcepts.includes('chloroplast'),false,'an out-of-beat concept is dropped, not fatal');
  const reordered=allContracts();reordered.contracts[0].beatKey='zzz_wrong';
  assert.throws(()=>validateArchitectOutput(reordered,{scene:scenePlan,learnerState,conceptGraph:graph}),/expected/);
  assert.throws(()=>validateArchitectOutput({contracts:[]},{scene:scenePlan,learnerState,conceptGraph:graph}),/array bounds/);

@@ -5,7 +5,8 @@
  *      --out output/<name> --prompt "..." --archetypes cause_effect,transformation \
  *      --scenes 2 --narration
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { join } from 'node:path';
 import { createJsonModel } from '../src/semantic/planning/model-adapter.js';
 import { generateV2 } from '../src/semantic/planning/generate.js';
@@ -29,8 +30,21 @@ const archetypes = (flag('archetypes', 'cause_effect,transformation,flow,structu
 /** Scene count comes from the requested length unless pinned explicitly. */
 const targetMinutes = Number(flag('minutes', '1'));
 const maxScenes = Number(flag('scenes', String(Math.min(120, Math.max(1, Math.ceil((targetMinutes * 60) / 30))))));
+/** A document source, not just a prompt. The semantic pipeline grounds teaching
+ *  in `sourceText` (knowledge compiler, evidence, source-visual-grounding) and
+ *  the CLI never exposed it, so every run treated a long report as a one-line
+ *  prompt. `--source <file>` reads the file and passes it as the grounded source. */
+const sourceFile = flag('source');
+const sourceText = sourceFile ? await readFile(sourceFile, 'utf8') : undefined;
+/** The plan schema constrains every id, including evidence sourceId, to
+ *  `^[a-z][a-z0-9_-]*$` - no dots. Passing a filename verbatim produced
+ *  `deepseek-report-excerpt.md`, which failed validation as an invalid string and
+ *  killed the whole source-grounded run. */
+const sourceId = sourceFile ? (basename(sourceFile).toLowerCase().replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]/g, '-').replace(/^[^a-z]+/, '') || 'source') : undefined;
 const narrate = args.includes('--narration');
-const maxCostUsd = Number(flag('budget', '0.5'));
+/** Cost ceiling scales with the requested length: a 20-minute lesson is 40 scenes
+ *  and cannot run inside a one-minute cap. */
+const maxCostUsd = Number(flag('budget', String(Math.max(0.5, targetMinutes * 0.35).toFixed(2))));
 
 await mkdir(out, { recursive: true });
 const model = createJsonModel({ env: process.env, maxCostUsd });
@@ -39,7 +53,7 @@ const start = performance.now();
 let scenes = 0, exported = 0;
 
 try {
-  for await (const result of generateV2({ prompt, maxScenes, allowedArchetypes: archetypes, language: 'en', targetMinutes }, model, {
+  for await (const result of generateV2({ prompt, maxScenes, allowedArchetypes: archetypes, language: 'en', targetMinutes, ...(sourceText ? { sourceText, sourceId } : {}) }, model, {
     ...(speech ? { speech } : {}),
   })) {
     scenes++;
