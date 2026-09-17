@@ -1,10 +1,10 @@
 # Front-end comparison — 1-minute target
 
-| pipeline | case | scenes | wall s | output s | ratio | gate | calls | cost $ | error |
-|---|---|---|---|---|---|---|---|---|---|
-| semantic-v3 | photosynthesis | 2 | 32.0 | 53.5 | 0.89 | PASS | 6 | 0.0277 |  |
-| semantic | photosynthesis | 2 | 87.1 | 61.3 | 1.02 | PASS | 6 | 0.0441 |  |
-| semantic-v3 | http | 2 | 21.1 | 52.4 | 0.87 | PASS | 6 | 0.0272 |  |
-| semantic | http | 1 | 103.7 | 31.2 | 0.52 | FAIL | 7 | 0.0510 | Illegal overlap: concept_1_http_request_lifecycle_1/concept_ |
-| semantic-v3 | gradient | 2 | 16.6 | 59.1 | 0.98 | PASS | 6 | 0.0250 |  |
-| semantic | gradient | 1 | 87.4 | 31.2 | 0.52 | FAIL | 7 | 0.0471 | V2 director validation exhausted: Action has no target |
+| pipeline | case | scenes | wall s | output s | ratio | gate | concept | relation | critical | calls | cost $ | error |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| semantic-v3 | photosynthesis | 2 | 33.7 | 73.5 | 1.23 | MISS | 0.29 | 1.00 | MISS | 6 | 0.0296 |  |
+| semantic | photosynthesis | 1 | 105.6 | 31.2 | 0.52 | FAIL | 0.00 | 0.00 | — | 8 | 0.0556 | Illegal overlap: concept_1_sunlight_1/concept_1_oxygen_1 |
+| semantic-v3 | http | 2 | 19.7 | 55.7 | 0.93 | PASS | 0.71 | 0.00 | MISS | 6 | 0.0265 |  |
+| semantic | http | 0 | 93.3 | 0.0 | 0.00 | FAIL | 0.00 | 0.00 | — | 7 | 0.0474 | Director chose unavailable mental model |
+| semantic-v3 | gradient | 0 | 7.8 | 0.0 | 0.00 | FAIL | 0.00 | 0.00 | — | 2 | 0.0080 | Teacher gate failed: LessonBible persistentObjects reference |
+| semantic | gradient | 1 | 77.7 | 31.2 | 0.52 | FAIL | 0.00 | 0.00 | — | 7 | 0.0424 | Illegal overlap: concept_1_gradient_descent_1/concept_1_loss |

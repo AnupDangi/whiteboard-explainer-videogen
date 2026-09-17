@@ -16,7 +16,7 @@ Selection point: `src/semantic/pipeline.ts:8` (code default `semantic`). Route s
 ## 2. Size
 
 ```
-src/ total                         14,269 LOC / 139 files
+src/ total                         14,298 LOC / 139 files
   explainer/      (V1)              4,350  (20 files)   planner.ts alone = 1,431
   semantic/planning/                2,044  (11 files)
   semantic/assets/                  1,251  (23 files)
@@ -26,7 +26,7 @@ src/ total                         14,269 LOC / 139 files
   shared/                             857  ( 9 files)   incl. ingestion/{source,blocks}.ts
   semantic/harness/                   595  ( 9 files)
   semantic/knowledge/                 496  ( 7 files)
-  semantic/teacher/                   320  ( 5 files)
+  semantic/teacher/                   349  ( 5 files)
   server.ts                           224
   semantic/renderer/                  209  (10 files)
   semantic/scene/                     242  ( 2 files)
@@ -206,4 +206,4 @@ W5 still needs: the render cache tier and the remaining skills consolidation. W6
 
 **Skills consolidation:** the target classification (runtime 3-4 / deterministic-invariant / development-process / deferred) is recorded in `skills/README.md`; no runtime-invariant skill text is left unloaded without an explicit classification. Removing files is deferred until each target stage fully replaces its V2 counterpart.
 
-**Live v3 runs and A/B (2026-09-17):** `generateV3` compiles end to end; on the same 1-minute text source it produced 2 scenes in **14.2s wall / 4 calls / $0.0214** versus V2's 70.0s / 6 calls / $0.0434. OpenRouter research: every shortlist model supports strict structured output, and `openai/gpt-5.6-luna` returns 200 on the exact request when endpoints are available (the earlier 404 was transient endpoint/tier availability; the plan fallback `google/gemini-3.8-flash` served). Twelve real contract defects found live were fixed and gated; three deterministic recovery tiers (flatten → single-hero → minimal single-object scene) guarantee a bad model shape cannot hard-fail a lesson. Under the reproducible `matrix:frontends` run (3 topics, 1 minute, no TTS) v3 passed the duration gate **3/3** while V2 passed **1/3** (one compile `Illegal overlap`, one director `Action has no target`); v3 was 2.6-5.3x faster and ~1.6-1.9x cheaper. Residual: v3 narration-length spread; the one bounded length repair now targets the requested duration (not the teacher's duration sum) and runs on cache hits, which took a real `SemanticJobStore` v3 job to `complete`/`PASS` (52.5s for 60s) with an assembled MP4 — see `docs/HANDOFF.md` "Length-repair root cause".
+**Live v3 runs and A/B (2026-09-17):** `generateV3` compiles end to end; on the same 1-minute text source it produced 2 scenes in **14.2s wall / 4 calls / $0.0214** versus V2's 70.0s / 6 calls / $0.0434. OpenRouter research: every shortlist model supports strict structured output, and `openai/gpt-5.6-luna` returns 200 on the exact request when endpoints are available (the earlier 404 was transient endpoint/tier availability; the plan fallback `google/gemini-3.8-flash` served). Twelve real contract defects found live were fixed and gated; three deterministic recovery tiers (flatten → single-hero → minimal single-object scene) guarantee a bad model shape cannot hard-fail a lesson. Under the reproducible `matrix:frontends` run (3 topics, 1 minute, no TTS) v3 passed the duration gate **3/3** while V2 passed **1/3** (one compile `Illegal overlap`, one director `Action has no target`); v3 was 2.6-5.3x faster and ~1.6-1.9x cheaper. Residual: v3 narration-length spread; the one bounded length repair now targets the requested duration (not the teacher's duration sum) and runs on cache hits, which took a real `SemanticJobStore` v3 job to `complete`/`PASS` (52.5s for 60s) with an assembled MP4 — see `docs/HANDOFF.md` "Length-repair root cause". The compare tool also reports `conceptCoverage`/`relationshipCoverage`/`criticalClaimCoverage` for both pipelines, and the Teacher Planner sanitizes out-of-graph bible/continuity ids before its gate.

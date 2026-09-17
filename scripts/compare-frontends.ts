@@ -3,6 +3,8 @@ import {generateV2} from '../src/semantic/planning/generate.js';
 import {generateV3} from '../src/semantic/frontend/generate-v3.js';
 import {parseBlocks} from '../src/shared/ingestion/blocks.js';
 import type {VisualArchetype} from '../src/semantic/types.js';
+import type {CompiledSceneV2} from '../src/semantic/types.js';
+import {evaluateCaseSemantics} from '../eval/live/metrics.js';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -13,7 +15,7 @@ import {fileURLToPath} from 'node:url';
  *  scene count, wall time, output duration vs the requested window, call count
  *  and cost. Live-only: it needs OPENROUTER_API_KEY; a failed pipeline is
  *  reported as a visible failure row, never hidden. */
-export interface FrontendCase {id:string;text:string;prompt:string}
+export interface FrontendCase {id:string;text:string;prompt:string;expectedConcepts:string[];mustExplain:string[];requiredRelations?:Array<{fromConcept:string;toConcept:string}>}
 export interface FrontendRun {
   pipeline:'semantic'|'semantic-v3';
   case:string;
@@ -25,13 +27,16 @@ export interface FrontendRun {
   durationPass:boolean;
   calls:number;
   costUsd:number;
+  conceptCoverage:number;
+  relationshipCoverage:number;
+  criticalClaimCoverage:number;
   error?:string;
 }
 
 export const DEFAULT_CASES:FrontendCase[]=[
-  {id:'photosynthesis',text:'# Photosynthesis\n\nPlants use sunlight, water and carbon dioxide to make glucose and release oxygen. Chlorophyll absorbs light in the chloroplast.\n',prompt:'Explain photosynthesis for a beginner'},
-  {id:'http',text:'# HTTP request lifecycle\n\nA browser resolves a domain with DNS, opens a TCP connection, sends an HTTP request, the server responds with a status and headers, then the browser renders the body. HTTPS wraps the exchange in TLS.\n',prompt:'Explain the HTTP request lifecycle for a beginner'},
-  {id:'gradient',text:'# Gradient descent\n\nA model computes a loss, the gradient of that loss points uphill, so the parameters step in the opposite direction scaled by the learning rate. Repeating this reduces the loss until it converges.\n',prompt:'Explain gradient descent for a beginner'},
+  {id:'photosynthesis',text:'# Photosynthesis\n\nPlants use sunlight, water and carbon dioxide to make glucose and release oxygen. Chlorophyll absorbs light in the chloroplast.\n',prompt:'Explain photosynthesis for a beginner',expectedConcepts:['plants','sunlight','carbon dioxide','glucose','oxygen','chlorophyll','chloroplast'],mustExplain:['sunlight']},
+  {id:'http',text:'# HTTP request lifecycle\n\nA browser resolves a domain with DNS, opens a TCP connection, sends an HTTP request, the server responds with a status and headers, then the browser renders the body. HTTPS wraps the exchange in TLS.\n',prompt:'Explain the HTTP request lifecycle for a beginner',expectedConcepts:['browser','dns','tcp','http','tls','server','headers'],mustExplain:['HTTP'],requiredRelations:[{fromConcept:'browser',toConcept:'server'}]},
+  {id:'gradient',text:'# Gradient descent\n\nA model computes a loss, the gradient of that loss points uphill, so the parameters step in the opposite direction scaled by the learning rate. Repeating this reduces the loss until it converges.\n',prompt:'Explain gradient descent for a beginner',expectedConcepts:['loss','gradient','learning rate','parameters','converges'],mustExplain:['gradient']},
 ];
 
 const V2_ARCHETYPES:VisualArchetype[]=['flow','cycle','comparison','cause_effect','transformation','structural_diagram','numbered_steps','equation_walkthrough'];
@@ -43,35 +48,48 @@ export function durationRatio(outputMs:number,targetMinutes:number):number{
 }
 export function durationPasses(ratio:number):boolean{return ratio>=0.85&&ratio<=1.15;}
 
+/** Reuses the live-eval semantic probe so v3 coverage is measured the same way
+ *  V2's migration gates measure it (`eval/live/metrics.ts`). */
+function coverageOf(testCase:FrontendCase,scenes:CompiledSceneV2[]):{conceptCoverage:number;relationshipCoverage:number;criticalClaimCoverage:number}{
+  const semantic=evaluateCaseSemantics(testCase as unknown as Parameters<typeof evaluateCaseSemantics>[0],scenes);
+  return {conceptCoverage:semantic.conceptCoverage,relationshipCoverage:semantic.relationshipCoverage,criticalClaimCoverage:semantic.criticalClaimCoverage};
+}
+
 async function runV3(testCase:FrontendCase,targetMinutes:number):Promise<FrontendRun>{
   const model=createJsonModel({env:process.env,maxCostUsd:Number(process.env.V2_JOB_BUDGET_USD??0.6)});
   const doc={kind:'text',label:testCase.id,text:testCase.text,sha256:`compare-v3-${testCase.id}`,blocks:parseBlocks(testCase.text)};
+  const compiledScenes:CompiledSceneV2[]=[];
   const started=Date.now();let scenes=0,outputMs=0;
+  const zero={conceptCoverage:0,relationshipCoverage:0,criticalClaimCoverage:0};
   try{
-    for await(const result of generateV3(doc,{prompt:testCase.prompt,targetMinutes},model)){scenes++;outputMs+=result.compiled.durationMs;}
+    for await(const result of generateV3(doc,{prompt:testCase.prompt,targetMinutes},model)){scenes++;outputMs+=result.compiled.durationMs;compiledScenes.push(result.compiled);}
   }catch(error){
-    return {pipeline:'semantic-v3',case:testCase.id,scenes,wallSec:(Date.now()-started)/1000,outputSec:outputMs/1000,ratio:durationRatio(outputMs,targetMinutes),durationPass:false,calls:model.calls.length,costUsd:model.calls.reduce((sum,call)=>sum+call.costUsd,0),error:error instanceof Error?error.message:String(error)};
+    return {pipeline:'semantic-v3',case:testCase.id,scenes,wallSec:(Date.now()-started)/1000,outputSec:outputMs/1000,ratio:durationRatio(outputMs,targetMinutes),durationPass:false,calls:model.calls.length,costUsd:model.calls.reduce((sum,call)=>sum+call.costUsd,0),...zero,error:error instanceof Error?error.message:String(error)};
   }
   const ratio=durationRatio(outputMs,targetMinutes);
-  return {pipeline:'semantic-v3',case:testCase.id,scenes,wallSec:(Date.now()-started)/1000,outputSec:outputMs/1000,ratio,durationPass:durationPasses(ratio),calls:model.calls.length,costUsd:model.calls.reduce((sum,call)=>sum+call.costUsd,0)};
+  return {pipeline:'semantic-v3',case:testCase.id,scenes,wallSec:(Date.now()-started)/1000,outputSec:outputMs/1000,ratio,durationPass:durationPasses(ratio),calls:model.calls.length,costUsd:model.calls.reduce((sum,call)=>sum+call.costUsd,0),...coverageOf(testCase,compiledScenes)};
 }
 
 async function runV2(testCase:FrontendCase,targetMinutes:number):Promise<FrontendRun>{
   const model=createJsonModel({env:process.env,maxCostUsd:Number(process.env.V2_JOB_BUDGET_USD??0.6)});
+  const compiledScenes:CompiledSceneV2[]=[];
   const started=Date.now();let scenes=0,outputMs=0;
+  const zero={conceptCoverage:0,relationshipCoverage:0,criticalClaimCoverage:0};
   try{
-    for await(const result of generateV2({prompt:testCase.prompt,sourceText:testCase.text,sourceId:`compare-${testCase.id}`,maxScenes:Math.max(1,Math.round(targetMinutes*2)),allowedArchetypes:V2_ARCHETYPES,language:'en',targetMinutes,groundingPolicy:'source-only'},model,{})){scenes++;outputMs+=result.compiled.durationMs;}
+    for await(const result of generateV2({prompt:testCase.prompt,sourceText:testCase.text,sourceId:`compare-${testCase.id}`,maxScenes:Math.max(1,Math.round(targetMinutes*2)),allowedArchetypes:V2_ARCHETYPES,language:'en',targetMinutes,groundingPolicy:'source-only'},model,{})){scenes++;outputMs+=result.compiled.durationMs;compiledScenes.push(result.compiled);}
   }catch(error){
-    return {pipeline:'semantic',case:testCase.id,scenes,wallSec:(Date.now()-started)/1000,outputSec:outputMs/1000,ratio:durationRatio(outputMs,targetMinutes),durationPass:false,calls:model.calls.length,costUsd:model.calls.reduce((sum,call)=>sum+call.costUsd,0),error:error instanceof Error?error.message:String(error)};
+    return {pipeline:'semantic',case:testCase.id,scenes,wallSec:(Date.now()-started)/1000,outputSec:outputMs/1000,ratio:durationRatio(outputMs,targetMinutes),durationPass:false,calls:model.calls.length,costUsd:model.calls.reduce((sum,call)=>sum+call.costUsd,0),...zero,error:error instanceof Error?error.message:String(error)};
   }
   const ratio=durationRatio(outputMs,targetMinutes);
-  return {pipeline:'semantic',case:testCase.id,scenes,wallSec:(Date.now()-started)/1000,outputSec:outputMs/1000,ratio,durationPass:durationPasses(ratio),calls:model.calls.length,costUsd:model.calls.reduce((sum,call)=>sum+call.costUsd,0)};
+  return {pipeline:'semantic',case:testCase.id,scenes,wallSec:(Date.now()-started)/1000,outputSec:outputMs/1000,ratio,durationPass:durationPasses(ratio),calls:model.calls.length,costUsd:model.calls.reduce((sum,call)=>sum+call.costUsd,0),...coverageOf(testCase,compiledScenes)};
 }
 
 const fmt=(value:number,digits=2)=>value.toFixed(digits);
+/** The migration gate is critical coverage = 100% (`eval/live/gates.ts`). */
+export function criticalCoveragePasses(run:{conceptCoverage:number;relationshipCoverage:number}):boolean{return run.conceptCoverage===1&&run.relationshipCoverage===1;}
 export function renderMarkdown(runs:FrontendRun[],targetMinutes:number):string{
-  const header=`# Front-end comparison — ${targetMinutes}-minute target\n\n| pipeline | case | scenes | wall s | output s | ratio | gate | calls | cost $ | error |\n|---|---|---|---|---|---|---|---|---|---|`;
-  const rows=runs.map(run=>`| ${run.pipeline} | ${run.case} | ${run.scenes} | ${fmt(run.wallSec,1)} | ${fmt(run.outputSec,1)} | ${fmt(run.ratio)} | ${run.error?'FAIL':run.durationPass?'PASS':'MISS'} | ${run.calls} | ${fmt(run.costUsd,4)} | ${run.error?run.error.slice(0,60):''} |`);
+  const header=`# Front-end comparison — ${targetMinutes}-minute target\n\n| pipeline | case | scenes | wall s | output s | ratio | gate | concept | relation | critical | calls | cost $ | error |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|`;
+  const rows=runs.map(run=>`| ${run.pipeline} | ${run.case} | ${run.scenes} | ${fmt(run.wallSec,1)} | ${fmt(run.outputSec,1)} | ${fmt(run.ratio)} | ${run.error?'FAIL':run.durationPass?'PASS':'MISS'} | ${fmt(run.conceptCoverage)} | ${fmt(run.relationshipCoverage)} | ${run.error?'—':criticalCoveragePasses(run)?'PASS':'MISS'} | ${run.calls} | ${fmt(run.costUsd,4)} | ${run.error?run.error.slice(0,60):''} |`);
   return `${header}\n${rows.join('\n')}\n`;
 }
 
@@ -91,6 +109,7 @@ async function main(){
   console.log(renderMarkdown(runs,targetMinutes));
   console.log(`v3 duration-gate passes: ${runs.filter(run=>run.pipeline==='semantic-v3'&&run.durationPass).length}/${runs.filter(run=>run.pipeline==='semantic-v3').length}`);
   console.log(`V2 duration-gate passes: ${runs.filter(run=>run.pipeline==='semantic'&&run.durationPass).length}/${runs.filter(run=>run.pipeline==='semantic').length}`);
+  console.log(`v3 critical-coverage passes: ${runs.filter(run=>run.pipeline==='semantic-v3'&&criticalCoveragePasses(run)).length}/${runs.filter(run=>run.pipeline==='semantic-v3').length}`);
   if(out){
     await mkdir(dirname(out),{recursive:true});
     await writeFile(out,JSON.stringify({targetMinutes,generatedAt:new Date().toISOString(),runs},null,2));

@@ -1,6 +1,6 @@
 # Handoff — state of the project, 2026-09-17
 
-Written after a full read of `src/` (139 files, 14,269 LOC) by five read-only audits. Architecture authority: `Architecture_plan.md`; complete overview: `PLAN_TO_IMPLEMENT.md`. Structure reference: `docs/ARCHITECTURE.md`. Philosophy and non-goals: `AGENTS.md`.
+Written after a full read of `src/` (139 files, 14,298 LOC) by five read-only audits. Architecture authority: `Architecture_plan.md`; complete overview: `PLAN_TO_IMPLEMENT.md`. Structure reference: `docs/ARCHITECTURE.md`. Philosophy and non-goals: `AGENTS.md`.
 
 ## Waves landed
 
@@ -312,6 +312,27 @@ job **`4d4c5693`** → **status `complete`, finalGate `PASS`, publishable**, sce
 25s + 28s = 52.5s (ratio 0.88), 7 model calls, $0.0500, MP4 assembled
 (`output/4d4c5693-…mp4`, 1280×720 h264). A prior failing job (`68371ba7`) remains
 as the before/after evidence.
+
+**Migration-metric work (2026-09-17, second pass).** Three additions toward the
+coverage/continuity gates:
+- `scripts/compare-frontends.ts` now computes `conceptCoverage`,
+  `relationshipCoverage`, `criticalClaimCoverage` for BOTH pipelines by reusing
+  `eval/live/metrics.evaluateCaseSemantics`; the report gains coverage columns
+  and a "critical coverage pass" summary (gate = 100%).
+- Concept coverage now counts a concept named in a scene's **narration** or
+  title, not only in an object label (`eval/live/metrics.ts`). Object-only
+  matching undercounted v3 scenes whose labels are phrasal; both pipelines are
+  measured the same way.
+- The Teacher Planner now deterministically drops any `LessonBible` / continuity
+  id that is not in the supplied graph before the gate (`sanitizeLesson`, logged
+  `v3.teacher.bible-sanitized`). A live v3 run hard-failed on
+  `LessonBible persistentObjects` referencing an absent concept; that is a
+  cosmetic cross-scene reference, not source truth.
+
+Latest single-case observations (1 min, no TTS): v3 gradient completed (2 scenes,
+20.2s, $0.0238) but over-wrote to ratio 1.32; V2 completed the same case in
+175.3s / $0.0484 at ratio 1.05. The v3 residual remains narration over-write,
+not a hard failure.
 
 **Scene-worker model adherence (same contract, 54-word target per scene):**
 

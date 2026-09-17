@@ -34,6 +34,35 @@ function instructions(input:TeacherInput):string{
   return `You are the teacher planner for a whiteboard lesson. Produce the entire lesson plan in one response: LessonGraph (title, goal, scenes, continuity, ending) and LessonBible (cross-scene consistency). ${INVARIANTS} Allowed relation types (use no others): ${RELATIONS.join(', ')}. Target about ${expected} scenes (band ${Math.max(1,Math.ceil(expected*0.5))}-${Math.ceil(expected*1.5)}); depth for this duration: ${depthGuidance(input.targetDurationSec)}. Language: ${input.language??'en'}.`;
 }
 
+/** Deterministic: drop any lesson id not present in the supplied graph. The
+ *  model may name a plausible but absent concept in the bible or continuity
+ *  (a live v3 run hard-failed on `LessonBible persistentObjects`); that is a
+ *  cosmetic cross-scene reference, not source truth, so it is removed and
+ *  logged. The gate still enforces required concepts and mechanisms. */
+function sanitizeLesson(plan:LessonPlan,input:TeacherInput):LessonPlan{
+  const allowed=new Set([...input.base.concepts,...input.focus.concepts].map(concept=>concept.key));
+  const drop=(ids:string[]):string[]=>ids.filter(id=>allowed.has(id));
+  const bible=plan.lessonBible;
+  const cleanedBible:LessonBible={
+    ...bible,
+    conceptIdentity:Object.fromEntries(Object.entries(bible.conceptIdentity).filter(([key])=>allowed.has(key))),
+    visualIdentity:Object.fromEntries(Object.entries(bible.visualIdentity).filter(([key])=>allowed.has(key))),
+    analogies:Object.fromEntries(Object.entries(bible.analogies).filter(([key])=>allowed.has(key))),
+    persistentObjects:drop(bible.persistentObjects),
+    introducedConceptsByScene:Object.fromEntries(Object.entries(bible.introducedConceptsByScene).map(([sceneId,ids])=>[sceneId,drop(ids)])),
+  };
+  const scenes=plan.lessonGraph.scenes.map(scene=>({...scene,continuityIn:drop(scene.continuityIn),continuityOut:drop(scene.continuityOut)}));
+  const removed=bible.persistentObjects.length-cleanedBible.persistentObjects.length
+    +Object.keys(bible.conceptIdentity).length-Object.keys(cleanedBible.conceptIdentity).length
+    +Object.keys(bible.visualIdentity).length-Object.keys(cleanedBible.visualIdentity).length
+    +Object.keys(bible.analogies).length-Object.keys(cleanedBible.analogies).length;
+  if(removed>0)log('v3.teacher.bible-sanitized',{removed},'warn');
+  return {
+    lessonGraph:{...plan.lessonGraph,scenes,continuity:{...plan.lessonGraph.continuity,persistentConceptIds:drop(plan.lessonGraph.continuity.persistentConceptIds)}},
+    lessonBible:cleanedBible,
+  };
+}
+
 export async function planLesson(input:TeacherInput,options:{model:JsonModel;signal?:AbortSignal;sessionId?:string}):Promise<{plan:LessonPlan;gate:LessonGate}>{
   const graphInput={
     request:{userPrompt:input.userPrompt,targetDurationSec:input.targetDurationSec,audience:input.audience??{},language:input.language??'en'},
@@ -46,7 +75,7 @@ export async function planLesson(input:TeacherInput,options:{model:JsonModel;sig
     terminology:input.focus.terminology,
   };
   const raw=await options.model.generate('teacherPlanner',instructions(input),graphInput,lessonPlanSchema,(value)=>{assertSchema(value,lessonPlanSchema);return normalizePlan(value);},{...(options.signal?{signal:options.signal}:{}),...(options.sessionId?{sessionId:options.sessionId}:{})});
-  const plan=raw as LessonPlan;
+  const plan=sanitizeLesson(raw as LessonPlan,input);
   const gate=gateLessonPlan(plan,{base:input.base,focus:input.focus,requestedDurationSec:input.targetDurationSec,userPrompt:input.userPrompt});
   if(gate.advisories.length)log('v3.teacher.advisory',{advisories:gate.advisories},'warn');
   if(!gate.passed)throw new Error(`Teacher gate failed: ${gate.findings.join('; ')}`);

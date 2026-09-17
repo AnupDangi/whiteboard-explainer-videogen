@@ -168,8 +168,13 @@ export function evaluateCaseSemantics(c:LiveEvalCase, scenes:CompiledSceneV2[]):
   const claims=c.mustExplain.length
     ? c.mustExplain.filter(claim=>normalize(allText).includes(normalize(claim))).length/c.mustExplain.length
     : 1;
+  /** A concept counts as covered when it is named in a scene's title, goal,
+   *  object labels OR narration — a lesson can teach a concept aloud without a
+   *  dedicated object. (Object-only matching undercounted v3 scenes whose labels
+   *  are phrasal.) */
+  const sceneText=(scene:CompiledSceneV2)=>normalize([scene.scene.title,scene.scene.teachingGoal,scene.scene.mentalModel,...scene.scene.beats.map(beat=>beat.narration),...scene.objects.map(object=>object.label)].join(' '));
   const concepts=c.expectedConcepts?.length
-    ? c.expectedConcepts.filter(concept=>objectMatches(allObjects,concept).length>0).length/c.expectedConcepts.length
+    ? c.expectedConcepts.filter(concept=>scenes.some(scene=>sceneText(scene).includes(normalize(concept)))).length/c.expectedConcepts.length
     : 1;
   const relationships=c.requiredRelations?.length
     ? c.requiredRelations.filter(req=>scenes.some(scene=>{
