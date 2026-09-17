@@ -6,6 +6,7 @@ import {validateVisualScene} from '../planning/validate.js';
 import {resolveAsset,canonicalAnchor} from '../assets/registry.js';
 import {applyCompositionFallbacks} from './fallback.js';
 import {BOARD,zoneRect,supportedArchetype} from './zones.js';
+import {MAX_STATIC_INTERVAL_MS} from '../../shared/language.js';
 import {fitLabel,visualBounds} from './text.js';
 import {findCollisions,contains} from './collisions.js';
 import {routeRelation} from './routing.js';
@@ -148,6 +149,6 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
    }
   }),timing=structuredClone(timingInput??estimatedTiming(scene)),actions=compileTimeline(scene,timing,diagnostics);
  if(['structural_diagram','convergence','cross_section','spatial_process'].includes(scene.archetype)){const metrics=occupancy(objects);if(metrics.heroRatio<.3)diagnostics.push('Weak hero salience');if(metrics.areaRatio<.2)diagnostics.push('Low structural occupancy');}
- const gaps=staticIntervals(scene,timing,actions);if(gaps.some(g=>g.endMs-g.startMs>3500))diagnostics.push('Narrated static interval exceeds 3500ms');
+ const gaps=staticIntervals(scene,timing,actions);if(gaps.some(g=>g.endMs-g.startMs>MAX_STATIC_INTERVAL_MS))diagnostics.push(`Narrated static interval exceeds ${MAX_STATIC_INTERVAL_MS}ms`);
  return {version:2,scene,objects,relations,actions,timing,durationMs:timing.durationMs+650,diagnostics,...(catalog&&Object.keys(catalog).length?{assetCatalog:catalog}:{})};
 }

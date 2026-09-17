@@ -4,6 +4,7 @@ import {contains,findCollisions} from './compiler/collisions.js';
 import {visualBounds} from './compiler/text.js';
 import {resolveAsset} from './assets/registry.js';
 import {staticIntervals} from './compiler/timeline.js';
+import {MAX_STATIC_INTERVAL_MS} from '../shared/language.js';
 export interface Finding {code:string;severity:'hard'|'advisory';message:string}
 /** These are deterministic engineering checks, never a substitute for teaching-quality judgment. */
 export function lintCompiledScene(scene:CompiledSceneV2):Finding[]{
@@ -13,7 +14,7 @@ export function lintCompiledScene(scene:CompiledSceneV2):Finding[]{
  const ids=new Set(scene.objects.map(o=>o.id)),relations=new Set(scene.relations.map(r=>r.id));
  for(const a of scene.actions){if(![a.startMs,a.durationMs].every(Number.isFinite)||a.startMs<0||a.durationMs<=0||a.startMs+a.durationMs>scene.durationMs)fail('action-window',a.id);if(a.objectIds.some(id=>!ids.has(id))||a.relationIds.some(id=>!relations.has(id)))fail('action-target',a.id);}
  for(const r of scene.relations){const from=scene.objects.find(o=>o.id===r.from.objectId)?.anchors[r.from.anchor],to=scene.objects.find(o=>o.id===r.to.objectId)?.anchors[r.to.anchor];if(!from||!to||r.points.some(p=>![p.x,p.y].every(Number.isFinite)))fail('relation-anchor',r.id);else if(JSON.stringify(r.points[0])!==JSON.stringify(from)||JSON.stringify(r.points.at(-1))!==JSON.stringify(to))fail('relation-endpoint',r.id);}
- const gaps=staticIntervals(scene.scene,scene.timing,scene.actions);for(const gap of gaps)if(gap.endMs-gap.startMs>3500)findings.push({code:'static-interval',severity:'advisory',message:`${Math.round(gap.endMs-gap.startMs)}ms at ${Math.round(gap.startMs)}ms`});
+ const gaps=staticIntervals(scene.scene,scene.timing,scene.actions);for(const gap of gaps)if(gap.endMs-gap.startMs>MAX_STATIC_INTERVAL_MS)findings.push({code:'static-interval',severity:'advisory',message:`${Math.round(gap.endMs-gap.startMs)}ms at ${Math.round(gap.startMs)}ms`});
  return findings;
 }
 /** Asset/concept relationships are compared semantically, never by pixel equality or object ID spelling. */
