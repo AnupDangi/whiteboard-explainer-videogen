@@ -20,6 +20,18 @@ export function validateTeachingPlan(input:unknown,priorConcepts:ReadonlySet<str
   uniqueIds(plan.scenes,'scene');
   const requirements=[...plan.requiredClaims,...plan.requiredMechanisms],ids=uniqueIds(requirements,'requirement');
   const covered=new Set<string>(),transformed=new Set<string>(),aliases=new Map<string,string>();
+  /** An undeclared evidence citation is dropped wherever it appears - a concept,
+   *  a requirement or a beat - and the object keeps everything else. Measured:
+   *  `Unknown evidence: e6` and `Unknown evidence: ev_csa2_reduction` each failed
+   *  a whole run over an id the model invented while quoting real text. What the
+   *  plan ASSERTS stays ground: a fabricated quote is still fatal elsewhere, and
+   *  a critical beat still has to cite something. */
+  const pruneEvidence=(holder:{evidenceRefs:string[]},label:string)=>{
+   const kept=holder.evidenceRefs.filter(id=>evidence.has(id));
+   if(kept.length!==holder.evidenceRefs.length){warnings.push(`${label}: dropped evidence ${holder.evidenceRefs.filter(id=>!evidence.has(id)).join(', ')} (not declared by the plan)`);holder.evidenceRefs=kept;}
+  };
+  for(const c of plan.conceptRegistry)pruneEvidence(c,`concept ${c.id}`);
+  for(const r of [...requirements])pruneEvidence(r,`requirement ${r.id}`);
   for(const c of plan.conceptRegistry){refs(c.evidenceRefs,evidence,'evidence');for(const name of [c.canonicalName,...c.aliases]){const key=name.toLowerCase().trim();if(aliases.has(key)&&aliases.get(key)!==c.id)throw new Error(`Ambiguous concept alias: ${name}`);aliases.set(key,c.id);}}
   for(const r of requirements)refs(r.evidenceRefs,evidence,'evidence');
   for(const m of plan.requiredMechanisms)refs(m.conceptIds,concepts,'concept');
@@ -56,7 +68,14 @@ export function validateTeachingPlan(input:unknown,priorConcepts:ReadonlySet<str
       warnings.push(`${scene.id}: continuity dropped ${scene.continuity.keepFromPrevious.filter(id=>!available.has(id)).join(', ')} (not established yet)`);
       scene.continuity.keepFromPrevious=kept;
      }
-    }refs(scene.continuity.prepareForNext,concepts,'next concept');
+    }
+    /** `prepareForNext` names what the NEXT scene will reuse; a model can name a
+     *  concept it never introduced. Dropped and recorded, exactly like
+     *  keepFromPrevious above - the scene keeps what it can. Measured:
+     *  `Unknown next concept: swa_bounded_replay` after the evidence heal. */
+    {const kept=scene.continuity.prepareForNext.filter(id=>concepts.has(id));
+     if(kept.length!==scene.continuity.prepareForNext.length){warnings.push(`${scene.id}: prepareForNext dropped ${scene.continuity.prepareForNext.filter(id=>!concepts.has(id)).join(', ')} (unknown concept)`);scene.continuity.prepareForNext=kept;}}
+    refs(scene.continuity.prepareForNext,concepts,'next concept');
     for(const r of scene.requiredRelations)refs([r.fromConceptId,r.toConceptId],new Set(scene.requiredConceptIds),'relation concept');
     // Deterministic heal: models smuggle requirement ids into relationFocus; drop those,
     // then attach any untaught required relation to a beat that covers both endpoints.
@@ -69,7 +88,12 @@ export function validateTeachingPlan(input:unknown,priorConcepts:ReadonlySet<str
     const signatures=new Set<string>(),seen=new Set<string>();
     for(const b of scene.beats){
       lintTeacherVoice(b.narrationDraft,b.id);
-      refs(b.requirementIds,ids,'requirement');refs(b.evidenceRefs,evidence,'evidence');refs([...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)],concepts,'beat concept');refs(b.relationFocus,relations,'relation');
+      /** A beat citing evidence the plan never declared keeps its beat and drops
+       *  the citation (recorded). Measured: `Unknown evidence: e6` failed a
+       *  source-grounded run outright, and the id was one the model had invented
+       *  while quoting real text. The plan's own evidence is verified; a beat's
+       *  reference to something outside it is bookkeeping. */
+      pruneEvidence(b,`${scene.id}/${b.id}`);refs(b.requirementIds,ids,'requirement');refs(b.evidenceRefs,evidence,'evidence');refs([...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)],concepts,'beat concept');refs(b.relationFocus,relations,'relation');
       b.requirementIds.forEach(x=>covered.add(x));b.transform.forEach(t=>{if(t.fromState===t.toState)throw new Error('State change must change state');transformed.add(t.conceptId);});
       [...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)].forEach(x=>seen.add(x));
       const words=new Set(wordsOf(b.narrationDraft));const signature=[...words].sort().join(' ');

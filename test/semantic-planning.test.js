@@ -17,7 +17,12 @@ test('V2 teaching plan covers claims and mechanisms with global concept identity
  // Stripping requirementIds from the combine beat heals deterministically: the mechanism
  // reattaches to the establishment beat whose narration still states it.
  {const p=plan();p.scenes[0].beats[4].requirementIds=[];assert.throws(()=>validateTeachingPlan(p),/Uncovered critical/);}
- for(const mutate of [p=>p.scenes[0].beats[0].introduce=['unknown'],p=>p.scenes[0].beats[0].evidenceRefs=['fabricated'],p=>p.conceptRegistry[1].aliases=['Plant'],p=>p.scenes[0].beats[1].narrationDraft=p.scenes[0].beats[0].narrationDraft,p=>p.requiredMechanisms[0].requiresStateChange=true]){const p=plan();mutate(p);assert.throws(()=>validateTeachingPlan(p));}});
+ for(const mutate of [p=>p.scenes[0].beats[0].introduce=['unknown'],p=>p.conceptRegistry[1].aliases=['Plant'],p=>p.scenes[0].beats[1].narrationDraft=p.scenes[0].beats[0].narrationDraft,p=>p.requiredMechanisms[0].requiresStateChange=true]){const p=plan();mutate(p);assert.throws(()=>validateTeachingPlan(p));}
+ // An undeclared evidence CITATION is dropped, not fatal - measured, `Unknown
+ // evidence: e6` failed a whole run over an id the model invented while quoting
+ // real text. An unknown CONCEPT still rejects (first case above): a concept is
+ // what the beat teaches, a citation is bookkeeping.
+ {const p=plan();p.scenes[0].beats[0].evidenceRefs=['fabricated'];const {plan:healed}=validateTeachingPlan(p);assert.equal(healed.scenes[0].beats[0].evidenceRefs.includes('fabricated'),false,'the undeclared citation is dropped');}});
 test('V2 mental model selection respects archetype gates and central semantic relations',()=>{const p=plan(),s=p.scenes[0],m=selectVisualModel(s,p.conceptRegistry,{keepFromPrevious:[],prepareForNext:[]},['structural_diagram']);assert.deepEqual(m.heroConceptIds,['plant']);assert.throws(()=>selectVisualModel(s,p.conceptRegistry,{keepFromPrevious:[],prepareForNext:[]},['flow']));});
 test('V2 source-grounded planning rejects fabricated evidence and prompt-only invented sources',async()=>{const fake=model();fake.generate=async(_s,_i,_input,_schema,validate)=>{const p=plan();p.evidenceRefs=[{id:'evidence',sourceId:'source',quote:'made up'}];p.scenes[0].beats.forEach(b=>b.evidenceRefs=['evidence']);return validate(p);}; /** Thin-teaching: fabricated evidence ids are dropped; a plan left without
   *  grounded evidence is rejected for lacking compiled references. */

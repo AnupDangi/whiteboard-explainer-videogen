@@ -38,9 +38,15 @@ test('replay: beat references to unknown concepts are rejected',async()=>{
  assert.throws(()=>validateTeachingPlan(teachingIntentToPlan(f.payload)),/Unknown concept: prefill_activation/);
 });
 
-test('replay: beat references to unknown evidence are rejected',async()=>{
+test('replay: a beat citing evidence the plan never declared drops the citation',async()=>{
  const f=await fixture('unknown-evidence');
- assert.throws(()=>validateTeachingPlan(teachingIntentToPlan(f.payload)),/Unknown evidence: ev_csa2_reduction/);
+ // The beat keeps its narration and concepts; only the dangling citation goes.
+ // Measured: `Unknown evidence: e6` failed a source-grounded run outright over an
+ // id the model invented while quoting real text. Unknown CONCEPTS still reject
+ // (above) - a concept is what the beat teaches, a citation is bookkeeping.
+ const {plan}=validateTeachingPlan(teachingIntentToPlan(f.payload));
+ const refs=plan.scenes.flatMap(scene=>scene.beats.flatMap(beat=>beat.evidenceRefs));
+ assert.equal(refs.includes('ev_csa2_reduction'),false,'the undeclared citation is dropped');
 });
 
 test('replay: knowledge formula evidence now snaps to the math-italic source instead of failing',async()=>{
