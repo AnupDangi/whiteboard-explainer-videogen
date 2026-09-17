@@ -44,7 +44,19 @@ export function validateTeachingPlan(input:unknown,priorConcepts:ReadonlySet<str
         else{scene.requiredConceptIds=scene.requiredConceptIds.filter(id=>id!==c);warnings.push(`${scene.id}: untaught required concept ${c} dropped; no beat has room under the cognitive-load limit`);}
       }
     }
-    refs(scene.requiredConceptIds,concepts,'concept');refs([scene.centralConceptId],new Set(scene.requiredConceptIds),'central concept');refs(scene.continuity.keepFromPrevious,new Set([...priorConcepts,...prior]),'previous concept');refs(scene.continuity.prepareForNext,concepts,'next concept');
+    refs(scene.requiredConceptIds,concepts,'concept');refs([scene.centralConceptId],new Set(scene.requiredConceptIds),'central concept');/** A scene may only carry forward what earlier scenes established. A model
+    *  asking for more is naming a concept that does not exist yet, so the
+    *  unavailable ids are dropped (recorded) and the scene keeps what it can.
+    *  Measured: `Unknown previous concept: latent-vector` exhausted the teaching
+    *  validation and lost a five-minute lesson on its first chapter. */
+    {
+     const available=new Set([...priorConcepts,...prior]);
+     const kept=scene.continuity.keepFromPrevious.filter(id=>available.has(id));
+     if(kept.length!==scene.continuity.keepFromPrevious.length){
+      warnings.push(`${scene.id}: continuity dropped ${scene.continuity.keepFromPrevious.filter(id=>!available.has(id)).join(', ')} (not established yet)`);
+      scene.continuity.keepFromPrevious=kept;
+     }
+    }refs(scene.continuity.prepareForNext,concepts,'next concept');
     for(const r of scene.requiredRelations)refs([r.fromConceptId,r.toConceptId],new Set(scene.requiredConceptIds),'relation concept');
     // Deterministic heal: models smuggle requirement ids into relationFocus; drop those,
     // then attach any untaught required relation to a beat that covers both endpoints.
