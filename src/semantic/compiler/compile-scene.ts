@@ -216,6 +216,32 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
    parent.x=original.x;parent.y=original.y;
   }
  }
+ // Last resort for a child-vs-child collision: two subparts of two DIFFERENT
+ // parents that re-seating could not clear. Shrink both and push them to opposite
+ // corners of their own parents. Measured (twice): `concept_1_transformer_1/
+ // concept_1_latent_vector_1` and `concept_1_kv_cache_1/concept_1_memory_bandwidth_1`
+ // on a `cause_effect` scene, where the neighbours sit side by side.
+ for(let pass=0;pass<5;pass++){
+  const pairs=findCollisions(objects).filter(pair=>{const [a,b]=pair.split('/');return objects.find(o=>o.id===a)?.parentId&&objects.find(o=>o.id===b)?.parentId;});
+  if(!pairs.length)break;
+  for(const pair of pairs){
+   const [leftId,rightId]=pair.split('/');
+   for(const [index,id] of [leftId,rightId].entries()){
+    const o=objects.find(x=>x.id===id);if(!o)continue;
+    const parent=objects.find(x=>x.id===o.parentId);if(!parent)continue;
+    o.w=Math.max(14,Math.round(o.w*.82));o.h=Math.max(10,Math.round(o.h*.82));
+    // left child to its parent's left edge, right child to its right edge
+    const own=objects.find(x=>x.id===(index===0?leftId:rightId));
+    const isLeft=own&&(o.x+o.w/2)<=(parent.x+parent.w/2);
+    o.x=Math.round(parent.x+(parent.w-o.w)*(index===0?(isLeft?.1:.9):(isLeft?.1:.9)));
+    o.y=Math.round(parent.y+(parent.h-o.h)*(index===0?.15:.85));
+    if(o.x<parent.x)o.x=parent.x; if(o.y<parent.y)o.y=parent.y;
+    if(o.x+o.w>parent.x+parent.w)o.x=parent.x+parent.w-o.w;
+    if(o.y+o.h>parent.y+parent.h)o.y=parent.y+parent.h-o.h;
+   }
+   diagnostics.push(`geometry repair: separated children ${leftId}/${rightId}`);
+  }
+ }
  const collisions=findCollisions(objects);if(collisions.length)throw Object.assign(new Error(`Illegal overlap: ${collisions.join(', ')}`),{compiledObjects:objects.map(o=>({id:o.id,role:o.role,parentId:o.parentId,collisionPolicy:o.collisionPolicy,x:Math.round(o.x),y:Math.round(o.y),w:o.w,h:o.h}))});
  for(const o of objects)if(!contains(BOARD.safe,visualBounds(o)))throw new Error(`Canvas escape: ${o.id}`);
  resolveAnchors();
