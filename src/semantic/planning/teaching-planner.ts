@@ -177,11 +177,17 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   *  re-states the measured total and the direction to move. */
  let plan=await attempt(options.repairFindings);
  if(input.targetMinutes){
-  const budget=wordsForMinutes(input.targetMinutes);
+  /** A chaptered source is planned one chapter at a time, so each chapter must
+   *  target its SHARE of the lesson. Comparing every chapter against the whole
+   *  budget let two chapters each come in at ~108 words for a one-minute lesson
+   *  and total 213 - the lesson ran 95.5s against a 60s request and the
+   *  refinement never fired, because each chapter individually looked correct. */
+  const chapters=Math.max(1,options.chapter?.count??1);
+  const budget=Math.max(1,Math.round(wordsForMinutes(input.targetMinutes)/chapters));
   const actual=plan.scenes.reduce((total,scene)=>total+scene.beats.reduce((n,beat)=>n+countWords(beat.narrationDraft),0),0);
   if(actual<budget*.85||actual>budget*1.15){
    const note=`Your narration totalled ${actual} words. This is a ${input.targetMinutes}-minute lesson and needs about ${budget} words (${actual<budget?'add depth: explain the mechanism and give a worked example':'trim repetition and shorten explanations'}). Keep every required concept, relation and requirement covered.`;
-   log('v2.teaching.length-repair',{scenes:plan.scenes.length,actual,budget,targetMinutes:input.targetMinutes},'warn');
+   log('v2.teaching.length-repair',{scenes:plan.scenes.length,actual,budget,chapters,targetMinutes:input.targetMinutes},'warn');
    plan=await attempt([...(options.repairFindings??[]),note]);
   }
  }
