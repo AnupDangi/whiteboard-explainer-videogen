@@ -56,12 +56,29 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   const parent=o.parentId?objects.find(p=>p.id===o.parentId):undefined;
   if(parent){
    const cw=Math.min(w,parent.w*.4),ch=Math.min(h,parent.h*.35);
+   /** On a cycle the parents sit on a ring, so a child placed at a fixed
+    *  fractional offset lands on the same side as its neighbour's child and the two
+    *  meet in the middle: measured `Illegal overlap:
+    *  concept_1_memory_bandwidth_1/concept_1_latent_vector_1`, two subparts of two
+    *  adjacent ring nodes, which no parent nudge of 32-64px could clear. A cycle
+    *  child is seated toward the OUTWARD radial direction instead, so adjacent
+    *  nodes' subparts face away from each other. */
+   if(scene.archetype==='cycle'){
+    const pcx=parent.x+parent.w/2,pcy=parent.y+parent.h/2;
+    const bcx=BOARD.safe.x+BOARD.safe.w/2,bcy=BOARD.safe.y+BOARD.safe.h/2;
+    const dx=pcx-bcx,dy=pcy-bcy;
+    const fx=Math.abs(dx)>Math.abs(dy)*.5?(dx>0?.78:.22):.5;
+    const fy=Math.abs(dy)>Math.abs(dx)*.5?(dy>0?.78:.22):.5;
+    rect={x:Math.round(parent.x+(parent.w-cw)*fx),y:Math.round(parent.y+(parent.h-ch)*fy),w:cw,h:ch};
+   }else{
    const px=zone.includes('left')?.2:zone.includes('right')?.8:.5;
    /** Children that share a zone on the same parent derange vertically, or two
     *  'lower_right' subparts would land on identical rects. */
    const slot=(childIndex.get(o.parentId!)??0);childIndex.set(o.parentId!,slot+1);
    const py=zone.includes('upper')?.18+[0,.34][slot%2]! as number:zone.includes('lower')?.58+[0,.26][slot%2]! as number:.4;
-   rect={x:parent.x+(parent.w-cw)*px,y:parent.y+(parent.h-ch)*Math.min(1,py),w:cw,h:ch};if(o.collisionPolicy==='touch')rect.x=parent.x+parent.w;
+   rect={x:parent.x+(parent.w-cw)*px,y:parent.y+(parent.h-ch)*Math.min(1,py),w:cw,h:ch};
+   }
+   if(o.collisionPolicy==='touch')rect.x=parent.x+parent.w;
   }
   /** A child's geometry is derived from its parent, so reusing the previous
    *  scene's rect would place it outside a parent that has moved or resized —

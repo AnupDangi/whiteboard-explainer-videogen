@@ -186,7 +186,14 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   const budget=Math.max(1,Math.round(wordsForMinutes(input.targetMinutes)/chapters));
   const actual=plan.scenes.reduce((total,scene)=>total+scene.beats.reduce((n,beat)=>n+countWords(beat.narrationDraft),0),0);
   if(actual<budget*.85||actual>budget*1.15){
-   const note=`Your narration totalled ${actual} words. This is a ${input.targetMinutes}-minute lesson and needs about ${budget} words (${actual<budget?'add depth: explain the mechanism and give a worked example':'trim repetition and shorten explanations'}). Keep every required concept, relation and requirement covered.`;
+   /** State the two numbers the model actually controls: the beat count and the
+    *  word total. Measured: the previous note gave only the word total, and the
+    *  model returned one more word than before - it repeated itself rather than
+    *  extending, because nothing told it to add beats. */
+   const beatsNow=plan.scenes.reduce((n,scene)=>n+scene.beats.length,0);
+   const beatsWanted=Math.max(1,(input.maxScenes??1)*5);
+   const note=`Your lesson has ${beatsNow} beats and ${actual} words of narration. This ${input.targetMinutes}-minute lesson needs about ${beatsWanted} beats and about ${budget} words (${actual<budget?'add beats and explain the mechanism in more depth':'trim repetition and shorten explanations'}). Keep every required concept, relation and requirement covered.`;
+   log('v2.teaching.length-repair-note',{beatsNow,beatsWanted,actual,budget},'warn');
    log('v2.teaching.length-repair',{scenes:plan.scenes.length,actual,budget,chapters,targetMinutes:input.targetMinutes},'warn');
    plan=await attempt([...(options.repairFindings??[]),note]);
   }

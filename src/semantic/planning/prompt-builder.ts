@@ -51,8 +51,14 @@ export function teachingPrompt(options:TeachingPromptOptions):string{
   const budget=options.targetMinutes?wordsForMinutes(options.targetMinutes):undefined;
   const beatsPerScene=5;
   const wordsPerBeat=budget?Math.max(4,Math.round(budget/(Math.max(1,options.maxScenes)*beatsPerScene))):undefined;
+  /** The beat COUNT is stated as a total, not a range. Measured: the model honours
+   *  `wordsPerBeat` exactly - every beat came back at 11 words - but wrote three
+   *  beats instead of the five asked for, so a one-minute lesson totalled 66 words
+   *  and ran 31.6s. Two scenes x 3 beats x 11 words is a correct per-beat number
+   *  and a wrong lesson. A total is one number the model can check itself against. */
+  const totalBeats=Math.max(1,options.maxScenes*beatsPerScene);
   const lengthRule=budget
-    ?`Use at most ${options.maxScenes} scenes with ${beatsPerScene}-${beatsPerScene+2} beats each. The ENTIRE lesson's narration must total approximately ${budget} words across every beat and scene: that is this ${options.targetMinutes}-minute lesson at ${NARRATION_WPM} words per minute, so roughly ${wordsPerBeat} words per beat. Stay within 10% of ${budget} words.`
+    ?`Build exactly ${options.maxScenes} scene(s) with ${beatsPerScene}-${beatsPerScene+2} beats each - ${totalBeats} beats in total. Every beat carries about ${wordsPerBeat} words of narration, and the ENTIRE lesson must total approximately ${budget} words: that is this ${options.targetMinutes}-minute lesson at ${NARRATION_WPM} words per minute. Before returning, count your beats and your words; if you have fewer than ${totalBeats} beats or fewer than ${Math.round(budget*.85)} words, add beats until you do.`
     :`Use at most ${options.maxScenes} scenes, 4-7 short beats per scene, approximately 12-20 words per beat.`;
   return [
     `Plan a coherent teaching arc and semantic beats, not a node/edge diagram. A scene keeps one central mental model on one board.`,
