@@ -1,7 +1,8 @@
 import type {VisualSceneV2,Rect,VisualArchetype} from '../types.js';
 import {BOARD} from './zones.js';
 import {NON_STRUCTURAL_RELATIONS} from '../types.js';
-import {maxLabelBlock} from './text.js';
+import {maxLabelBlock,labelBlock,fitLabel} from './text.js';
+const MIN_NOTE=24;
 /** Primary-representation bounds each family enforces below. Shared so plan
  *  validation and archetype selection agree with the compiler instead of
  *  discovering the limit as a render-time failure. */
@@ -56,8 +57,21 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
   if(roots.length<2||roots.length>6)throw new Error('Equation walkthrough requires 2–6 derivation lines');
   // Eq lines stack top-to-bottom as a derivation; short label objects are teacher-voice
   // step notes placed inline between them (compact rows).
-  const rowHeights=roots.map(o=>o.primitiveRef==='equation'?64:34),gap=14,total=rowHeights.reduce((a,b)=>a+b,0)+(roots.length-1)*gap,top=(720-total)/2;let y=top;
-  roots.forEach((o,index)=>{placements.set(o.id,{x:o.primitiveRef==='equation'?230:300,y,w:o.primitiveRef==='equation'?820:680,h:rowHeights[index]});y+=rowHeights[index]+gap;});
+  /** The pitch must clear the label block that the fitter places BENEATH a row.
+   *  A fixed 14 did not: one line already needs 31px and the fitter permits three
+   *  (81px), so every adjacent note pair at a 34+14=48px pitch overlapped. A
+   *  `label`/`equation` row keeps 14 because its label is drawn inside the rect.
+   *  The gap is measured from the actual labels, so a scene whose labels already
+   *  cleared 14 keeps byte-identical geometry (this is what the golden hashes
+   *  pin). Rows are scaled together only when they and their labels do not fit
+   *  the safe band. */
+  const widths=roots.map(o=>o.primitiveRef==='equation'?820:680);
+  const blocks=roots.map((o,i)=>o.primitiveRef==='label'||o.primitiveRef==='equation'?0:labelBlock(fitLabel(o.label,Math.max(widths[i],180),20).lines.length,20));
+  let gap=Math.max(14,...blocks),rowHeights:number[]=roots.map(o=>o.primitiveRef==='equation'?64:34);
+  let total=rowHeights.reduce((a,b)=>a+b,0)+(roots.length-1)*gap,top=(720-total)/2;
+  if(total>BOARD.safe.h){const scale=BOARD.safe.h/total;gap=Math.max(14,Math.round(gap*scale));rowHeights=rowHeights.map(h=>Math.max(MIN_NOTE,Math.round(h*scale)));total=rowHeights.reduce((a,b)=>a+b,0)+(roots.length-1)*gap;top=BOARD.safe.y+Math.max(0,Math.round((BOARD.safe.h-total)/2));}
+  let y=top;
+  roots.forEach((o,index)=>{placements.set(o.id,{x:o.primitiveRef==='equation'?230:300,y,w:widths[index],h:rowHeights[index]});y+=rowHeights[index]+gap;});
  }else if(scene.archetype==='matrix_operation'){
   if(roots.length<3||roots.length>6)throw new Error('Matrix operation requires 3–6 equation terms');
   if(!roots.some(o=>o.primitiveRef==='equation'))throw new Error('Matrix operation requires an operator or equals token');

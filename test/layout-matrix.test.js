@@ -117,7 +117,6 @@ for (const archetype of SUPPORTED_ARCHETYPES) {
 const KNOWN_DEFECTS = new Set([
   'convergence n=12 long chain', 'convergence n=12 long flat', 'convergence n=12 short chain', 'convergence n=12 short flat',
   'cross_section n=2 long chain', 'cross_section n=2 long flat', 'cross_section n=4 long chain', 'cross_section n=4 long flat',
-  'equation_walkthrough n=4 long chain', 'equation_walkthrough n=4 long flat', 'equation_walkthrough n=4 short chain', 'equation_walkthrough n=4 short flat',
   'equation_walkthrough n=6 long chain', 'equation_walkthrough n=6 long flat', 'equation_walkthrough n=6 short chain', 'equation_walkthrough n=6 short flat',
   'spatial_process n=12 long chain', 'spatial_process n=12 long flat', 'spatial_process n=2 long chain', 'spatial_process n=2 long flat',
   'spatial_process n=4 long chain', 'spatial_process n=4 long flat',
@@ -137,5 +136,5 @@ test('no archetype manufactures its own illegal overlap or canvas escape', () =>
   // 36 -> 26: the fit-to-safe repair fixed the structural hero escape and the
   // crowded-flow column shrink cases, so their entries were removed rather than
   // left to rot. The assertion is bidirectional, so this list can only shrink.
-  assert.equal(KNOWN_DEFECTS.size, 26, 'the register is a fixed list; update it deliberately');
+  assert.equal(KNOWN_DEFECTS.size, 22, 'the register is a fixed list; update it deliberately');
 });
