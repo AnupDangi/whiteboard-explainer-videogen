@@ -159,7 +159,7 @@ test('long label tokens fit instead of failing the scene', () => {
   assert.equal(name.lines.join(''), 'DeepSeek-V4.1-Flash', 'the whole name survives the break');
 });
 
-test('stripped asset anchors degrade to center on surviving relations', () => {
+test('a kept asset keeps its own anchors on surviving relations', () => {
   const s = scene('spatial_process', [
     obj('dna', { assetRef: 'biology.dna.fork.v2', role: 'hero' }),
     obj('strand', { assetRef: 'biology.dna.helix.v2' }),
@@ -168,8 +168,11 @@ test('stripped asset anchors degrade to center on surviving relations', () => {
   s.beats = [beat('b1', ['dna', 'strand'], ['r_unwind'])];
   const compiled = compileScene(s);
   const unwound = compiled.scene.relations.find(r => r.id === 'r_unwind');
-  assert.equal(unwound.to.anchor, 'center');
-  assert.ok(compiled.diagnostics.some(d => d.includes('degraded to center')));
+  // The asset is no longer stripped for not naming the archetype, so its own
+  // `fork` anchor survives instead of degrading to center.
+  const dna = compiled.scene.objects.find(o => o.id === 'dna');
+  assert.equal(dna.assetRef, 'biology.dna.fork.v2', 'a known asset is drawable in any layout');
+  assert.ok(unwound.to.anchor);
 });
 
 test('unroutable connector degrades to a direct line instead of failing', () => {
@@ -182,16 +185,18 @@ test('unroutable connector degrades to a direct line instead of failing', () => 
   assert.ok(compiled.diagnostics.some(d => d.includes('no safe connector route for r_bad')));
 });
 
-test('incompatible asset under final archetype converts to label', () => {
+test('a known asset is kept even when it does not name the final archetype', () => {
   const s = scene('spatial_process', [
     obj('dna', { assetRef: 'biology.dna.fork.v2', role: 'hero' }),
     obj('strand', { assetRef: 'biology.dna.helix.v2' }),
   ]);
   const compiled = compileScene(s);
   const dna = compiled.scene.objects.find(o => o.id === 'dna');
-  assert.equal(dna.assetRef, undefined);
-  assert.equal(dna.primitiveRef, 'label');
-  assert.ok(compiled.diagnostics.some(d => d.includes('does not support spatial_process')));
+  // Demoting a known asset to a bare label was why boxes rendered empty, and why
+  // the post-compile integrity check then reported `Critical representation
+  // degraded` for a representation the director had declared correctly.
+  assert.equal(dna.assetRef, 'biology.dna.fork.v2');
+  assert.equal(compiled.diagnostics.some(d => d.includes('does not support spatial_process')), false);
 });
 
 test('spatial scene without a hero promotes one deterministically', () => {

@@ -264,11 +264,17 @@ function ensureAssetCompatibility(scene: VisualSceneV2, warnings: string[], cata
   const stripped = new Set<string>();
   for (const o of scene.objects) {
     if (!o.assetRef) continue;
-    // Unknown asset IDs stay loud (a model inventing assets is a real failure);
-    // only known assets under the wrong archetype degrade to labels.
+    // Unknown asset IDs stay loud - a model inventing an asset is a real
+    // failure. A KNOWN asset is always drawable: it is geometry with anchors, and
+    // the compiler lays it out in any archetype. This used to demote a known
+    // asset to a bare label whenever it did not NAME the archetype, which is why
+    // boxes rendered empty and why the post-compile integrity check then reported
+    // `Critical representation degraded` for a representation the director had
+    // declared correctly.
     let compatible: boolean;
     try {
-      compatible = resolveAsset(o.assetRef, catalog).archetypes.includes(scene.archetype);
+      resolveAsset(o.assetRef, catalog);
+      compatible = true;
     } catch {
       throw new Error(`Unknown asset: ${o.assetRef}`);
     }
