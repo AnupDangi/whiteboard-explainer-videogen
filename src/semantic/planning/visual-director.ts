@@ -12,6 +12,7 @@ import {compileScene} from '../compiler/compile-scene.js';
 import {zoneRect} from '../compiler/zones.js';
 import {archetypePlacements} from '../compiler/archetypes.js';
 import type {ConceptIdentity,SemanticScenePlan,VisualSceneV2,CompiledSceneV2} from '../types.js';
+import {NON_STRUCTURAL_RELATIONS} from '../types.js';
 import type {VisualModel} from './visual-model.js';
 import type {JsonModel} from './model-adapter.js';
 import type {WhiteboardPlan} from '../harness/contracts.js';
@@ -103,7 +104,7 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
   if(visual.archetype==='cycle'){
    const primaryIds=visual.objects.filter(o=>!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support').map(o=>o.id);
    const conceptOf=(id:string)=>visual.objects.find(o=>o.id===id)?.conceptId;
-   const ringArcs=visual.relations.filter(r=>primaryIds.includes(r.from.objectId)&&primaryIds.includes(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback&&!['labels','compares_with'].includes(r.relationType));
+   const ringArcs=visual.relations.filter(r=>primaryIds.includes(r.from.objectId)&&primaryIds.includes(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback&&!NON_STRUCTURAL_RELATIONS.includes(r.relationType));
    const outgoingCount=(id:string)=>ringArcs.filter(r=>r.from.objectId===id).length;
    const visited=new Set<string>();
    let current=[...primaryIds].sort()[0];
@@ -114,25 +115,27 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
     current=next[0].to.objectId;
    }
    if(visited.size<primaryIds.length||!ringArcs.some(r=>r.from.objectId===current&&r.to.objectId===[...primaryIds].sort()[0])){
-    /** Repair: keep exactly one outgoing arc per node along the plan order. */
+    /** Rebuild the ring; do not patch it arc by arc. The previous repair only
+     *  corrected the arcs it happened to visit, so a node could end up with zero
+     *  outgoing arcs and the compiler then rejected the whole scene: "Cycle
+     *  requires one outgoing relation per primary representation (object_x has 0
+     *  outgoing relations within the cycle)". Clearing every ring arc first and
+     *  then closing the ring over the plan order is valid by construction, and
+     *  idempotent - running it on an already-correct ring reproduces that ring. */
     const beatOrder=new Map<string,number>();
     scene.beats.forEach((b,i)=>{for(const key of [...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)])if(!beatOrder.has(key))beatOrder.set(key,i);});
     const order=[...primaryIds].sort((a,b)=>(beatOrder.get(conceptOf(a)!)??99)-(beatOrder.get(conceptOf(b)!)??99)||a.localeCompare(b));
-    const start=order[0];
-    const planArcType=(fromId:string,toId:string)=>{const from=conceptOf(fromId),to=conceptOf(toId);const arc=scene.requiredRelations.find(r=>r.fromConceptId===from&&r.toConceptId===to);return arc?.relationType??'flows_to';};
-    for(let i=0;i<order.length;i++){
-     const fromId=order[i],toId=order[(i+1)%order.length];
-     const existing=ringArcs.filter(r=>r.from.objectId===fromId);
-     if(existing.length===1&&existing[0].to.objectId===toId)continue;
-     for(const r of existing)if(r.to.objectId!==toId){r.visualForm='none';log('v2.director.ring-heal',{scene:scene.id,dropped:`${r.from.objectId}->${r.to.objectId}`},'warn');}
-     if(!ringArcs.some(r=>r.from.objectId===fromId&&r.to.objectId===toId)){
-      const from=conceptOf(fromId),to=conceptOf(toId);
-      const arc=scene.requiredRelations.find(r=>r.fromConceptId===from&&r.toConceptId===to);
-      const newRelation={id:`relation_ring_${i}`,from:{objectId:fromId,anchor:'center'},to:{objectId:toId,anchor:'center'},relationType:arc?.relationType??'flows_to',visualForm:'flow',label:arc?.id??'cycle arc'} as VisualSceneV2['relations'][number];
-      visual.relations.push(newRelation);ringArcs.push(newRelation);
-      log('v2.director.ring-heal',{scene:scene.id,added:`${fromId}->${toId}`},'warn');
-     }
-    }
+    for(const r of ringArcs)r.visualForm='none';
+    order.forEach((fromId,i)=>{
+     const toId=order[(i+1)%order.length];
+     const from=conceptOf(fromId),to=conceptOf(toId);
+     const arc=scene.requiredRelations.find(r=>r.fromConceptId===from&&r.toConceptId===to);
+     const existing=visual.relations.find(r=>r.from.objectId===fromId&&r.to.objectId===toId);
+     if(existing){existing.visualForm='flow';log('v2.director.ring-heal',{scene:scene.id,reused:`${fromId}->${toId}`},'warn');return;}
+     const newRelation={id:`relation_ring_${i}`,from:{objectId:fromId,anchor:'center'},to:{objectId:toId,anchor:'center'},relationType:arc?.relationType??'flows_to',visualForm:'flow',label:arc?.id??'cycle arc'} as VisualSceneV2['relations'][number];
+     visual.relations.push(newRelation);
+     log('v2.director.ring-heal',{scene:scene.id,added:`${fromId}->${toId}`},'warn');
+    });
    }
   }
  for(const o of visual.objects)if(o.assetRef&&!allowedAssets.has(o.assetRef))throw new Error(`Director invented asset ${o.assetRef}`);

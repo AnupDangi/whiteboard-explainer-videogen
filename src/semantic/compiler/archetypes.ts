@@ -1,5 +1,6 @@
 import type {VisualSceneV2,Rect,VisualArchetype} from '../types.js';
 import {BOARD} from './zones.js';
+import {NON_STRUCTURAL_RELATIONS} from '../types.js';
 /** Primary-representation bounds each family enforces below. Shared so plan
  *  validation and archetype selection agree with the compiler instead of
  *  discovering the limit as a render-time failure. */
@@ -10,7 +11,7 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
  const placements=new Map<string,Rect>(),roots=scene.objects.filter(o=>!o.parentId&&o.role!=='annotation'&&o.role!=='decorative_support');
   if(scene.archetype==='flow'){
    if(roots.length<2||roots.length>8)throw new Error('Flow requires 2–8 primary representations');
-   const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!['labels','compares_with'].includes(r.relationType)&&r.visualForm!=='none'&&!r.layoutFeedback);
+   const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!NON_STRUCTURAL_RELATIONS.includes(r.relationType)&&r.visualForm!=='none'&&!r.layoutFeedback);
   const rank=new Map<string,number>(),pending=new Set(ids);
   while(pending.size){const ready=[...pending].filter(id=>edges.filter(e=>e.to.objectId===id).every(e=>rank.has(e.from.objectId))).sort();if(!ready.length)throw new Error('Flow contains a cycle; choose the cycle archetype');for(const id of ready){rank.set(id,Math.max(0,...edges.filter(e=>e.to.objectId===id).map(e=>rank.get(e.from.objectId)!+1)));pending.delete(id);}}
   const count=Math.max(...rank.values())+1;if(count>5)throw new Error('Flow exceeds five readable stages');
@@ -30,7 +31,7 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
   }
  }else if(scene.archetype==='cycle'){
   if(roots.length<3||roots.length>6)throw new Error('Cycle requires 3–6 primary representations');
-  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback),order:string[]=[];let id=[...ids].sort()[0];
+  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!NON_STRUCTURAL_RELATIONS.includes(r.relationType)&&r.visualForm!=='none'&&!r.layoutFeedback),order:string[]=[];let id=[...ids].sort()[0];
  for(let i=0;i<roots.length;i++){
   if(order.includes(id))throw new Error(`Cycle must visit every primary representation (walk revisits ${id} before completing the ring)`);
   order.push(id);

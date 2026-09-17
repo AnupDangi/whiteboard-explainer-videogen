@@ -13,6 +13,15 @@ export const ROLES = ['hero','support','structure','material','data','equation',
 export const ZONES = ['center','upper_left','upper_right','lower_left','lower_right','left','right','bottom','top'] as const;
 export type LayoutZone = typeof ZONES[number];
 export const RELATIONS = ['causes','flows_to','contains','part_of','transforms_to','depends_on','labels','compares_with','activates','inhibits','moves_toward'] as const;
+
+/** Relation types that annotate or compare rather than carry a structural edge.
+ *  Graph layouts - flow ranks, cycle rings - must ignore them: a `labels` arc
+ *  leaving a node is not a second outgoing path. The director's cycle synthesis
+ *  already excluded them, but the compiler's ring walk counted them, so a
+ *  labelled cycle node looked like it had two outgoing arcs and the whole scene
+ *  failed to compile with "Cycle requires one outgoing relation per primary
+ *  representation". Flow had the exclusion; cycle did not. */
+export const NON_STRUCTURAL_RELATIONS:readonly string[]=['labels','compares_with'];
 export type CollisionPolicy = 'forbid'|'allow'|'contain'|'overlay'|'touch';
 export type AssetRef = string;
 export type ObjectState = 'neutral'|'highlighted'|'activated'|'before'|'after'|'hidden';
