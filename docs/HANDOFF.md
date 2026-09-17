@@ -29,7 +29,53 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **P5** representation telemetry | *(this commit)* | tier counts per scene, aggregated in the live metrics |
 | **S9a** regression corpus | *(this commit)* | real model output captured from the logs as fixtures |
 
-Tests: **535/535**. Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
+
+
+### Wave 4 — three one-minute topic videos, one shot each
+
+Three source PDFs were supplied with the request (one-minute cut of each, no
+retries, failures tracked rather than repaired):
+
+| # | source | prompt grounded in | archetypes | result |
+|---|---|---|---|---|
+| 1 | `llms-cant-jump.pdf` (Tom Zahavy, Google DeepMind, 27 Jan 2026) | E-J-A cycle, induction/deduction/abduction, GR case study | `cycle,cause_effect,comparison` | **FAILED** 50s, 0 scenes |
+| 2 | `arxiv 2609.14858` — *Dream-RSI: Recursive Self-Improvement through Evolving Worlds* | replay simulator, off-policy feedback, self-improving loop | `cycle,cause_effect,transformation` | **COMPLETE** 48.6s, 2 scenes, $0.024, 3 calls |
+| 3 | `DeepSeek_V41_Tech_Report.pdf` — *Pushing the Limits of KV Cache Compression* | 552B MoE, CED 16B decode / 8B prefill, CSA2 + FP4, 890 B/token | `comparison,cause_effect,numbered_steps` | **FAILED** 76s, 1 scene |
+
+Every prompt was built from `pdftotext` extraction of the actual PDF, names the
+paper and its authors, and states the paper's real claims and numbers. The
+generator takes only `--prompt`, so grounding the prompt is the entire mechanism —
+there is no document-ingest path yet.
+
+**Topic 2 verified grounded in the rendered output**, not just the prompt:
+`loop-scene/scene.json` is titled "Recursive Self-Improvement Loop", its goal is
+"Explain the recursive self-improvement loop using the replay simulator", and its
+narration says "accumulated discovery history can serve as a replay simulator",
+"Dream-RSI performs 'dreaming' inside this simulator", and "reimplemented…
+continuously expanding the simulator pool". Exported as 24.2s + 31.8s = **55.9s**,
+h264 + aac, i.e. a one-minute lesson.
+
+**Two new defect classes, unfixed by request (one shot, no repair):**
+
+1. **`Invalid word timing`** (`v_llms_cant_jump`) — thrown during the compile
+   stage after 4 model calls (52.5s of model time already spent). `elapsedMs` was
+   0.49, so it is a deterministic timing-validation failure, not a model one, and
+   the generation it rejected was thrown away. Same shape as the teaching-discard
+   class fixed in wave 3, but on the TTS word-timing path.
+2. **`Critical label would be truncated: object_deepseek-v4-1-flash`**
+   (`v_deepseek_v41`) — the `cause_effect` director named the hero object after the
+   model ("DeepSeek-V4.1-Flash"), and the critical-label fit guard refused it. The
+   21-character label cannot fit the hero rect. The director gets one repair, which
+   reproduced it. This is the label-fit family the 36-entry register describes, hit
+   through a different door: a legitimate long proper noun rather than a layout
+   formula.
+
+**Timing audit (log span / model calls / model seconds):** #1 49s / 4 calls / 52.5s;
+#2 46s / 3 calls / 41.8s; #3 76s / **5 calls including two teaching calls** / 77.4s.
+Topic 3 bought a second teaching generation, so the wave-3 discard is not fully
+closed — it is reduced, not eliminated. See `## 2` item 2 and `## 3`.
+
+Tests unchanged: **535/535** (no source changed for this wave). Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
 
 ### Wave 2 — latency, cache, benchmark, live matrix
 
