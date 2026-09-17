@@ -14,7 +14,20 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
   const rank=new Map<string,number>(),pending=new Set(ids);
   while(pending.size){const ready=[...pending].filter(id=>edges.filter(e=>e.to.objectId===id).every(e=>rank.has(e.from.objectId))).sort();if(!ready.length)throw new Error('Flow contains a cycle; choose the cycle archetype');for(const id of ready){rank.set(id,Math.max(0,...edges.filter(e=>e.to.objectId===id).map(e=>rank.get(e.from.objectId)!+1)));pending.delete(id);}}
   const count=Math.max(...rank.values())+1;if(count>5)throw new Error('Flow exceeds five readable stages');
-  for(let column=0;column<count;column++){const group=roots.filter(o=>rank.get(o.id)===column).sort((a,b)=>a.id.localeCompare(b.id));if(group.length>3)throw new Error('Flow column exceeds three readable branches');group.forEach((o,row)=>placements.set(o.id,{x:100+(column+.5)*1080/count-65,y:150+(row+.5)*440/group.length-70,w:130,h:110}));}
+  /** Row pitch here is `440/group.length`, which for a three-branch column is
+   *  146.7px against a node whose rect plus label block is ~166px — the same
+   *  self-inflicted overlap the layered layout had. The position formula is left
+   *  alone (existing scenes must keep byte-identical output) and the node is
+   *  shortened only when a column is too crowded to hold its rows at full
+   *  height. Measured: `Illegal overlap: object_bill/object_committee` on a
+   *  three-branch flow column. */
+  const LABEL_BLOCK=56,GAP=10,MIN_H=54;
+  for(let column=0;column<count;column++){
+   const group=roots.filter(o=>rank.get(o.id)===column).sort((a,b)=>a.id.localeCompare(b.id));
+   if(group.length>3)throw new Error('Flow column exceeds three readable branches');
+   const rowPitch=440/group.length,h=Math.max(MIN_H,Math.min(110,rowPitch-LABEL_BLOCK-GAP));
+   group.forEach((o,row)=>placements.set(o.id,{x:100+(column+.5)*1080/count-65,y:150+(row+.5)*rowPitch-70,w:130,h:Math.round(h)}));
+  }
  }else if(scene.archetype==='cycle'){
   if(roots.length<3||roots.length>6)throw new Error('Cycle requires 3–6 primary representations');
   const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&r.visualForm!=='none'&&!r.layoutFeedback),order:string[]=[];let id=[...ids].sort()[0];

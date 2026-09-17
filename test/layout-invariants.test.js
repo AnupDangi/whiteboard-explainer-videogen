@@ -212,3 +212,27 @@ test('a flat text archetype flattens composed and nested objects instead of fail
   assert.equal(findCollisions(compiled.objects).length, 0);
   assert.ok(compiled.diagnostics.some(d => /text-only/.test(d)), 'the flattening must be recorded');
 });
+
+/** The flow layout had the same self-inflicted overlap as the layered one: row
+ *  pitch `440/group.length` is 146.7px for a three-branch column, under a node
+ *  whose rect plus label block is ~166px. Measured live:
+ *  `Illegal overlap: object_bill/object_committee`. */
+test('a crowded flow column shrinks its nodes instead of overlapping', () => {
+  const node = (id, role) => ({id, label: `Node ${id}`, role, children: [], state: 'neutral', allowedStates: ['neutral', 'highlighted', 'activated'], importance: role === 'hero' ? 'primary' : 'secondary', collisionPolicy: 'forbid', primitiveRef: 'rectangle'});
+  // a, b and c share rank 0 (no edges among them); d is one stage on.
+  const scene = {
+    version: 2, id: 'flow_crowded', title: 'Crowded', teachingGoal: 'g', mentalModel: 'm', archetype: 'flow',
+    objects: [node('a', 'hero'), node('b', 'support'), node('c', 'support'), node('d', 'support')],
+    relations: [{id: 'r', from: {objectId: 'a', anchor: 'center'}, to: {objectId: 'd', anchor: 'center'}, relationType: 'flows_to', visualForm: 'flow'}],
+    beats: [{id: 'beat_1', narration: 'probe', actions: ['a', 'b', 'c', 'd'].map((id, i) => ({id: `x${i}`, type: 'reveal', objectIds: [id], relationIds: [], durationMs: 400, leadMs: 0, easing: 'linear'}))}],
+    continuity: {keepFromPrevious: [], prepareForNext: []},
+  };
+  const compiled = compileScene(scene);
+  assert.equal(findCollisions(compiled.objects).length, 0, 'a three-branch column must not overlap');
+  const crowded = ['a', 'b', 'c'].map(id => compiled.objects.find(o => o.id === id));
+  assert.ok(crowded.every(o => o.h < 110), 'the crowded column must be shortened to fit');
+  for (const o of compiled.objects) {
+    for (const value of [o.x, o.y, o.w, o.h]) assert.ok(Number.isFinite(value), `${o.id} has non-finite geometry`);
+    assert.ok(contains(BOARD.safe, visualBounds(o)), `${o.id} escaped the safe area`);
+  }
+});
