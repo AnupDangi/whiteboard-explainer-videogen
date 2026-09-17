@@ -58,6 +58,13 @@ export function wordsForMinutes(minutes:number,wpm:number=NARRATION_WPM):number{
 export const SECONDS_PER_SCENE=30;
 export const MAX_SCENES_PER_LESSON=120;
 
+/** The shortest a planned chapter comes out in practice. Measured: asked for 54
+ *  words the model returned ~102 twice, with an explicit "remove 48 words"
+ *  instruction on both attempts. A chapter carries real content and has a floor,
+ *  so a SHORT lesson must use FEWER chapters rather than a smaller budget for
+ *  each. Two chapters at this floor made a "one-minute" lesson 207 words and 94s. */
+export const NATURAL_CHAPTER_WORDS=110;
+
 /** The board must not sit frozen while the teacher keeps talking. Expressed in
  *  SPOKEN WORDS rather than milliseconds because that is the thing the learner
  *  experiences: a pause is long relative to how fast the narration moves, not in

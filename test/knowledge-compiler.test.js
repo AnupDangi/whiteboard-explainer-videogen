@@ -190,9 +190,12 @@ test('long grounded documents plan one global graph with bounded chapter windows
   this.calls.push({stage});
   if(stage==='knowledge')return validate(validKnowledge());
   if(stage==='teaching'){
-   const callIndex=this.calls.filter(call=>call.stage==='teaching').length;
+   /** Keyed on the CHAPTER the prompt names, not on a call index: the length
+    *  refinement adds up to two more teaching calls per chapter, so a call index
+    *  no longer identifies the chapter. */
+   const chapter=Number((String(_instructions).match(/chapter (\d+) of/i)??[])[1]??1);
    const plan=fixturePlan();
-   if(callIndex===2){plan.scenes[0].continuity.keepFromPrevious=['plant'];for(const scene of plan.scenes)for(const beat of scene.beats)beat.narrationDraft=`${beat.narrationDraft} Chapter two revisits these inputs from the soil and canopy perspective with fresh worked detail.`;}
+   if(chapter===2){plan.scenes[0].continuity.keepFromPrevious=['plant'];for(const scene of plan.scenes)for(const beat of scene.beats)beat.narrationDraft=`${beat.narrationDraft} Chapter two revisits these inputs from the soil and canopy perspective with fresh worked detail.`;}
    this._chapterPlan=plan;
    return validate(plan);
   }
@@ -203,10 +206,23 @@ test('long grounded documents plan one global graph with bounded chapter windows
   return validate({scene:s,decisions:{centralTeachingObject:'plant',firstFocus:'plant',illustratedConcepts:'plant and inputs',labelsOnly:'labels',movingRelations:'flows',persistentContext:'plant',stateChanges:'activation',omit:'decoration'}});
  }};
  const results=[];
- for await(const result of generateV2({prompt:'Teach the full report',sourceText:source,sourceId:'src_test',allowedArchetypes:['structural_diagram','convergence'],maxScenes:2},model))results.push(result);
+ // targetMinutes is set so the lesson is long enough to span two chapters: a
+  // chapter has a ~110-word floor, so a one-minute budget plans ONE chapter and
+  // this test is specifically about the multi-window path.
+  for await(const result of generateV2({prompt:'Teach the full report',sourceText:source,sourceId:'src_test',allowedArchetypes:['structural_diagram','convergence'],maxScenes:2,targetMinutes:10},model))results.push(result);
   assert.equal(results.length,2);assert.ok(results.every(result=>result.manifest.status==='PASS'));
   const teachingCalls=model.calls.filter(call=>call.stage==='teaching');
-  assert.equal(teachingCalls.length,2,'a two-scene lesson plans two bounded chapter windows, not one per document window');
+  // A chapter has a natural floor of ~110 words however small its share: asked for
+  // 54 the model returned ~102 on two escalating attempts. So the chapter count is
+  // bounded by the lesson's WORD budget as well as its scene budget, and a
+  // one-minute (targetMinutes defaults to 1) lesson plans ONE chapter at its
+  // natural length rather than two at half a budget each - which is what made a
+  // sixty-second request 207 words and 94s. The scenes still come from that
+  // chapter: two scenes are planned from one window.
+  // At least one planning call per bounded window. The length refinement may add
+  // up to two more per window, and this fixture's plan is fixed, so it can never
+  // converge - the call count is therefore a floor, not an exact number.
+  assert.ok(teachingCalls.length>=2,'each bounded chapter window is planned, not one per document window');
  const plan=results[0].plan;
  assert.equal(plan.scenes.length,2);
  assert.equal(new Set(plan.scenes.map(scene=>scene.id)).size,plan.scenes.length);

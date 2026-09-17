@@ -1,4 +1,5 @@
 import {log} from '../../shared/logger.js';
+import {wordsForMinutes,NATURAL_CHAPTER_WORDS} from '../../shared/language.js';
 /** Per-call memo: the unit of retry must equal the unit of cost. Validated
  *  window graphs and chapter plans are memoized by their semantic input hash,
  *  so a later stage failure replays them instead of re-buying the same model
@@ -151,7 +152,13 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
        const graphGate=gateConceptGraph(graph);
        if(!graphGate.passed)throw Object.assign(new Error(`knowledge gate failed: ${graphGate.findings.filter(finding=>finding.severity==='hard').map(finding=>finding.code).join(', ')}`),{gate:graphGate});
        const teachingWindows=chapterWindows(knowledgeText);
-      const windows=selectRelevantWindows(teachingWindows,input.prompt,Math.max(1,Math.min(teachingWindows.length,sceneBudget)));
+      /** Bound the chapter count by the lesson's WORD budget as well as its scene
+       *  budget. A chapter has a natural floor of roughly NATURAL_CHAPTER_WORDS
+       *  however small its share, so a one-minute lesson must cover ONE chapter at
+       *  its natural length instead of two at half a budget each - which is what
+       *  made a sixty-second request 207 words and 94s. */
+      const chapterCap=Math.max(1,Math.floor(wordsForMinutes(input.targetMinutes??1)/NATURAL_CHAPTER_WORDS));
+      const windows=selectRelevantWindows(teachingWindows,input.prompt,Math.max(1,Math.min(teachingWindows.length,sceneBudget,chapterCap)));
      const perWindow=Math.max(1,Math.floor((input.maxScenes??1)/windows.length));
       const planned:TeachingPlanV2[]=[];let prior:string[]=[];
        for(const [index,window] of windows.entries()){
