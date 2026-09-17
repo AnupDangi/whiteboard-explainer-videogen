@@ -1,212 +1,1799 @@
-# Harness-Controlled Teaching Compiler Refactor
+Note: 'NEVER EDIT THIS FILE'
 
-## Summary
 
-Refactor semantic V2 into a versioned teaching compiler while preserving the deterministic compiler, renderer, browser/export parity, V1 pipeline, job persistence, SSE delivery, TTS adapters, and current evaluation corpus.
+# Explain Canvas Lab — Final Source-to-Lesson Architecture Plan
 
-The harness—not any agent—will own execution order, canonical identity, learner state, visual continuity, model selection, budgets, retries, validation, repair routing, timeline state, persistence, and release gates.
+## 0. Mission
 
-For passive video, `LearnerState` represents expected knowledge established by validated teaching beats. Actual comprehension remains an evaluation result. Failed critical gates retain diagnostic partial artifacts but produce no publishable MP4.
+Build a teacher-quality visual explanation pipeline that accepts:
 
-## Implementation phases
+```text
+PDF
+URL
+DOCX
+PPTX
+Markdown
+Text
+HTML
+Images
+scanned pages
+```
 
-### Phase 0 — Baseline and contract freeze
+plus an optional:
 
-- Preserve all existing dirty-worktree changes.
-- Record commit, configuration, model route, prompt/skill, schema, asset, and benchmark hashes.
-- Capture current deterministic tests and live benchmark results as the comparison baseline.
-- Classify existing V2.1 work as reusable, incomplete, or superseded; do not rebuild typed representation, continuity, speech, telemetry, or contact-sheet features that already satisfy the new contracts.
-- Keep `VISUAL_PIPELINE=explainer` as the default throughout migration.
+```text
+userPrompt
+```
 
-### Phase 1 — Harness kernel and stage isolation
+and a required:
 
-- Introduce a single `TeachingHarness` orchestrator with this logical pipeline:
+```text
+targetDuration
+```
 
-  `ingest → knowledge-compiler → teaching-architect → whiteboard-planner → representation-guide/source-visual-grounding → visual-director → deterministic compiler → TTS/alignment → pedagogy-critic → render`
+then produces:
 
-- After narration is frozen, execute visual compilation and TTS concurrently; the logical stage order remains visible in persisted provenance.
-- Give every stage typed input, typed output, validator, one owner, cost allocation, deadline, retry policy, and artifact location.
-- Agents receive only their stage input and schema. They cannot call other stages, mutate harness state, select models, alter budgets, execute tools, or emit SVG, coordinates, code, runtime IDs, or pipeline instructions.
-- Persist an append-only stage journal so interrupted jobs can be inspected and safely resumed from the last validated boundary.
-- Compile local skill instructions into versioned stage prompts; store hashes and never allow skill text to become executable runtime control.
+```text
+source understanding
+→ cached ConceptGraph
+→ complete LessonGraph
+→ parallel SceneIntents
+→ narration
+→ deterministic compiled scenes
+→ video
+```
 
-### Phase 2 — Knowledge compiler
+Do NOT build a swarm of conversational agents.
 
-- Produce a source-grounded `ConceptGraph` before lesson planning:
-  - canonical concepts and aliases;
-  - prerequisite DAG;
-  - mechanisms and state transitions;
-  - terminology;
-  - claims, quantities, and evidence spans;
-  - source figures and their provenance.
-- Collapse aliases deterministically and reject ambiguous or conflicting canonical identities.
-- Validate evidence references against the ingested document.
-- Use source material as the factual authority by default. External assets may be resolved with provenance, but external factual claims require an explicitly enabled grounding policy.
-- For long documents, build one global graph and lesson arc, then process bounded chapter windows against that shared state to preserve 30–60 minute continuity.
+Runtime intelligence should be concentrated into three semantic roles:
 
-### Phase 3 — Learner model and teaching architect
+```text
+1. Knowledge Compiler
+2. Teacher Planner
+3. Scene Director
+```
 
-- Add immutable learner-profile input with a default beginner profile and an evolving expected `LearnerState`.
-- Make the teaching architect emit a `TeachingContract` for every beat:
-  - learner-before and learner-after;
-  - objective and motivating question;
-  - prerequisites;
-  - teaching strategy;
-  - mechanism to explain;
-  - likely misconception and correction;
-  - worked example, prediction, retrieval prompt, or checkpoint where appropriate;
-  - expected learner-state update.
-- Enforce topological prerequisite order, terminology-before-use, one primary learner delta per beat, bounded new concepts, and complete mechanism coverage.
-- Validate the complete lesson arc before visual planning. Repair only the failed teaching contract once.
+Everything else should be deterministic infrastructure.
 
-### Phase 4 — Whiteboard planner and persistent semantic identity
+---
 
-- Convert each validated `TeachingContract` into narration segments and semantic scene intent.
-- Replace scene-local concept identity with a lesson-wide `semanticKey` registry owned by the harness.
-- Emit canvas diffs rather than independent full-scene reinvention:
-  - `PRESERVE`;
-  - `TRANSFORM`;
-  - `INTRODUCE`;
-  - `RESET`, allowed only at validated conceptual boundaries.
-- Map those intentions deterministically to existing runtime continuity actions:
-  `KEEP`, `MOVE`, `TRANSFORM`, `REPLACE`, `REMOVE`, and `REINTRODUCE`.
-- Preserve concept identity, representation family, color role, semantic parts, established terminology, and reusable geometry across chapters.
-- Reject unexplained resets, duplicate teaching beats, narration without visual support, and reintroduction under conflicting aliases.
+# 1. Core invariant
 
-### Phase 5 — Representation and source grounding
+Preserve the current strongest architectural decision:
 
-- Promote the existing representation code into a harness-owned service with typed requests, candidates, provenance, confidence, compatibility, states, parts, anchors, and degradation severity.
-- Apply the fixed resolution chain:
+```text
+LLMs own:
 
-  `trusted asset → semantic asset → composition → domain template → constrained synthesis → semantic abstraction → failure`
+WHAT exists
+WHAT matters
+WHAT should be taught
+HOW concepts relate
+HOW narration should explain them
+WHAT semantic visual representation is required
 
-- Keep `representation-guide` deterministic: relationship and cognitive intent select suitable archetype families.
-- Let `source-visual-grounding` select source figures, verified real assets, or semantic canvas representations only when they improve understanding.
-- Treat decorative assets as invalid and generic-box downgrade of a critical concept as a hard teaching failure.
-- Retain safe declarative synthesis only: models describe semantic parts; deterministic code creates and validates geometry.
-- Cache validated representations by semantic, style, source, and content hashes.
 
-### Phase 6 — Visual director and compiler boundary
+CODE owns:
 
-- Restrict the visual director to visual decisions over validated teaching and representation inputs.
-- Its output contains semantic object choices, emphasis, focus, and continuity decisions—not facts, pedagogy, geometry, IDs, SVG, or animation code.
-- Validate that each visual action encodes meaning and that active objects, focal areas, simultaneous motion, and new terms remain inside cognitive-load limits.
-- Adapt the validated direction into the existing `VisualSceneV2`.
-- Leave layout, containment, routing, collision handling, text fitting, anchors, geometry repair, and rendering deterministic.
-- Keep `renderSVG(scene, timeMs)` pure and seek-independent.
+coordinates
+geometry
+layout
+routing
+timing
+SVG
+rendering
+persistence
+validation
+caching
+retrieval
+```
 
-### Phase 7 — Narration, speech, and semantic timing
+Never allow models to output:
 
-- Freeze narration per teaching beat only after teaching and representation feasibility pass.
-- Run TTS per semantic segment so exact segment durations exist even without word alignment.
-- Preserve buffered Supertonic/Piper compatibility and the optional streaming speech interface.
-- Use timing provenance in this order:
-  `provider timestamps → aligner timestamps → semantic-segment timing → estimated words`.
-- Bind visual actions to important spoken anchors, not every word.
-- Detect signed anchor lag, action gaps, unintended narrated no-change intervals, late critical reveals, and unnecessary resets.
-- Allow pauses only when explicitly declared in the teaching contract.
-- A speech failure remains visible; it cannot silently become a successful narrated job.
+```text
+x/y coordinates
+raw SVG
+runtime object IDs
+arbitrary code
+layout mathematics
+```
 
-### Phase 8 — Pedagogy critic and targeted repair
+Existing compiler and renderer remain authoritative.
 
-- Run deterministic gates before the model critic.
-- Make the pedagogy critic return binary findings for:
-  - prerequisite violation;
-  - missing learner delta;
-  - mechanism not explained;
-  - continuity loss;
-  - cognitive overload;
-  - unsupported or ungrounded claims;
-  - duplicated teaching;
-  - missing visual support;
-  - unacceptable representation degradation.
-- Use typed `StageFailure` objects with class, owner stage, code, message, context, before/after values, and provenance.
-- Route repair only to the owning stage:
-  - semantic defects → knowledge compiler, teaching architect, or whiteboard planner;
-  - representation defects → resolver/source grounding;
-  - visual-choice defects → visual director;
-  - geometry defects → deterministic compiler;
-  - timing defects → timeline;
-  - speech/provider defects → speech or model router.
-- Permit one targeted repair per failed stage. Revalidate that stage and all downstream deterministic invariants without regenerating upstream work.
-- After exhaustion, mark the job `FAIL`, retain committed scenes and diagnostics, and withhold final MP4 publication.
+---
 
-### Phase 9 — Jobs, API, UI, and observability
+# 2. Canonical request
 
-- Preserve existing job, SSE, media, renderer, and export interfaces; add fields rather than creating a second job system.
-- Expose:
-  - current stage and stage owner;
-  - validated learner progression;
-  - continuity decisions;
-  - gate outcomes;
-  - model route and fallback;
-  - per-stage latency, tokens, and cost;
-  - repairs and degradations;
-  - final `PASS`, `FAIL`, or operational `PARTIAL`.
-- Stream validated scenes for preview, but enable final MP4 only after global teaching, continuity, speech, compile, and render gates pass.
-- Store all stage inputs/outputs, evidence, validated IR, compiled scenes, audio, diagnostics, hashes, and reports beneath the existing job artifact tree.
-- Never expose provider secrets or full environment values in hashes or UI.
+Create one lesson request.
 
-### Phase 10 — Evaluation and migration
+```ts
+interface LessonRequest {
+  sources: SourceInput[];
 
-- Separate renderer-generalization evaluation from coherent teaching evaluation.
-- Keep the fixed 48-case corpus and add coherent lesson suites for photosynthesis, DNA, attention/MLA, HTTP, compression, equations, matrices, routing, cycles, timelines, and trajectories.
-- Add fixed long-form document cases, including the DeepSeek report, to test global lesson structure, canonical identity, repetition, and chapter continuity.
-- For each coherent architecture wave:
-  1. run typecheck, build, deterministic tests, schema/property tests, and browser/export parity;
-  2. run fixed fixture regressions;
-  3. run 48 cases × 3 narrated repetitions with provider failures preserved;
-  4. generate machine-readable and Markdown before/after reports.
-- Track Truth, Teaching, Visual, Timing, Continuity, Reliability, Performance, and Cost separately.
-- Evaluate comprehension outside generation using factual, mechanism, and transfer questions. Compare expected learner-state changes with independent evaluator and human results.
-- Calibrate model critics on controlled corruptions in both pairwise orders before using them as release gates.
-- Add blind V1-versus-V2 human comparisons and a smaller real-learner pre-test/post-test/retention protocol.
-- Update `docs/HANDOFF.md` (measurements, limitations, next bounded task) and `docs/ARCHITECTURE.md` (structure) after each accepted wave.
+  userPrompt?: string;
 
-## Public interfaces and data contracts
+  targetDurationSec: number;
 
-- `ConceptGraph`: canonical concepts, aliases, prerequisites, mechanisms, claims, evidence, terminology, quantities, and source visuals.
-- `LearnerProfile`: level, goals, language, assumed knowledge, and optional constraints.
-- `LearnerState`: expected established concepts, mental models, terminology, unresolved questions, misconceptions addressed, checkpoints, and provenance.
-- `TeachingContract`: learner delta, motivation, prerequisite set, teaching strategy, mechanism, misconception, checkpoint, evidence, and state update.
-- `WhiteboardPlan`: semantic narration segments, semantic objects, relations, and persistent canvas diffs.
-- `SemanticRegistry`: canonical concept key to persistent visual identity, representation family, semantic parts, style role, state, and scene instances.
-- `StageEnvelope<T>`: stage/version, input hash, output, validator result, model/skill/prompt hashes, token/cost/latency data, and repair attempt.
-- `StageFailure` and `GateResult`: typed ownership, severity, failure context, repair scope, and final PASS/FAIL.
-- `HarnessRunManifest`: complete reproducibility metadata and aggregate job accounting.
-- Extend semantic job input additively with learner profile, grounding policy, target duration, and harness version.
-- Preserve `VisualSceneV2`, `CompiledSceneV2`, renderer, SSE, and MP4 contracts unless an additive provenance field is required.
+  audience?: {
+    level?: string;
+    assumedKnowledge?: string[];
+  };
 
-## Test and acceptance plan
+  language?: string;
 
-- Schema tests prove agents cannot submit runtime IDs, coordinates, SVG, code, unknown fields, or execution directives.
-- Knowledge tests cover alias collapse, prerequisite cycles, evidence validity, terminology, quantities, and long-document graph consistency.
-- Teaching tests cover learner delta, prerequisite order, misconceptions, worked examples, checkpoints, duplication, and cognitive-load limits.
-- Continuity tests cover all six runtime actions, stable semantic identity, geometry reuse, chapter boundaries, and justified resets.
-- Representation tests cover every fallback tier, provenance, degradation severity, asset safety, semantic parts, and generic-box rejection.
-- Repair tests prove exactly one owning-stage repair and no full-pipeline regeneration.
-- Timing tests cover segment timing, provider/aligner/estimated provenance, repeated spoken anchors, lag, pauses, static intervals, and speech failures.
-- Job tests cover interruption, resume, partial diagnostics, failed-gate MP4 withholding, progressive previews, cancellation, and accurate cost aggregation.
-- Renderer tests retain finite geometry, containment, deterministic seeking, browser/export parity, contact sheets, and `ffprobe` validation.
-- Migration gates:
-  - compile success ≥99%;
-  - full narrated job success ≥95%, moving toward 98%;
-  - critical claim, mechanism, and relation coverage 100%;
-  - prerequisite violations zero;
-  - unacceptable representation degradation near zero;
-  - continuity score >90% with unexplained resets near zero;
-  - narrated first-AV P50 ≤12 seconds initially;
-  - browser/export determinism unchanged;
-  - blind human preference for V2 ≥70%;
-  - positive comprehension gain on factual, mechanism, and transfer questions.
+  teachingStyle?: string;
+}
+```
 
-## Assumptions and approval boundary
+`userPrompt` is optional.
 
-- `LearnerState` is expected instructional state, not claimed actual mastery.
-- Failed critical gates retain debug artifacts and previewable committed scenes but produce no final MP4.
-- V1 remains available and remains the default until migration gates pass.
-- Existing V2.1 components are reused when they satisfy these ownership rules.
-- Existing dirty-worktree changes are preserved; no destructive cleanup, commit, push, or repository publication is included.
-- Live provider failures remain failures, and estimated timing remains labeled as estimated.
-- Paid benchmark runs use explicit per-run and aggregate harness budgets with complete accounting.
-- Implementation begins only after explicit approval of this plan.
+Examples:
+
+```text
+source:
+Attention Is All You Need.pdf
+
+prompt:
+undefined
+
+duration:
+600s
+```
+
+means:
+
+> Teach the important material from this source in ten minutes.
+
+Whereas:
+
+```text
+prompt:
+Focus primarily on why multi-head attention is useful.
+```
+
+changes lesson focus without changing source truth.
+
+---
+
+# 3. Separate SOURCE understanding from LESSON personalization
+
+This is mandatory.
+
+Do NOT create a new source ConceptGraph for every user prompt.
+
+Use:
+
+```text
+SOURCE
+   ↓
+BaseConceptGraph
+```
+
+and then:
+
+```text
+BaseConceptGraph
++
+userPrompt
++
+duration
++
+audience
+   ↓
+LessonGraph
+```
+
+This means:
+
+```text
+same PDF
+different lesson
+different duration
+different learner
+```
+
+can reuse the expensive source analysis.
+
+---
+
+# 4. Source ingestion
+
+Normalize every supported input into:
+
+```ts
+interface SourceDocument {
+  id: string;
+  sourceHash: string;
+
+  metadata: SourceMetadata;
+
+  blocks: SourceBlock[];
+}
+```
+
+Use typed blocks.
+
+```ts
+type SourceBlock =
+  | TextBlock
+  | HeadingBlock
+  | TableBlock
+  | FigureBlock
+  | EquationBlock
+  | CodeBlock;
+```
+
+Do NOT flatten everything into one giant string.
+
+---
+
+# 5. PDF multimodal ingestion
+
+PDF processing should fan out immediately.
+
+```text
+                        PDF
+                         │
+          ┌──────────────┼───────────────┐
+          ↓              ↓               ↓
+      text layer       figures         tables
+          │              │               │
+          ↓              ↓               ↓
+      structure       extraction      extraction
+          │              │               │
+          └──────────────┼───────────────┘
+                         ↓
+                 SourceDocument
+```
+
+Also detect:
+
+```text
+page has insufficient text
+        ↓
+OCR required
+```
+
+Do not OCR every page.
+
+---
+
+# 6. Figure handling
+
+A `FigureBlock` should retain:
+
+```ts
+interface FigureBlock {
+  id: string;
+
+  page: number;
+
+  imageRef: string;
+
+  caption?: string;
+
+  nearbyText: string[];
+
+  description?: string;
+
+  semanticTags?: string[];
+}
+```
+
+For meaningful figures:
+
+```text
+crop
+→ VLM description
+→ retain actual image
+```
+
+Do NOT convert a useful scientific figure merely into prose.
+
+We may later reuse the source figure in the generated explanation.
+
+---
+
+# 7. Table handling
+
+Keep tables structurally.
+
+```ts
+interface TableBlock {
+  id: string;
+
+  page: number;
+
+  caption?: string;
+
+  columns: string[];
+  rows: string[][];
+
+  nearbyText: string[];
+}
+```
+
+For large tables also create a textual retrieval representation.
+
+The renderer can later decide whether to:
+
+```text
+show original table
+reconstruct simplified table
+teach one portion
+```
+
+---
+
+# 8. Semantic chunking
+
+After source normalization:
+
+```text
+SourceDocument
+      ↓
+SemanticChunker
+```
+
+Do NOT use arbitrary fixed character windows.
+
+Chunks should respect:
+
+```text
+heading boundaries
+paragraph boundaries
+figure-caption relationships
+table context
+equation context
+code blocks
+section hierarchy
+```
+
+Initial target:
+
+```text
+~700–1,500 tokens/chunk
+```
+
+with modest overlap only where semantic continuity requires it.
+
+---
+
+# 9. Retrieval architecture
+
+Create a hybrid index.
+
+```text
+chunks
+   │
+   ├── BM25
+   ├── vector embedding
+   ├── section metadata
+   └── entity/concept metadata
+```
+
+Prefer local embedding/reranking models initially so this layer does not consume generative-model tokens.
+
+Retrieval should roughly be:
+
+```text
+query
+ ↓
+hybrid retrieve ~75–100
+ ↓
+reranker
+ ↓
+top 25
+```
+
+But TOP 25 IS NOT THE ENTIRE SOURCE UNDERSTANDING.
+
+---
+
+# 10. Two retrieval sets
+
+Use:
+
+```text
+A. COVERAGE SET
+B. FOCUS SET
+```
+
+## Coverage Set
+
+Guarantees representation from major source sections.
+
+For example:
+
+```text
+intro
+architecture
+method
+experiments
+limitations
+conclusion
+```
+
+depending on source structure.
+
+## Focus Set
+
+Hybrid retrieval + reranking:
+
+```text
+top 25
+```
+
+using:
+
+```text
+user prompt
+source title
+requested learning objective
+```
+
+Then:
+
+```text
+GraphContext =
+CoverageSet
+UNION
+FocusSet
+```
+
+This prevents personalization from accidentally deleting important source context.
+
+---
+
+# 11. If userPrompt is absent
+
+Create focus intent automatically from:
+
+```text
+source title
+abstract/introduction
+headings
+high-centrality concepts
+conclusion
+```
+
+Goal:
+
+```text
+teach the source's core intellectual structure
+```
+
+Not:
+
+```text
+summarize every paragraph
+```
+
+---
+
+# 12. Knowledge graph construction
+
+Do not call one model per raw chunk.
+
+Pack related chunks together.
+
+Example:
+
+```text
+8 chunks
+→ knowledge batch
+```
+
+Then execute knowledge-map calls concurrently.
+
+```text
+Batch A ──→ GraphFragment A
+Batch B ──→ GraphFragment B
+Batch C ──→ GraphFragment C
+Batch D ──→ GraphFragment D
+```
+
+Each fragment contains:
+
+```ts
+interface GraphFragment {
+  concepts: Concept[];
+  relations: Relation[];
+
+  claims: Claim[];
+
+  mechanisms: Mechanism[];
+
+  prerequisites: Prerequisite[];
+
+  terminology: Term[];
+
+  evidenceRefs: EvidenceRef[];
+}
+```
+
+Every factual claim must carry evidence.
+
+---
+
+# 13. One graph reducer
+
+After parallel fragment generation:
+
+```text
+GraphFragments[]
+       ↓
+GraphReducer
+       ↓
+BaseConceptGraph
+```
+
+Reducer responsibilities:
+
+```text
+canonicalize aliases
+deduplicate concepts
+merge identical claims
+resolve terminology
+build prerequisite edges
+build mechanism edges
+preserve evidence
+identify source-level thesis
+identify central concepts
+```
+
+Reducer must NOT invent unsupported content.
+
+---
+
+# 14. Cache the BaseConceptGraph
+
+Key roughly by:
+
+```text
+sourceHash
++
+chunkerVersion
++
+retrievalVersion
++
+graphCompilerVersion
+```
+
+Persist:
+
+```text
+SourceDocument
+ChunkIndex
+BaseConceptGraph
+EvidenceIndex
+```
+
+A second video using the same source must not regenerate these.
+
+---
+
+# 15. User focus should not mutate BaseConceptGraph
+
+For:
+
+```text
+"Explain only DeepSeek's MLA architecture."
+```
+
+derive:
+
+```text
+FocusedConceptGraph
+```
+
+from:
+
+```text
+BaseConceptGraph
++
+userPrompt
+```
+
+Base source knowledge remains immutable.
+
+This means:
+
+```text
+Video A:
+MLA
+
+Video B:
+training
+
+Video C:
+inference optimization
+```
+
+can share the same source graph.
+
+---
+
+# 16. Teacher Planner
+
+This becomes the most important semantic call in the lesson pipeline.
+
+INPUT:
+
+```text
+BaseConceptGraph
+FocusedConceptGraph
+userPrompt?
+targetDuration
+audience
+source metadata
+```
+
+OUTPUT:
+
+```text
+LessonGraph
++
+LessonBible
+```
+
+ONE model call under normal conditions.
+
+---
+
+# 17. LessonGraph
+
+```ts
+interface LessonGraph {
+  title: string;
+
+  lessonGoal: string;
+
+  targetDurationSec: number;
+
+  scenes: SceneContract[];
+
+  summaryGoal: string;
+
+  continuityPlan: ContinuityPlan;
+}
+```
+
+Each scene represents:
+
+```text
+A LEARNER DELTA
+```
+
+not one graph node.
+
+---
+
+# 18. Never make ConceptNode == Scene
+
+Wrong:
+
+```text
+water
+→ scene
+
+sun
+→ scene
+
+CO2
+→ scene
+
+chloroplast
+→ scene
+```
+
+Correct:
+
+```text
+ConceptGraph nodes
+      ↓
+pedagogical clustering
+      ↓
+SceneContract
+```
+
+Example photosynthesis:
+
+```text
+Scene 1
+What the plant needs
+
+sunlight + water + CO2
+
+
+Scene 2
+Where conversion happens
+
+leaf + chloroplast + chlorophyll
+
+
+Scene 3
+What the process produces
+
+glucose + oxygen + stored energy
+```
+
+---
+
+# 19. Teacher-like ordering
+
+Lesson Planner must reason:
+
+```text
+What should learner understand first?
+
+What prerequisite is required?
+
+What should I introduce before terminology?
+
+When should I show mechanism?
+
+Where is an example useful?
+
+Where should depth increase?
+
+What should I intentionally leave out given duration?
+```
+
+The lesson must progress:
+
+```text
+orientation
+↓
+mental model
+↓
+core concepts
+↓
+mechanism
+↓
+deeper relationships
+↓
+examples / implications
+↓
+synthesis
+```
+
+appropriate to target duration.
+
+---
+
+# 20. Duration controls depth, not playback speed
+
+Do NOT squeeze a ten-minute lesson into one minute by speaking faster.
+
+For approximately:
+
+```text
+1 minute
+```
+
+teach:
+
+```text
+topic orientation
+core mental model
+one central mechanism
+main takeaway
+```
+
+For:
+
+```text
+2 minutes
+```
+
+add:
+
+```text
+important components
+one example
+```
+
+For:
+
+```text
+5 minutes
+```
+
+add:
+
+```text
+prerequisites
+mechanism in stages
+example
+important caveat
+summary
+```
+
+For:
+
+```text
+10 minutes
+```
+
+allow:
+
+```text
+context
+architecture
+major components
+step-by-step mechanism
+example
+interactions
+limitations
+implications
+summary
+```
+
+The teacher chooses depth based on time budget.
+
+---
+
+# 21. Video title policy
+
+The video title should describe the subject.
+
+For source:
+
+```text
+DeepSeek B4 Flash Architecture Review
+```
+
+acceptable title:
+
+```text
+DeepSeek B4 Flash Architecture
+```
+
+or:
+
+```text
+DeepSeek B4 Flash: Architecture Review
+```
+
+Not:
+
+```text
+Why Is DeepSeek B4 Flash So Fast?
+```
+
+unless user explicitly requests that framing.
+
+Analogies and pedagogical questions belong inside scenes.
+
+Not as the default lesson title.
+
+---
+
+# 22. Introduction policy
+
+For normal educational videos, narration should orient the learner naturally.
+
+Example:
+
+```text
+"Today we're going to look at the architecture behind
+DeepSeek B4 Flash, starting with the overall design and
+then moving into the mechanisms that make it efficient."
+```
+
+Do not jump immediately into an unexplained analogy.
+
+Short videos can compress this to one sentence.
+
+---
+
+# 23. LessonBible
+
+Teacher Planner generates one lesson-wide consistency artifact.
+
+```ts
+interface LessonBible {
+  canonicalTerminology: Record<string, string>;
+
+  conceptIdentity: Record<string, ConceptIdentity>;
+
+  visualIdentity: Record<string, VisualIdentity>;
+
+  analogies: Record<string, Analogy>;
+
+  narrativeStyle: NarrativeStyle;
+
+  learnerLevel: string;
+
+  persistentObjects: string[];
+
+  introducedConceptsByScene: Record<string, string[]>;
+
+  forbiddenRepetition: string[];
+}
+```
+
+This solves cross-scene inconsistency.
+
+---
+
+# 24. Visual consistency
+
+Example:
+
+```text
+Q = blue
+K = purple
+V = green
+```
+
+is declared once.
+
+Every scene worker receives it.
+
+A worker may not reinterpret it.
+
+Same for:
+
+```text
+plant
+server
+neuron
+database
+concept aliases
+notation
+```
+
+---
+
+# 25. Scene contracts
+
+Teacher Planner returns all scene contracts at once.
+
+```ts
+interface SceneContract {
+  id: string;
+
+  sequence: number;
+
+  learningDelta: string;
+
+  requiredConceptIds: string[];
+
+  requiredRelations: string[];
+
+  mechanismIds: string[];
+
+  evidenceRefs: string[];
+
+  targetDurationSec: number;
+
+  narrationIntent: string;
+
+  candidateArchetypes: string[];
+
+  continuityIn: string[];
+
+  continuityOut: string[];
+}
+```
+
+This is now the authoritative lesson architecture.
+
+---
+
+# 26. Scene-specific RAG
+
+Before generating a scene:
+
+```text
+SceneContract
+      ↓
+retrieve supporting evidence
+```
+
+Use:
+
+```text
+concept IDs
+required relations
+learning delta
+mechanism
+```
+
+as retrieval queries.
+
+Rerank down to approximately:
+
+```text
+5–10 evidence chunks
+```
+
+per scene.
+
+Scene models do NOT receive the entire PDF.
+
+---
+
+# 27. Scene generation
+
+One scene worker should produce both:
+
+```text
+VisualIntent
++
+Narration
+```
+
+Do not create separate:
+
+```text
+narration agent
+visual agent
+pedagogy agent
+```
+
+for every scene.
+
+That recreates the call explosion we are trying to remove.
+
+---
+
+# 28. Scene worker input
+
+Each worker receives only:
+
+```text
+SceneContract
+LessonBible
+relevant concept subgraph
+5–10 evidence chunks
+available representation candidates
+```
+
+NOT:
+
+```text
+entire PDF
+entire graph
+all other scenes
+```
+
+This dramatically reduces prefill.
+
+---
+
+# 29. Scene worker output
+
+```ts
+interface SceneIntent {
+  sceneId: string;
+
+  narration: string;
+
+  objects: SemanticObject[];
+
+  relations: SemanticRelation[];
+
+  actions: SemanticAction[];
+
+  continuity: SceneContinuity;
+}
+```
+
+Still no geometry.
+
+---
+
+# 30. Parallel scene generation
+
+After LessonGraph is frozen:
+
+```text
+Scene 1 ──→ Worker
+Scene 2 ──→ Worker
+Scene 3 ──→ Worker
+Scene 4 ──→ Worker
+```
+
+run concurrently.
+
+Do not serialize expensive model reasoning because of scene geometry.
+
+---
+
+# 31. Scene batching
+
+Do not necessarily make one network request per scene.
+
+Use:
+
+```text
+Scene 1
+```
+
+alone because it is latency-critical.
+
+Then group adjacent scenes:
+
+```text
+Scenes 2–3
+Scenes 4–5
+Scenes 6–7
+...
+```
+
+into independent scene-worker calls when schemas and context size allow.
+
+This reduces:
+
+```text
+network overhead
+prefill
+total call count
+```
+
+while retaining scene-level outputs.
+
+---
+
+# 32. Why Scene 1 is special
+
+Optimize first-AV latency.
+
+Execute:
+
+```text
+Teacher Plan complete
+      ↓
+Scene 1 immediately
+      ↓
+Narration
+      ↓
+TTS
+      ↓
+Compile
+      ↓
+PLAY
+```
+
+while all later scene batches continue in parallel.
+
+User should not wait for the whole ten-minute lesson.
+
+---
+
+# 33. Expensive parallel, cheap sequential
+
+Generate:
+
+```text
+semantic SceneIntents
+```
+
+in parallel.
+
+If geometric continuity requires previous scene geometry:
+
+```text
+compile scene 1
+→ compile scene 2
+→ compile scene 3
+```
+
+sequentially.
+
+That is acceptable because compilation is cheap.
+
+Do NOT serialize LLM calls merely because compilation is sequential.
+
+---
+
+# 34. TTS
+
+Generate one narration stream per scene where practical.
+
+Do NOT invoke TTS separately for every tiny beat unless alignment quality requires it.
+
+Prefer:
+
+```text
+scene narration
+      ↓
+TTS
+      ↓
+word alignment
+      ↓
+timeline
+```
+
+Audio is the master clock.
+
+---
+
+# 35. Runtime model roles
+
+Runtime architecture should have three main LLM roles:
+
+```text
+Knowledge Compiler
+Teacher Planner
+Scene Worker
+```
+
+plus optional:
+
+```text
+Vision Extractor
+Rescue Model
+```
+
+That is enough.
+
+Do not create ten runtime agents.
+
+---
+
+# 36. Model routing — current recommendation
+
+## Multimodal / difficult source pages
+
+```text
+google/gemini-3.8-flash
+```
+
+Use for:
+
+```text
+figure interpretation
+table interpretation
+scanned/visual pages
+complex multimodal source extraction
+```
+
+Do NOT send normal selectable-text pages through it.
+
+---
+
+## Graph fragment compiler
+
+Primary:
+
+```text
+openai/gpt-5.6-luna
+```
+
+Graph fragments are strict structured JSON.
+
+Luna is cheap and has a large context window.
+
+---
+
+## Graph reducer
+
+Primary:
+
+```text
+openai/gpt-5.6-luna
+```
+
+Escalate difficult multimodal/very complex source reductions to:
+
+```text
+google/gemini-3.8-flash
+```
+
+---
+
+## Teacher Planner
+
+Economy/default:
+
+```text
+openai/gpt-5.6-luna
+```
+
+Fast mode candidate:
+
+```text
+anthropic/claude-haiku-4.5
+```
+
+Only one Teacher Planner call normally occurs per lesson, so paying slightly more for a faster/high-quality planner can be worthwhile.
+
+---
+
+## Scene 1
+
+Fast-mode candidate:
+
+```text
+anthropic/claude-haiku-4.5
+```
+
+because first-playable latency matters most.
+
+Economy:
+
+```text
+openai/gpt-5.6-luna
+```
+
+---
+
+## Later Scene Workers
+
+Benchmark:
+
+```text
+qwen/qwen3.5-27b
+```
+
+against:
+
+```text
+openai/gpt-5.6-luna
+```
+
+Do not switch until live schema/gate-pass benchmarks prove Qwen is acceptable.
+
+---
+
+## Rescue
+
+Only after one gate failure:
+
+```text
+anthropic/claude-sonnet-5
+```
+
+No routine Sonnet usage.
+
+---
+
+# 37. DeepSeek V3.2
+
+Do not use DeepSeek V3.2 for contract-critical JSON stages by default.
+
+It may remain useful for:
+
+```text
+cheap summarization
+retrieval preprocessing
+non-schema analysis
+```
+
+but structured-output enforcement is more important than raw token price for our main stages.
+
+---
+
+# 38. Approximate model call formula
+
+For a NEW source:
+
+```text
+Calls =
+V
++ G
++ 1 GraphReducer
++ 1 TeacherPlanner
++ B SceneBatches
++ failures/retries
+```
+
+where:
+
+```text
+V = multimodal extraction batches
+G = graph map batches
+B = scene generation batches
+```
+
+For an already-cached source:
+
+```text
+Calls =
+1 TeacherPlanner
++ B SceneBatches
+```
+
+For identical lesson settings with cached LessonGraph/scenes:
+
+```text
+potentially 0 LLM calls
+```
+
+---
+
+# 39. Graph-call policy by source size
+
+Small source:
+
+```text
+1 graph map
++
+1 reducer
+```
+
+Medium:
+
+```text
+2–4 graph maps parallel
++
+1 reducer
+```
+
+Large:
+
+```text
+4–8 graph maps parallel
++
+1 reducer
+```
+
+Do not create one graph call per chunk.
+
+---
+
+# 40. Approximate scene density
+
+Scene count should be semantic, but initial planning target:
+
+```text
+~25–45 seconds / teaching scene
+```
+
+Typical:
+
+```text
+1 min  → ~2 scenes
+2 min  → ~4 scenes
+5 min  → ~8–10 scenes
+10 min → ~16–20 scenes
+```
+
+Teacher Planner can override when concept density demands it.
+
+---
+
+# 41. Approximate scene API calls
+
+With Scene 1 isolated and later scenes grouped in pairs:
+
+```text
+2 scenes  → 2 scene calls
+4 scenes  → 3 scene calls
+10 scenes → 6 scene calls
+18 scenes → 10 scene calls
+```
+
+Therefore cached-source generation is approximately:
+
+```text
+1 min  → 3 LLM calls
+2 min  → 4 LLM calls
+5 min  → ~7 LLM calls
+10 min → ~11 LLM calls
+```
+
+plus any failed-stage repair.
+
+This is dramatically better than creating:
+
+```text
+teaching call
++
+architect call
++
+director call
+```
+
+for every scene.
+
+---
+
+# 42. Caching hierarchy
+
+Persist:
+
+```text
+SOURCE CACHE
+├── SourceDocument
+├── chunks
+├── embeddings/index
+├── figure/table metadata
+├── BaseConceptGraph
+└── EvidenceIndex
+
+
+LESSON CACHE
+├── FocusedConceptGraph
+├── LessonGraph
+├── LessonBible
+└── SceneContracts
+
+
+SCENE CACHE
+├── SceneIntent
+├── narration
+├── audio
+└── CompiledScene
+```
+
+---
+
+# 43. Cache invalidation
+
+Source-level cache key:
+
+```text
+sourceHash
+parserVersion
+chunkerVersion
+embeddingVersion
+graphCompilerVersion
+```
+
+Lesson-level:
+
+```text
+baseGraphHash
+userPromptHash
+duration
+audience
+language
+teacherPlannerVersion
+```
+
+Scene-level:
+
+```text
+lessonGraphHash
+sceneContractHash
+sceneWorkerVersion
+representationVersion
+```
+
+---
+
+# 44. Existing architecture to KEEP
+
+Do not rewrite:
+
+```text
+TeachingHarness
+schema validation
+failure ownership
+one-repair policy
+compiler
+renderSVG
+browser/export renderer sharing
+job journal
+provenance envelopes
+```
+
+We are restructuring the expensive semantic front end.
+
+Not rebuilding the trusted deterministic back end.
+
+---
+
+# 45. Existing architecture to CONSOLIDATE
+
+Current:
+
+```text
+knowledge windows
+teaching windows
+per-scene architect
+whiteboard planner
+per-scene director
+```
+
+Target:
+
+```text
+source knowledge maps
+        ↓
+one BaseConceptGraph
+        ↓
+one TeacherPlanner
+        ↓
+all SceneContracts
+        ↓
+parallel SceneWorkers
+```
+
+Remove redundant semantic re-planning after migration proves parity.
+
+---
+
+# 46. Implementation coding agents
+
+Use multiple coding agents to implement this, but runtime stays simple.
+
+## Agent A — Multimodal Source Model
+
+Own:
+
+```text
+SourceDocument
+SourceBlock
+PDF/URL/DOCX/PPTX adapters
+figure/table/equation preservation
+```
+
+---
+
+## Agent B — Retrieval
+
+Own:
+
+```text
+semantic chunking
+BM25
+embeddings
+hybrid retrieval
+reranker
+coverage selection
+top-25 focus selection
+```
+
+---
+
+## Agent C — ConceptGraph
+
+Own:
+
+```text
+GraphFragment schema
+parallel map
+graph reducer
+evidence preservation
+BaseConceptGraph caching
+```
+
+---
+
+## Agent D — Teacher Planner
+
+Own:
+
+```text
+LessonGraph
+LessonBible
+SceneContract
+duration-aware pedagogy
+title policy
+teacher-like introduction
+```
+
+---
+
+## Agent E — Scene Runtime
+
+Own:
+
+```text
+scene-specific retrieval
+parallel SceneWorkers
+scene batching
+Scene 1 priority
+progressive generation
+```
+
+---
+
+## Agent F — Model Router
+
+Own:
+
+```text
+stage-specific models
+provider routing
+cost metrics
+TTFT
+schema pass rate
+gate pass rate
+fallback
+```
+
+---
+
+## Agent G — Cache/Persistence
+
+Own:
+
+```text
+source cache
+lesson cache
+scene cache
+versioned invalidation
+resume/replay
+```
+
+---
+
+## Agent H — Migration/Evaluation
+
+Compare:
+
+```text
+CURRENT V2
+vs
+NEW FRONT END
+```
+
+on the same benchmark.
+
+No migration until quality is at least equal.
+
+---
+
+# 47. Required benchmark
+
+Use at least:
+
+```text
+photosynthesis
+attention
+DeepSeek architecture
+HTTP lifecycle
+DNA replication
+matrix multiplication
+plate tectonics
+cache hit/miss
+```
+
+Test:
+
+```text
+1 min
+5 min
+10 min
+```
+
+Measure:
+
+```text
+concept coverage
+critical claim accuracy
+teaching coherence
+cross-scene consistency
+first AV
+full generation latency
+API calls
+tokens
+cost
+repair count
+schema pass rate
+```
+
+---
+
+# 48. Success target
+
+The architecture is successful when:
+
+```text
+source understanding occurs once
+
+ConceptGraph is reusable
+
+user prompt changes lesson focus,
+not source truth
+
+lesson structure is planned once
+
+all scenes share one teacher identity
+
+scene reasoning runs mostly parallel
+
+first scene plays before full lesson completes
+
+compiler/renderer remain deterministic
+
+same source re-use becomes very cheap
+```
+
+That is the architecture to implement.

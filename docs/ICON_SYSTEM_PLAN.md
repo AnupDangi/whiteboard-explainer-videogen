@@ -1,6 +1,6 @@
 # Dynamic Representation & Icon Subsystem — Integration Plan
 
-Status: P0–P2 implemented; P3+ not started.
+Status: P0–P3b implemented; P4 cache module exists but is not wired; P5–P6 done; P7 not started. This table was stale and is corrected below.
 Scope: add a controlled dynamic representation subsystem to the V2 semantic
 pipeline. External icon retrieval is a fallback source for representation
 candidates, never a renderer path.
@@ -10,7 +10,11 @@ candidates, never a renderer path.
 | P0 palette + fill modes | **done** | `renderer/palette.ts`, `AssetPart.strokeRole/fillRole/fillMode/fillOpacity`, golden SVG hashes in `test/golden-svg-hashes.json` |
 | P1 normalizer | **done** | `assets/normalize/{sanitize,path,geometry,transform,colors}.ts`, `assets/external/convert.ts` |
 | P2 embedded catalog | **done** | `CompiledSceneV2.assetCatalog`, `resolveAsset(ref, catalog?)`, threaded through compile/fallback/renderer |
-| P3–P7 | not started | external retrieval, cache/replay, policy/ranking, benchmark, promotion |
+| P3 external retrieval | **done** | `assets/external/{iconify,search,rank,policy,resolve,suitability}.ts`, wired into the `representation-guide` stage (`generate.ts:241`) |
+| P4 cache + replay | **partial** | `assets/external/cache.ts` exists; only caller is `test/icon-cache.test.js` (no live wiring) |
+| P5 policy + ranking + telemetry | **done** | `assets/external/{license,policy,rank,suitability}.ts`, `representation-metrics.ts` |
+| P6 representation benchmark | **done** | `scripts/bench-representation.ts` |
+| P7 promotion into static registry | **not started** | no promotion path exists |
 
 **Path corrections** (this document was written before a repo restructure):
 `src/semantic/representation.ts` is now `src/semantic/identity/representation.ts`;

@@ -11,13 +11,13 @@ src/
     vocabulary.ts          node kinds + layout names (explainer vocabulary)
     model-router.ts        per-task model selection (outline/content/director)
     voice-engine-client.ts async boundary to ../voice-engine
-  explainer/         DEFAULT pipeline: deterministic node/edge whiteboard scenes.
+  explainer/         FROZEN LEGACY (V1): deterministic node/edge whiteboard scenes.
     sources.ts document-map.ts retrieval.ts embeddings.ts figures.ts   ingest
     planner.ts auto-director.ts prompt-builder.ts                      planning
     engine.ts schema.ts vocabulary-less renderer helpers
     icons.ts illustrations.ts style.ts templates.ts fixtures.ts
     jobs.ts scene-output.ts progression.ts budgets.ts concurrency.ts
-  semantic/        EXPERIMENTAL V4 pipeline: semantic teaching scenes with assets.
+  semantic/        Active pipeline (V2, default): semantic teaching scenes with assets.
     types.ts schemas.ts pipeline.ts artifacts.ts evaluation.ts
     calibration.ts vision-judge.ts speech.ts
     planning/      teaching planner, visual model, director, narration, model adapter
@@ -46,4 +46,5 @@ src/
 - `../voice-engine/` — separate local TTS project (Supertonic 3 default, Piper fallback).
 - `../examples/semantic/` — manual semantic scene fixtures.
 - `../eval/semantic/` — semantic archetype benchmark cases.
-- `../docs/` — architecture, handoff, results and the V4 implementation matrix.
+- `../docs/` — architecture, handoff and the icon-system plan.
+- `../Architecture_plan.md` — target-state architecture (the authority); `../PLAN_TO_IMPLEMENT.md` — target-state overview.

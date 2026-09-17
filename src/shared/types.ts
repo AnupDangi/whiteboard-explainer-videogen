@@ -21,7 +21,18 @@ export interface SourceInput { kind:'prompt'|'text'|'url'|'pdf'|'docx'|'pptx'|'m
 // `text` where that page's text begins. Blank pages are omitted. PDF sources only.
 // map: LD2 hierarchical document map — section tree built once per source (sha256-cached),
 // consumed by the outline call (LD5) instead of raw text.
-export interface SourceDocument { kind:string; label:string; text:string; sha256:string; figures?:SourceFigure[]; pages?:Array<{page:number;start:number}>; map?:DocumentMap }
+export interface SourceDocument { kind:string; label:string; text:string; sha256:string; figures?:SourceFigure[]; pages?:Array<{page:number;start:number}>; map?:DocumentMap; blocks?:SourceBlock[] }
+/** W1 typed source blocks (`Architecture_plan.md` §5). `text` is retained for
+ *  backward compatibility; `blocks` is the structured representation used by
+ *  semantic chunking and retrieval. */
+export interface BlockBase { id:string; page?:number }
+export interface HeadingBlock extends BlockBase { type:'heading'; text:string; level:number }
+export interface TextBlock extends BlockBase { type:'text'; text:string }
+export interface FigureBlock extends BlockBase { type:'figure'; imageRef?:string; caption?:string; nearbyText:string[]; description?:string; semanticTags?:string[] }
+export interface TableBlock extends BlockBase { type:'table'; caption?:string; columns:string[]; rows:string[][] }
+export interface EquationBlock extends BlockBase { type:'equation'; text:string; latex?:string }
+export interface CodeBlock extends BlockBase { type:'code'; text:string; language?:string }
+export type SourceBlock=HeadingBlock|TextBlock|FigureBlock|TableBlock|EquationBlock|CodeBlock;
 export interface MapSection { id:string; title:string; page:number; start:number; end:number; charCount:number; summary:string }
 export interface DocumentMap { kind:'book'|'paper'|'unknown'; sections:MapSection[] }
 /** P2: one detected+described figure/table from a PDF source — planning input only. */

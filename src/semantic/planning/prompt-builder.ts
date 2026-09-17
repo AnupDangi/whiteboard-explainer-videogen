@@ -1,4 +1,5 @@
-import {ARCHETYPES,MOTIONS} from '../types.js';
+import {MOTIONS} from '../types.js';
+import {SUPPORTED_ARCHETYPES} from '../compiler/zones.js';
 import {wordsForMinutes,NARRATION_WPM} from '../../shared/language.js';
 
 /**
@@ -89,7 +90,7 @@ export function teachingPrompt(options:TeachingPromptOptions):string{
     `Do not choose shapes or coordinates.`,
     ...TEACHER_VOICE_RULES,
     ...MATH_TEACHING_RULES,
-    `Use only the supplied allowed archetypes. Allowed archetype vocabulary: ${ARCHETYPES.join(', ')}.`,
+    `Use only the supplied allowed archetypes. Allowed archetype vocabulary: ${SUPPORTED_ARCHETYPES.join(', ')}.`,
     options.hasSource
       ? `If sourceText is supplied, quote exact source spans with its sourceId and reference them on each critical beat.`
       : `No source is supplied; evidenceRefs arrays stay empty. Do not invent sources.`,
@@ -194,5 +195,5 @@ export function criticRepairPrompt(options:{criticalErrors:string[];reason:strin
 export function assertPromptVocabulary():void{
   const teaching=teachingPrompt({maxScenes:2,hasSource:false}),director=directorPrompt();
   for(const w of ['draw','reveal','flow','trace'])if(!director.includes(w))throw new Error(`Prompt drift: missing capability word ${w}`);
-  if(!teaching.includes(ARCHETYPES[0]))throw new Error('Prompt drift: archetype vocabulary missing from teaching prompt');
+  if(!teaching.includes(SUPPORTED_ARCHETYPES[0]))throw new Error('Prompt drift: archetype vocabulary missing from teaching prompt');
 }

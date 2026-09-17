@@ -1,0 +1,74 @@
+{
+  "targetMinutes": 1,
+  "generatedAt": "2026-09-17T20:23:07.037Z",
+  "runs": [
+    {
+      "pipeline": "semantic-v3",
+      "case": "photosynthesis",
+      "scenes": 2,
+      "wallSec": 31.953,
+      "outputSec": 53.52222222222222,
+      "ratio": 0.892037037037037,
+      "durationPass": true,
+      "calls": 6,
+      "costUsd": 0.027659949999999996
+    },
+    {
+      "pipeline": "semantic",
+      "case": "photosynthesis",
+      "scenes": 2,
+      "wallSec": 87.079,
+      "outputSec": 61.3,
+      "ratio": 1.0216666666666667,
+      "durationPass": true,
+      "calls": 6,
+      "costUsd": 0.04410973333333333
+    },
+    {
+      "pipeline": "semantic-v3",
+      "case": "http",
+      "scenes": 2,
+      "wallSec": 21.053,
+      "outputSec": 52.41111111111111,
+      "ratio": 0.8735185185185185,
+      "durationPass": true,
+      "calls": 6,
+      "costUsd": 0.027159449999999995
+    },
+    {
+      "pipeline": "semantic",
+      "case": "http",
+      "scenes": 1,
+      "wallSec": 103.65,
+      "outputSec": 31.205555555555556,
+      "ratio": 0.5200925925925926,
+      "durationPass": false,
+      "calls": 7,
+      "costUsd": 0.05104918333333333,
+      "error": "Illegal overlap: concept_1_http_request_lifecycle_1/concept_1_tls_1"
+    },
+    {
+      "pipeline": "semantic-v3",
+      "case": "gradient",
+      "scenes": 2,
+      "wallSec": 16.62,
+      "outputSec": 59.077777777777776,
+      "ratio": 0.9846296296296295,
+      "durationPass": true,
+      "calls": 6,
+      "costUsd": 0.024969449999999997
+    },
+    {
+      "pipeline": "semantic",
+      "case": "gradient",
+      "scenes": 1,
+      "wallSec": 87.411,
+      "outputSec": 31.205555555555556,
+      "ratio": 0.5200925925925926,
+      "durationPass": false,
+      "calls": 7,
+      "costUsd": 0.04707396666666666,
+      "error": "V2 director validation exhausted: Action has no target"
+    }
+  ]
+}

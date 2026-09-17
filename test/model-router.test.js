@@ -65,6 +65,38 @@ test('route cooldown is sticky: cooldown routes are skipped and stay skipped',as
  resetRouteHealth();
 });
 
+test('model adapter: session id and cacheable system prefix reach the request body',async()=>{
+ const {createJsonModel,resetRouteHealth}=await import('../dist/src/semantic/planning/model-adapter.js');
+ resetRouteHealth();
+ let body;
+ const m=createJsonModel({env:{OPENROUTER_API_KEY:'test',OPENROUTER_MODEL:'test/solo',OPENROUTER_GRAPH_MAP_MODEL:'test/solo',OPENROUTER_V3_FALLBACKS:'test/solo'},maxCostUsd:1,fetcher:async(url,init)=>{
+  if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:[{id:'test/solo',pricing:{prompt:'0.0000001',completion:'0.0000001'}}]}));
+  body=JSON.parse(init.body);
+  return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{"ok":true}'}}],usage:{prompt_tokens:10,completion_tokens:10,cost:.000001}}));
+ }});
+ const schema={type:'object',required:['ok'],properties:{ok:{type:'boolean'}}};
+ await m.generate('graphMap','stable instructions',{q:1},schema,value=>value,{sessionId:'source:abc123'});
+ assert.equal(body.session_id,'source:abc123');
+ assert.ok(Array.isArray(body.messages[0].content),'the system message is a content-block array');
+ assert.equal(body.messages[0].content[0].cache_control.type,'ephemeral','the stable prefix is marked cacheable');
+ assert.match(body.messages[0].content[0].text,/stable instructions/);
+ assert.equal(body.messages[1].role,'user');
+ resetRouteHealth();
+});
+
+test('model adapter: a fenced JSON response is parsed, other malformation still fails',async()=>{
+ const {createJsonModel,resetRouteHealth}=await import('../dist/src/semantic/planning/model-adapter.js');
+ resetRouteHealth();
+ const schema={type:'object',required:['ok'],properties:{ok:{type:'boolean'}}};
+ const m=createJsonModel({env:{OPENROUTER_API_KEY:'test',OPENROUTER_MODEL:'test/solo',OPENROUTER_GRAPH_MAP_MODEL:'test/solo',OPENROUTER_V3_FALLBACKS:'test/solo'},maxCostUsd:1,fetcher:async(url)=>{
+  if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:[{id:'test/solo',pricing:{prompt:'0.0000001',completion:'0.0000001'}}]}));
+  return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'```json\n{"ok":true}\n```'}}],usage:{prompt_tokens:10,completion_tokens:10,cost:.000001}}));
+ }});
+ const value=await m.generate('graphMap','instr',{q:1},schema,result=>result);
+ assert.deepEqual(value,{ok:true});
+ resetRouteHealth();
+});
+
 test('three consecutive successes forgive one recorded timeout',async()=>{
  const {createJsonModel,routeHealthState,resetRouteHealth}=await import('../dist/src/semantic/planning/model-adapter.js');
  resetRouteHealth();

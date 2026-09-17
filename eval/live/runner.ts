@@ -78,7 +78,7 @@ export async function runCase(
   const input: TeachingInput = {
     prompt: c.prompt,
     maxScenes: c.maxScenes ?? 1,
-    allowedArchetypes: c.preferredArchetypes ?? ['simple_explanation'],
+    allowedArchetypes: c.preferredArchetypes ?? ['flow','numbered_steps'],
     language: 'en',
     ...(fixtureText ? {sourceText: fixtureText, sourceId: `case:${c.id}`} : {})
   };

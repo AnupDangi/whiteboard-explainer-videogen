@@ -2,7 +2,8 @@
  *  identity authority (`harness/registry.ts`).
  */
 import {teachingPlanSchema,visualObjectSchema,visualActionSchema,type Schema} from '../schemas.js';
-import {ARCHETYPES,RELATIONS} from '../types.js';
+import {RELATIONS} from '../types.js';
+import {SUPPORTED_ARCHETYPES} from '../compiler/zones.js';
 const text:Schema={type:'string',minLength:1,maxLength:1800};
 const key:Schema={type:'string',pattern:'^[a-z][a-z0-9_-]*$',minLength:1,maxLength:64};
 const array=(items:Schema,maxItems=48,minItems=0):Schema=>({type:'array',items,minItems,maxItems});
@@ -32,7 +33,7 @@ const ap=structuredClone(visualActionSchema.properties!);
 for(const k of ['id','objectIds','relationIds'])delete ap[k];
 ap.conceptKeys=array(key,32);ap.relationRefs=array(relationRefSchema);
 export const resolvedDirectionSchema=object({
- title:text,teachingGoal:text,mentalModel:text,archetype:{type:'string',enum:ARCHETYPES},
+ title:text,teachingGoal:text,mentalModel:text,archetype:{type:'string',enum:SUPPORTED_ARCHETYPES},
  objects:array(semanticObjectSchema,32,1),relations:array(relationRefSchema),
  beats:array(object({key,narration:text,actions:array(object(ap,['anchor','fromState','toState']),32,1),intentionalPause:text},['intentionalPause']),24,1)
 });

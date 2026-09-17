@@ -18,6 +18,7 @@ const root=fileURLToPath(new URL('../../',import.meta.url));
 const json=(res:ServerResponse,status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
 async function body(req:IncomingMessage){let value='';for await(const chunk of req){value+=chunk;if(Buffer.byteLength(value)>72*1024*1024)throw new Error('Request too large');}return JSON.parse(value);}
 export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
+  const pipeline=visualPipeline(process.env);
   const store=new JobStore(dataRoot,providers);
   const semanticStore=new SemanticJobStore(join(dataRoot,'semantic'),{
     model:(env,options)=>createJsonModel({env,signal:options?.signal,maxCostUsd:options?.maxCostUsd??Number(env.V2_JOB_BUDGET_USD??.15),onOutput:async(stage,attempt,value)=>{
@@ -27,8 +28,7 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
     }}),
     judge:env=>createVisionJudge({env,maxCostUsd:Number(env.V2_CRITIC_BUDGET_USD??.25)}),
     speech:(language,signal)=>createVoiceEngineSpeech({language,signal}),
-  },join(root,'output'));
-  const pipeline=visualPipeline(process.env);
+  },join(root,'output'),pipeline);
   const server=createServer((req,res)=>logContext.run({requestId:randomUUID()},async()=>{
     const started=performance.now();
     log('http.request',{method:req.method,path:(req.url||'/').split('?')[0]});
@@ -204,7 +204,7 @@ export function makeServer({dataRoot=join(root,'.data'),providers={}}={}) {
       else if(/^\/src\/semantic\/(?:compiler\/text|renderer\/(?:render-svg|style|scene-state|illustrations|primitives|relations|cursor|captions|steps)|assets\/(?:registry|validator|geometry|illustrations\/plant|icons\/inputs|templates\/catalog))\.js$/.test(url.pathname))path=join(root,'dist',url.pathname);
       else if(/^\/src\/(?:explainer\/[a-z0-9-]+|shared\/(?:logger|model-router|types|voice-engine-client|vocabulary|language))\.js$/.test(url.pathname))path=join(root,'dist',url.pathname);
       else {
-        const requested=url.pathname==='/'?(pipeline==='semantic'?'semantic.html':'index.html'):url.pathname.slice(1);
+        const requested=url.pathname==='/'?(pipeline==='explainer'?'index.html':'semantic.html'):url.pathname.slice(1);
         path=resolve(root,'public',requested);
         if(!path.startsWith(resolve(root,'public')+'/'))return json(res,403,{error:'Forbidden'});
       }

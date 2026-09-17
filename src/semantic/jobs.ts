@@ -1,6 +1,6 @@
 import {log,logContext} from '../shared/logger.js';
 import {scenesForMinutes,MAX_SCENES_PER_LESSON} from '../shared/language.js';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {mkdir,writeFile,rename,readFile,stat,copyFile,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
@@ -9,20 +9,24 @@ import type {JsonModel} from './planning/model-adapter.js';
 import type {VisionJudge} from './vision-judge.js';
 import type {V2Speech} from './speech.js';
 import {generateV2} from './planning/generate.js';
+import {generateV3,type V3SceneResult} from './frontend/generate-v3.js';
+import {parseBlocks} from '../shared/ingestion/blocks.js';
 import type {TeachingInput} from './planning/teaching-planner.js';
-import {ingestSource} from '../explainer/sources.js';
+import {ingestSource} from '../shared/ingestion/source.js';
+import type {SourceDocument} from '../shared/types.js';
 import {loadModelRouter,loadModelFallbacks,DEFAULT_FAST_MODEL} from '../shared/model-router.js';
 import {jobBudgetMs} from './harness/budget.js';
 import {retrievalMode} from './planning/representation-external.js';
 import type {SourceInput,SourceFigure} from '../shared/types.js';
 import {FileStageJournal} from './harness/journal.js';
+import {createFileCache,type CacheStore} from './cache/store.js';
 import {HARNESS_VERSION,type GateResult,type HarnessRunManifest,type LearnerProfile,type StageOwner} from './harness/contracts.js';
 import {DEFAULT_STAGE_POLICIES} from './harness/stage.js';
 
 export interface SemanticJobOptions {prompt:string;sourceText?:string;sourceId?:string;source?:SourceInput;sourceFigures?:SourceFigure[];maxScenes?:number;allowedArchetypes:string[];language?:string;narration:boolean;maxCostUsd?:number;autoMp4?:boolean;learnerProfile?:Partial<LearnerProfile>;groundingPolicy?:'source-only'|'source-plus-verified';targetMinutes?:number;harnessVersion?:string;resumeFrom?:string}
 export interface SemanticSceneSnapshot {id:string;title:string;durationMs:number;timingKind:string;svg:string;compiledUrl?:string;audioUrl?:string;metrics:Record<string,number|undefined>;diagnostics:string[]}
 export interface SemanticJobSnapshot {id:string;status:'queued'|'planning'|'streaming'|'complete'|'partial'|'error'|'cancelled'|'interrupted';revision:number;createdAt:number;prompt:string;language:string;scenes:SemanticSceneSnapshot[];availableMs:number;totalScenes?:number;firstPlayableMs?:number;completedMs?:number;error?:string;errorKind?:string;costUsd:number;calls:number;narration:boolean;autoMp4?:boolean;mp4Status?:'pending'|'ready'|'failed'|'withheld';mp4Url?:string;mp4Error?:string;harnessVersion:string;finalGate:'PENDING'|'PASS'|'FAIL'|'PARTIAL';publishable:boolean;currentStage?:string;stageOwner?:StageOwner;gates:GateResult[];manifestUrl?:string;learnerProgression?:{establishedConcepts:string[];checkpoints:number};continuityDecisions?:number;semanticRepairCount?:number;modelRoutes?:string[];groundingPolicy:'source-only'|'source-plus-verified';targetMinutes?:number;learnerProfile?:LearnerProfile;resumeFrom?:string;maxCostUsd?:number}
-interface InternalSemanticJob extends SemanticJobSnapshot {controller?:AbortController;task?:Promise<void>;model?:JsonModel;judge?:VisionJudge;input?:TeachingInput;speech?:V2Speech;learnerProfile?:LearnerProfile;manifest?:HarnessRunManifest;resumeFrom?:string}
+interface InternalSemanticJob extends SemanticJobSnapshot {controller?:AbortController;task?:Promise<void>;model?:JsonModel;judge?:VisionJudge;input?:TeachingInput;speech?:V2Speech;learnerProfile?:LearnerProfile;manifest?:HarnessRunManifest;resumeFrom?:string;sourceDoc?:SourceDocument}
 
 /** Failure taxonomy mirrors explainer/jobs.ts classifyError for the V2 stages. */
 export function classifySemanticError(message:string):string{
@@ -47,10 +51,12 @@ export class SemanticJobStore {
   jobs=new Map<string,InternalSemanticJob>();
   queue:string[]=[];
   outputDir:string;
-  constructor(root:string,factories:{model:(env:NodeJS.ProcessEnv,options?:{jobId:string;maxCostUsd?:number;signal:AbortSignal})=>JsonModel;judge?:(env:NodeJS.ProcessEnv)=>VisionJudge;speech?:(language:string,signal?:AbortSignal)=>V2Speech|Promise<V2Speech>},outputDir?:string){
-    this.root=root;this.factories=factories;this.outputDir=outputDir??join(process.cwd(),'output');
+  pipeline:'explainer'|'semantic'|'semantic-v3';
+  v3Cache:CacheStore;
+  constructor(root:string,factories:{model:(env:NodeJS.ProcessEnv,options?:{jobId:string;maxCostUsd?:number;signal:AbortSignal})=>JsonModel;judge?:(env:NodeJS.ProcessEnv)=>VisionJudge;speech?:(language:string,signal?:AbortSignal)=>V2Speech|Promise<V2Speech>},outputDir?:string,pipeline:'explainer'|'semantic'|'semantic-v3'='semantic'){
+    this.root=root;this.factories=factories;this.outputDir=outputDir??join(process.cwd(),'output');this.pipeline=pipeline;this.v3Cache=createFileCache(join(root,'v3-cache'));
   }
-  snapshot(job:InternalSemanticJob):SemanticJobSnapshot{const {controller,task,model,judge,input,speech,manifest,...data}=job;return structuredClone(data);}
+  snapshot(job:InternalSemanticJob):SemanticJobSnapshot{const {controller,task,model,judge,input,speech,manifest,sourceDoc,...data}=job;return structuredClone(data);}
   async save(job:InternalSemanticJob,type:string){
     job.revision++;
     const path=join(this.root,job.id,'job.json');
@@ -59,10 +65,11 @@ export class SemanticJobStore {
   }
   async create(options:SemanticJobOptions){
     const controller=new AbortController();
-    let sourceText=options.sourceText,sourceId=options.sourceId,sourceFigures=options.sourceFigures;
+    let sourceText=options.sourceText,sourceId=options.sourceId,sourceFigures=options.sourceFigures,sourceDoc:SourceDocument|undefined;
     if(options.source){
       if(sourceText!==undefined)throw new Error('Provide source or sourceText, not both');
       const doc=await ingestSource(options.source,controller.signal);
+      sourceDoc=doc;
       const sourceMax=Number(process.env?.V2_SOURCE_MAX_CHARS??200000);
 sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*$/,''):doc.text;
       sourceId=`src_${doc.sha256.slice(0,28)}`;
@@ -95,6 +102,14 @@ sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*
     const profile: LearnerProfile={level:options.learnerProfile?.level??'beginner',goals:options.learnerProfile?.goals??[],language:options.learnerProfile?.language??language,assumedKnowledge:options.learnerProfile?.assumedKnowledge??[],constraints:options.learnerProfile?.constraints};
     const job:InternalSemanticJob={id:randomUUID(),status:'queued',revision:0,createdAt:Date.now(),prompt:options.prompt,language,scenes:[],availableMs:0,costUsd:0,calls:0,narration:options.narration,harnessVersion:HARNESS_VERSION,finalGate:'PENDING',publishable:false,gates:[],groundingPolicy:options.groundingPolicy??'source-only',targetMinutes:options.targetMinutes,learnerProfile:profile,...(options.autoMp4?{autoMp4:true}:{}),...(options.resumeFrom?{resumeFrom:options.resumeFrom}:{}),...(options.maxCostUsd!==undefined?{maxCostUsd:options.maxCostUsd}:{})};
     job.controller=controller;
+    /** The v3 front end plans from typed blocks, so it needs the full parsed
+     *  document, not the truncated `sourceText`. A caller that supplied only
+     *  `sourceText` gets a deterministic text document so v3 still has blocks. */
+    if(this.pipeline==='semantic-v3'){
+      if(sourceDoc)job.sourceDoc=sourceDoc;
+      else if(sourceText!==undefined){const text=sourceText;job.sourceDoc={kind:'text',label:'source',text,sha256:createHash('sha256').update(text).digest('hex'),blocks:parseBlocks(text)};}
+      else throw new Error('semantic-v3 requires a source');
+    }
     const env=process.env;job.model=this.factories.model(env,{jobId:job.id,maxCostUsd:options.maxCostUsd,signal:controller.signal});job.judge=env.V2_CRITIC==='on'?this.factories.judge?.(env):undefined;
     job.speech=options.narration?await this.factories.speech?.(language,controller.signal):undefined;
     job.input={prompt:options.prompt,sourceText,sourceId,sourceFigures,maxScenes,allowedArchetypes:options.allowedArchetypes as TeachingInput['allowedArchetypes'],language,targetMinutes:options.targetMinutes,groundingPolicy:options.groundingPolicy??'source-only'};
@@ -172,7 +187,10 @@ sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*
       job.status='planning';await this.save(job,'planning');
       const journal=new FileStageJournal(join(this.root,job.id,'stage-journal.ndjson'));
       const stageMap={teaching:'knowledge-compiler','visual-model':'representation-guide',representation:'source-visual-grounding',director:'visual-director','narration-finalize':'whiteboard-planner',tts:'tts-alignment',compile:'compiler',critic:'pedagogy-critic'} as const;
-      for await(const result of generateV2(job.input!,job.model!,{speech:job.speech?(text:string)=>job.speech!(text):undefined,signal,judge:job.judge,criticEnv:process.env,journal,resume:Boolean(job.resumeFrom),runId:job.id,learnerProfile:job.learnerProfile,onTelemetry:event=>{const stage=(event.details?.harnessStage as keyof typeof DEFAULT_STAGE_POLICIES|undefined)??stageMap[event.stage];job.currentStage=stage;job.stageOwner=DEFAULT_STAGE_POLICIES[stage].owner;}})){
+      const stream:AsyncIterable<V3SceneResult>=(this.pipeline==='semantic-v3'&&job.sourceDoc)
+        ?generateV3(job.sourceDoc,{prompt:job.input!.prompt,...(job.targetMinutes!==undefined?{targetMinutes:job.targetMinutes}:{}),...(job.input!.language?{language:job.input!.language}:{}),maxScenes:job.input!.maxScenes,allowedArchetypes:job.input!.allowedArchetypes as string[]},job.model!,{...(job.speech?{speech:(text:string)=>job.speech!(text)}:{}),signal,runId:job.id,store:this.v3Cache}) as unknown as AsyncIterable<V3SceneResult>
+        :generateV2(job.input!,job.model!,{speech:job.speech?(text:string)=>job.speech!(text):undefined,signal,judge:job.judge,criticEnv:process.env,journal,resume:Boolean(job.resumeFrom),runId:job.id,learnerProfile:job.learnerProfile,onTelemetry:event=>{const stage=(event.details?.harnessStage as keyof typeof DEFAULT_STAGE_POLICIES|undefined)??stageMap[event.stage];job.currentStage=stage;job.stageOwner=DEFAULT_STAGE_POLICIES[stage].owner;}}) as unknown as AsyncIterable<V3SceneResult>;
+      for await(const result of stream){
         signal.throwIfAborted();
         const scene=result.compiled;
         let audio:Buffer|undefined,format:string|undefined;
@@ -219,6 +237,7 @@ sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*
   }
   /** Resume a failed/interrupted job from its last validated journal boundary. */
   async retry(id:string):Promise<SemanticJobSnapshot>{
+    if(this.pipeline==='semantic-v3')throw new Error('semantic-v3 jobs cannot resume yet; create a new job');
     const previous=await this.get(id);
     if(!previous)throw new Error('Job not found');
     const directory=join(this.root,id);

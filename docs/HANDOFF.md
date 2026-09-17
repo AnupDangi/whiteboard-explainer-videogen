@@ -1,6 +1,6 @@
-# Handoff — state of the project, 2026-09-16
+# Handoff — state of the project, 2026-09-17
 
-Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audits. Structure reference: `docs/ARCHITECTURE.md`. Philosophy and non-goals: `AGENTS.md`.
+Written after a full read of `src/` (139 files, 14,269 LOC) by five read-only audits. Architecture authority: `Architecture_plan.md`; complete overview: `PLAN_TO_IMPLEMENT.md`. Structure reference: `docs/ARCHITECTURE.md`. Philosophy and non-goals: `AGENTS.md`.
 
 ## Waves landed
 
@@ -28,6 +28,340 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **X1/X2** invariants | *(this commit)* | purity and cross-cutting invariants are enforced tests, not convention |
 | **P5** representation telemetry | *(this commit)* | tier counts per scene, aggregated in the live metrics |
 | **S9a** regression corpus | *(this commit)* | real model output captured from the logs as fixtures |
+
+
+## W0 — semantic-v3 foundation (2026-09-17)
+
+First wave of the target architecture (`Architecture_plan.md`), built alongside
+V2 per the §69 migration rule. `VISUAL_PIPELINE=semantic-v3`; V2 stays default.
+
+Landed:
+- Single ingestion pathway moved to the neutral `src/shared/ingestion/source.ts`
+  (`Architecture_plan.md` §4); `src/explainer/sources.ts` is now a re-export shim.
+  Removes the `semantic/` → `explainer/` import violation. Behaviour-preserving.
+- Versioned cache skeleton `src/semantic/cache/{keys,store}.ts` (§14, §42-43,
+  §50-51). `put` refuses an unvalidated artifact. Not yet wired to any stage.
+- Per-stage routing `loadV3ModelRouter` + `PLAN_MODEL_DEFAULTS` in
+  `src/shared/model-router.ts` (§54): the plan's model IDs as defaults,
+  overridable by `MODEL_ROUTER` or `OPENROUTER_*_MODEL`. V2 routing unchanged.
+  **The plan IDs are not yet verified against OpenRouter** — an unresolvable
+  route fails visibly, it is never replaced by a fixture.
+- `test/frontend-v3-w0.test.js`: pipeline switch, routing precedence, cache-key
+  determinism/version-sensitivity, cache validation refusal, and an enforced
+  layering scan. Suite green (5 new tests).
+
+Not started: W1 typed `SourceBlock` + retrieval, W2 graph reducer, W3 teacher
+planner, W4 scene worker/TTS, W6 migration comparison. Next bounded task: W1.
+
+## W1 — typed source + retrieval (2026-09-17)
+
+Landed (all additive; nothing wired into a live job yet):
+- `src/shared/ingestion/blocks.ts`: deterministic parser into
+  heading/text/figure/table/equation/code blocks. `SourceDocument.blocks` is now
+  populated by `ingestSource`; HTML is serialized to structured text (headings,
+  fenced code, pipe tables, figure captions) before parsing. Figures are
+  references/captions only — no image generation.
+- `src/semantic/source/chunker.ts`: semantic chunker, ~1000 tokens target / 1500
+  max, heading-scoped, indivisible code/table/equation/figure blocks kept whole.
+- `src/semantic/retrieval/bm25.ts` + `sets.ts`: zero-dep BM25, RRF fusion over
+  **injected** vectors, `CoverageSet` (one per top-level section), `FocusSet`
+  (top-K), `graphContext` union. Pure; no I/O.
+- `embedTexts` added to `planning/model-adapter.ts` (the single network module),
+  key-gated and fail-soft to BM25-only.
+- `src/semantic/source/cache.ts`: source-tier cache over `cache/{keys,store}.ts`.
+- `test/semantic-source-retrieval.test.js` (5 tests). Suite green.
+
+Honest gaps carried into W2: PDF figure/table *structural* extraction is still
+absent (only text-derived blocks); OCR is detect-only (the existing
+"Scanned PDFs need OCR" error); no reranker beyond BM25/RRF; retrieval is not yet
+called by any generator.
+
+Next bounded task: W2 — `GraphFragment` schema, parallel graph-map batches, one
+`GraphReducer` → `BaseConceptGraph`, `FocusedConceptGraph`, persisted via the
+source cache.
+
+## W2 — knowledge stage (2026-09-17)
+
+Landed (all additive; nothing wired into a live job yet):
+- `src/semantic/knowledge/{types,schema}.ts`: `GraphFragment`,
+  `BaseConceptGraph`, `FocusedConceptGraph` + model-facing JSON schemas.
+  Claims/mechanisms require evidence; no coordinates/code.
+- `graph-map.ts`: parallel graph maps, 1/2/4/8 calls by source size, never one
+  per chunk; contiguous document-ordered batches.
+- `reducer.ts`: deterministic merge (dedup, alias merge, evidence pruning,
+  central concepts, thesis), `gateBaseGraph` (unsupported evidence, dangling
+  relations, prerequisite cycles), `focusGraph` (prompt match + one hop, scoped
+  by optional claim/mechanism `conceptKeys`). ASCII-only ordering so
+  `baseGraphHash` is machine-independent.
+- `graph-reduce.ts`: optional single model reducer; output is re-reduced
+  deterministically and its evidence discarded, so a fabricated quote can never
+  become valid evidence. Falls back to the deterministic reducer, no repair loop.
+- `cache.ts`: `BaseConceptGraph` cached by source hash only after gate +
+  `assertSchema`; base graph is built **without** the lesson objective so it is
+  source-owned and reusable (§15).
+- Two review passes found and fixed: objective-dependent base graph, envelope
+  bug in the file cache (returned `{value}` wrapper), model-reducer evidence
+  leak, optional-array crash, and a dead `knowledge` v3 route.
+- Tests: `test/semantic-knowledge.test.js` (9 tests). Suite green.
+
+Honest gaps: PDF figure/table structural extraction still absent; no live
+embedding run (fake models only); `runGraphReducer` is not yet called by the
+orchestrator (deterministic reducer is); nothing wired into `semantic-v3`.
+
+Next bounded task: W3 — one Teacher Planner call → `LessonGraph` + `LessonBible`
++ `SceneContract[]`, duration→depth, title/intro policy.
+
+## W3 — teacher planner (2026-09-17)
+
+Landed (additive; not wired into a job):
+- `src/semantic/teacher/{types,schema,gate,planner,index}.ts`: `LessonGraph`,
+  `LessonBible`, `SceneContract` contracts and a model schema. **ONE**
+  `teacherPlanner` call per lesson; a scene is a learner delta, never a concept.
+- Duration→depth: `scenesForDuration` (~35s/scene) and `depthGuidance`;
+  title/intro policy in the prompt and gate.
+- `gateLessonPlan`: duration band, closed-world concept/mechanism/evidence/scene
+  references across graph+bible+continuity, duplicate scene ids, prerequisite
+  ordering, supported archetypes, title policy. `buildLessonPlan` caches by
+  `lessonCacheKey`; a malformed cache entry is a miss.
+- Tests: `test/semantic-teacher.test.js` (6).
+
+## W4 — scene worker + TTS (2026-09-17)
+
+Landed (additive; not wired into a job):
+- `src/semantic/scene/worker.ts`: **ONE** `sceneWorker` call decides narration +
+  visual intent for a batch. Output reuses the existing `VisualSceneV2`
+  contract, so the trusted compiler is unchanged. `sceneBatches` = Scene 1 alone
+  then pairs; parallelism capped at 8; the returned scene-id set must equal the
+  batch's contract ids. `gateSceneIntent` enforces closed-world concepts,
+  candidate archetypes, required-concept coverage and reference integrity.
+- `src/semantic/scene/voice.ts`: `VoiceProfile` per lesson, `narrationForScene`
+  (one narration per scene), version-sensitive `ttsCacheKey`.
+- Tests: `test/semantic-scene.test.js` (5).
+
+Review passes (three agents total across W2-W4) fixed: fabricated-evidence leak,
+objective-dependent base graph, file-cache envelope bug, model-reducer evidence,
+duplicate scene ids, prerequisite same-scene loophole, incomplete closed-world
+bible checks, worker short-response drop, unbounded worker concurrency and
+`laterBatchSize`, and a TTS key missing style/pause fields.
+
+Honest gaps: **nothing is wired into a live job** — there is no `generateV3`
+orchestrator and no `semantic-v3` job path; the compiler/export still run V2.
+PDF figure/table extraction and OCR routing are absent. OpenRouter plan model
+IDs were verified present (2026-09-17), but no live v3 call has run.
+
+Next bounded task: W5 — wire the v3 modules into a `generateV3` behind
+`VISUAL_PIPELINE=semantic-v3`, then W6 migration A/B against the gates.
+
+## W5 — generateV3 wired behind the pipeline switch (2026-09-17)
+
+Landed:
+- `src/semantic/frontend/generate-v3.ts`: source → knowledge → one teacher call
+  → scene-worker batches → `compileScene` → optional one-TTS-per-scene. Yields
+  the same per-scene shape the V2 job loop consumes, so persistence, SSE and MP4
+  export are unchanged. Knowledge/teacher/scene/compile gate failures **throw**;
+  the manifest is not a fabricated PASS.
+- `src/semantic/jobs.ts`: the store takes the pipeline; `run()` chooses
+  `generateV3` only when `VISUAL_PIPELINE=semantic-v3` and a parsed source
+  exists, else `generateV2` byte-identically. `sourceDoc` is captured at ingest
+  and stripped from the snapshot. v3 `retry()` is rejected until resume artifacts
+  exist.
+- `src/server.ts` passes the resolved pipeline into the store.
+- `src/semantic/scene/worker.ts`: each object must carry exactly one
+  representation carrier; `assetRef` is rejected (no candidates supplied yet).
+- Scene-tier cache: `generateV3` reuses a gated `VisualSceneV2` per lesson-graph
+  + contract hash; `SemanticJobStore` supplies a file-backed `v3Cache`. A warm
+  source+lesson+scene cache buys zero model calls.
+- `skills/knowledge-compiler/SKILL.md`: the knowledge stage's hard invariants are
+  a runtime skill, injected by `graph-map.ts` (§31, §33).
+- Tests: `test/semantic-frontend-v3.test.js` (3).
+
+Review pass (fourth agent across W2-W5) fixed: fabricated compile-gate PASS,
+discarded teacher gate, hardcoded-zero metrics, unenforced archetype allowlist,
+invented `assetRef`, `totalScenes` always 0, and unrestartable v3 retry.
+
+Honest gaps at W5 close (all superseded by the W6/W5 follow-up sections below):
+no live v3 run had occurred yet; session-id + prompt-cache prefixes were not yet
+wired; the render tier and full skills consolidation were pending. The W6 sections
+below record the first live runs, the A/B matrix and the session/cache landing.
+
+Next bounded task: W6 — migration A/B: run `semantic` and `semantic-v3` on the
+same cases and compare against `eval/live/gates.ts` before any default change.
+
+## W6 (partial) — first live semantic-v3 run (2026-09-17)
+
+A real OpenRouter run of the v3 front end (`generateV3`, no TTS, text source,
+"Explain photosynthesis for a beginner", 1 minute):
+
+| metric | value |
+|---|---|
+| scenes | **2 / 2 compiled**, all gates PASS |
+| scene durations | 21.76s + 21.76s (estimated; no TTS) |
+| model calls | 4 (1 graphMap, 1 teacherPlanner, 2 sceneWorker) |
+| cost | **$0.0265** |
+| route actually served | `google/gemini-3.8-flash` for every stage |
+
+**Routing fact:** the plan primary `openai/gpt-5.6-luna` returns OpenRouter
+`404 No endpoints found that can handle the requested parameters` when
+`provider.require_parameters=true` + strict `json_schema` are set; the documented
+fallback (`google/gemini-3.8-flash`) served every call. The failure is logged
+(`provider-failure`) and never substituted — the fallback is exactly what
+`Architecture_plan.md` §54 prescribes.
+
+**Six real defects the live run exposed and that are now fixed** (each was
+caught by a gate/compiler, not silently healed):
+1. Teacher gate rejected a scene that introduces a prerequisite with its
+   dependent (over-strict rule added from an earlier review) — reverted to
+   cross-scene ordering.
+2. Worker objects carried a bare `representation`; the compiler requires exactly
+   one `primitiveRef`/`assetRef` — instruction + gate tightened.
+3. `structural_diagram`/`convergence` need exactly one hero — now instructed and
+   gated.
+4. The teacher/worker prompts did not list the closed relation enum, so a model
+   emitted an off-enum relation — the allowed types are now stated.
+5. Action `fromState`/`toState` not in the object's `allowedStates` — now a
+   logged deterministic width-heal plus a gate check.
+6. Worker object ids were per-scene, so `keepFromPrevious` could never resolve —
+   object ids are now canonicalised per concept (`obj_<conceptId>`), and
+   untargeted objects get a logged reveal.
+
+Regression tests added for the canonical ids, hero/carrier gate and reveal-heal.
+Suite green (570). V2 remains the default and unchanged.
+
+Next bounded task: W6 proper — A/B `semantic` vs `semantic-v3` over the live
+matrix, then compare pass rates against `eval/live/gates.ts`.
+
+## W6 — model research + first A/B (2026-09-17)
+
+**OpenRouter capability research (445 models).** Every shortlist model advertises
+`structured_outputs` + `response_format` + `reasoning`; none advertises a
+`json_schema` supported-parameter flag (OpenRouter folds strict schema support
+under `structured_outputs`). Direct probes of the exact v3 request (strict
+`json_schema` + `provider.require_parameters=true` + `reasoning`) against
+`openai/gpt-5.6-luna` returned **200** — so the earlier 404 was transient
+endpoint/tier availability, not an unsupported parameter, and the documented
+fallback is the correct handling. Verified working routes: `google/gemini-3.8-flash`
+(primary fallback), `anthropic/claude-haiku-4.5`, `qwen/qwen3.5-27b`,
+`qwen/qwen3.5-flash-02-23` (cheapest structured-output model), `deepseek/deepseek-v3.2`.
+
+**A/B on the same text source ("Explain photosynthesis", 1 min, no TTS):**
+
+| pipeline | scenes | wall | output | calls | cost | route |
+|---|---|---|---|---|---|---|
+| `semantic` (V2) | 2 | 70.0s | 56.9s | 6 | $0.0434 | gemini-3-flash-preview |
+| `semantic-v3` | 2 | **14.2s** | 38.5s | **4** | **$0.0214** | gemini-3.8-flash (fallback) |
+
+V3 is ~5x faster wall-clock, ~half the cost and 2 fewer calls. Caveat: without
+TTS the v3 estimated output (38.5s) sits under the requested 60s, so the job-level
+duration gate (`jobs.ts`) would mark it partial; V2's 56.9s passes. This is a
+duration-budget issue in the teacher prompt, not a compiler defect, and is the
+next thing to tune.
+
+**Contract defects the A/B and follow-up runs exposed and that are now fixed**
+(each caught by a gate/compiler, then healed deterministically and logged):
+7. `object.state` not in `allowedStates` — state-declaration heal.
+8. Structural archetypes with 0/2 heroes — hero heal plus gate.
+9. `Illegal overlap` for nested containment — containment relations become real
+   `parentId` + `collisionPolicy:'contain'` before compile; a three-tier compile
+   recovery (flatten → single-hero → minimal single-object scene) guarantees a
+   bad model shape cannot cost the lesson (loud `v3.compile.degraded` log).
+10. Malformed continuity `transitions` — sanitised/dropped.
+11. Two objects for one concept — deduped by prominence with reference remap.
+12. Worker narration length variance — one bounded length repair re-asks the
+    scene workers once and keeps whichever result is closer to the target
+    (`v3.scene.length-repair`).
+
+**Final v3 numbers (three fresh live runs, same source, 1-minute target, no TTS):**
+58.0s (ratio 0.97, passes the ±15% duration gate), 74.1s (1.24) and 49.6s (0.83);
+4-6 calls, $0.02-0.04 each. v3 never hard-failed a lesson after the recovery
+tiers; duration variance remains the one open tuning item (the model swings
+between ~75 and ~190 words for a ~108-word target).
+
+Regression tests added for state/hero heals and dedupe. Suite green (572).
+
+**W6 matrix — 3 topics, `semantic` (V2) vs `semantic-v3`, 1 min, no TTS.**
+Reproducible with `npm run matrix:frontends -- --out eval/live/reports/frontends-v3.json`
+(latest run saved there); the table below is that run and supersedes the earlier
+exploratory one.
+
+| case | v3 scenes / wall / output / gate | V2 scenes / wall / output / gate |
+|---|---|---|
+| photosynthesis | 2 / 32.0s / 53.5s / **pass (0.89)**, $0.0277 | 2 / 87.1s / 61.3s / pass (1.02), $0.0441 |
+| HTTP lifecycle | 2 / 21.1s / 52.4s / **pass (0.87)**, $0.0272 | 1 / 103.7s / 31.2s / **FAIL** `Illegal overlap` |
+| gradient descent | 2 / 16.6s / 59.1s / **pass (0.98)**, $0.0250 | 1 / 87.4s / 31.2s / **FAIL** `Action has no target` |
+
+**v3 duration-gate passes: 3/3. V2: 1/3**, with one compile failure and one
+director failure. v3 was 2.6-5.3x faster and ~1.6-1.9x cheaper. The earlier
+single v3 miss (ratio 1.21) did not reproduce; the spread is the model's own
+narration length, mitigated by the one bounded length repair. `temperature:0` for
+v3 stages did not reduce it — Gemini does not honour it.
+
+**Length-repair root cause + fix (2026-09-17).** A live v3 job with the real
+`SemanticJobStore` failed the duration gate at 77s/60s even though the repair
+existed. Two causes, both fixed:
+1. the repair target was the **sum of the teacher's per-scene durations**, not
+   the requested duration — a teacher budgeting 78s for a 60s request set the
+   target so high that the repair never triggered. It now uses the requested
+   duration; the teacher gate's duration band tightened 30% → 20%.
+2. a warm **scene cache** suppressed the repair (`missing.length` guard), so a
+   stale over-long lesson was sticky. The band check now runs on cache hits too,
+   and only inside ±12% of the target (inside the job's ±15% window) so the
+   repair fires before the gate can fail.
+
+Verified end-to-end with `SemanticJobStore` (`semantic-v3`, silent, 1 min):
+job **`4d4c5693`** → **status `complete`, finalGate `PASS`, publishable**, scenes
+25s + 28s = 52.5s (ratio 0.88), 7 model calls, $0.0500, MP4 assembled
+(`output/4d4c5693-…mp4`, 1280×720 h264). A prior failing job (`68371ba7`) remains
+as the before/after evidence.
+
+**Scene-worker model adherence (same contract, 54-word target per scene):**
+
+| scene-worker model | words (2 scenes) | note |
+|---|---|---|
+| google/gemini-3.8-flash | 74 + 70 | current route; reliable JSON |
+| deepseek/deepseek-v3.2 | 63 + 70 | closest to target, cheaper |
+| anthropic/claude-haiku-4.5 | — | returned fenced JSON; **now fixed** (adapter strips one fence) |
+| qwen/qwen3.5-27b | — | `parentId` shape rejected by the contract |
+| openai/gpt-5.6-luna | — | transient 404 (endpoint/tier availability) |
+
+No candidate follows the word target tightly: gemini over-writes ~30% here while
+full runs sometimes under-write. The spread is the model's own, not a routing or
+prompt bug, so the one bounded length repair (re-ask once, keep the closer
+result) stands as the mitigation and the ±15% job gate correctly withholds an
+out-of-window MP4. Accepted residual; re-tune only with a stronger length-following
+model. The fenced-JSON fix is a real win found by this experiment.
+
+**Reproducible tool:** `npm run matrix:frontends` (`scripts/compare-frontends.ts`)
+runs the same source/prompt through V2 and v3 and writes a JSON+Markdown report
+(`--case=<id>`, `--minutes=<n>`, `--out=<path>`). Live-validated on `http`
+(v3 31.3s/$0.0276/pass vs V2 108.7s/$0.0466/pass). Needs `OPENROUTER_API_KEY`.
+
+**W5 follow-up — session routing and prompt caching landed.** The OpenRouter
+docs confirmed `session_id` (request body, ≤256 chars) plus `cache_control`
+prefix breakpoints. `model-adapter.ts` now marks the byte-stable system prefix
+(instructions + schema) with `cache_control:{type:'ephemeral'}` and sends a
+`session_id`; `generateV3` uses `source:<hash>` for knowledge maps and
+`lesson:<hash>` for teacher/scene stages. Live-confirmed working (a run with
+both fields completed and routed to gemini-3.8-flash). Cache savings are visible
+in `usage.prompt_tokens_details.cached_tokens` on OpenRouter.
+
+**W5 close-out — render tier and skills.** The render cache is deliberately not
+implemented: `renderSVG` is pure and <0.3% of job time, and export streams
+frames to FFmpeg rather than re-rendering. The skills target classification
+(runtime / deterministic-invariant / development-process / deferred) is recorded
+in `skills/README.md`; the three deterministic-invariant skills stay code+tests,
+and no unloaded runtime skill text is left unclassified. Deletion of superseded
+markdown is deferred until each target stage fully replaces its V2 counterpart.
+
+**Unimplemented archetypes are no longer advertised.** `simple_explanation` and
+`chart` were listed in the V2 prompt vocabulary and the teaching/scene JSON
+schemas although the compiler rejects them. The prompt vocabulary, the
+teaching/scene schemas and the identity runtime schemas now use
+`SUPPORTED_ARCHETYPES`; the two names remain declared in `ARCHETYPES` only for
+legacy compatibility and are rejected before compile. `eval/live/runner.ts`
+default archetypes changed from `simple_explanation` to supported ones.
+
+Next bounded task: tune the teacher duration budget so v3 estimated output lands
+inside the requested window, then run the full live matrix A/B.
 
 
 
@@ -444,7 +778,7 @@ Both exported narrated MP4s (scene 1 is 27.25s h264+aac). `final6` drew **53.8s 
 
 ### Parallel wave — S4, X1/X2, P5, S9a
 
-Four file-disjoint workstreams run in parallel, then built and verified centrally. **525/525** (was 511).
+Four file-disjoint workstreams run in parallel, then built and verified centrally. All tests green (`npm test`; never hardcode a count).
 
 **S4 — one identity authority.** `identity/references.ts` deleted (fully orphaned), along with dead exports `normalizeLegacyTeachingPlan`, `canonicalizeRelation`, `normalizeSemanticPart`, `remapContinuityIds`, `buildVisualScene`, `CanonicalRelation`, `VisualIntent`, `ResolvedVisualDirection`; several internal-only types un-exported. **−171 lines.** Every remaining identity module carries a one-line role comment. The premise about `artifacts.ts` was wrong and the agent said so: it has four live importers (`scripts/export-example-video.ts`, `scripts/generate-v2-video.ts`, `scripts/bench-semantic-archetypes.ts`, `eval/live/runner.ts`) and was left alone. `harness/registry.ts` remains the runtime authority, untouched.
 
@@ -646,7 +980,7 @@ Structural proof: `classifyFailure()` now has a production caller (`executeStage
 ## 1. What genuinely works (verified)
 
 - **The central constraint holds.** Models emit validated semantic data; all geometry is compiled by trusted deterministic code; `renderSVG(scene, timeMs)` is pure. No `Date`/`Math.random`/`performance.now`/DOM inside `renderer/` or `compiler/` (grep-verified).
-- **V2 has a real spine.** One orchestrator (`planning/generate.ts:76`) threads every stage through one harness (`harness/stage.ts:38`) with per-stage owner/timeout/budget/repair policy (`harness/stage.ts:11-23`), one journal, one manifest. Two disjoint pipelines are enforced at `semantic/pipeline.ts:4`.
+- **V2 has a real spine.** One orchestrator (`planning/generate.ts:85`) threads every stage through one harness (`harness/stage.ts:38`) with per-stage owner/timeout/budget/repair policy (`harness/stage.ts:11-23`), one journal, one manifest. Two disjoint pipelines are enforced at `semantic/pipeline.ts:8`.
 - **Deterministic layer is verified by tests**: compiler, renderer determinism/escaping, validators, geometry/collision/timeline math, representation fallbacks, harness resume/cancel, cost/route accounting.
 - **A real scene has rendered and exported.** Run `59ca93e3` compiled and rendered scene 1 (`Abduction / Sense Experience / Axioms / Induction / Deduction / World Models`, 40.98s) with local TTS audio.
 
@@ -657,11 +991,11 @@ Ordered by impact on "generate a clean video".
 1. **Layout formula manufactured overlaps.** `compiler/archetypes.ts:56-72` pitched rows at `400/group.length` (100px for a 4-node rank) under 110px rects with a ~166px rect+label block. The layout itself produced the overlaps the compiler then rejected as `Illegal overlap`, and the repair pass could not fix them (hero immovable, `.8` scale floor insufficient, only 6 zones). **This was misdiagnosed in prior handoffs as "director variance".** Fixed this session (bounded layered grid).
 2. **Wasted model calls dominate latency.** On the last failed run, **97 of 174 seconds (56%) produced nothing**: a teaching window re-planned after a knowledge failure, and the director called 4× on a scene that could never compile. Validation fires only *after* full generation (`planning/model-adapter.ts:56-60`).
 3. **Director action contract is ambiguous to the model.** The model attaches relation refs to `draw`/`morph` actions; resolution then yields a relation-only target, rejected by `validate.ts:80-82`. Seen in 4 of 4 raw director outputs.
-4. **Renderer never reads `continuity.transitions`.** MOVE/REMOVE/REPLACE/REINTRODUCE are computed (`harness/state.ts:67-79`) and validated but ignored by `renderer/scene-state.ts:4-17`. Motions `move`/`split`/`merge` are accepted and never animate.
-5. **Relations only draw when an action animates them** (`renderer/relations.ts:8`). Model-added relations vanish silently.
-6. **`structural_diagram` and `convergence` have no layout algorithm** — they fall back to round-robin zones (`compile-scene.ts:26,32-33`). `simple_explanation` is declared but rejected (`zones.ts:5`).
-7. **Identity layer is half-wired**: `identity/references.ts` fully orphaned; ~35 orphaned runtime exports; `artifacts.ts` has no importer.
-8. **`healSchema` (`schemas.ts:54-129`) mutates model output with zero logging.**
+4. **Renderer never reads `continuity.transitions`.** They are derived (`generate.ts:287`) and validated (`validate.ts:124`) but ignored by `renderer/scene-state.ts`. The non-animating motions `move`/`split`/`merge` were removed from `MOTIONS` rather than left advertised (`types.ts:6-10`).
+5. **Relations render as VISIBLE_STATIC when no action animates them** (`renderer/relations.ts:8-27`) — the old "edges vanish silently" defect is fixed.
+6. **`structural_diagram` and `convergence` now have an explicit zone strategy** (`zones.ts:47`) with a dedicated collision pass (`compile-scene.ts:143`). `simple_explanation` and `chart` remain declared but rejected (`zones.ts:43`).
+7. **Identity layer is half-wired**: `identity/{canonicalize,resolver,types}.ts` remain largely test-facing behind `harness/registry.ts`; the old `identity/references.ts` and its dead exports were deleted in S4, and `artifacts.ts` has four live importers.
+8. **`healSchema` (`schemas.ts:66`) mutates model output**, but every rule now reports `{path,rule,classification,before,after}` through an optional reporter, and SEMANTIC heals are counted on the job snapshot.
 
 ## 3. Why it is slow, and where parallelisation is missing
 
@@ -697,28 +1031,26 @@ Also: the harness allows absurd ceilings — `knowledge-compiler` 600s (`stage.t
 
 ## 4. What is actually proven vs asserted
 
-- `npm test` = 361 tests, 1,258 asserts, **all fixture/mock**. No test ever calls a real model. Real verification lives in `scripts/live-v2-evaluation.ts` (48-case manifest), outside the default gate.
+- `npm test` builds and runs the whole fixture/mock suite — **no test ever calls a real model**; never hardcode the count. Real verification lives in `scripts/live-v2-evaluation.ts` (48-case manifest), outside the default gate.
 - **Proven:** deterministic layer, harness resume/cancel, route accounting.
 - **Not proven:** that a real LLM produces schema-valid, semantically faithful output; grounding/anti-fabrication; visual adequacy; latency.
 - Tests are plant-heavy (`plant` appears 203×; `abduction`/`einstein` 0×). The demo topic leaks into the "generic" eval layer (`semantic/evaluation.ts:21-24`, `semantic/calibration.ts:9-17`).
 
-## 5. Icon system: NOT STARTED
+## 5. Icon system: P0–P3b landed
 
-`docs/ICON_SYSTEM_PLAN.md` states this itself. Verified: 0 of 7 proposed module groups exist. No `assets/external/`, no `assets/normalize/`, no `renderer/palette.ts`, no `CompiledSceneV2.assetCatalog`, no `RepresentationSource:'external'` (`representation.ts:12`). `assets/validator.ts:3` explicitly forbids external SVG.
+`docs/ICON_SYSTEM_PLAN.md` status table is stale. Verified in source: `renderer/palette.ts`, `assets/normalize/*` and `assets/external/*` (Iconify client, licence gate, ranker, suitability) exist, `CompiledSceneV2.assetCatalog` threads resolved geometry, and external retrieval is wired into the `representation-guide` stage (`generate.ts:241`). The P4 cache module (`external/cache.ts`) has no live caller; P7 promotion into the static registry is not started. `assets/validator.ts` now supports colour roles, though one comment still claims external SVG is unsupported.
 
-Current behaviour: 43 static assets, runtime *scoring* over a **hardcoded** registry (`assets/registry.ts:7`). Unmatched concepts degrade to a composition family or a labelled primitive — **no dynamic/runtime asset generation**.
-
-This is the gap between us and a system that can visually explain arbitrary concepts.
+Current behaviour: 43 static assets plus runtime-computed scoring/retrieval over the registry. Unmatched concepts degrade to a composition family or a labelled primitive. Dynamic representation is **partly** wired; see `docs/ICON_SYSTEM_PLAN.md` §14 for the open decisions.
 
 ## 6. Skills: mostly dead markdown
 
-13 `SKILL.md` files exist; **3 load** and only their `# Hard invariants` section (≤10 lines) is injected (`semantic/skills.ts:31-45`). Loaded into `knowledge-compiler`, `teaching-architect`, `visual-director`. `whiteboard-planner`, `pedagogy-critic`, `source-visual-grounding` stages receive **no** skill text although docs exist for them. 19 of 21 reference docs are never read.
+14 `SKILL.md` files exist; **4 load** and only their `# Hard invariants` section (≤10 lines) is injected (`semantic/skills.ts:31-45`). Loaded into `knowledge-compiler` (v3 graph maps), `teaching-architect`, `visual-director`; `whiteboard-planner`, `pedagogy-critic`, `source-visual-grounding` stages receive **no** skill text although docs exist for them.
 
 ## 7. Open questions — needs a decision before more code
 
-1. **Docs set.** I kept `docs/{ARCHITECTURE, HANDOFF, ICON_SYSTEM_PLAN}.md` + root `README.md`, `AGENTS.md`, `PLAN_TO_IMPLEMENT.md`. You said "only two files". Confirm the exact final set.
-2. **Icon system: build it or not?** It is the largest single capability gap (dynamic representation for unseen concepts). P0-P2 in the plan needs no network. Do you want it prioritised over fixing visual quality?
-3. **V1 pipeline:** 4,493 LOC, still the default (`VISUAL_PIPELINE=explainer`). Delete, freeze, or keep as reference?
+1. **Docs set.** Canonical: `Architecture_plan.md` (target authority), `PLAN_TO_IMPLEMENT.md` (target overview), `docs/{ARCHITECTURE, HANDOFF, ICON_SYSTEM_PLAN}.md`, root `README.md`, `AGENTS.md`. You had said "only two files" — confirm before deleting anything else.
+2. **Icon system: build it or not?** It is the largest single capability gap (dynamic representation for unseen concepts). P4+ in the plan needs decisions on `VISUAL_ICONS` rollout, OpenMoji licence and P7 sign-off. Do you want it prioritised over fixing visual quality?
+3. **V1 pipeline:** 4,493 LOC, frozen legacy (code default is `semantic`; `VISUAL_PIPELINE=explainer` opts into V1). Delete, freeze, or keep as reference?
 4. **Latency target:** what is "Lamina-level" for a 1-minute video — 30s? 60s? This determines how aggressively to cut `maxScenes` and windows.
 5. **Budget:** the OpenRouter account's monthly spend cap blocks paid routes; only free routes work, and they are too slow/unreliable for the knowledge stage. This must be raised before any real end-to-end run.
 
@@ -744,15 +1076,15 @@ Synthesis rules, both recorded: an *entirely absent* required relation is realiz
 
 ### What still limits output quality
 
-The lesson completes but reads thin: on the same run, four of five concepts render as bare label pills because **no asset exists for `abduction`, `axiom`, `induction`, `deduction`**. That is the 43-asset static-registry ceiling, not a layout or routing defect. Relations also render only when an action animates them (`renderer/relations.ts:8`), so the graph is richer than the picture.
+The lesson completes but reads thin: on the same run, four of five concepts render as bare label pills because **no asset exists for `abduction`, `axiom`, `induction`, `deduction`**. That is the 43-asset static-registry ceiling, not a layout or routing defect. Relations now render as VISIBLE_STATIC even without an animating action (`renderer/relations.ts:8-27`), so graph edges no longer vanish.
 
-### Next: P3 external retrieval, or S6/S7 throughput
+### Next: P4 wiring / P7 promotion, or visual quality
 
-The icon track has reached the point where the only thing missing is a **source** of candidate icons: P0–P2 give the palette, the safe converter and the embedded catalog, but nothing yet produces a catalog entry. **P3** adds Iconify search + fetch behind `VISUAL_ICONS=off|strict|balanced|broad` (default off), with a hard licence gate and the sanitizer as the only ingest path. It introduces network, licences and caching — the first phase that can fail in ways the deterministic layers cannot.
+P3 external retrieval landed (see §P3, §P3a, §P3b above), so the "missing icon source" framing is superseded. What remains from the icon track: wire the P4 cache (`assets/external/cache.ts` has no live caller), then decide whether P7 promotion into the static registry is worth it. `VISUAL_ICONS=off|strict|balanced|broad` — **code default is `balanced`** (`src/semantic/planning/representation-external.ts:34-38`), the plan text says `off`.
 
-**Before P3, three decisions are needed** (the plan's blockers, minus the one that disappeared with `docs/v4/`):
-1. `VISUAL_ICONS` default and rollout mode — the plan recommends `off`, then `balanced`.
+**Three decisions are still open** (from `docs/ICON_SYSTEM_PLAN.md` §14):
+1. `VISUAL_ICONS` default and rollout mode.
 2. OpenMoji (CC BY-SA) — use with attribution, or do not use.
 3. Who signs off promoting a frequent winner into the static registry (P7).
 
-If representation breadth is less urgent than speed, **S6/S7** (bounded concurrency + job-relative latency budgets) are the alternative: a 1-minute lesson still costs 30–140s of wall time with no latency budget, and the harness still allows a 600s knowledge timeout for a 60s video.
+S6/S7 (bounded concurrency + job-relative latency budgets) have landed; throughput work now moves to the remaining serialisation sites in §3 and the `gateVisual`/board-alignment hard gates named in the "Next bounded task" above.

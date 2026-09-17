@@ -10,7 +10,7 @@ Node.js 22+. The web demo and core tests need **no dependencies and no API key**
 
 ```bash
 npm start          # http://127.0.0.1:3000
-npm test           # 361 tests, all fixture-based
+npm test           # builds, then runs the whole node:test suite (fixture-based)
 npm run build      # tsc
 ```
 
@@ -21,13 +21,13 @@ Select an offline fixture and generate; press Play after the first scene arrives
 Selected by `VISUAL_PIPELINE` (`src/semantic/pipeline.ts:4`):
 
 - **`semantic` (default)** — the V2 teaching pipeline → `planning/generate.ts`. All current work targets this.
-- `explainer` — the original node/edge planner → `explainer/planner.ts`. **FROZEN LEGACY**: kept as the comparison baseline and documented fallback until the migration gates in `PLAN_TO_IMPLEMENT.md` pass, but it receives no new capability work. Select it with `VISUAL_PIPELINE=explainer`.
+- `explainer` — the original node/edge planner → `explainer/planner.ts`. **FROZEN LEGACY**: kept as the comparison baseline and documented fallback until the executable migration gates in `eval/live/gates.ts` pass, but it receives no new capability work. Select it with `VISUAL_PIPELINE=explainer`.
 
 V2 runs four model calls per scene (knowledge → teaching → architect → director) and compiles everything else deterministically. Models emit validated semantic data only; geometry is built by trusted code and rendered by a pure `renderSVG(scene, timeMs)` shared by browser and export.
 
 ## AI generation
 
-Copy `.env.example` to `.env` and set `OPENROUTER_API_KEY`. Per-task routes are pinned by `OPENROUTER_OUTLINE_MODEL`, `OPENROUTER_CONTENT_MODEL`, `OPENROUTER_DIRECTOR_MODEL` (all default to the shortlist head in `src/shared/model-router.ts:11`). `OPENROUTER_MODEL` only sets the base and is overridden by the per-task vars.
+Copy `.env.example` to `.env` and set `OPENROUTER_API_KEY`. Per-task routes are pinned by `OPENROUTER_OUTLINE_MODEL`, `OPENROUTER_CONTENT_MODEL`, `OPENROUTER_DIRECTOR_MODEL` (all default to the shortlist head in `src/shared/model-router.ts:15`). `OPENROUTER_MODEL` only sets the base and is overridden by the per-task vars.
 
 Narration is **local-only** via the separate `voice-engine/` project (Supertonic 3 default, Piper fallback) over an async JSON boundary. No speech key is used. Local engines return duration, not word timings, so timing is marked `LOCAL TTS · ESTIMATED WORD TIMING`, never as provider alignment.
 
@@ -42,16 +42,17 @@ npm run export -- --fixture attention --fps 12 --width 1280 --out output/attenti
 node dist/scripts/export-semantic-job.js --job <uuid> --data-root .data/video-jobs --out output/lesson.mp4
 ```
 
-A V2 job is only publishable when `finalGate === 'PASS'`; otherwise the MP4 is withheld (`src/semantic/jobs.ts:128`). A downloaded JSON alone does not contain narration bytes — the adjacent WAV files are required.
+A V2 job is only publishable when `finalGate === 'PASS'`; otherwise the MP4 is withheld (`src/semantic/jobs.ts:143`). A downloaded JSON alone does not contain narration bytes — the adjacent WAV files are required.
 
 ## Documentation
 
 | File | Purpose |
 |---|---|
+| [Architecture_plan.md](Architecture_plan.md) | Target-state architecture — the authority. Not yet implemented. |
+| [PLAN_TO_IMPLEMENT.md](PLAN_TO_IMPLEMENT.md) | Complete overview of the target end to end. Where it disagrees with `Architecture_plan.md`, the latter wins. |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | What the codebase actually is, with `path:line` evidence. |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | Current state, measured bottlenecks, open decisions, next bounded tasks. |
-| [PLAN_TO_IMPLEMENT.md](PLAN_TO_IMPLEMENT.md) | The harness-controlled teaching-compiler refactor and where it stands. |
-| [docs/ICON_SYSTEM_PLAN.md](docs/ICON_SYSTEM_PLAN.md) | Proposed dynamic representation subsystem. **Not started.** |
+| [docs/ICON_SYSTEM_PLAN.md](docs/ICON_SYSTEM_PLAN.md) | Dynamic representation subsystem: P0–P3b landed, P4+ pending. |
 | [AGENTS.md](AGENTS.md) | Repository rules and research guardrails. |
 
 ## Code graph (graphify)
@@ -74,10 +75,4 @@ Loopback-only single-process prototype, not a deployed product. Delivery is JSON
 
 ## Publish to GitHub
 
-No remote repository is claimed to exist. With GitHub CLI authenticated:
-
-```bash
-npm run publish:github -- explain-canvas-lab --publish   # creates a private repo
-```
-
-Pass `--public` only for public visibility. The script fails rather than overwriting an existing repository.
+The remote `origin` already exists (`github.com/AnupDangi/lamina-labs-clone`); do not create or overwrite it. `scripts/publish-github.ts` is a standalone script excluded from `tsconfig.json` and has no `package.json` entry — invoke it directly if publication is ever needed, and never overwrite an existing repository.
