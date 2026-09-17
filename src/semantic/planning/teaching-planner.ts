@@ -11,7 +11,11 @@ import type {TeachingPlanV2,VisualArchetype} from '../types.js';
 import type {JsonModel} from './model-adapter.js';
 import type {SourceFigure} from '../../shared/types.js';
 import type {ConceptGraph} from '../harness/contracts.js';
-export interface TeachingInput {prompt:string;sourceText?:string;sourceId?:string;evidenceScope?:string;sourceFigures?:SourceFigure[];maxScenes?:number;allowedArchetypes:VisualArchetype[];language?:string;targetMinutes?:number;groundingPolicy?:'source-only'|'source-plus-verified'}
+export interface TeachingInput {prompt:string;sourceText?:string;sourceId?:string;evidenceScope?:string;sourceFigures?:SourceFigure[];maxScenes?:number;allowedArchetypes:VisualArchetype[];language?:string;targetMinutes?:number;groundingPolicy?:'source-only'|'source-plus-verified';
+ /** What document this lesson teaches. Absent for a prompt-only run. The pipeline
+  *  grounded its facts in the source but never named it, so the board showed an
+  *  invented scene title and never once said what paper was being taught. */
+ documentTitle?:string;documentAuthors?:string[];documentKind?:string}
 /** Deterministic cognitive-load heal: a beat that introduces more than three
  *  concepts overflows into later beats that still have room, preserving order
  *  and every concept. Runs before validation so a load violation is repaired
@@ -74,7 +78,7 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   *  model burned ~30k prompt tokens per teaching call. The model quotes from
   *  its chapter window; the verbatim gate still checks against the full scope. */
  const modelInput={...input,evidenceScope:undefined};
- const attempt=(repairNotes?:string[])=>model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes,knowledge,chapter}),modelInput,teachingIntentSchema,value=>{
+ const attempt=(repairNotes?:string[])=>model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes,knowledge,chapter,documentTitle:input.documentTitle,documentAuthors:input.documentAuthors,documentKind:input.documentKind}),modelInput,teachingIntentSchema,value=>{
    spreadExcessIntroductions(value);healStateMechanisms(value);
    const intent=value as {evidenceRefs?:{id:string;sourceId?:string;quote?:string}[];scenes?:{key:string;beats?:{key?:string;evidenceRefs?:string[]}[]}[]};
    /** Thin-teaching boundary: the model references COMPILED evidence ids; it

@@ -7,6 +7,7 @@
  */
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { documentIdentity } from '../src/shared/document.js';
 import { join } from 'node:path';
 import { createJsonModel } from '../src/semantic/planning/model-adapter.js';
 import { generateV2 } from '../src/semantic/planning/generate.js';
@@ -41,6 +42,8 @@ const sourceText = sourceFile ? await readFile(sourceFile, 'utf8') : undefined;
  *  `deepseek-report-excerpt.md`, which failed validation as an invalid string and
  *  killed the whole source-grounded run. */
 const sourceId = sourceFile ? (basename(sourceFile).toLowerCase().replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]/g, '-').replace(/^[^a-z]+/, '') || 'source') : undefined;
+/** What document is being taught, derived from the source itself. */
+const identity = documentIdentity({ ...(sourceText ? { text: sourceText } : {}), ...(sourceId ? { sourceId } : {}) });
 const narrate = args.includes('--narration');
 /** Cost ceiling scales with the requested length: a 20-minute lesson is 40 scenes
  *  and cannot run inside a one-minute cap. */
@@ -54,7 +57,7 @@ const start = performance.now();
 let scenes = 0, exported = 0;
 
 try {
-  for await (const result of generateV2({ prompt, maxScenes, allowedArchetypes: archetypes, language: 'en', targetMinutes, ...(sourceText ? { sourceText, sourceId } : {}) }, model, {
+  for await (const result of generateV2({ prompt, maxScenes, allowedArchetypes: archetypes, language: 'en', targetMinutes, ...(sourceText ? { sourceText, sourceId } : {}), ...(identity ? { documentTitle: identity.title, documentAuthors: identity.authors, documentKind: identity.kind } : {}) }, model, {
     ...(speech ? { speech } : {}),
   })) {
     scenes++;
