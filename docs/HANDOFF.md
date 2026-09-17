@@ -77,6 +77,62 @@ closed — it is reduced, not eliminated. See `## 2` item 2 and `## 3`.
 
 Tests unchanged: **535/535** (no source changed for this wave).
 
+### Wave 6 - duration as a constraint, and three deterministic bugs it exposed
+
+Goal: make the requested lesson length a constraint instead of a post-hoc
+rejection. Three commits (`622fb4c`, `261295e`, `901e7f2`).
+
+**The length contract.** The teaching prompt specified length as three
+independent ranges - at most N scenes, 4-7 beats per scene, 12-20 words per beat -
+which multiply out to 96-280 words for two scenes, i.e. 40s to 116s at speaking
+rate. A one-minute request could be satisfied by any of them. `shared/language.ts`
+now owns `NARRATION_WPM`, `wordsForMinutes()`, `scenesForMinutes()` and
+`MAX_SCENES_PER_LESSON`, and the prompt states one total: "the ENTIRE lesson's
+narration must total approximately N words". Scene count follows the length on
+every path, and the 24-scene ceiling is lifted - it had silently made anything
+past ~12 minutes unrepresentable, so a 30-minute request could never pass its own
+gate. 1/10/30 min now yield 2/20/60 scenes, 108/1080/3240 words, a constant 54
+words per scene.
+
+**The word budget held; the speaking rate was the error.** Measured live, the
+narration came in at 149 words against a 145-word target (1.03x) and the video
+was still 86.5s instead of 60s. The voice engine delivers **107.7 wpm**, not the
+145 the planner assumed (four lessons: 102.0, 103.3, 108.8, 120.8). Every lesson
+was ~1.35x longer than intended. `NARRATION_WPM` is now 108 with the measurements
+recorded so it can be re-derived. The static-interval limit, previously a bare
+3500ms duplicated in `compile-scene.ts` and `evaluation.ts` and tuned to the wrong
+pace, is one derived constant (`MAX_STATIC_WORDS = 8`).
+
+**Three deterministic bugs found while verifying live:**
+
+1. **The cycle ring heal was not idempotent.** It patched the ring arc by arc,
+   correcting only the arcs it visited, so a node could be left with zero outgoing
+   arcs and the compiler rejected the scene: "Cycle requires one outgoing relation
+   per primary representation (object_x has 0 outgoing relations within the
+   cycle)". It now clears every ring arc and closes the ring over the plan order -
+   valid by construction, idempotent. (`visual-director.ts:117`)
+2. **Flow and cycle disagreed about what an edge is.** Flow excluded
+   `labels`/`compares_with` relations; cycle counted them, so a labelled cycle node
+   looked like it had two outgoing arcs. One constant now:
+   `NON_STRUCTURAL_RELATIONS` in `types.ts`.
+3. **A stale 1-24 scene check** survived in `teaching-planner.ts:68` and defeated
+   the lifted ceiling; it now uses `MAX_SCENES_PER_LESSON`.
+
+**Still blocking a clean live run** (all Wave 4 / Wave 2 class, none of them
+duration):
+- `Illegal overlap: concept_1_dream_rsi_1/concept_1_exploration_policy_1` - child
+  objects overlapping after cycle placement. The repair passes cannot move
+  parented children, so this is unrecoverable, as the audit predicted.
+- `Critical representation degraded: object_dream-rsi` - no catalog asset matches
+  the concept, so it falls to a composition and trips the critical-representation
+  gate. This is the visual-richness gap (measured earlier: 25 of 25 concepts in
+  three runs resolved to `composition`, `external: 0`).
+- `Scene scene-solution requires 5 primary concepts, which no candidate archetype
+  (transformation) can represent` - archetype capacity, hit when the archetype set
+  is narrowed.
+
+Tests: **535/535**.
+
 Code graph regenerated after the wave-5 `src/` edits (`graphify update . --force`):
 **1,920 nodes / 4,139 edges / 151 communities -> 2,048 nodes / 4,368 edges / 156
 communities** (+128 nodes, +229 edges).
