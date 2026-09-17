@@ -44,7 +44,8 @@ const sourceId = sourceFile ? (basename(sourceFile).toLowerCase().replace(/\.[^.
 const narrate = args.includes('--narration');
 /** Cost ceiling scales with the requested length: a 20-minute lesson is 40 scenes
  *  and cannot run inside a one-minute cap. */
-const maxCostUsd = Number(flag('budget', String(Math.max(0.5, targetMinutes * 0.35).toFixed(2))));
+/** The model adapter caps any single run at $2, so scaling must respect that. */
+const maxCostUsd = Number(flag('budget', String(Math.min(2, Math.max(0.5, targetMinutes * 0.35)).toFixed(2))));
 
 await mkdir(out, { recursive: true });
 const model = createJsonModel({ env: process.env, maxCostUsd });
