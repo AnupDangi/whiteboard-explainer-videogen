@@ -278,6 +278,52 @@ emitted as `v2.telemetry` (28 events on `final13`).
 
 Tests: **535/535**.
 
+#### Wave 7 - visual richness, source grounding, and a four-duration attempt
+
+**The visual layer works now.** Measured on the MLA lesson: `trusted-asset 1,
+substring-asset 2-3, composition 0` in both scenes. Before this wave it was
+`trusted-asset 0, composition 9`. Four causes, all fixed:
+
+1. The archetype was a HARD filter on asset lookup, in THREE places that each had
+   to be found: `assets/search.ts`, `compiler/fallback.ts` (which demoted a known
+   asset to a bare label), and `planning/visual-director.ts` (which refused any
+   pick that did not NAME the archetype). 37 of 43 catalog assets declared two or
+   three layouts and `cause_effect`, `numbered_steps` and `hierarchy` appeared on
+   almost none of them, so a `cause_effect` scene was offered no assets at all.
+2. `VISUAL_ICONS` defaulted to `off`, so the Iconify path never ran. Default is
+   now `balanced`.
+3. A false match the widening exposed: `Discovery Loop` matched
+   `physics.compressor.v2` on the tag `cycle` alone. A tag-only match no longer
+   qualifies.
+4. A source document could not be passed at all - the CLI only took `--prompt`.
+   `--source <file>` now grounds a run, and `sourceId` is sanitised to the plan
+   schema's id pattern (a filename with a dot failed as an invalid string).
+
+**Five more gates healed, all the same class - fail rather than heal:**
+architect delta out of beat (`teaching-architect.ts`), critical beat without
+evidence (`validate.ts`), dangling evidence reference (`knowledge-compiler.ts`),
+continuity a scene cannot honour (`visual-model.ts`), and a chaptered source
+compared against the WHOLE lesson budget instead of its share
+(`teaching-planner.ts`) - which made a "one-minute" lesson 213 words and 95.5s.
+
+**Four-duration run from the MLA fixture, one shot each, no retries:**
+
+| target | result | wall | lesson | cost | scenes |
+|---|---|---|---|---|---|
+| 1 min | **complete** | 68s | 36.8s | $0.041 | 2 |
+| 5 min | failed - whiteboard `VISUAL_SUPPORT` | 104s | - | - | 0 |
+| 10 min | failed - `Illegal overlap: concept_1_kv_cache_1/concept_1_latent_vector_1` | 84s | - | - | 1 |
+| 20 min | failed - `Persistent representation changed without transition: memory-bandwidth` | 139s | - | - | 2 |
+
+Three distinct gates remain, all the same class as the five above and all
+healable: a plan that leaves a concept without a visual beat, a child overlap
+between two DIFFERENT parents (the child repair only moves within one parent), and
+a persistent object whose representation changes without a declared transition.
+
+The 1-minute lesson also came in SHORT (36.8s, 75 words against a 108 budget):
+the length refinement fired at 66 words and re-asked, and the model still
+undershot. The refinement needs a floor, not only a re-ask.
+
 #### Wave 6e - the length refinement, and a verified one-minute lesson
 
 Two more compiler repairs and the last piece of the duration contract.
