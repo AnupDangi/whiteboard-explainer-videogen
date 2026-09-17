@@ -142,7 +142,13 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
   /** Defence in depth for the resolver/compiler contract: an asset the selected
    *  archetype cannot carry must be rejected as a director choice (repairable
    *  once) rather than silently stripped by the compiler's fallback. */
-  for(const o of visual.objects)if(o.assetRef&&!resolveAsset(o.assetRef,catalog).archetypes.includes(visual.archetype))throw new Error(`${o.assetRef} does not support ${visual.archetype}; choose a candidate whose archetypes include it, or a semantic composition`);
+  /** An asset is geometry with anchors: the compiler draws it in any layout, so a
+  *  pick that does not NAME this archetype is not a defect. This threw, and the
+  *  director therefore could not choose `data.latent.v2` for a `cause_effect`
+  *  scene even when it was the only real representation of the concept - the
+  *  scene then failed twice and the lesson was lost. The archetype list now only
+  *  affects ranking. */
+ for(const o of visual.objects)if(o.assetRef&&!resolveAsset(o.assetRef,catalog))throw new Error(`Director invented asset ${o.assetRef}`);
  for(const id of scene.requiredConceptIds)if(!visual.objects.some(o=>o.conceptId===id))throw new Error(`Director omitted concept ${id}`);
  if(visual.beats.length!==scene.beats.length)throw new Error('Director changed beat count');
  for(const [i,b] of scene.beats.entries())if(visual.beats[i].id!==b.id||visual.beats[i].narration!==b.narrationDraft)throw new Error(`Director changed narration/beat ${b.id}`);
