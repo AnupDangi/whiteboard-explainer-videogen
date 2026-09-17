@@ -77,6 +77,10 @@ closed — it is reduced, not eliminated. See `## 2` item 2 and `## 3`.
 
 Tests unchanged: **535/535** (no source changed for this wave).
 
+Code graph regenerated after the wave-5 `src/` edits (`graphify update . --force`):
+**1,920 nodes / 4,139 edges / 151 communities -> 2,048 nodes / 4,368 edges / 156
+communities** (+128 nodes, +229 edges).
+
 ### Wave 5 — root cause of both one-shot failures, and the missing lesson artifact
 
 Both failures were **our own deterministic validators destroying work that had
