@@ -1,4 +1,5 @@
 import {log,logContext} from '../shared/logger.js';
+import {scenesForMinutes,MAX_SCENES_PER_LESSON} from '../shared/language.js';
 import {randomUUID} from 'node:crypto';
 import {mkdir,writeFile,rename,readFile,stat,copyFile,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -69,7 +70,10 @@ sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*
       if(doc.text.length>sourceText.length)log('semantic-job.source-truncated',{chars:doc.text.length,kept:sourceText.length});
     }
     if(!options.prompt?.trim()||options.prompt.length>4000||(sourceText?.length??0)>200000)throw new Error('V2 prompt/source bounds exceeded');
-    const maxScenes=options.maxScenes??Math.min(24,Math.max(1,Math.ceil((options.targetMinutes??.5)*2)));if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>24)throw new Error('V2 scene limit must be 1–24');
+    /** Scene count follows the requested length: one board per 30 seconds.
+     *  It used to be ceil(minutes*2) capped at 24, which silently made anything
+     *  longer than 12 minutes unrepresentable. An explicit maxScenes still wins. */
+    const maxScenes=options.maxScenes??scenesForMinutes(options.targetMinutes??1);if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>MAX_SCENES_PER_LESSON)throw new Error(`V2 scene limit must be 1-${MAX_SCENES_PER_LESSON}`);
     if(!Array.isArray(options.allowedArchetypes)||!options.allowedArchetypes.length||options.allowedArchetypes.some(a=>!ARCHETYPE_PATTERN.test(a)))throw new Error('allowedArchetypes required');
     if(typeof options.narration!=='boolean')throw new Error('Invalid narration option');
     if(options.autoMp4!==undefined&&typeof options.autoMp4!=='boolean')throw new Error('Invalid autoMp4 option');

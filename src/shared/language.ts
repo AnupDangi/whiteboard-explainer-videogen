@@ -29,5 +29,32 @@ export function segmentSentencesWithIndex(text:string):IndexedSegment[]{
 
 export function countWords(text:string):number{return segmentWords(text).length;}
 
+/** Speaking rate that turns a requested lesson length into a word budget. One
+ *  number for the whole product: the teaching prompt sizes its narration from
+ *  it and `estimatedTiming` measures against it, so "one minute" means the same
+ *  thing on both sides. It used to live only inside the timing estimator, where
+ *  the planner could not see it — which is why a one-minute request produced
+ *  60s, 64s and 93s from identical inputs. */
+export const NARRATION_WPM=145;
+
+/** Narration length for a requested lesson. This is the number the teaching
+ *  plan is held to; it is not advisory. */
+export function wordsForMinutes(minutes:number,wpm:number=NARRATION_WPM):number{
+ if(!Number.isFinite(minutes)||minutes<=0)throw new Error('Lesson length must be greater than zero');
+ if(!Number.isFinite(wpm)||wpm<60||wpm>300)throw new Error('Invalid speech rate');
+ return Math.round(minutes*wpm);
+}
+
+/** A scene is one board the learner reads while the narration runs. Thirty
+ *  seconds is the teaching unit the layout was designed around, so scene count
+ *  follows from the requested length rather than from a fixed default. */
+export const SECONDS_PER_SCENE=30;
+export const MAX_SCENES_PER_LESSON=120;
+
+export function scenesForMinutes(minutes:number):number{
+ if(!Number.isFinite(minutes)||minutes<=0)throw new Error('Lesson length must be greater than zero');
+ return Math.min(MAX_SCENES_PER_LESSON,Math.max(1,Math.ceil(minutes*60/SECONDS_PER_SCENE)));
+}
+
 /** Whitespace-insensitive text identity, used to verify a beat partition on any script. */
 export function squash(text:string):string{return String(text??'').replace(/\s+/g,'');}

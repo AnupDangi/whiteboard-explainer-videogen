@@ -259,7 +259,7 @@ if (!caseList.length && !all) throw new Error('Select cases with --cases a,b,c o
 const runsPerCase = Number(flag('runs', '1'));
 if (!Number.isInteger(runsPerCase) || runsPerCase < 1) throw new Error('--runs must be a positive integer');
 const maxScenes = Number(flag('scenes', '1'));
-if (!Number.isInteger(maxScenes) || maxScenes < 1 || maxScenes > 24) throw new Error('--scenes must be 1–24');
+if (!Number.isInteger(maxScenes) || maxScenes < 1 || maxScenes > 120) throw new Error('--scenes must be 1–120');
 const narration = has('narration');
 const budgetFlag = flag('budget');
 const budgetUsd = budgetFlag === undefined ? null : Number(budgetFlag);

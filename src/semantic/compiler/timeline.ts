@@ -1,7 +1,7 @@
 import type {CompiledVisualAction,VisualSceneV2,VisualTiming,WordTiming} from '../types.js';
-import {segmentWords} from '../../shared/language.js';
+import {segmentWords,NARRATION_WPM} from '../../shared/language.js';
 const normalize=(s:string)=>s.toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
-export function estimatedTiming(scene:VisualSceneV2,wpm=145):VisualTiming{
+export function estimatedTiming(scene:VisualSceneV2,wpm=NARRATION_WPM):VisualTiming{
  if(!Number.isFinite(wpm)||wpm<60||wpm>300)throw new Error('Invalid speech rate');const tokens=scene.beats.flatMap(b=>segmentWords(b.narration)),step=60000/wpm;
  return {kind:'estimated',durationMs:tokens.length*step,words:tokens.map((word,i)=>({word,startMs:i*step,endMs:(i+1)*step}))};
 }

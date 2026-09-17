@@ -1,4 +1,5 @@
 import {ARCHETYPES,MOTIONS} from '../types.js';
+import {wordsForMinutes,NARRATION_WPM} from '../../shared/language.js';
 
 /**
  * Single source of truth for every V2 model-stage prompt. Schemas own structure
@@ -42,14 +43,25 @@ export function teachingPrompt(options:TeachingPromptOptions):string{
   const level=options.learnerLevel??'a curious student';
   const repair=options.repairNotes?.length?`A previous attempt failed these semantic checks: ${options.repairNotes.join('; ')}. Correct exactly those issues and return the complete lesson again. Do not regenerate unrelated content.`:'';
   const knowledge=options.knowledge?`The source was already compiled into a knowledge inventory. Concept ids MUST be chosen from: ${options.knowledge.keys.join(', ')}. Terminology to use before or when introducing each concept: ${options.knowledge.terminology.slice(0,12).join('; ')||'none compiled'}. Requirement ids may only reference compiled claims and mechanisms: ${options.knowledge.requirements.join(', ')||'none'}. Evidence ids may only reference compiled evidence entries: ${options.knowledge.evidence?.join(', ')||'none'}. Never use the document sourceId, section markers or page numbers as evidence ids.`:'';
+  /** The lesson's length is a contract, not a hint. It used to be expressed as
+   *  three independent ranges (scenes x 4-7 beats x 12-20 words) that multiply
+   *  out to 96-280 words for two scenes, i.e. 40s to 116s at speaking rate — the
+   *  planner could satisfy "one minute" with any of them. The total word budget
+   *  is now stated outright so the model has one number to hit. */
+  const budget=options.targetMinutes?wordsForMinutes(options.targetMinutes):undefined;
+  const beatsPerScene=5;
+  const wordsPerBeat=budget?Math.max(4,Math.round(budget/(Math.max(1,options.maxScenes)*beatsPerScene))):undefined;
+  const lengthRule=budget
+    ?`Use at most ${options.maxScenes} scenes with ${beatsPerScene}-${beatsPerScene+2} beats each. The ENTIRE lesson's narration must total approximately ${budget} words across every beat and scene: that is this ${options.targetMinutes}-minute lesson at ${NARRATION_WPM} words per minute, so roughly ${wordsPerBeat} words per beat. Stay within 10% of ${budget} words.`
+    :`Use at most ${options.maxScenes} scenes, 4-7 short beats per scene, approximately 12-20 words per beat.`;
   return [
     `Plan a coherent teaching arc and semantic beats, not a node/edge diagram. A scene keeps one central mental model on one board.`,
     `Explicitly identify centralConceptId: the whole system being taught, not whichever subpart receives the most relations.`,
-    `Each beat teaches one conceptual change. Use at most ${options.maxScenes} scenes, 4–7 short beats per scene, approximately 12–20 words per beat.`,
+    `Each beat teaches one conceptual change. ${lengthRule}`,
     `A beat's introduce list may hold at most three concepts; spread later concepts across the following beats (reinforce or transform them there) so no single beat carries more than three new concepts.`,
-    options.targetMinutes?`Build one causally connected lesson for approximately ${options.targetMinutes} minutes. Spend time on mechanisms and worked examples rather than repeating definitions. Keep canonical concept identity stable across the full lesson.`:'',
+    `Spend time on mechanisms and worked examples rather than repeating definitions. Keep canonical concept identity stable across the full lesson.`,
     `Write for ${level}.`,
-    `Keep the JSON compact: narration drafts of 12-20 words each, statements under 20 words, no repeated evidence text, no explanations outside the schema fields.`,
+    `Keep the JSON compact: narration drafts of about ${wordsPerBeat??'12-20'} words each, statements under 20 words, no repeated evidence text, no explanations outside the schema fields.`,
     options.language&&options.language!=='en'?`Write ALL narration, titles, key points and beat purposes in the language tagged "${options.language}" (BCP-47), not English. Keep every concept id AND canonicalName in English (stable identifiers used for asset lookup); aliases may include the translated term alongside the English one.`:'',
     `The requiredConceptIds inventory contains independently represented entities/materials. Subparts of the central system are semantic anchors ON THE SYSTEM, not separate requiredConceptIds or relation target concepts, unless their internal structure is the subject of this scene. For example, an input that enters roots targets the whole plant concept with targetAnchor roots; leaf input targets the plant with targetAnchor leaf.top or leaf.right. Keep four to six required concepts for an input-focused scene.`,
     `Do not add a separate product object merely because the summary mentions food; a product object is needed only for a visual transformation scene. For an input-to-system relation, specify the real targetAnchor (roots, leaf.top, input, etc.). Introduce a central system before its inputs.`,

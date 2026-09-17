@@ -3,6 +3,7 @@ import {teachingIntentToPlan} from '../identity/intent-adapter.js';
 import {teachingPlanSchema} from '../schemas.js';
 import {validateTeachingPlan} from './validate.js';
 import {log} from '../../shared/logger.js';
+import {MAX_SCENES_PER_LESSON} from '../../shared/language.js';
 import {evidenceSupported,snapQuoteToSource,evidenceIdGrounding} from './knowledge-compiler.js';
 import {teachingPrompt} from './prompt-builder.js';
 import {archetypeFits} from '../compiler/archetypes.js';
@@ -65,7 +66,7 @@ export function healStateMechanisms(value:unknown):void{
 }
 export async function planTeaching(input:TeachingInput,model:JsonModel,options:{repairFindings?:string[];conceptGraph?:ConceptGraph;chapter?:{index:number;count:number;priorConcepts:string[];maxScenes:number};signal?:AbortSignal}={}):Promise<TeachingPlanV2>{
  if(!input.prompt.trim()||input.prompt.length>4000||(input.sourceText?.length??0)>120000)throw new Error('V2 prompt/source bounds exceeded');
- const maxScenes=options.chapter?.maxScenes??input.maxScenes??1;if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>24)throw new Error('V2 scene limit must be 1–24');
+ const maxScenes=options.chapter?.maxScenes??input.maxScenes??1;if(!Number.isInteger(maxScenes)||maxScenes<1||maxScenes>MAX_SCENES_PER_LESSON)throw new Error(`V2 scene limit must be 1-${MAX_SCENES_PER_LESSON}`);
  const graph=options.conceptGraph;
  const knowledge=graph?{keys:graph.concepts.map(c=>c.id),terminology:Object.entries(graph.terminology).map(([key,term])=>`${key}: ${term.definition}`),requirements:[...graph.claims.map(c=>c.id),...graph.mechanisms.map(m=>m.id)],evidence:[...graph.evidence.map(e=>e.id),...graph.sourceVisuals.map(v=>v.id)]}:undefined;
  const chapter=options.chapter?`This is chapter ${options.chapter.index} of ${options.chapter.count} of one longer lesson. Plan scenes for this chapter only, on one shared mental model. Prefix every scene id with ch${options.chapter.index}_. These concepts are already established in earlier chapters and may be reused as continuity: ${options.chapter.priorConcepts.join(', ')||'none'}. Keep canonical identity, terminology and representation vocabulary stable with those earlier scenes.`:'';

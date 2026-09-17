@@ -26,12 +26,9 @@ const out = flag('out', 'output/v2-topic-video')!;
 const prompt = flag('prompt');
 if (!prompt) throw new Error('Missing --prompt "..."');
 const archetypes = (flag('archetypes', 'cause_effect,transformation,flow,structural_diagram')!).split(',') as VisualArchetype[];
-const maxScenes = Number(flag('scenes', '2'));
-// The teaching planner has always accepted a target length and built the prompt
-// around it, but this entry point never passed one, so the planner never knew
-// whether it was writing a one-minute lesson or a thirty-minute one. That is why
-// identical requests produced 60s, 64s and 93s lessons.
+/** Scene count comes from the requested length unless pinned explicitly. */
 const targetMinutes = Number(flag('minutes', '1'));
+const maxScenes = Number(flag('scenes', String(Math.min(120, Math.max(1, Math.ceil((targetMinutes * 60) / 30))))));
 const narrate = args.includes('--narration');
 const maxCostUsd = Number(flag('budget', '0.5'));
 

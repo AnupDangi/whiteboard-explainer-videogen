@@ -2,6 +2,14 @@
 
 This is Anup Dangi's independent research prototype, not Lamina Labs source code.
 
+Critical Notes and Guidelines:
+-  Always analyze the tasks complexity if we require subagents to be called to analyze or implement any faeture use it.
+- Don't try to patch the solutions with agents 
+- After completing tasks audit and update all the docs files which needs to be updated.
+- Use graphify to search files if graphify is not well updated run it 
+- Review the code and fix bugs if you find don't patch any solution hardcoding
+
+
 1. Read `docs/HANDOFF.md`, then `docs/ARCHITECTURE.md`, `PLAN_TO_IMPLEMENT.md`, and `docs/ICON_SYSTEM_PLAN.md`. These four are the only project documents; do not recreate the deleted history files.
 2. Run `npm test` before editing. No provider keys or installed dependencies are required for the core tests.
 3. Preserve the central constraint: models produce validated scene data; do not introduce arbitrary generated Python/JavaScript execution or a Manim pipeline.
