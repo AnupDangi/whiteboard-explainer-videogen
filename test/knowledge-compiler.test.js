@@ -66,7 +66,13 @@ test('skill invariants: alias forks, cycles, orphan claims and fabricated eviden
  const fabricated=validKnowledge();fabricated.evidence[0].quote='Leaves photosynthesize moonlight on Tuesdays';
  assert.throws(()=>validateKnowledge(fabricated,SOURCE),/Fabricated evidence/);
  const unknown=validKnowledge();unknown.mechanisms[0].evidenceRefs=['ev_ghost'];
- assert.throws(()=>validateKnowledge(unknown,SOURCE),/Unknown evidence/);
+ /** A dangling evidence REFERENCE is dropped, not fatal - measured: a
+  *  source-grounded run died on `Unknown evidence ev_recon_error`, an id the
+  *  model invented while quoting real text, and the repair reproduced it. A
+  *  fabricated QUOTE still rejects (above): the graph never asserts ungrounded
+  *  text, it just stops citing an id it does not hold. */
+ const scoped=validateKnowledge(unknown,SOURCE);
+ assert.deepEqual(scoped.mechanisms[0].evidenceRefs,[],'a dangling evidence ref is dropped, not fatal');
  const badEdge=validKnowledge();badEdge.prerequisites=[{before:'plant',after:'chloroplast',reason:'x'}];
  assert.throws(()=>validateKnowledge(badEdge,SOURCE),/Invalid prerequisite edge/);
 });

@@ -227,7 +227,20 @@ export function validateKnowledge(raw:unknown,sourceText:string):ConceptGraph{
  const evidenceIds=new Set(value.evidence.map(e=>e.id));
  for(const item of value.evidence)if(!item.quote.trim())throw new Error(`Evidence ${item.id} is empty`);
  for(const claim of value.claims)if(!claim.evidenceRefs.length)throw new Error(`Claim ${claim.id} has no verbatim evidence`);
- for(const item of [...value.claims,...value.mechanisms,...value.quantities])for(const ref of item.evidenceRefs)if(!evidenceIds.has(ref))throw new Error(`Unknown evidence ${ref}`);
+ /** A claim, mechanism or quantity citing evidence the graph never recorded has
+  *  the dangling reference dropped (recorded). Measured: a source-grounded run
+  *  died on `Unknown evidence ev_recon_error` - an id the model invented while
+  *  quoting real text - and the repair reproduced it, losing the lesson. A claim
+  *  left with no evidence at all is dropped with it: this is the truth layer, and
+  *  it must not assert what it cannot ground. */
+ const dangling: string[] = [];
+ for(const item of [...value.claims,...value.mechanisms,...value.quantities]){
+  const kept=item.evidenceRefs.filter(ref=>evidenceIds.has(ref));
+  if(kept.length!==item.evidenceRefs.length){dangling.push(...item.evidenceRefs.filter(ref=>!evidenceIds.has(ref)));item.evidenceRefs=kept;}
+ }
+ if(dangling.length)log('v2.knowledge.evidence-dropped',{ids:[...new Set(dangling)]},'warn');
+ const ungrounded=value.claims.filter(claim=>!claim.evidenceRefs.length);
+ if(ungrounded.length){value.claims=value.claims.filter(claim=>claim.evidenceRefs.length);log('v2.knowledge.ungrounded-claims-dropped',{ids:ungrounded.map(claim=>claim.id)},'warn');}
  for(const mechanism of value.mechanisms)for(const conceptId of mechanism.conceptIds)if(!keys.has(conceptId))throw new Error(`Unknown concept in mechanism ${mechanism.id}: ${conceptId}`);
  for(const quantity of value.quantities)if(!keys.has(quantity.conceptKey))throw new Error(`Unknown quantity concept: ${quantity.conceptKey}`);
  // Deterministic heal: models compile terminology for entities mentioned in
