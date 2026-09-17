@@ -58,7 +58,16 @@ test('V2 flow order follows dependency edges and cyclic flows keep every relatio
 });
 test('V2 cycles close semantically and remain separate from DAG layout',()=>{
  const g=JSON.parse(readFileSync('examples/semantic/water-cycle.scene.json','utf8')),s=compileScene(g);assert.equal(findCollisions(s.objects).length,0);assert.ok(!s.diagnostics.includes('Weak hero salience'));assert.equal(s.relations.length,4);
- g.relations.pop();g.beats.pop();assert.throws(()=>compileScene(g),/outgoing|close/);
+ /** A ring that no longer closes still LAYS OUT as a ring. It used to throw so the
+  *  director could repair it, but the director synthesises the ring before the
+  *  compiler's composition fallbacks run, and a fallback that drops a node breaks
+  *  the ring it just built. Measured live: "object_replay-simulator has 0 outgoing
+  *  relations within the cycle" killed a scene whose director output had already
+  *  been healed. A cycle is a layout; graph drift is the director's business. */
+ g.relations.pop();g.beats.pop();
+ const broken=compileScene(g);
+ assert.equal(findCollisions(broken.objects).length,0,'a ring that no longer closes still lays out as a ring');
+ assert.equal(broken.objects.length,4);
 });
 test('V2 equation and matrix layouts compile deterministically with bounded geometry',()=>{
  for(const name of ['matrix-multiply','equation-walkthrough']){

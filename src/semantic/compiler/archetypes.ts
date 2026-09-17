@@ -36,14 +36,22 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
   }
  }else if(scene.archetype==='cycle'){
   if(roots.length<3||roots.length>6)throw new Error('Cycle requires 3–6 primary representations');
-  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!NON_STRUCTURAL_RELATIONS.includes(r.relationType)&&r.visualForm!=='none'&&!r.layoutFeedback),order:string[]=[];let id=[...ids].sort()[0];
- for(let i=0;i<roots.length;i++){
-  if(order.includes(id))throw new Error(`Cycle must visit every primary representation (walk revisits ${id} before completing the ring)`);
-  order.push(id);
-  const next=edges.filter(e=>e.from.objectId===id);
-  if(next.length!==1)throw new Error(`Cycle requires one outgoing relation per primary representation (${id} has ${next.length} outgoing relations within the cycle; name the offenders so the owner can repair)`);
-  id=next[0].to.objectId;}
-  if(id!==order[0])throw new Error('Cycle must close');order.forEach((id,i)=>{const a=-Math.PI/2+i*Math.PI*2/order.length;placements.set(id,{x:640+380*Math.cos(a)-60,y:340+155*Math.sin(a)-45,w:120,h:90});});
+  const ids=new Set(roots.map(o=>o.id)),edges=scene.relations.filter(r=>ids.has(r.from.objectId)&&ids.has(r.to.objectId)&&!NON_STRUCTURAL_RELATIONS.includes(r.relationType)&&r.visualForm!=='none'&&!r.layoutFeedback);
+  /** Prefer the graph's own ring. If it does not walk as one closed cycle, lay
+   *  the primaries out as a ring anyway instead of failing the scene. The
+   *  director synthesises the ring BEFORE the compiler's composition fallbacks
+   *  run, and a fallback that drops one node leaves the next node with no
+   *  outgoing arc, so the ring it had just built no longer walks. Measured:
+   *  "object_replay-simulator has 0 outgoing relations within the cycle" killed a
+   *  scene whose director output had already been healed into a ring. A cycle is
+   *  a layout; failing it because the graph drifted is the wrong trade. */
+  const walked=(()=>{const order:string[]=[];let id=[...ids].sort()[0];
+   for(let i=0;i<roots.length;i++){if(order.includes(id))return undefined;order.push(id);
+    const next=edges.filter(e=>e.from.objectId===id);if(next.length!==1)return undefined;id=next[0].to.objectId;}
+   return id===order[0]?order:undefined;})();
+  const heroId=roots.find(o=>o.role==='hero')?.id;
+  const order=walked??[...(heroId?[heroId]:[]),...[...ids].filter(x=>x!==heroId).sort()];
+  order.forEach((id,i)=>{const a=-Math.PI/2+i*Math.PI*2/order.length;placements.set(id,{x:640+380*Math.cos(a)-60,y:340+155*Math.sin(a)-45,w:120,h:90});});
  }else if(scene.archetype==='transformation'||scene.archetype==='comparison'){
   if(roots.length<2||roots.length>4)throw new Error('Transformation/comparison requires 2–4 primary representations');
   const cell=1080/roots.length,w=Math.min(240,cell-70);roots.forEach((o,i)=>placements.set(o.id,{x:100+cell*(i+.5)-w/2,y:245,w,h:220}));
