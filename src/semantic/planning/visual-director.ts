@@ -213,6 +213,16 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
     log('v2.director.relation-synthesis',{scene:scene.id,relation:required.id,from:from.id,to:to.id,type:required.relationType,anchor:relation.to.anchor},'warn');
     }
    }
+   /** Whatever arc represents the required relation, any OTHER arc drawn between
+    *  the same two concepts is a duplicate in the picture. Neutralise it rather
+    *  than rendering the same relationship twice, recorded. */
+   for(const arc of visual.relations){
+    if(arc===relation||arc.visualForm==='none')continue;
+    const a=visual.objects.find(o=>o.id===arc.from.objectId),b=visual.objects.find(o=>o.id===arc.to.objectId);
+    if(!a||!b)continue;
+    const same=((a.conceptId===required.fromConceptId&&b.conceptId===required.toConceptId)||(a.conceptId===required.toConceptId&&b.conceptId===required.fromConceptId));
+    if(same){arc.visualForm='none';log('v2.director.relation-duplicate-neutralised',{scene:scene.id,relation:required.id,arc:arc.id},'warn');}
+   }
   for(const b of scene.beats.filter(b=>b.relationFocus.includes(required.id))){
    const beat=visual.beats.find(v=>v.id===b.id)!;
    if(beat.actions.some(a=>a.relationIds.includes(relation.id)))continue;

@@ -92,17 +92,18 @@ test('the board contract heal supplies a missing INTRODUCE reveal and TRANSFORM 
 
 test('duplicate arcs for a required pair are deduplicated, not fatal',()=>{
  const s=fresh();
- const duplicate=JSON.parse(JSON.stringify(s.relations[0]));
- duplicate.id='duplicate_arc';duplicate.relationType='inhibits';
- s.relations.push(duplicate);
  const required=semantic.requiredRelations[0];
- const result=validate(s);
  const objectOf=(id)=>s.objects.find(o=>o.id===id);
- const arcs=result.relations.filter(r=>{
-  const a=objectOf(r.from.objectId),b=objectOf(r.to.objectId);
-  return a&&b&&a.conceptId===required.fromConceptId&&b.conceptId===required.toConceptId;
- });
+ const pairOf=(r)=>Boolean(objectOf(r.from.objectId)&&objectOf(r.to.objectId)&&objectOf(r.from.objectId).conceptId===required.fromConceptId&&objectOf(r.to.objectId).conceptId===required.toConceptId);
+ const at=s.relations.findIndex(pairOf);
+ assert.ok(at>=0,'the fixture must contain the required pair');
+ const duplicate=JSON.parse(JSON.stringify(s.relations[at]));
+ duplicate.id='duplicate_arc';duplicate.relationType='inhibits';
+ s.relations[at].relationType='inhibits';
+ s.relations.push(duplicate);
+ const result=validate(s);
+ const arcs=result.relations.filter(pairOf);
  assert.ok(arcs.length>=2,'the fixture must present two arcs for one pair');
- assert.ok(arcs.some(r=>r.relationType===required.relationType),'the contract arc must remain');
+ assert.ok(arcs.some(r=>r.relationType===required.relationType),'the contract arc must be realized');
  assert.ok(arcs.filter(r=>r.visualForm==='none').length>=1,'the surplus arc must be neutralised, not rendered twice');
 });
