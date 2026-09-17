@@ -5,7 +5,16 @@ import {point as p,part,ellipse,curve} from '../geometry.js';
 const rect=(x:number,y:number,w:number,h:number)=>[p(x,y),p(x+w,y),p(x+w,y+h),p(x,y+h),p(x,y)];
 const line=(id:string,points:Point[],order:number,color:AssetPart['stroke']='ink')=>part(id,points,order,color);
 const circle=(id:string,x:number,y:number,r:number,order:number,color:AssetPart['stroke']='ink')=>part(id,ellipse(x,y,r,r),order,color);
-function asset(id:string,aliases:string[],tags:string[],parts:AssetPart[],anchors:Record<string,Point>={},archetypes:VisualArchetype[]=['structural_diagram','flow','comparison'],semanticType='entity'):AssetDefinition{
+/** Every layout the compiler can draw. An illustration is geometry with anchors -
+ *  a leaf, a server, a KV cache - and it renders correctly in any of them. The
+ *  old default was three layouts (`structural_diagram, flow, comparison`), so an
+ *  asset simply did not EXIST for a `cause_effect` or `numbered_steps` scene: the
+ *  search found nothing, the concept fell to a generic composition, and the board
+ *  showed a squiggle where a real drawing belonged. Measured: 25 of 25 concepts
+ *  resolved to `composition` with `trusted-asset: 0` across three live lessons.
+ *  Assets that are genuinely layout-specific still declare a narrow list. */
+const ALL_LAYOUTS:VisualArchetype[]=['flow','cycle','structural_diagram','convergence','transformation','comparison','cross_section','spatial_process','numbered_steps','equation_walkthrough','matrix_operation','hierarchy','timeline','trajectory','branch','cause_effect','state_machine'];
+function asset(id:string,aliases:string[],tags:string[],parts:AssetPart[],anchors:Record<string,Point>={},archetypes:VisualArchetype[]=ALL_LAYOUTS,semanticType='entity'):AssetDefinition{
  return {id,type:'diagram_template',aliases,tags,parts,anchors:{center:p(50,50),input:p(4,50),output:p(96,50),...anchors},viewBox:[0,0,100,100],archetypes,semanticTypes:[semanticType],styleFamily:'chalk-ink-v2',source:'Original project geometry',license:'project-original',states:{neutral:{partIds:[]},highlighted:{partIds:parts.map(p=>p.id)},activated:{partIds:parts.map(p=>p.id)}}};
 }
 function grid(id:string,aliases:string[],rows:number,cols:number,color:AssetPart['stroke']='blue'):AssetDefinition{

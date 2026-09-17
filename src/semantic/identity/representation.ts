@@ -90,11 +90,17 @@ function substringFallback(
   const conceptWords = wordsOf([concept.id, concept.canonicalName, ...concept.aliases].join(' '));
   let best: { id: string; overlap: number } | undefined;
   for (const asset of ASSETS) {
-    if (!asset.archetypes.some(a => archetypes.includes(a))) continue;
-    const assetWords = wordsOf([...asset.aliases, ...asset.tags].join(' '));
-    let overlap = 0;
-    for (const w of conceptWords) if (assetWords.has(w)) overlap++;
-    if (overlap === 0) continue;
+    /** Only an ALIAS is a semantic match; a tag is merely thematic. The
+     *  refrigeration parts are tagged `cycle`, so "Discovery Loop" matched
+     *  `physics.compressor.v2` on that single word and would have drawn a coolant
+     *  compressor for a machine-learning concept - a false match is worse than a
+     *  labelled box. An alias hit is weighted so it always outranks incidental
+     *  tag overlap, and a concept with no alias hit does not match at all. */
+    const aliasWords = wordsOf(asset.aliases.join(' ')),tagWords = wordsOf(asset.tags.join(' '));
+    let aliasHits = 0,tagHits = 0;
+    for (const w of conceptWords) { if (aliasWords.has(w)) aliasHits++; else if (tagWords.has(w)) tagHits++; }
+    if (aliasHits === 0) continue;
+    const overlap = aliasHits * 2 + tagHits;
     if (!best || overlap > best.overlap || (overlap === best.overlap && asset.id < best.id)) {
       best = { id: asset.id, overlap };
     }

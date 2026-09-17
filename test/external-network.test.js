@@ -107,7 +107,12 @@ const registry = [{id: 'c1', canonicalName: 'Ledger', aliases: [], semanticType:
 const model = {mentalModel: 'm', candidateArchetypes: ['flow'], heroConceptIds: ['c1'], supportConceptIds: [], relationStrategy: [], requiredObjectStates: []};
 
 test('VISUAL_ICONS=off performs no work at all', async () => {
-  assert.equal(retrievalMode(undefined), 'off');
+  // Icons are on by default: the curated catalog does not cover the
+  // machine-learning and systems material the product is asked to teach, so
+  // leaving retrieval off meant every concept resolved to a generic composition.
+  // `off` is now explicit and still performs no network work.
+  assert.equal(retrievalMode(undefined), 'balanced', 'icons default on; off must be explicit');
+  assert.equal(retrievalMode('off'), 'off');
   assert.equal(retrievalMode('BALANCED'), 'balanced');
   assert.throws(() => retrievalMode('sometimes'), /VISUAL_ICONS/);
   const {catalog, candidates} = await representationCandidates(planScene, registry, model, {mode: 'off', fetchedAt: '2026-01-01T00:00:00.000Z'});

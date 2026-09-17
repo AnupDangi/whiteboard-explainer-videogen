@@ -25,8 +25,14 @@ export type CandidateList=ReturnType<typeof assetCandidates>;
 export interface RepresentationOutcome{candidates:CandidateList;catalog:Record<string,AssetDefinition>;warnings:string[]}
 
 const ICON_SEMANTIC_TYPES=new Set(['entity','material','location','role']);
+/** Default is `balanced`: a real icon beats a generic composition, and the
+ *  illustration path alone has never produced one - measured 25 of 25 concepts
+ *  resolving to `composition` with `trusted-asset: 0` across three live lessons,
+ *  because the curated catalog covers biology/chemistry/earth but not the
+ *  machine-learning and systems material the product is actually asked to teach.
+ *  `off` still disables every network call. */
 export const retrievalMode=(raw:string|undefined):RetrievalMode=>{
- const value=(raw??'off').trim().toLowerCase();
+ const value=(raw??'balanced').trim().toLowerCase();
  if(value!=='off'&&value!=='strict'&&value!=='balanced'&&value!=='broad')throw new Error('VISUAL_ICONS must be off|strict|balanced|broad');
  return value;
 };

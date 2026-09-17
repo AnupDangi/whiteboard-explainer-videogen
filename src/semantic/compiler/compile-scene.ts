@@ -30,7 +30,10 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  const ALT_MIN_H=60;
  const objects:CompiledObject[]=[],remaining=[...scene.objects];const childIndex=new Map<string,number>();let support=0;
  while(remaining.length){const index=remaining.findIndex(o=>!o.parentId||objects.some(p=>p.id===o.parentId));if(index<0)throw new Error('Unresolved parent');const o=remaining.splice(index,1)[0];
-  const asset=o.assetRef?resolveAsset(o.assetRef,catalog):undefined;if(asset&&!asset.archetypes.includes(scene.archetype))throw new Error(`Asset incompatible with archetype: ${o.id}`);
+  /** An asset is geometry with anchors; the compiler draws it in any layout. This
+   *  used to throw, and the fallback demoted the concept to a bare label, which is
+   *  why boxes rendered empty. The archetype list now only affects ranking. */
+  const asset=o.assetRef?resolveAsset(o.assetRef,catalog):undefined;
   if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!['before','after'].includes(state)&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
   /** A structural hero has to share the band with its supports. At the fixed
    *  330x440 it filled the centre and left no room for eleven of them, so the
