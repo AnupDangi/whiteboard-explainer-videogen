@@ -26,6 +26,24 @@ export function validateTeachingPlan(input:unknown,priorConcepts:ReadonlySet<str
   const prior=new Set<string>();
   for(const scene of plan.scenes){
     uniqueIds(scene.beats,'beat');const relations=uniqueIds(scene.requiredRelations,'relation');
+    /** Deterministic reference heals. Each of these used to reject the whole
+     *  plan, and a rejected plan triggers a FULL teaching repair — so the entire
+     *  first generation (measured at 39-66s on recent runs, thousands of
+     *  completion tokens) was discarded and re-bought over one dangling
+     *  reference. Same shape as the existing relation-focus heal below. */
+    if(!scene.requiredConceptIds.includes(scene.centralConceptId)){
+      scene.requiredConceptIds.unshift(scene.centralConceptId);
+      warnings.push(`${scene.id}: central concept ${scene.centralConceptId} added to requiredConceptIds`);
+    }
+    {
+      const taught=new Set<string>();
+      for(const b of scene.beats)for(const c of [...b.introduce,...b.reinforce,...b.transform.map(t=>t.conceptId)])taught.add(c);
+      for(const c of scene.requiredConceptIds.filter(id=>!taught.has(id))){
+        const beat=scene.beats.find(b=>new Set([...b.introduce,...b.reinforce]).size<3);
+        if(beat){beat.introduce.push(c);warnings.push(`${scene.id}/${beat.id}: untaught required concept ${c} attached to a beat with room`);}
+        else{scene.requiredConceptIds=scene.requiredConceptIds.filter(id=>id!==c);warnings.push(`${scene.id}: untaught required concept ${c} dropped; no beat has room under the cognitive-load limit`);}
+      }
+    }
     refs(scene.requiredConceptIds,concepts,'concept');refs([scene.centralConceptId],new Set(scene.requiredConceptIds),'central concept');refs(scene.continuity.keepFromPrevious,new Set([...priorConcepts,...prior]),'previous concept');refs(scene.continuity.prepareForNext,concepts,'next concept');
     for(const r of scene.requiredRelations)refs([r.fromConceptId,r.toConceptId],new Set(scene.requiredConceptIds),'relation concept');
     // Deterministic heal: models smuggle requirement ids into relationFocus; drop those,

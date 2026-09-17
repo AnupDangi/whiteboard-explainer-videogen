@@ -40,11 +40,18 @@ export function log(event:string,fields:Record<string,unknown>={},level:'info'|'
     appendFileSync(appLogPath,line+'\n');
     appLogBytes+=Buffer.byteLength(line)+1;
   } catch{/* ledger must never break the pipeline */}
-  // P5 eval ledger: every line also lands in the job's log.jsonl (best-effort; the
-  // console stream stays primary). Journal/eval scripts read this file back.
-  const jobId=logContext.getStore()?.jobId;
+  // Per-job ledger: every line also lands in that job's log.jsonl (best-effort; the
+  // console stream stays primary). The job supplies `logDir` because the two
+  // pipelines keep their jobs in different roots — V1 in `.data/<jobId>`, V2 in
+  // `.data/semantic/<jobId>`. Without it this file was written to a directory that
+  // never existed for V2, so every semantic job's per-job log was silently empty.
+  const store=logContext.getStore(),jobId=store?.jobId;
   if(typeof jobId==='string'&&/^[a-f0-9-]{36}$/.test(jobId)){
-    try{appendFileSync(join('.data',jobId,'log.jsonl'),line+'\n');}catch{/* ledger must never break the pipeline */}
+    try{
+      const dir=typeof store?.logDir==='string'?store.logDir:join('.data',jobId);
+      mkdirSync(dir,{recursive:true});
+      appendFileSync(join(dir,'log.jsonl'),line+'\n');
+    }catch{/* ledger must never break the pipeline */}
   }
 }
 

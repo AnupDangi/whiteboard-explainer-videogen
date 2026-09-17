@@ -146,7 +146,7 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
     diagnostics.push(`representation fallback: no safe connector route for ${r.id}; using direct line`);
     return {...r,points:[a,b]};
    }
-  }),timing=structuredClone(timingInput??estimatedTiming(scene)),actions=compileTimeline(scene,timing);
+  }),timing=structuredClone(timingInput??estimatedTiming(scene)),actions=compileTimeline(scene,timing,diagnostics);
  if(['structural_diagram','convergence','cross_section','spatial_process'].includes(scene.archetype)){const metrics=occupancy(objects);if(metrics.heroRatio<.3)diagnostics.push('Weak hero salience');if(metrics.areaRatio<.2)diagnostics.push('Low structural occupancy');}
  const gaps=staticIntervals(scene,timing,actions);if(gaps.some(g=>g.endMs-g.startMs>3500))diagnostics.push('Narrated static interval exceeds 3500ms');
  return {version:2,scene,objects,relations,actions,timing,durationMs:timing.durationMs+650,diagnostics,...(catalog&&Object.keys(catalog).length?{assetCatalog:catalog}:{})};

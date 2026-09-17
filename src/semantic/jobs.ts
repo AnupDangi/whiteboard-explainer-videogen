@@ -111,7 +111,10 @@ sourceText=doc.text.length>sourceMax?doc.text.slice(0,sourceMax).replace(/\s+\S*
     return this.snapshot(job);
   }
   private start(job:InternalSemanticJob){
-    job.status='planning';job.task=logContext.run({...logContext.getStore(),jobId:job.id},()=>this.run(job,job.controller!.signal)).finally(()=>{void this.dequeue();});
+    job.status='planning';/** `logDir` is what makes the per-job log.jsonl land beside the job: V2 keeps
+    *  its jobs under `.data/semantic/<id>`, and the logger's default of
+    *  `.data/<id>` produced a silently empty file for every semantic job. */
+    job.task=logContext.run({...logContext.getStore(),jobId:job.id,logDir:join(this.root,job.id)},()=>this.run(job,job.controller!.signal)).finally(()=>{void this.dequeue();});
   }
   private async dequeue(){
     if(!this.queue.length)return;

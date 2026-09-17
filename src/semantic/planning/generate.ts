@@ -92,7 +92,17 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
  const harness=new TeachingHarness({runId,input,journal:options.journal,budget}),gates=harness.gates;
  const learnerProfile=structuredClone(options.learnerProfile??defaultLearnerProfile(input.language));
  let learnerState=initialLearnerState(learnerProfile);
- const telemetry=(stage:TelemetryEvent['stage'],status:TelemetryEvent['status'],extra:Partial<TelemetryEvent>={})=>options.onTelemetry?.({stage,status,...extra,atMs:performance.now()-start});
+ /** Every stage transition is emitted twice: to the caller's telemetry hook
+  *  (which only the job store wires, and only to set its current stage) and to
+  *  the log stream. Without the second half the per-stage timing, diagnostics,
+  *  timing kind and failure text existed in-process and then vanished — the log
+  *  held model calls and gates but nothing that explained where the wall time
+  *  went. */
+ const telemetry=(stage:TelemetryEvent['stage'],status:TelemetryEvent['status'],extra:Partial<TelemetryEvent>={})=>{
+  const event={stage,status,...extra,atMs:performance.now()-start};
+  log('v2.telemetry',event as unknown as Record<string,unknown>,status==='failure'?'warn':'info');
+  options.onTelemetry?.(event);
+ };
  const passGate=(stage:HarnessStage):GateResult=>({stage,passed:true,findings:[]});
  await harness.execute({resume:options.resume,stage:'ingest',input,run:()=>({sourceId:input.sourceId??null,sourceChars:input.sourceText?.length??0,promptChars:input.prompt.length,language:input.language}),gate:()=>passGate('ingest')});
  const teachingStart=performance.now();
