@@ -35,8 +35,20 @@ test('a representation failure is not repaired by the stage that observed it',as
  assert.equal(repairs,0);
 });
 
-test('a provider timeout or budget failure is not converted into a semantic repair',async()=>{
- for(const message of ['OpenRouter 503: upstream unavailable','The operation was aborted due to timeout','V2 knowledge request exceeds remaining cost budget']){
+test('a provider timeout or budget failure is handled by the right owner',async()=>{
+ // A TIMEOUT is transient: one attempt later the same request usually succeeds, so
+ // the running stage may spend its single bounded repair on a retry. Measured:
+ // `knowledge-compiler exceeded 72000ms` routed to the harness, which owns no
+ // repair, so one slow call ended a five-minute job outright.
+ {
+  let repairs=0;
+  const recovered=await executeStage({stage:'knowledge-compiler',input:{},run:()=>{throw new Error('The operation was aborted due to timeout');},gate:()=>ok('knowledge-compiler'),repair:async()=>{repairs++;return {ok:true};},journal:new MemoryStageJournal()});
+  assert.equal(repairs,1,'the running stage spends exactly one bounded retry on a timeout');
+  assert.ok(recovered.envelope,'and the retry is what produced the output');
+ }
+ // A dead route or an exhausted budget is not transient: re-asking spends a model
+ // call to fail the same way, so those still route to the harness.
+ for(const message of ['OpenRouter 503: upstream unavailable','V2 knowledge request exceeds remaining cost budget']){
   let repairs=0;
   await assert.rejects(()=>executeStage({stage:'knowledge-compiler',input:{},run:()=>{throw new Error(message);},gate:()=>ok('knowledge-compiler'),repair:async()=>{repairs++;return {ok:true};},journal:new MemoryStageJournal()}),(error)=>{
    assert.equal(error.classification.owner,'harness',`${message} must be provider-owned`);

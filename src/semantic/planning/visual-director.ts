@@ -93,7 +93,11 @@ export function validateDirectedScene(raw:VisualSceneV2,scene:SemanticScenePlan,
  if(visual.id!==scene.id)throw new Error('Director changed scene identity');
  if(!mentalModel.candidateArchetypes.includes(visual.archetype))throw new Error('Director chose unavailable mental model');
  if(!visual.objects.some(o=>o.role==='hero'&&o.conceptId===scene.centralConceptId))throw new Error('Director changed central teaching object');
- for(const o of visual.objects)if(o.representation&&o.assetRef)throw new Error('Object has two representations');
+ /** An object carrying BOTH a semantic representation and an asset is
+  *  over-specified, not wrong: the asset is the richer, so the representation is
+  *  dropped and recorded rather than failing the scene. Measured: `Director
+  *  validation exhausted: Object has two representations` lost a lesson. */
+  for(const o of visual.objects)if(o.representation&&o.assetRef){log('v2.director.dual-representation',{object:o.id,asset:o.assetRef,dropped:o.representation.family},'warn');delete o.representation;}
   /** The archetype is harness-owned (selectVisualModel); the prompt names it, so
    *  a model-returned mismatch is clamped to it (recorded). */
   if(visual.archetype!==mentalModel.candidateArchetypes[0]){log('v2.director.archetype-clamp',{scene:scene.id,from:visual.archetype,to:mentalModel.candidateArchetypes[0]});visual.archetype=mentalModel.candidateArchetypes[0];}

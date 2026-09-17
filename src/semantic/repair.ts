@@ -42,7 +42,13 @@ export interface FailureClassification{owner:StageOwner;code:string;failureClass
  *  a semantic failure belongs to whichever stage raised it. */
 const OWNER_BY_CLASS:Partial<Record<FailureClass,StageOwner>>={REPRESENTATION:'representation-guide',GEOMETRY:'compiler',TIMING:'speech-layer',SPEECH:'speech-layer',PROVIDER:'harness'};
 const emptyGate=(stage:HarnessStage):GateResult=>({stage,passed:false,findings:[]});
-const PROVIDER_PATTERN=/OpenRouter|fetch failed|budget|pricing|timed out|aborted due to timeout|TimeoutError|rate limit/i;
+const PROVIDER_PATTERN=/OpenRouter|fetch failed|budget|pricing|timed out|aborted due to timeout|TimeoutError|rate limit|exceeded \d+ms/i;
+/** A timeout is transient: the same request one attempt later usually succeeds,
+ *  so it is the one provider failure the running stage may retry. A rate limit,
+ *  a missing route or an exhausted budget is not. Measured: `knowledge-compiler
+ *  exceeded 72000ms` routed to the harness, which owns no repair, so one slow
+ *  call ended the job. */
+const TIMEOUT_PATTERN=/timed out|aborted due to timeout|TimeoutError|exceeded \d+ms/i;
 
 /** Decide who owns a failure. Precedence:
  *    1. a gate finding already names the owning stage (gates stamp their own);
@@ -63,6 +69,7 @@ export function classifyFailure(error:unknown,currentStage:HarnessStage,gate?:Ga
   *  the adapter already owns route failover. Routing it keeps the stage repair
   *  for decisions the model actually made. */
  const message=error instanceof Error?error.message:String(error);
+ if(TIMEOUT_PATTERN.test(message))return {owner:STAGE_OWNERS[currentStage],code:'stage-timeout',failureClass:'PROVIDER',gate:resolvedGate};
  if(PROVIDER_PATTERN.test(message))return {owner:'harness',code:'provider-failed',failureClass:'PROVIDER',gate:resolvedGate};
  return {owner:STAGE_OWNERS[currentStage],code:'stage-failed',failureClass:'SEMANTIC',gate:resolvedGate};
 }
