@@ -222,7 +222,15 @@ export async function* generateV2(input:TeachingInput,model:JsonModel,options:Ge
       *  would otherwise be discovered *after* paying for a director call, and
       *  neither is repairable by the director. */
      const preferredArchetype=mentalModel.candidateArchetypes[0];
-     if(!archetypeFits(preferredArchetype,semantic.requiredConceptIds.length))throw new Error(`Archetype ${preferredArchetype} cannot hold ${semantic.requiredConceptIds.length} required representations`);
+     /** The director uses `candidateArchetypes[0]`, so it has to be one that can
+      *  hold the scene - but the plan only guarantees SOME candidate fits.
+      *  Measured: `Archetype transformation cannot hold 5 required
+      *  representations` on a scene whose candidates were [transformation, cycle]
+      *  with cycle fitting six. A workable candidate existed and was not first,
+      *  so the fitting one is promoted rather than the scene failed. */
+     const fitting=mentalModel.candidateArchetypes.find(archetype=>archetypeFits(archetype,semantic.requiredConceptIds.length));
+     if(!fitting)throw new Error(`No candidate archetype can hold ${semantic.requiredConceptIds.length} required representations (${mentalModel.candidateArchetypes.join('/')})`);
+     if(preferredArchetype!==fitting)mentalModel.candidateArchetypes=[fitting,...mentalModel.candidateArchetypes.filter(archetype=>archetype!==fitting)];
      if(board.beats.length!==semantic.beats.length)throw new Error(`Whiteboard plan covers ${board.beats.length} beats but the scene has ${semantic.beats.length}`);
      telemetry('visual-model','success',{elapsedMs:performance.now()-at});}catch(e){telemetry('visual-model','failure',{error:e instanceof Error?e.message:String(e),elapsedMs:performance.now()-at});throw stageFailure(e,'visual-model');}
    const visualModelMs=performance.now()-at;
