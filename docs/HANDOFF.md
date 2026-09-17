@@ -29,7 +29,7 @@ Written after a full read of `src/` (96 files, 9,791 LOC) by five read-only audi
 | **P5** representation telemetry | *(this commit)* | tier counts per scene, aggregated in the live metrics |
 | **S9a** regression corpus | *(this commit)* | real model output captured from the logs as fixtures |
 
-Tests: **530/530**. Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
+Tests: **535/535**. Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
 
 ### Wave 2 — latency, cache, benchmark, live matrix
 
@@ -42,6 +42,51 @@ Measured after: the two director calls start 2.5s apart and overlap. **Serial su
 **Ownership fix found while doing this.** Two live runs failed with errors the director owns but that were classified compiler-owned and therefore not repairable: a cyclic relation graph in a `cause_effect` scene and a spoken anchor that does not exist in the beat's own narration. Inverted the rule: **only a pure geometry invariant (`Illegal overlap`, `Canvas escape`) is non-repairable**; everything else thrown during compilation is a contract the director wrote and gets its one targeted repair. Retried geometry is still proven byte-identical.
 
 **P4 icon cache** (`external/cache.ts`) — file or memory cache keyed by sha256, atomic writes, a corrupt entry a miss, cached assets re-validated before use. A second resolve performs zero fetches.
+
+### Wave 3 — the discarded generation (biggest single latency and cost win)
+
+Three senior audits (layout, latency, logging) ran against the tree. The latency
+audit **corrected a claim this document made**: `## 3` said teaching was one call.
+It is not. On every recent run the teaching stage generated a full plan, threw it
+away over one deterministic reference error, and then regenerated a smaller one:
+
+| run | teaching calls | teaching time | first-call fate |
+|---|---|---|---|
+| `final1` (failed) | 2 | 92.4s | discarded — knowledge window failure |
+| `final8` (complete) | 2 | 60.4s | **discarded at 42.3s on a deterministic check** |
+| `final11` (complete) | 2 | 56.0s | discarded |
+
+The two errors that discarded it were both pure reference checks, not model
+judgement: a `centralConceptId` missing from its own `requiredConceptIds`, and a
+`requiredConceptIds` member that no beat taught. Both are now deterministic heals
+in `validate.ts`, the same shape as the existing relation-focus heal, and both are
+recorded as warnings.
+
+**Measured effect.** `final13` (same prompt as `final8`/`final11`, 2 scenes, narrated):
+
+| run | wall | cost | teaching | model calls |
+|---|---|---|---|---|
+| `final8` | 92.8s | $0.060 | 2 calls, 60.4s | 4 |
+| `final11` | 97.9s | $0.047 | 2 calls, 56.0s | 5 |
+| **`final13`** | **67.2s** | **$0.053** | **1 call, 18.3s** | 4 |
+
+Both scenes exported and narrated (27.2s + 29.6s ≈ 57s, h264+aac). Director calls
+now overlap: serial sum 66.7s against a model wall span of 58.8s.
+
+A spoken anchor the model named but never wrote (`"ensure"`, from the same family
+the wave-2 ownership fix already hit) no longer fails the scene: `timeline.ts`
+degrades it to the beat start and records a diagnostic. Failing it bought a
+director repair that reproduced the same anchor.
+
+**Observability was broken in two ways and both are fixed.** The per-job
+`log.jsonl` had never been written for a single semantic job: the logger wrote to
+`.data/<jobId>` while V2 keeps jobs under `.data/semantic/<jobId>`. The job now
+supplies `logDir`. And every stage telemetry event was handed only to the job
+store's hook, which discarded everything but the stage name — per-stage timing,
+diagnostics, timing kind and failure text never reached the log. They are now
+emitted as `v2.telemetry` (28 events on `final13`).
+
+Tests: **535/535**.
 
 **P6 representation benchmark** (`scripts/bench-representation.ts`, `npm run bench:representation`) — 75 concepts, 9 domains, 17 archetypes. Headline on the authored corpus: **82.7% primitive-label**, law/governance **0/10** trusted, and four abstractions that reach a trusted asset when they arguably should not (`Blood Pressure → physics.compressor.v2` is a tag collision).
 
