@@ -61,7 +61,13 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   const old=!parent&&scene.continuity.keepFromPrevious.includes(o.id)?previous?.objects.find(x=>x.id===o.id):undefined;
   if(old){if(old.conceptId!==o.conceptId||old.assetRef!==o.assetRef)throw new Error('Persistent identity changed');rect={x:old.x,y:old.y,w:old.w,h:old.h};}
   const baseFontSize=scene.archetype==='numbered_steps'?24:scene.archetype==='equation_walkthrough'?24:labelOnly?22:20;
-  const fitted=fitLabel(o.label,labelOnly?rect.w:Math.max(rect.w,180),baseFontSize);
+  /** A label is centred on its rect, so the widest it may fit is set by the
+   *  NEARER safe edge, not by a flat 180px floor. A 120px support at x=76
+   *  fitted a 180px label and escaped the band on the left - the
+   *  cross_section and spatial_process canvas escape. */
+  const centreX=rect.x+rect.w/2;
+  const maxLabelWidth=Math.max(80,2*Math.min(centreX-BOARD.safe.x,BOARD.safe.x+BOARD.safe.w-centreX)-8);
+  const fitted=fitLabel(o.label,Math.min(labelOnly?rect.w:Math.max(rect.w,180),maxLabelWidth),baseFontSize);
   if(fitted.truncated&&o.importance==='primary'&&o.primitiveRef!=='label')throw new Error(`Critical label would be truncated: ${o.id}`);
   if(fitted.fitted||fitted.truncated)diagnostics.push(`representation fallback: label "${o.label}" ${fitted.truncated?'truncated to three lines':'shrunk to '+fitted.fontSize+'px'} to fit (${o.id})`);
   const fontSize=fitted.fontSize,lines=fitted.lines;
