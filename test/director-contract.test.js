@@ -61,3 +61,32 @@ test('the instruction names the contract fields rather than describing them in p
   assert.match(instructions, /relationRefs/);
   assert.ok(!/--\S*-->/.test(instructions), 'relations must not be re-serialised as prose arrows');
 });
+
+test('a concept the model invented is dropped, not fatal', async () => {
+  const {directScene, assetCandidates} = await import('../dist/src/semantic/planning/visual-director.js');
+  const direction = {
+    title: 't', teachingGoal: 'g', mentalModel: 'm', archetype: 'flow',
+    objects: [
+      {conceptKey: 'c1', label: 'One', role: 'hero', state: 'neutral', allowedStates: ['neutral'], importance: 'primary', collisionPolicy: 'forbid', primitiveRef: 'rectangle', children: []},
+      {conceptKey: 'invented', label: 'Ghost', role: 'support', state: 'neutral', allowedStates: ['neutral'], importance: 'secondary', collisionPolicy: 'forbid', primitiveRef: 'rectangle', children: []},
+    ],
+    relations: [{fromConcept: 'invented', relation: 'causes', toConcept: 'c1'}],
+    beats: [{key: 'beat_1', narration: 'One', actions: [{type: 'reveal', durationMs: 400, leadMs: 0, easing: 'linear', conceptKeys: ['c1'], relationRefs: []}]}],
+  };
+  const decisions = {centralTeachingObject: 'c1', firstFocus: 'c1', illustratedConcepts: 'c1', labelsOnly: '', movingRelations: '', persistentContext: '', stateChanges: '', omit: ''};
+  const model = {calls: [], events: [], async generate(stage, instructions, input, schema, validate) { return validate({direction, decisions}); }};
+  const semantic = {
+    version: 2, id: 's1', centralConceptId: 'c1', teachingGoal: 'g', learnerShouldUnderstand: 'u', mentalModel: 'm',
+    beats: [{id: 'beat_1', narrationDraft: 'One', requirementIds: [], introduce: ['c1'], reinforce: [], transform: [], relationFocus: [], evidenceRefs: []}],
+    requiredConceptIds: ['c1'], requiredRelations: [], candidateArchetypes: ['flow'],
+    continuity: {keepFromPrevious: [], prepareForNext: []},
+  };
+  const registry = [{id: 'c1', canonicalName: 'One', aliases: [], semanticType: 'entity', evidenceRefs: []}];
+  const mental = selectVisualModel(semantic, registry, {keepFromPrevious: [], prepareForNext: []}, semantic.candidateArchetypes);
+  const directed = await directScene(semantic, registry, mental, model, undefined, 'en', {candidates: assetCandidates(semantic, registry, mental)});
+  assert.equal(directed.scene.objects.some(o => o.conceptId === 'invented'), false,
+    'an invented identity must not survive: it would be rejected as an unknown concept');
+  assert.equal(directed.scene.objects.some(o => o.conceptId === 'c1'), true, 'the required concept must');
+  assert.equal(directed.scene.relations.some(r => String(r.id).includes('invented')), false,
+    'no relation may reference a dropped concept');
+});

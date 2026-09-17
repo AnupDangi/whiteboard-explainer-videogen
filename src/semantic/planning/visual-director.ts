@@ -241,6 +241,20 @@ export async function directScene(scene:SemanticScenePlan,registry:ConceptIdenti
     *  are indistinguishable apart from when the latency was paid. */
    const directed=resolved?.prefetched as {scene:VisualSceneV2;decisions:DirectionDecisions}|undefined??await model.generate('director',instructions,{semanticScene:scene,requiredRelations,requiredObjects,mentalModel,conceptRegistry:registry,candidateAssets:candidates,sourceVisualIds:resolved?.sourceVisualIds??[],whiteboardPlan:resolved?.whiteboardPlan??null,previousContinuity:resolved?.previousContinuity??previous?.scene.continuity??null},directorResponseSchema,value=>{
    const response=value as {scene?:VisualSceneV2;direction?:unknown;decisions:DirectionDecisions};
+   /** The model may invent a concept that is not in the teaching graph. The
+    *  identity is what is wrong, not the shape: leaving it in makes
+    *  `validateVisualScene` reject the whole direction with "Unknown concept",
+    *  which costs the lesson over a single hallucinated key. The invented object
+    *  and every relation touching it are dropped, recorded, and the required
+    *  concepts (which ARE in the registry) are untouched. */
+   const direction=response.direction as {objects?:{conceptKey?:string}[];relations?:{fromConcept?:string;toConcept?:string}[]}|undefined;
+   if(direction?.objects){
+    const known=new Set(registry.map(c=>c.id)),before=direction.objects.length;
+    direction.objects=direction.objects.filter(o=>!o.conceptKey||known.has(o.conceptKey));
+    const kept=new Set(direction.objects.map(o=>o.conceptKey));
+    direction.relations=(direction.relations??[]).filter(r=>kept.has(r.fromConcept??'')&&kept.has(r.toConcept??''));
+    if(direction.objects.length!==before)log('v2.director.invented-concept-dropped',{scene:scene.id,dropped:before-direction.objects.length},'warn');
+   }
    if(response.scene){
     // Instrumented legacy passthrough (plan heal rule 24): kept for model
     // compatibility, recorded here so removal has data. Not silent.
