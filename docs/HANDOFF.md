@@ -278,6 +278,35 @@ emitted as `v2.telemetry` (28 events on `final13`).
 
 Tests: **535/535**.
 
+#### Wave 6e - the length refinement, and a verified one-minute lesson
+
+Two more compiler repairs and the last piece of the duration contract.
+
+- **Child repair** (`compile-scene.ts`): children were excluded from every pass
+  because moving them freely breaks containment, so a child overlap was
+  unrecoverable - `Illegal overlap: concept_1_dreaming_loop_1/
+  concept_1_discovery_history_1` killed a live scene. A child is now shrunk and
+  re-seated toward a quadrant INSIDE its parent until it clears.
+- **A broken ring is laid out, not refused** (`archetypes.ts`): the cycle layout
+  threw when the graph did not walk as one closed ring, on the theory the director
+  would repair it. It cannot - the director synthesises the ring before the
+  compiler's composition fallbacks run, and a fallback that drops a node breaks the
+  ring it just built. The compiler now prefers the graph's ring and otherwise lays
+  the primaries out as a ring over a deterministic order. The test asserting the
+  refusal was rewritten, not deleted: it now proves a broken ring still lays out
+  with zero collisions.
+- **Length refinement** (`teaching-planner.ts`): the prompt states the word budget
+  but the model does not reliably hit it. Measured 149 words against a 145 target
+  on one run and **65 against 108** on another - a 40s lesson for a sixty-second
+  request. If the total lands outside 0.85-1.15x the budget the stage re-asks once,
+  stating the measured total and the direction to move. This is the one targeted
+  repair the stage is allowed.
+
+**Verified end to end:** `status complete`, 2/2 scenes, **lesson 62.9s from 103
+words against a 108-word budget** - inside the 60s +/-15% window for the first
+time. Wall 67.3s, cost $0.037, 3 model calls, h264+aac. The layout register is
+36 -> 8.
+
 #### Wave 6d - the layout register is 36 -> 8
 
 Five repairs, each preserving byte-identical output for scenes that already fit

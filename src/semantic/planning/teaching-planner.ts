@@ -3,7 +3,7 @@ import {teachingIntentToPlan} from '../identity/intent-adapter.js';
 import {teachingPlanSchema} from '../schemas.js';
 import {validateTeachingPlan} from './validate.js';
 import {log} from '../../shared/logger.js';
-import {MAX_SCENES_PER_LESSON} from '../../shared/language.js';
+import {MAX_SCENES_PER_LESSON,countWords,wordsForMinutes} from '../../shared/language.js';
 import {evidenceSupported,snapQuoteToSource,evidenceIdGrounding} from './knowledge-compiler.js';
 import {teachingPrompt} from './prompt-builder.js';
 import {archetypeFits} from '../compiler/archetypes.js';
@@ -74,7 +74,7 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   *  model burned ~30k prompt tokens per teaching call. The model quotes from
   *  its chapter window; the verbatim gate still checks against the full scope. */
  const modelInput={...input,evidenceScope:undefined};
- return await model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes:options.repairFindings,knowledge,chapter}),modelInput,teachingIntentSchema,value=>{
+ const attempt=(repairNotes?:string[])=>model.generate('teaching',teachingPrompt({maxScenes,hasSource:Boolean(input.sourceText),language:input.language,targetMinutes:input.targetMinutes,repairNotes,knowledge,chapter}),modelInput,teachingIntentSchema,value=>{
    spreadExcessIntroductions(value);healStateMechanisms(value);
    const intent=value as {evidenceRefs?:{id:string;sourceId?:string;quote?:string}[];scenes?:{key:string;beats?:{key?:string;evidenceRefs?:string[]}[]}[]};
    /** Thin-teaching boundary: the model references COMPILED evidence ids; it
@@ -169,5 +169,21 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
    for(const requirement of [...plan.requiredClaims,...plan.requiredMechanisms])if(!requirements.has(requirement.id))throw new Error(`Requirement outside knowledge inventory: ${requirement.id}`);
   }
   return plan;
- },{signal:options.signal}) as TeachingPlanV2;
+ },{signal:options.signal}) as Promise<TeachingPlanV2>;
+ /** Length refinement. The prompt states the word budget outright, but the model
+  *  does not reliably hit it: measured at 149 words against a 145 target on one
+  *  run and 65 against 108 on another, i.e. a 40s lesson for a sixty-second
+  *  request. This is the one targeted repair the teaching stage is allowed; it
+  *  re-states the measured total and the direction to move. */
+ let plan=await attempt(options.repairFindings);
+ if(input.targetMinutes){
+  const budget=wordsForMinutes(input.targetMinutes);
+  const actual=plan.scenes.reduce((total,scene)=>total+scene.beats.reduce((n,beat)=>n+countWords(beat.narrationDraft),0),0);
+  if(actual<budget*.85||actual>budget*1.15){
+   const note=`Your narration totalled ${actual} words. This is a ${input.targetMinutes}-minute lesson and needs about ${budget} words (${actual<budget?'add depth: explain the mechanism and give a worked example':'trim repetition and shorten explanations'}). Keep every required concept, relation and requirement covered.`;
+   log('v2.teaching.length-repair',{scenes:plan.scenes.length,actual,budget,targetMinutes:input.targetMinutes},'warn');
+   plan=await attempt([...(options.repairFindings??[]),note]);
+  }
+ }
+ return plan;
 }
