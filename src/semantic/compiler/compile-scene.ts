@@ -5,7 +5,7 @@ import type {AssetDefinition} from '../assets/types.js';
 import {validateVisualScene} from '../planning/validate.js';
 import {resolveAsset,canonicalAnchor} from '../assets/registry.js';
 import {applyCompositionFallbacks} from './fallback.js';
-import {BOARD,zoneRect,supportedArchetype} from './zones.js';
+import {BOARD,zoneRect,nestedZoneRect,supportedArchetype} from './zones.js';
 import {MAX_STATIC_INTERVAL_MS} from '../../shared/language.js';
 import {fitLabel,visualBounds} from './text.js';
 import {findCollisions,contains} from './collisions.js';
@@ -26,13 +26,21 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  /** Eight distinct non-centre zones keep a hero plus up to eight unplaced
   *  supports from stacking two objects on the same rect. */
  const SUPPORT_ZONES:LayoutZone[]=['upper_left','upper_right','lower_left','lower_right','left','right','top','bottom'];
+ /** Lowest height a fit-to-safe shrink may leave an object at. */
+ const ALT_MIN_H=60;
  const objects:CompiledObject[]=[],remaining=[...scene.objects];const childIndex=new Map<string,number>();let support=0;
  while(remaining.length){const index=remaining.findIndex(o=>!o.parentId||objects.some(p=>p.id===o.parentId));if(index<0)throw new Error('Unresolved parent');const o=remaining.splice(index,1)[0];
   const asset=o.assetRef?resolveAsset(o.assetRef,catalog):undefined;if(asset&&!asset.archetypes.includes(scene.archetype))throw new Error(`Asset incompatible with archetype: ${o.id}`);
   if(asset)for(const state of o.allowedStates)if(state!=='hidden'&&!['before','after'].includes(state)&&!asset.states[state])throw new Error(`Asset does not implement state ${state}`);
   const labelOnly=o.primitiveRef==='label'||o.primitiveRef==='equation';const hero=o.role==='hero',structuralHero=hero&&['structural_diagram','convergence'].includes(scene.archetype),w=structuralHero?330:labelOnly?250:132,h=structuralHero?440:labelOnly?44:132;
+  /** `nest` is how many objects already claimed this zone. It was ignored, so
+   *  the ninth unplaced object reused zone 0 and landed on the same rect as the
+   *  first. nest 0 is `zoneRect` unchanged, so existing scenes keep byte-identical
+   *  output; later claimants shrink toward a corner inside their zone. */
+  const zoneIndex=support;
   const zone=o.preferredZone??(hero?'center':SUPPORT_ZONES[support++%SUPPORT_ZONES.length]);
-  let rect=placements.get(o.id)??zoneRect(zone,w,h);
+  const nest=o.preferredZone||hero?0:Math.floor(zoneIndex/SUPPORT_ZONES.length);
+  let rect=placements.get(o.id)??nestedZoneRect(zone,w,h,nest);
   if(labelOnly&&rect){const native=scene.archetype==='equation_walkthrough'?44:44;rect={x:rect.x,y:rect.y+(rect.h-native)/2,w:rect.w,h:native};}
   const parent=o.parentId?objects.find(p=>p.id===o.parentId):undefined;
   if(parent){
@@ -59,6 +67,25 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   const fontSize=fitted.fontSize,lines=fitted.lines;
   const compiled:CompiledObject={...o,...rect,anchors:{},fontSize,lines,zIndex:parent?parent.zIndex+1:hero?1:2};
   objects.push(compiled);
+ }
+ /** Fit-to-safe repair. The structural hero is 440px tall inside a 498px safe
+  *  band, which leaves no room for the three-line label `fitLabel` permits (81px)
+  *  beneath it: a hero plus its label needs up to 521px. Measured, that is
+  *  exactly the `structural_diagram` and `convergence` canvas escape, and no
+  *  later pass could fix it because the escape check runs after every repair.
+  *  Objects that actually escape are shrunk about their own centre and re-fitted
+  *  until they fit; objects that already fit are untouched, so existing scenes
+  *  keep byte-identical geometry. */
+ for(const o of objects){
+  for(let attempt=0;attempt<10&&!contains(BOARD.safe,visualBounds(o));attempt++){
+   const oldH=o.h;
+   o.h=Math.max(ALT_MIN_H,Math.round(o.h*.92));
+   o.y=Math.round(o.y+(oldH-o.h)/2);
+   const only=o.primitiveRef==='label'||o.primitiveRef==='equation';
+   const size=scene.archetype==='numbered_steps'?24:scene.archetype==='equation_walkthrough'?24:only?22:20;
+   const refit=fitLabel(o.label,only?o.w:Math.max(o.w,180),size);
+   o.fontSize=refit.fontSize;o.lines=refit.lines;
+  }
  }
  const resolveAnchors=()=>{for(const o of objects){o.anchors={center:{x:o.x+o.w/2,y:o.y+o.h/2},input:{x:o.x,y:o.y+o.h/2},output:{x:o.x+o.w,y:o.y+o.h/2},top:{x:o.x+o.w/2,y:o.y},bottom:{x:o.x+o.w/2,y:o.y+o.h}};if(o.assetRef){const a=resolveAsset(o.assetRef,catalog),[vx,vy,vw,vh]=a.viewBox;for(const [name,p] of Object.entries(a.anchors))o.anchors[name]={x:o.x+(p.x-vx)/vw*o.w,y:o.y+(p.y-vy)/vh*o.h};}}};
  // Labels are part of occupied geometry, including labels below illustration bounds.

@@ -278,6 +278,35 @@ emitted as `v2.telemetry` (28 events on `final13`).
 
 Tests: **535/535**.
 
+#### Wave 6c - fit-to-safe repair, nested zones, and a register that shrinks
+
+**10 of the 36 layout defects are fixed and removed from the register (36 -> 26).**
+The bidirectional assertion caught it exactly as designed: it failed with "these
+were fixed - remove them from KNOWN_DEFECTS" and listed the ten.
+
+- `compile-scene.ts` - fit-to-safe repair. The structural hero is 440px inside a
+  498px safe band, so a three-line label (81px) beneath it needs 521px. Objects
+  whose `visualBounds` leave the safe band are shrunk about their own centre and
+  re-fitted until they fit. Only escaping objects are touched, so scenes that
+  already fit keep byte-identical geometry (golden hashes unchanged).
+  Fixed: `structural_diagram` n=2/n=4 long, `convergence` n=2/n=4 long,
+  `flow` n=4/n=5 long flat.
+- `zones.ts` + `compile-scene.ts` - nested zone allocation. `zoneRect` was reused
+  by the round robin (`SUPPORT_ZONES[support++ % 8]`), so the ninth unplaced
+  object landed on exactly the first claimant's rect - a guaranteed illegal
+  overlap no repair pass could fix. `nestedZoneRect(zone,w,h,nest)` returns
+  `zoneRect` unchanged for `nest` 0, so existing scenes stay byte-identical, and
+  later claimants shrink toward a deterministic corner inside their zone.
+
+**Still open (26):** `equation_walkthrough` n=4/n=6 (8) - note rows are 34px with a
+14px gap, so the label block (31px for one line, 81px for three) hangs into the
+next row; the pitch has to be derived from the band and the label budget, not
+fixed. `structural_diagram`/`convergence` n=12 (8) - the layout still has no
+placement branch, so roots go through the zone fallback. `spatial_process` (6) and
+`cross_section` (4) - a support whose label is wider than its 120px rect escapes
+horizontally; the fit width is `max(rect.w,180)` regardless of the space beside it.
+
+
 **P6 representation benchmark** (`scripts/bench-representation.ts`, `npm run bench:representation`) — 75 concepts, 9 domains, 17 archetypes. Headline on the authored corpus: **82.7% primitive-label**, law/governance **0/10** trusted, and four abstractions that reach a trusted asset when they arguably should not (`Blood Pressure → physics.compressor.v2` is a tag collision).
 
 **S9b live matrix** (`scripts/live-matrix.ts`, `npm run matrix:live`) — one command produces job success rate, compile success, P50/P95 wall and first-playable latency, cost, model calls, top failure reasons and a PASS/FAIL line per measurable migration gate. Failed runs stay in the denominator; unmeasurable gates report PENDING rather than being faked.
