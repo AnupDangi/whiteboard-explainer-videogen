@@ -71,7 +71,12 @@ test('teaching rejects a scene whose concepts cannot fit any candidate archetype
  plan.scenes[0].requiredConceptKeys=['plant','sunlight','water','carbon_dioxide','extra1','extra2','extra3'];
  plan.scenes[0].beats[0].introduce=[...new Set([...(plan.scenes[0].beats[0].introduce??[]),'extra1','extra2','extra3'])];
  const model={generate:async(_s,_i,_inp,_schema,validate)=>validate(structuredClone(plan))};
- await assert.rejects(planTeaching({...input,allowedArchetypes:['cycle']},model),/no candidate archetype/);
+ // Still a rejection: `cycle` caps at six and the scene carries seven, so no
+  // allowed archetype fits. What changed is that a scene whose concepts fit a
+  // WIDER allowed archetype is now offered one instead of failing - measured:
+  // 'requires 5 primary concepts, which no candidate archetype
+  // (transformation/comparison) can represent' lost a whole lesson.
+  await assert.rejects(planTeaching({...input,allowedArchetypes:['cycle']},model),/no allowed archetype/);
  const fitting=structuredClone(plan);fitting.scenes[0].requiredConceptKeys=['plant','sunlight','water','carbon_dioxide','extra1','extra2'];
  fitting.scenes[0].beats[0].introduce=fitting.scenes[0].beats[0].introduce.filter(key=>fitting.scenes[0].requiredConceptKeys.includes(key));
  const model2={generate:async(_s,_i,_inp,_schema,validate)=>validate(structuredClone(fitting))};

@@ -128,7 +128,16 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
   }
   for(const s of plan.scenes){
    const fits=s.candidateArchetypes.some(a=>archetypeFits(a,s.requiredConceptIds.length));
-   if(!fits)throw new Error(`Scene ${s.id} requires ${s.requiredConceptIds.length} primary concepts, which no candidate archetype (${s.candidateArchetypes.join('/')}) can represent; merge or split concepts`);
+   if(fits)continue;
+   /** The model's own candidates cannot carry this many concepts. Rather than
+    *  failing the scene, offer one from the harness-owned set that can, and keep
+    *  the model's preference first so the director still sees it. Measured:
+    *  `Scene mla-solution-scene requires 5 primary concepts, which no candidate
+    *  archetype (transformation/comparison) can represent` - the scene had five
+    *  concepts and the model had named two four-capacity families. */
+   const wider=input.allowedArchetypes.find(a=>archetypeFits(a,s.requiredConceptIds.length));
+   if(wider){log('v2.plan.archetype-widened',{scene:s.id,concepts:s.requiredConceptIds.length,from:s.candidateArchetypes,added:wider},'warn');s.candidateArchetypes=[wider,...s.candidateArchetypes] as VisualArchetype[];}
+   else throw new Error(`Scene ${s.id} requires ${s.requiredConceptIds.length} primary concepts, which no allowed archetype can represent; merge or split concepts`);
   }
   if(input.sourceText){
    /** Thin-teaching: evidence comes from the compiled inventory by id. A
