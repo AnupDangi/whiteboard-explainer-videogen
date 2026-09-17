@@ -1,4 +1,5 @@
 import type {ConceptIdentity,SemanticScenePlan,VisualArchetype,SceneContinuity} from '../types.js';
+import {log} from '../../shared/logger.js';
 /** True when the plan's required relations form exactly one closed ring over
  *  every concept the scene must represent: each concept has one outgoing
  *  relation within the set and the walk returns to its start after visiting
@@ -40,7 +41,13 @@ export function selectVisualModel(scene:SemanticScenePlan,registry:ConceptIdenti
   const ordered=[...candidates.filter(ranked),...candidates.filter(a=>!ranked(a))];
   if(!candidates.length)throw new Error(unsupported.length?`No supported archetype for ${scene.id}: ${[...new Set(unsupported)].join(', ')} declared but not implemented by the compiler`:`No feasible archetype for ${scene.id}`);
   const concepts=scene.requiredConceptIds.map(id=>{const c=registry.find(c=>c.id===id);if(!c)throw new Error(`Unknown concept: ${id}`);return c;});
-  for(const id of scene.continuity.keepFromPrevious)if(!previous.prepareForNext.includes(id))throw new Error(`Continuity unavailable: ${id}`);
+  /** A scene may only keep what the previous scene declared it would carry
+   *  forward. A model that asks for more is asking for something that does not
+   *  exist yet, so the unavailable ids are dropped (recorded) and the scene keeps
+   *  what it can. Measured: `Continuity unavailable: memory-bandwidth` failed a
+   *  five-minute lesson after the first scene had already been produced. */
+  const unavailable=scene.continuity.keepFromPrevious.filter(id=>!previous.prepareForNext.includes(id));
+  if(unavailable.length){log('v2.continuity.dropped',{scene:scene.id,ids:unavailable},'warn');scene.continuity.keepFromPrevious=scene.continuity.keepFromPrevious.filter(id=>previous.prepareForNext.includes(id));}
   const hero=scene.centralConceptId;
   if(!concepts.some(c=>c.id===hero))throw new Error('Central concept is not present');
   return {mentalModel:scene.mentalModel,candidateArchetypes:ordered,heroConceptIds:[hero],supportConceptIds:concepts.filter(c=>c.id!==hero).map(c=>c.id),relationStrategy:scene.requiredRelations.map(r=>`${r.fromConceptId} ${r.relationType} ${r.toConceptId}${r.targetAnchor?'.'+r.targetAnchor:''}`),requiredObjectStates:scene.beats.flatMap(b=>b.transform)};
