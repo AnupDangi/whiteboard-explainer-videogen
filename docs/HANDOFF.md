@@ -133,6 +133,27 @@ duration):
 
 Tests: **535/535**.
 
+#### Wave 6b - the label block is measured now, and the placement fix is deferred
+
+`LABEL_BLOCK=56` was a flat constant in `archetypes.ts` (flow and branch). It is
+exactly the label extent for TWO lines at 20px: `26 - fontSize + lines *
+(fontSize + 5)` = 56. But `fitLabel` will fit up to THREE lines, which needs 81px,
+so every layout under-reserved 25px and manufactured the overlaps the compiler
+then rejected. Layout runs before labels are fitted, so it must reserve the worst
+case the fitter allows. `text.ts` now exports `labelBlock(lines,fontSize)`,
+`LABEL_LINES_MAX` and `maxLabelBlock(fontSize)`, and both layouts reserve from it.
+
+**A `structural_diagram`/`convergence` placement branch was written and
+reverted.** It replaced the round-robin zone fallback with a bounded grid, but
+that changed where roots land, which collided with objects that are placed
+separately because they are not roots (annotations, decorations, parented
+children keep falling through to `zoneRect`). The golden photosynthesis fixture
+immediately failed with `Illegal overlap: water/leaf_label`. The real fix has to
+place roots AND non-roots from one layout, or the two systems will keep
+colliding; reverting keeps the baseline honest rather than papering over it with
+fixture edits. The 36-entry register is unchanged, which confirms the label block
+alone is not what makes those cases fail - the missing placement branch is.
+
 Code graph regenerated after the wave-5 `src/` edits (`graphify update . --force`):
 **1,920 nodes / 4,139 edges / 151 communities -> 2,048 nodes / 4,368 edges / 156
 communities** (+128 nodes, +229 edges).

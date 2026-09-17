@@ -48,6 +48,20 @@ export function fitLabel(text:string,width:number,fontSize=22):{lines:string[];f
  return {lines:clipped,fontSize:18,fitted:true,truncated:true};
 }
 
+/** Vertical space a label occupies BELOW its object: from the object's bottom
+ *  edge to the bottom of the last line. Derived from the same metrics that
+ *  `labelBounds` uses, so layout and rendering cannot disagree.
+ *
+ *  The layouts reserved a flat 56px, which is exactly this formula for TWO lines
+ *  at 20px - but `fitLabel` will fit up to three lines, which needs 81px. Every
+ *  archetype therefore under-reserved 25px and manufactured the overlaps the
+ *  compiler then rejected. Layout runs before labels are fitted, so it must
+ *  reserve the worst case the fitter allows. */
+export function labelBlock(lines:number,fontSize:number):number{return Math.max(0,26-fontSize)+lines*(fontSize+5);}
+/** Lines `fitLabel` will never exceed; the reserved block must assume this. */
+export const LABEL_LINES_MAX=3;
+export function maxLabelBlock(fontSize:number):number{return labelBlock(LABEL_LINES_MAX,fontSize);}
+
 export function labelBounds(o:CompiledObject):Rect {
  const only=o.primitiveRef==='label'||o.primitiveRef==='equation';
  const w=Math.max(...o.lines.map(l=>l.length))*o.fontSize*.62;

@@ -1,6 +1,7 @@
 import type {VisualSceneV2,Rect,VisualArchetype} from '../types.js';
 import {BOARD} from './zones.js';
 import {NON_STRUCTURAL_RELATIONS} from '../types.js';
+import {maxLabelBlock} from './text.js';
 /** Primary-representation bounds each family enforces below. Shared so plan
  *  validation and archetype selection agree with the compiler instead of
  *  discovering the limit as a render-time failure. */
@@ -22,7 +23,9 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
    *  shortened only when a column is too crowded to hold its rows at full
    *  height. Measured: `Illegal overlap: object_bill/object_committee` on a
    *  three-branch flow column. */
-  const LABEL_BLOCK=56,GAP=10,MIN_H=54;
+  /** Reserved from the measured block at the worst case the fitter allows, not
+   *  a flat 56 that only covers two lines. */
+  const LABEL_BLOCK=maxLabelBlock(20),GAP=10,MIN_H=54;
   for(let column=0;column<count;column++){
    const group=roots.filter(o=>rank.get(o.id)===column).sort((a,b)=>a.id.localeCompare(b.id));
    if(group.length>3)throw new Error('Flow column exceeds three readable branches');
@@ -84,7 +87,7 @@ export function archetypePlacements(scene:VisualSceneV2):Map<string,Rect>{
    *  own band instead of stacking into its neighbours. Column width is derived
    *  from the band so horizontal gaps stay positive for every capacity the
    *  archetype admits (2-10 primaries). */
-  const SAFE=BOARD.safe,GAP=10,LABEL_BLOCK=56,NOMINAL_H=110,MIN_H=54,MIN_W=60;
+  const SAFE=BOARD.safe,GAP=10,LABEL_BLOCK=maxLabelBlock(20),NOMINAL_H=110,MIN_H=54,MIN_W=60;
   const byRank=new Map<number,string[]>();
   for(const id of ids){const r=rank.get(id)!;byRank.set(r,[...(byRank.get(r)??[]),id]);}
   const bandW=SAFE.w/ranks;
