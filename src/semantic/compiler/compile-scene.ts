@@ -160,6 +160,22 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
     }
    }
   }
+ // Children were excluded from every pass above because moving them freely breaks
+ // containment. They can still be repaired WITHIN their parent, which is where the
+ // freedom actually is: shrink and re-seat a colliding child toward one of the
+ // parent's quadrants until it clears. Measured: `Illegal overlap:
+ // concept_1_dreaming_loop_1/concept_1_discovery_history_1` on two cycle subparts.
+ for(const o of objects.filter(o=>o.parentId)){
+  const parent=objects.find(p=>p.id===o.parentId);if(!parent)continue;
+  for(let attempt=0;attempt<6&&findCollisions(objects).some(pair=>pair.split('/').includes(o.id));attempt++){
+   o.w=Math.max(16,Math.round(o.w*.85));o.h=Math.max(12,Math.round(o.h*.85));
+   const quadrant=(attempt%4);
+   const fx=[.12,.68,.12,.68][quadrant],fy=[.12,.12,.68,.68][quadrant];
+   o.x=Math.round(parent.x+(parent.w-o.w)*fx);
+   o.y=Math.round(parent.y+(parent.h-o.h)*fy);
+   diagnostics.push(`geometry repair: re-seated child ${o.id} inside ${parent.id}`);
+  }
+ }
  const collisions=findCollisions(objects);if(collisions.length)throw Object.assign(new Error(`Illegal overlap: ${collisions.join(', ')}`),{compiledObjects:objects.map(o=>({id:o.id,role:o.role,parentId:o.parentId,collisionPolicy:o.collisionPolicy,x:Math.round(o.x),y:Math.round(o.y),w:o.w,h:o.h}))});
  for(const o of objects)if(!contains(BOARD.safe,visualBounds(o)))throw new Error(`Canvas escape: ${o.id}`);
  resolveAnchors();
