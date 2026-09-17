@@ -312,6 +312,7 @@ compared against the WHOLE lesson budget instead of its share
 |---|---|---|---|---|---|
 | 1 min | **complete** | 68s | 36.8s | $0.041 | 2 |
 | 1 min (after three more heals) | **complete** | 80s | 31.6s | $0.041 | 2 |
+| **1 min (clean run, wave 8)** | **complete** | **57s** | **56.3s** | **$0.030** | 2 |
 | 5 min | failed - whiteboard `VISUAL_SUPPORT` | 104s | - | - | 0 |
 | 10 min | failed - `Illegal overlap: concept_1_kv_cache_1/concept_1_latent_vector_1` | 84s | - | - | 1 |
 | 20 min | failed - `Persistent representation changed without transition: memory-bandwidth` | 139s | - | - | 2 |
@@ -326,11 +327,19 @@ distinct problems remain:
   other names. Relocating a parent by 32-64px cannot clear two subparts whose
   parents sit adjacent on a ring of radius 380x155: the ring must place a child on
   the side FACING AWAY from its neighbour, or widen for scenes with subparts.
-- **The narration undershoots.** 66 words against a 108-word budget produced a
-  31.6s lesson for a 60s request, and the refinement's re-ask returned 67 - the
-  model repeated itself instead of extending. A prompt cannot enforce a floor:
-  the refinement must extend narration deterministically, or the prompt must state
-  a minimum rather than an approximation.
+- **The narration undershoots** - FIXED. The cause was the beat COUNT, not the
+  word count: every beat came back at exactly the 11 words asked for, but there
+  were three per scene instead of five, so a one-minute lesson totalled 66 words
+  and ran 31.6s. The prompt now states a beat TOTAL and the refinement note gives
+  beats and words together. Measured after: **56.3s**, inside the 60s +/-15%
+  window, and 52.4s on an earlier pass.
+- **Wave 8 also raised the long-form token ceiling** (12000 -> 20000, retries 1 ->
+  2; a twenty-minute lesson needs ~2,160 words of narration and failed with
+  'truncated again 2 times: length'), gave a stage TIMEOUT the running stage's one
+  bounded retry (a timeout is transient; a rate limit or dead route is not), healed
+  dual representations, healed an archetype no candidate could carry, healed
+  continuity naming a concept that does not exist yet, and added a child-vs-child
+  resolver.
 
 The 1-minute lesson also came in SHORT (36.8s, 75 words against a 108 budget):
 the length refinement fired at 66 words and re-asked, and the model still
