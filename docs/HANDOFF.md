@@ -311,14 +311,26 @@ compared against the WHOLE lesson budget instead of its share
 | target | result | wall | lesson | cost | scenes |
 |---|---|---|---|---|---|
 | 1 min | **complete** | 68s | 36.8s | $0.041 | 2 |
+| 1 min (after three more heals) | **complete** | 80s | 31.6s | $0.041 | 2 |
 | 5 min | failed - whiteboard `VISUAL_SUPPORT` | 104s | - | - | 0 |
 | 10 min | failed - `Illegal overlap: concept_1_kv_cache_1/concept_1_latent_vector_1` | 84s | - | - | 1 |
 | 20 min | failed - `Persistent representation changed without transition: memory-bandwidth` | 139s | - | - | 2 |
 
-Three distinct gates remain, all the same class as the five above and all
-healable: a plan that leaves a concept without a visual beat, a child overlap
-between two DIFFERENT parents (the child repair only moves within one parent), and
-a persistent object whose representation changes without a declared transition.
+Those three gates were then healed (whiteboard VISUAL_SUPPORT, unannounced
+representation drift, child collisions between two parents) and the run repeated:
+**1 min still completes** (31.6s, $0.041, 2 scenes); 5/10/20 min still fail. Two
+distinct problems remain:
+
+- **Child collisions on a cycle ring.** `Illegal overlap:
+  concept_1_memory_bandwidth_1/concept_1_latent_vector_1`, and the same shape under
+  other names. Relocating a parent by 32-64px cannot clear two subparts whose
+  parents sit adjacent on a ring of radius 380x155: the ring must place a child on
+  the side FACING AWAY from its neighbour, or widen for scenes with subparts.
+- **The narration undershoots.** 66 words against a 108-word budget produced a
+  31.6s lesson for a 60s request, and the refinement's re-ask returned 67 - the
+  model repeated itself instead of extending. A prompt cannot enforce a floor:
+  the refinement must extend narration deterministically, or the prompt must state
+  a minimum rather than an approximation.
 
 The 1-minute lesson also came in SHORT (36.8s, 75 words against a 108 budget):
 the length refinement fired at 66 words and re-asked, and the model still
