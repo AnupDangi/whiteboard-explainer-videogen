@@ -197,19 +197,25 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
    *  refinement never fired, because each chapter individually looked correct. */
   const chapters=Math.max(1,options.chapter?.count??1);
   const budget=Math.max(1,Math.round(wordsForMinutes(input.targetMinutes)/chapters));
-  const actual=plan.scenes.reduce((total,scene)=>total+scene.beats.reduce((n,beat)=>n+countWords(beat.narrationDraft),0),0);
-  if(actual<budget*.85||actual>budget*1.15){
-   /** State the two numbers the model actually controls: the beat count and the
-    *  word total. Measured: the previous note gave only the word total, and the
-    *  model returned one more word than before - it repeated itself rather than
-    *  extending, because nothing told it to add beats. */
-   const beatsNow=plan.scenes.reduce((n,scene)=>n+scene.beats.length,0);
+  /** The model writes what a chapter warrants, not what a number asks: measured
+   *  with source text it produces ~20 words per beat against an 11-word
+   *  instruction, so a chapter comes out ~100 words where 54 were requested and
+   *  the lesson runs 94s for a 60s target. One re-ask changed nothing, so the
+   *  retry is escalated and arithmetic, twice, before the plan is accepted. */
+  const notes=[...(options.repairFindings??[])];
+  for(let pass=0;pass<2;pass++){
+   const beats=plan.scenes.reduce((n,scene)=>n+scene.beats.length,0);
+   const words=plan.scenes.reduce((total,scene)=>total+scene.beats.reduce((n,beat)=>n+countWords(beat.narrationDraft),0),0);
+   if(words>=budget*.85&&words<=budget*1.15)break;
    const beatsWanted=Math.max(1,(input.maxScenes??1)*5);
-   const note=`Your lesson has ${beatsNow} beats and ${actual} words of narration. This ${input.targetMinutes}-minute lesson needs about ${beatsWanted} beats and about ${budget} words (${actual<budget?'add beats and explain the mechanism in more depth':'trim repetition and shorten explanations'}). Keep every required concept, relation and requirement covered.`;
-   log('v2.teaching.length-repair-note',{beatsNow,beatsWanted,actual,budget},'warn');
-   log('v2.teaching.length-repair',{scenes:plan.scenes.length,actual,budget,chapters,targetMinutes:input.targetMinutes},'warn');
-   plan=await attempt([...(options.repairFindings??[]),note]);
+   const note=words>budget
+    ?`Your narration is ${words} words across ${beats} beats. This lesson must not exceed about ${budget} words, so remove at least ${words-budget} words. Shorten each beat by dropping what does not teach; keep every required concept, relation and requirement covered, and keep all ${beats} beats.`
+    :`Your narration is ${words} words across ${beats} beats. This lesson needs about ${budget} words over roughly ${beatsWanted} beats, so add at least ${budget-words} words - deepen the mechanism rather than repeating definitions. Keep every required concept, relation and requirement covered.`;
+   log('v2.teaching.length-repair-note',{pass,beats,beatsWanted,actual:words,budget},'warn');
+   notes.push(note);
+   plan=await attempt(notes);
   }
+  log('v2.teaching.length-final',{words:plan.scenes.reduce((total,scene)=>total+scene.beats.reduce((n,beat)=>n+countWords(beat.narrationDraft),0),0),budget,chapters},'warn');
  }
  return plan;
 }
