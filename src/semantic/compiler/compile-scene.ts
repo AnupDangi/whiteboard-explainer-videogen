@@ -5,7 +5,7 @@ import type {AssetDefinition} from '../assets/types.js';
 import {validateVisualScene} from '../planning/validate.js';
 import {resolveAsset,canonicalAnchor} from '../assets/registry.js';
 import {applyCompositionFallbacks} from './fallback.js';
-import {BOARD,zoneRect,nestedZoneRect,supportedArchetype} from './zones.js';
+import {BOARD,zoneRect,zoneRectFor,supportedArchetype} from './zones.js';
 import {MAX_STATIC_INTERVAL_MS} from '../../shared/language.js';
 import {fitLabel,visualBounds} from './text.js';
 import {findCollisions,contains} from './collisions.js';
@@ -29,6 +29,11 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
  /** Lowest height a fit-to-safe shrink may leave an object at. */
  const ALT_MIN_H=60;
  const objects:CompiledObject[]=[],remaining=[...scene.objects];const childIndex=new Map<string,number>();let support=0;
+ /** How many objects will claim each zone, so a shared zone can be subdivided
+  *  evenly before anything is placed. */
+ const zoneClaims=new Map<string,number>();
+ {let claim=0;for(const o of scene.objects){if(o.preferredZone||o.role==='hero')continue;const z=SUPPORT_ZONES[claim++%SUPPORT_ZONES.length];zoneClaims.set(z,(zoneClaims.get(z)??0)+1);}}
+ const zoneSlots=new Map<string,number>();
  while(remaining.length){const index=remaining.findIndex(o=>!o.parentId||objects.some(p=>p.id===o.parentId));if(index<0)throw new Error('Unresolved parent');const o=remaining.splice(index,1)[0];
   /** An asset is geometry with anchors; the compiler draws it in any layout. This
    *  used to throw, and the fallback demoted the concept to a bare label, which is
@@ -51,7 +56,8 @@ export function compileScene(input:unknown,timingInput?:VisualTiming,previous?:C
   const zoneIndex=support;
   const zone=o.preferredZone??(hero?'center':SUPPORT_ZONES[support++%SUPPORT_ZONES.length]);
   const nest=o.preferredZone||hero?0:Math.floor(zoneIndex/SUPPORT_ZONES.length);
-  let rect=placements.get(o.id)??nestedZoneRect(zone,w,h,nest);
+  const zoneSlot=zoneSlots.get(zone)??0;zoneSlots.set(zone,zoneSlot+1);
+   let rect=placements.get(o.id)??zoneRectFor(zone,w,h,zoneSlot,zoneClaims.get(zone)??1);
   if(labelOnly&&rect){const native=scene.archetype==='equation_walkthrough'?44:44;rect={x:rect.x,y:rect.y+(rect.h-native)/2,w:rect.w,h:native};}
   const parent=o.parentId?objects.find(p=>p.id===o.parentId):undefined;
   if(parent){

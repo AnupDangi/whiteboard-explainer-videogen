@@ -6,7 +6,7 @@ import {normalizeSemanticKey} from '../identity/types.js';
 export const stableHash=(value:unknown)=>createHash('sha256').update(stableJson(value)).digest('hex');
 function stableJson(value:unknown):string{
  if(Array.isArray(value))return `[${value.filter(item=>item!==undefined).map(stableJson).join(',')}]`;
- if(value&&typeof value==='object')return `{${Object.entries(value as Record<string,unknown>).filter(([,v])=>v!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+ if(value&&typeof value==='object')return `{${Object.entries(value as Record<string,unknown>).filter(([,v])=>v!==undefined).sort(([a],[b])=>(a<b?-1:a>b?1:0)).map(([k,v])=>`${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
  return JSON.stringify(value);
 }
 const unique=(values:string[])=>[...new Set(values)];

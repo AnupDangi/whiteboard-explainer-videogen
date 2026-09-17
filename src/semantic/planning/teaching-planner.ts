@@ -174,7 +174,11 @@ export async function planTeaching(input:TeachingInput,model:JsonModel,options:{
    if(groundings.dropped.length)log('v2.plan.evidence-drop',{ids:groundings.dropped},'warn');
    /** Compiled inventory ids OR plan entries whose quote was verified verbatim
     *  in the scope (the source-only policy grounds quotes, not ids). */
-   const planEvidenceIds=new Set(plan.evidenceRefs.map(e=>e.id));
+   /** plan.evidenceRefs is what this set is built from, so testing a plan entry
+    *  against it was always true - invented evidence survived and the dropped
+    *  ids were never removed. The verified inventory plus the grounded plan
+    *  entries are the real allow-list. */
+   const planEvidenceIds=new Set(plan.evidenceRefs.filter(e=>!groundings.dropped.includes(e.id)).map(e=>e.id));
    for(const scene of plan.scenes)for(const beat of scene.beats)beat.evidenceRefs=(beat.evidenceRefs??[]).filter(id=>evidenceIds.has(id)||planEvidenceIds.has(id));
    for(const c of plan.conceptRegistry)if(!keys.has(c.id))throw new Error(`Concept outside knowledge inventory: ${c.id}`);
    for(const e of plan.evidenceRefs)if(!evidenceIds.has(e.id)&&!planEvidenceIds.has(e.id))throw new Error(`Evidence outside knowledge inventory: ${e.id}`);

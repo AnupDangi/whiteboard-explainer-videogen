@@ -163,7 +163,10 @@ function fallbackArchetype(scene: VisualSceneV2, warnings: string[], reason: str
 
 /** Cap primaries at `max` by demoting extras (deterministic by object id). */
 function capPrimaries(scene: VisualSceneV2, warnings: string[], max: number): void {
-  const primaries = roots(scene).sort((a, b) => a.id.localeCompare(b.id));
+  /** The hero is never a candidate: it is the central system, and demoting it
+   *  throws. Sorting by id put it inside the slice whenever its id sorted last,
+   *  which made capPrimaries fatal on a scene it could otherwise fix. */
+  const primaries = roots(scene).sort((a, b) => (a.role === 'hero' ? -1 : 0) - (b.role === 'hero' ? -1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   for (const extra of primaries.slice(max)) {
     demoteToAnnotation(extra, warnings);
     ensureRevealed(scene, extra.id);
