@@ -75,7 +75,70 @@ h264 + aac, i.e. a one-minute lesson.
 Topic 3 bought a second teaching generation, so the wave-3 discard is not fully
 closed — it is reduced, not eliminated. See `## 2` item 2 and `## 3`.
 
-Tests unchanged: **535/535** (no source changed for this wave). Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
+Tests unchanged: **535/535** (no source changed for this wave).
+
+### Wave 5 — root cause of both one-shot failures, and the missing lesson artifact
+
+Both failures were **our own deterministic validators destroying work that had
+already been paid for**. Neither needed a model change.
+
+**1. `Invalid word timing`** (`timeline.ts:10`). `timingFromSegments` shifted each
+provider word by its segment `offset` but never clamped it to that segment's own
+`durationMs`. A single word running past its segment pushed the *next* segment's
+first word before the previous word's end, and the flat validator threw. The
+validator ran at the TTS rebind (`generate.ts:296`), i.e. after every model call
+was bought. Fixed at the producer (clamp into the segment) and at the validator
+(`repairWordTimings` — clamp, force monotonic, re-label from the narration we
+control), every change recorded as a diagnostic. A word-count mismatch is still
+fatal.
+
+**2. `Critical label would be truncated: object_deepseek-v4-1-flash`**
+(`compile-scene.ts:56`). `wrapLabel` threw `Label token exceeds available width`
+for any token longer than a line, `fitLabel` fell back to truncation, and a
+`primary` object then failed the whole scene. A proper noun like
+`DeepSeek-V4.1-Flash` is one token with no spaces, so it hit this every time.
+`wrapLabel` now breaks long tokens at hyphens/dots/underscores/slashes before
+resorting to truncation. Tokens that already fit are returned untouched, so
+existing wrapping and the golden hashes are unchanged.
+
+**3. There was no lesson artifact at all.** The pipeline exported one video per
+scene and never joined them, so "generate a one-minute video" produced a folder of
+thirty-second parts. `concatVideos` in `artifacts.ts` now emits
+`output/<run>/lesson.mp4` and the report records `lesson`/`lessonParts`. (First
+attempt exited 254: the concat demuxer resolves list entries relative to the list
+file's directory, not the cwd — absolute paths now.)
+
+**4. Duration was never requested.** `targetMinutes` has always existed on
+`TeachingInput` and shapes the teaching prompt, but `generate-v2-video.ts` never
+passed it, so the planner did not know whether it was writing a one-minute or a
+thirty-minute lesson. Reported as `for approximately N minutes`. A `--minutes`
+flag now wires it. **Wired and built, not yet re-verified live.**
+
+**Verified after the fixes — 3 of 3 complete, one shot each, no retries:**
+
+| video | scenes | lesson | wall | cost | calls |
+|---|---|---|---|---|---|
+| `llms-cant-jump` | 2/2 | **64.6s** | 74.7s | $0.057 | 4 |
+| `dream-rsi` | 2/2 | **60.1s** | 50.4s | $0.024 | 3 |
+| `deepseek-v4.1` | 2/2 | **93.5s** | 75.7s | $0.040 | 3 |
+
+All `h264 960x540 + aac`, each naming its paper and its real claims in the rendered
+narration (verified from `narration.txt`, not from the prompt). `deepseek-v4.1` runs
+long because the duration flag was not set for that run.
+
+**Parallelisation, re-measured on these runs** (`v2.telemetry`, `atMs`):
+
+| run | span | model | tts | unaccounted |
+|---|---|---|---|---|
+| `v2_llms` | 71.1s | 3 calls / 21.9s | 2 / 20.2s | ~29s |
+| `v2_dream` | 46.8s | 3 calls / 15.9s | 2 / 18.0s | ~13s |
+| `v2_ds` | 70.2s | 3 calls / 22.2s | 2 / 31.5s | ~16s |
+
+Model time is now only 16-22s per lesson, yet wall is 47-71s: **the bottleneck has
+moved from model latency to serialization.** The known sites remain, in
+`## 3` items A-H above — TTS across scenes (E), TTS beats inside a scene (D), and
+parallel MP4 export (G) are now the largest, since teaching and director overlap
+already landed in waves 2-3. Code graph: **1,900 nodes / 4,124 edges** (`graphify update . --force`).
 
 ### Wave 2 — latency, cache, benchmark, live matrix
 

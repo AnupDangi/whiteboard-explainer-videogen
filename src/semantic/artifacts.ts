@@ -1,11 +1,30 @@
 import {mkdir,writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {join,dirname,resolve} from 'node:path';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {createHash} from 'node:crypto';
 import type {CompiledSceneV2} from './types.js';
 import {renderSVG} from './renderer/render-svg.js';
 import {lintCompiledScene} from './evaluation.js';
+/** Concatenate the per-scene narrated clips into the one file a learner
+ *  actually watches. The pipeline has always exported a video per scene and
+ *  never joined them, so requesting a one-minute lesson produced a folder of
+ *  thirty-second parts and no lesson. Streams are re-encoded rather than copied:
+ *  independently encoded scenes do not reliably share timestamps, and the
+ *  deterministic renderer means the frames are identical either way. */
+export async function concatVideos(inputs:string[],outPath:string,options:{signal?:AbortSignal}={}):Promise<string>{
+ if(!inputs.length)throw new Error('Cannot concatenate zero videos');
+ await mkdir(dirname(outPath),{recursive:true});
+ const listPath=join(dirname(outPath),'concat.txt');
+ // Absolute paths: the concat demuxer resolves entries relative to the LIST
+ // FILE's directory, not the process cwd, so a relative entry silently became
+ // <out>/<out>/<scene>/narrated.mp4 and ffmpeg exited 254.
+ await writeFile(listPath,inputs.map(p=>`file '${resolve(p).replace(/'/g,"'\\''")}'`).join('\n'));
+ const ffmpeg=spawn('ffmpeg',['-y','-v','error','-f','concat','-safe','0','-i',listPath,'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p','-c:a','aac','-movflags','+faststart',outPath],{stdio:'inherit',signal:options.signal});
+ await new Promise<void>((resolve,reject)=>{ffmpeg.on('error',reject);ffmpeg.on('close',code=>code===0?resolve():reject(new Error(`Concat FFmpeg exit ${code}`)));});
+ return outPath;
+}
+
 /** Immutable per-scene review artifacts, rendered through the exact browser renderer. */
 export async function writeV2Artifacts(scene:CompiledSceneV2,out:string,options:{video?:boolean;audio?:{data:Buffer;format:'wav'|'mp3'};signal?:AbortSignal}={}){
  const findings=lintCompiledScene(scene);if(findings.some(f=>f.severity==='hard'))throw new Error('Cannot export a scene that fails deterministic preflight');

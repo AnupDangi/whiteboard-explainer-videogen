@@ -1,8 +1,25 @@
 import type {CompiledObject,Rect} from '../types.js';
 /** Conservative board text metrics. Refuse overflow instead of clipping critical text. */
+/** Break a token that cannot fit a line on its own. A proper noun such as
+ *  "DeepSeek-V4.1-Flash" is a single token with no spaces, so the old wrap threw
+ *  `Label token exceeds available width`, fitLabel fell back to truncation, and a
+ *  primary object then failed the scene outright. Breaking at hyphens, dots,
+ *  slashes and underscores keeps the whole name on the board. Tokens that already
+ *  fit are returned untouched, so existing wrapping is unchanged. */
+function splitLongToken(word:string,capacity:number):string[]{
+ if(word.length<=capacity)return [word];
+ const pieces:string[]=[];let rest=word;
+ while(rest.length>capacity){
+  const zone=rest.slice(0,capacity),brk=Math.max(zone.lastIndexOf('-'),zone.lastIndexOf('.'),zone.lastIndexOf('_'),zone.lastIndexOf('/'),zone.lastIndexOf('\u00b7'));
+  const cut=brk>0?brk+1:capacity;
+  pieces.push(rest.slice(0,cut));rest=rest.slice(cut);
+ }
+ if(rest)pieces.push(rest);
+ return pieces;
+}
 export function wrapLabel(text:string,width:number,fontSize=22):string[]{
  const capacity=Math.floor(width/(fontSize*.62)),lines:string[]=[];let line='';
- for(const word of text.split(/\s+/)){if(word.length>capacity)throw new Error(`Label token exceeds available width: ${word}`);if((line?line.length+1:0)+word.length>capacity){lines.push(line);line=word;}else line+=(line?' ':'')+word;}
+ for(const word of text.split(/\s+/).flatMap(part=>splitLongToken(part,capacity))){if((line?line.length+1:0)+word.length>capacity){lines.push(line);line=word;}else line+=(line?' ':'')+word;}
  if(line)lines.push(line);if(lines.length>3)throw new Error('Label needs more than three lines');return lines;
 }
 

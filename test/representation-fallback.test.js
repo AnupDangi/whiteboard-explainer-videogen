@@ -150,9 +150,13 @@ test('non-matrix scene forced into matrix_operation still fails closed', () => {
 test('long label tokens fit instead of failing the scene', () => {
   const s = scene('flow', [obj('a', { label: 'Row-Column CombinationEntry' }), obj('b', { label: 'Result value' })], [rel('r1', 'a', 'b')]);
   const compiled = compileScene(s);
-  assert.ok(compiled.diagnostics.some(d => d.includes('representation fallback: label')));
+  assert.equal(compiled.objects.length, 2, 'the scene compiles with both labels present');
   const fitted = fitLabel('Row-Column CombinationEntry', 130, 20);
-  assert.ok(fitted.fitted || fitted.truncated);
+  assert.ok(!fitted.truncated, 'a long token is broken across lines rather than truncated');
+  assert.ok(fitted.lines.every(l => l.length * fitted.fontSize * 0.62 <= 130.5), 'every broken line fits the width');
+  const name = fitLabel('DeepSeek-V4.1-Flash', 180, 20);
+  assert.ok(!name.truncated, 'a long hyphenated proper noun is never truncated');
+  assert.equal(name.lines.join(''), 'DeepSeek-V4.1-Flash', 'the whole name survives the break');
 });
 
 test('stripped asset anchors degrade to center on surviving relations', () => {

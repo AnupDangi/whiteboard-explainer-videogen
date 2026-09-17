@@ -48,7 +48,17 @@ export function timingFromSegments(segments:{beatId:string;text:string;durationM
  for(const segment of segments){
   if(!Number.isFinite(segment.durationMs)||segment.durationMs<=0)throw new Error(`Invalid segment duration for ${segment.beatId}`);
   if(segment.words?.length){
-   for(const word of segment.words)words.push({...word,startMs:offset+word.startMs,endMs:offset+word.endMs});
+   /** A provider may return a word that runs past the segment it belongs to.
+    *  Shifting it by `offset` then pushed it past the NEXT segment's first word,
+    *  which the timeline validator rejected as 'Invalid word timing' - one bad
+    *  TTS boundary discarded a generation that had already paid for every model
+    *  call. Clamp each word into its own segment so the flat list stays ordered. */
+   for(const word of segment.words){
+    const rawStart=Number.isFinite(word.startMs)?word.startMs:0;
+    const startMs=Math.max(0,Math.min(segment.durationMs,rawStart));
+    const endMs=Math.max(startMs,Math.min(segment.durationMs,Number.isFinite(word.endMs)?word.endMs:startMs));
+    words.push({...word,startMs:offset+startMs,endMs:offset+endMs});
+   }
   }else{
    for(const word of wordsFromDuration(segment.text,segment.durationMs).words)words.push({...word,startMs:offset+word.startMs,endMs:offset+word.endMs});
   }

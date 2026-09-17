@@ -12,6 +12,8 @@ import { generateV2 } from '../src/semantic/planning/generate.js';
 import { createVoiceEngineSpeech } from '../src/semantic/speech.js';
 import { writeV2Artifacts } from '../src/semantic/artifacts.js';
 import { lintCompiledScene } from '../src/semantic/evaluation.js';
+import {readdir,access} from 'node:fs/promises';
+import {concatVideos} from '../src/semantic/artifacts.js';
 import type { VisualArchetype } from '../src/semantic/types.js';
 
 const args = process.argv.slice(2);
@@ -25,6 +27,11 @@ const prompt = flag('prompt');
 if (!prompt) throw new Error('Missing --prompt "..."');
 const archetypes = (flag('archetypes', 'cause_effect,transformation,flow,structural_diagram')!).split(',') as VisualArchetype[];
 const maxScenes = Number(flag('scenes', '2'));
+// The teaching planner has always accepted a target length and built the prompt
+// around it, but this entry point never passed one, so the planner never knew
+// whether it was writing a one-minute lesson or a thirty-minute one. That is why
+// identical requests produced 60s, 64s and 93s lessons.
+const targetMinutes = Number(flag('minutes', '1'));
 const narrate = args.includes('--narration');
 const maxCostUsd = Number(flag('budget', '0.5'));
 
@@ -35,7 +42,7 @@ const start = performance.now();
 let scenes = 0, exported = 0;
 
 try {
-  for await (const result of generateV2({ prompt, maxScenes, allowedArchetypes: archetypes, language: 'en' }, model, {
+  for await (const result of generateV2({ prompt, maxScenes, allowedArchetypes: archetypes, language: 'en', targetMinutes }, model, {
     ...(speech ? { speech } : {}),
   })) {
     scenes++;
@@ -58,10 +65,25 @@ try {
     await writeFile(join(dir, 'metrics.json'), JSON.stringify(result.metrics, null, 2));
     console.log(`scene ${scenes}: ${result.compiled.scene.id} archetype=${result.compiled.scene.archetype} duration=${result.compiled.durationMs}ms timing=${result.compiled.timing.kind} diagnostics=${JSON.stringify(result.compiled.diagnostics)}`);
   }
+  // The lesson itself: one file a learner can watch end to end. Without this the
+  // run produced only per-scene parts and no answer to "make a one-minute video".
+  let lessonPath: string | undefined;
+  const parts: string[] = [];
+  for (const name of await readdir(out)) {
+    const part = join(out, name, 'narrated.mp4');
+    try { await access(part); parts.push(part); } catch { /* scene not exported */ }
+  }
+  parts.sort();
+  if (parts.length) {
+    lessonPath = join(out, 'lesson.mp4');
+    await concatVideos(parts, lessonPath);
+    console.log(`lesson: ${lessonPath} from ${parts.length} scene(s)`);
+  }
   const cost = model.calls.reduce((s, c) => s + c.costUsd, 0);
   await writeFile(join(out, 'report.json'), JSON.stringify({
     status: exported > 0 ? 'complete' : 'failed', scenes, exported, wallMs: Math.round(performance.now() - start),
     costUsd: cost, calls: model.calls.length, narrated: narrate,
+    lesson: lessonPath ?? null, lessonParts: parts.length,
   }, null, 2));
   if (exported === 0) throw new Error('No scene passed deterministic preflight; see per-scene findings.json');
   console.log(JSON.stringify({ out, scenes, exported, costUsd: cost }));
