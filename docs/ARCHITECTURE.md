@@ -1,6 +1,6 @@
 # Current architecture note — 2026-09-09 review
 
-This document contains historical design sections. Current code already has seven layouts, a separate director, optional critic, 12 illustration kinds, up-to-five concurrent chapter preparation, speculative Kokoro speech and batched raster export. Statements below about three layouts, purely sequential preparation and deferred repair are historical, not the current module contract.
+This document contains historical design sections. Current code already has seven layouts, a separate director, optional critic, 12 illustration kinds, up-to-five concurrent chapter preparation, local voice-engine speech (Supertonic/Piper) and batched raster export. Statements below about three layouts, purely sequential preparation and deferred repair are historical, not the current module contract.
 
 Current representation remains Plan v1 with nodes/edges: visualIntent is metadata, not an event program. Exact two-scene chapter schemas, heuristic text metrics, kind-based colors, fixed arrow delays and a narrow final-thumbnail critic remain constraints. Alignment quality is under investigation: saved WAVs contain substantial signal after the final word timestamp. Preserve provider error visibility; do not infer a silent-success fallback from old notes.
 
@@ -43,7 +43,7 @@ flowchart TD
 | `src/figures.ts` | poppler figure/table detection, crops, bounded-parallel fail-soft VLM description. |
 | `src/engine.ts` | Whitelist validation, layouts, compile, pure SVG rendering, playback clamp, text metrics. |
 | `src/jobs.ts` | Single-process async preparation, atomic JSON snapshots, bounded concurrency, progressive availability, cancellation. |
-| `src/kokoro-speech.ts` / `scripts/kokoro_tts.py` | Kokoro TTS + native word timings (proportional fallback on alignment mismatch). |
+| `src/voice-engine-client.ts` / `voice-engine/` | Local TTS bridge (Supertonic/Piper, 50+ languages) + `src/language.ts` (Unicode word/sentence segmentation). |
 | `src/providers.ts` | ElevenLabs speech/alignment; errors remain visible. |
 | `src/server.ts` | Loopback HTTP app, job API, local media and static files. |
 | `public/app.ts` | Polling, play/pause/seek, audio clock, transcript, metrics, source intake (prompt/URL/PDF). |
@@ -96,24 +96,25 @@ This is not a production multi-user service. Job snapshots remain in memory afte
 - External image assets, background music, PDF extraction and source citation verification.
 - Production latency/cost claims and open-domain quality claims.
 
-## Narration (updated 2026-09-09 — supersedes the 2026-09-08 local-robot-voice entry below)
+## Narration (updated 2026-09-19 — voice-engine; supersedes the Kokoro entries below)
 
-`src/kokoro-speech.ts` is the default TTS path (`generateKokoroSpeech`). It
-talks to a persistent local server (`scripts/kokoro_server.py`, model loaded
-once) over HTTP, self-healing: if the server isn't answering `/health`, it
-spawns one detached from a persistent venv (`.kokoro-venv/`, created once via
-`scripts/setup-kokoro.sh`) and polls until ready — no manual server-start step
-in normal use. Narration is data, never generated executable code; word
-timings are native to the model (`pred_dur`), not estimated. WAV media uses
-the same player and export timeline as ElevenLabs MP3. ElevenLabs
-(`src/providers.ts`, `generateSpeech`) remains available as a paid alternative
-via `--tts elevenlabs`, using per-job voiceId or its configured default. TTS
-errors fail visibly; there is no automatic silent fallback.
+`src/voice-engine-client.ts` is the default TTS path (`generateVoiceEngineSpeech`).
+It spawns the bundled local voice-engine (`voice-engine/dist/cli.js`) per scene:
+**Supertonic** by default with **Piper** fallback, 50+ languages (`normalizeLanguage`
+maps names/regions to a base code; Piper is always used for Nepali). No API key.
+One-time setup: `npm run voice-engine:setup` (`voice-engine/.venv` + default Piper
+voices). Narration is data, never generated executable code. The engine returns
+audio + duration, not phoneme timings, so word timings are **estimated** uniformly
+over the audio duration (`timingSource: estimated`, `kind: 'engine'`) — explicitly
+labelled, never claimed as provider alignment. WAV media uses the same player and
+export timeline as ElevenLabs MP3. ElevenLabs (`src/providers.ts`, `generateSpeech`)
+remains available as a paid alternative via `--tts elevenlabs`, using per-job
+voiceId or its configured default. TTS errors fail visibly; a failed scene degrades
+to explicitly-estimated silent timing, never a silent success.
 
-The former Python-`say`-based "robot voice" (`src/local-speech.ts`,
-`scripts/robot_tts.py`) was removed entirely (2026-09-09, user request) —
-Kokoro replaced it as the free/local/no-key option with materially better
-quality.
+Kokoro (and before it, the Python-`say` "robot voice") was removed entirely on
+2026-09-19, along with `src/kokoro-speech.ts`, `src/tts-pool.ts`,
+`scripts/kokoro_*`, `scripts/setup-kokoro.sh` and `.kokoro-venv/`.
 
 Browser media is the master clock during speech, with a separate visual tail.
 Seeking resets audio identity; seeking into the tail does not replay narration.
@@ -122,9 +123,8 @@ are persisted in snapshots and shown in the UI. `/?job=UUID` opens a saved job.
 
 ### Provider default history
 
-2026-09-08: omitted `ttsProvider` selected ElevenLabs (voice-quality feedback
-at the time). 2026-09-09: omitted `ttsProvider` now selects **Kokoro** — free,
-local, no key, and the reliability problem (see above) is fixed. ElevenLabs
-requires explicit `--tts elevenlabs`. Speech failures preserve the provider
-HTTP status/code/message; library-plan restrictions must not be labeled as
-exhausted quota. The UI default matches the API.
+2026-09-08: omitted `ttsProvider` selected ElevenLabs. 2026-09-09: Kokoro.
+2026-09-19: omitted `ttsProvider` selects the local **voice-engine**
+(Supertonic/Piper). ElevenLabs requires explicit `--tts elevenlabs`. Speech
+failures preserve the provider HTTP status/code/message; library-plan
+restrictions must not be labeled as exhausted quota. The UI default matches the API.

@@ -1,3 +1,51 @@
+# Current handoff — 2026-09-19, loopback engine: kokoro removed, local voice-engine + budgets
+
+**Suite:** `npm test` → **149 tests, 149 pass, 0 fail**.
+
+**Kokoro is gone.** Deleted `src/kokoro-speech.ts`, `src/tts-pool.ts`,
+`scripts/kokoro_{server,tts}.py`, `scripts/kokoro_pool.sh`, `scripts/setup-kokoro.sh`,
+`scripts/bench-tts.ts`, `test/kokoro-speech.test.js`, `test/tts-pool.test.js`,
+`.kokoro-venv/` (979 MB), the package scripts, the UI voice controls, the env keys and
+the docs. No `kokoro` reference remains in code (grep-verified).
+
+**Replacement — the bundled local voice-engine** (`voice-engine/`, ported from
+`v4-optimization`): Supertonic by default with Piper fallback, **50+ languages**
+(Piper is always used for Nepali). `src/voice-engine-client.ts` bridges it as a separate
+process (`voice-engine/dist/cli.js`), one spawn per scene; full `src/language.ts`
+(Unicode word/sentence segmentation via `Intl.Segmenter`). CLI: `--tts voice-engine`
+(default) or `--tts piper|supertonic`, `--language <code>`. Setup once:
+`npm run voice-engine:setup`. Word timings are **estimated** uniformly over the
+synthesized audio duration (`kind:'engine'`, `timingSource:'estimated'`) and clamped to
+`durationMs` so the export validator's `endMs > durationMs` float check cannot trip.
+New tests: `test/language.test.js`, `test/voice-engine.test.js`.
+
+**Budgets are per-duration and hard** (`src/budgets.ts::DURATION_BUDGET_USD`):
+1 min $0.5 · 5 min $0.7 · 10 min $1 · 30 min $1.2 · **60 min $2**. `scripts/generate-video.ts`
+uses the table (`--budget` overrides); `src/jobs.ts` accepts up to the table max.
+Duration `60` added. Because Google rejects outline schemas asking for **>18 chapters**,
+targets >18 chapters auto-fall back off Google to
+`OPENROUTER_OUTLINE_FALLBACK` (default `deepseek/deepseek-v4-flash`) with
+`planner.outline-model-fallback` logged.
+
+**Measured 2026-09-19 (V1, local voice-engine, real audio):** 1-min complete ~45 s
+wall / 67.6 s timeline / $0.019 / 2 scenes; 10-min complete 20/20 (~196–233 s wall,
+~657–686 s timeline, ~$0.11); 30-min partial 52–55/60 (~626–759 s wall, ~29.8 min
+timeline, $0.30–0.41). Languages smoke-tested: ne/zh→Piper; hi/es/fr/ar→Supertonic.
+
+**Output curated** to `output/keep/` (1/10/30-min AI + biology + civics samples and
+their `.scenes/`). Docs consolidated: historical docs removed; target plans copied
+(`PLAN_TO_IMPLEMENT.md`, `Architecture_plan.md`, `docs/ICON_SYSTEM_PLAN.md`).
+Current task tracking: root `tasks.md`.
+
+**Known problems (carry forward):** end-to-end planning is non-deterministic
+(temperature 0.3, no seed — four identical 1-min runs gave four distinct outputs);
+Google >18-chapter outline limit; 30-min overshoots the hard 30-min timeline cap
+(partial); a single silent scene blocks export; local TTS is not byte-reproducible;
+first-playable ~35–45 s vs the `<8 s` target. Next bounded task: 60-min V1 run +
+multi-domain 5-min set, then adopt the target architecture (`PLAN_TO_IMPLEMENT.md`).
+
+---
+
 # Current handoff — 2026-09-11, TTS reliability + planner boundary + gate consolidation (Phase 1-3)
 
 **Suite:** `npm test` → **153 tests, 151 pass, 0 fail, 2 skip**.
