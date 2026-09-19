@@ -28,6 +28,14 @@ root `PLAN_TO_IMPLEMENT.md`, root `Architecture_plan.md`, `docs/v4/`,
 - [x] **Output curated** to `output/keep/` (1/10/30-minute AI + biology + civics
       samples and their `.scenes/` evidence).
 - [x] Suite green: **149 pass / 0 fail** (`npm test`).
+- [x] **RAG subsystem imported from `v4-optimization`** (pruned to the required
+      closure, 13 source files): `src/semantic/retrieval/{bm25,sets}.ts`,
+      `src/semantic/source/{chunker,cache}.ts`, `src/semantic/cache/{keys,store}.ts`,
+      `src/semantic/harness/concurrency.ts` (parallel `mapConcurrent`),
+      `src/shared/{model-router,language,vocabulary,types}.ts`,
+      `src/shared/ingestion/{blocks,source}.ts`; plans `docs/RAG_PLAN.md` +
+      `docs/ENHANCEMENT_PLAN.md`; tests `test/{concurrency,semantic-source-retrieval}.test.js`.
+      Suite now **159 pass / 0 fail**.
 - [ ] 5-minute multi-domain videos (AI + biology + civics) — running 2026-09-19.
 - [ ] V1 60-minute end-to-end run (outline fallback + 30-min timeline cap).
 - [ ] Adopt the target architecture: Knowledge Compiler → Teacher Planner →
