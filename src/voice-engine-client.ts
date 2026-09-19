@@ -4,9 +4,6 @@ import {resolve,join} from 'node:path';
 import type {Timing} from './types.js';
 import {segmentWords} from './language.js';
 
-/** Ported from the v4 branch: local CPU TTS router (Supertonic by default, Piper
- *  fallback, Piper locked for Nepali). The engine is a separate process behind the
- *  CLI — no provider is imported here; we only speak JSON to it. */
 export interface VoiceEngineSynthesis {audioPath:string;provider:string;language:string;voice:string;generationMs:number;audioDurationMs:number;rtf:number}
 export interface VoiceEngineRequest {text:string;language:string;voice?:string;provider?:'auto'|'supertonic'|'piper'}
 export type VoiceEngineRunner=(request:VoiceEngineRequest)=>Promise<VoiceEngineSynthesis>;
@@ -34,7 +31,9 @@ export function createVoiceEngineRunner(options:{env?:NodeJS.ProcessEnv;engineDi
 export function wordsFromDuration(text:string,durationMs:number):Timing{
  const tokens=segmentWords(text);if(!tokens.length)throw new Error('Cannot time empty narration');
  const step=durationMs/tokens.length;
- return {kind:'engine',timingSource:'estimated',durationMs,words:tokens.map((word,i)=>({word,startMs:Math.round(i*step),endMs:Math.min(Math.round(durationMs),Math.round((i+1)*step))}))} as Timing & {timingSource:string};
+ // Round + clamp to durationMs: an un-rounded (i+1)*step can land a hair past durationMs
+ // and trip the export validator's `endMs > durationMs` check on long narrations.
+ return {kind:'engine',timingSource:'estimated',durationMs,words:tokens.map((word,i)=>({word,startMs:Math.round(i*step),endMs:Math.min(Math.round(durationMs),Math.round((i+1)*step))}))};
 }
 
 /** Providers.speech-compatible adapter used by the V1 job runner. */

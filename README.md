@@ -35,7 +35,7 @@ The main rendering surface is SVG, not HTML Canvas 2D. The research question is 
 
 Copy `.env.example` to `.env`. Set `OPENROUTER_API_KEY` (default model `google/gemini-3.8-flash`, set via `OPENROUTER_MODEL` to override). Restart `npm start`, choose **AI planner → OpenRouter**, and enter a prompt or paste source text / URL / PDF.
 
-Narration defaults to **Kokoro** — a free, local neural voice with native word timings. Run `npm run kokoro:setup` once (creates a persistent venv at `.kokoro-venv/`, not `/tmp`); its server then auto-starts itself on first use, no manual step needed afterward. ElevenLabs (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`) is available as a paid alternative for more natural speech. These operations use your paid provider accounts where applicable. The repository contains no keys.
+Narration defaults to the **local voice-engine** — free, no key, all languages (Supertonic with Piper fallback). Run `npm run voice-engine:setup` once; it creates `voice-engine/.venv` and downloads the default Piper voices. ElevenLabs (`ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`) is available as a paid alternative for more natural speech. These operations use your paid provider accounts where applicable. The repository contains no keys.
 
 Provider adapters were verified with mocked responses and now also with live OpenRouter/ElevenLabs runs for 1-minute chapters. Missing keys or provider failures produce visible errors (including `402 quota` / `429 rate limit`); they never silently substitute a fixture. Budget reservation is per-call progressive — already prepared chapters remain playable on budget/quota exhaustion.
 
@@ -87,12 +87,14 @@ This is a loopback-only, single-process prototype, not a deployed multi-user pro
 
 ### Narration voices
 
-**Kokoro** (default, `--tts kokoro`) is a free local neural voice (Kokoro-82M via
-MLX on Apple Silicon) with native word timings — no API key. Run
-`npm run kokoro:setup` once to create the persistent venv (`.kokoro-venv/`,
-gitignored); after that the server auto-starts itself whenever it's needed, so
-no manual `npm run kokoro-server` step is required in normal use. Five voices:
-`af_heart` (default), `af_bella`, `am_michael`, `am_adam`, `bf_emma`.
+**Local voice-engine** (default, `--tts voice-engine`) is a free local CPU TTS
+router: **Supertonic** by default with **Piper** fallback, covering 50+ languages
+(`--language <code>`; Piper is always used for Nepali). No API key. One-time
+setup via `npm run voice-engine:setup` (creates `voice-engine/.venv` and
+downloads the default Piper voices; Supertonic weights download on first use).
+`--tts piper` / `--tts supertonic` pin a provider. Word timings are **estimated**
+from the synthesized audio duration (the engine returns audio, not phoneme
+timings), and are labelled `timingSource: estimated`.
 
 **ElevenLabs** (`--tts elevenlabs`) provides more natural continuous speech with
 word-level alignment, using your configured `ELEVENLABS_API_KEY` +
@@ -102,8 +104,7 @@ Provider failures are visible errors (including `402 quota` / `429 rate limit`);
 they never become successful silent jobs. Reopen a saved job using
 `/?job=JOB_UUID` on the local server.
 
-`TEST_KOKORO_TTS=1 npm test` includes the real Kokoro audio integration test
-(needs the persistent server running or auto-startable).
-`npm run test:live -- --minutes 1 --voice --tts kokoro --budget 0.1` uses
+`npm test` runs the language/voice-engine contract tests.
+`npm run test:live -- --minutes 1 --voice --tts voice-engine --budget 0.5` uses
 configured OpenRouter credentials for a quick end-to-end check without a full
 MP4 export; `--tts elevenlabs` selects paid speech.

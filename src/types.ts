@@ -10,7 +10,7 @@ export interface Beat { id: string; narration: string; meaning?: string }
 export type SceneTemplate='tls_handshake'|'supply_demand'|'attention_matrix'|'dna_fork'|'tectonic_section';
 export interface Scene { id: string; title: string; narration: string; layout: LayoutName; nodes: PlanNode[]; edges: PlanEdge[]; note?: string; beats?: Beat[]; template?: SceneTemplate }
 export interface Plan { version: 1; title: string; scenes: Scene[] }
-export interface Timing { kind: string; words: {word:string;startMs:number;endMs:number}[]; durationMs:number; gapMs?:number; trailingNonSilent?:boolean }
+export interface Timing { kind: string; timingSource?: string; words: {word:string;startMs:number;endMs:number}[]; durationMs:number; gapMs?:number; trailingNonSilent?:boolean }
 export interface Usage { model:string; promptTokens:number; completionTokens:number; cachedTokens:number; costUsd:number; calls:number; repairs?:number; spans?: PlannerSpans }
 /** Phase 0 timing spans: wall ms per planner stage, accumulated across attempts. */
 export interface PlannerSpans { outlineMs:number; chapters:Record<string,{contentMs:number;directorMs:number}> }
@@ -26,7 +26,7 @@ export interface MapSection { id:string; title:string; page:number; start:number
 export interface DocumentMap { kind:'book'|'paper'|'unknown'; sections:MapSection[] }
 /** P2: one detected+described figure/table from a PDF source — planning input only. */
 export interface SourceFigure { page:number; kind:'figure'|'table'; caption:string; dataHint:string; keyNumbers:string[] }
-export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; figures?:SourceFigure[]; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'elevenlabs'|'kokoro'|'voice-engine'; voiceId?:string; language?:string; visualCritic?:boolean; cachePrompts?:boolean }
+export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; figures?:SourceFigure[]; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'elevenlabs'|'voice-engine'; voiceId?:string; language?:string; visualCritic?:boolean; cachePrompts?:boolean }
 export interface CompiledNode extends PlanNode { x:number; y:number; w:number; h:number; fontSize:number; lines:string[]; color:string; fillOpacity?:number; startMs:number; drawMs:number }
 export interface CompiledEdge extends PlanEdge { x1:number; y1:number; x2:number; y2:number; startMs:number; drawMs:number }
 export interface CompiledScene extends Scene { nodes:CompiledNode[]; edges:CompiledEdge[]; timing:Timing; audioUrl?:string; durationMs:number }

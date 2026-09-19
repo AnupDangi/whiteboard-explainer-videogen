@@ -5,16 +5,17 @@
  *    node dist/scripts/generate-video.js --url https://arxiv.org/pdf/1706.03762 --minutes 1
  *    node dist/scripts/generate-video.js --pdf ./paper.pdf --minutes 1 --model qwen/qwen3.8-flash
  *    node dist/scripts/generate-video.js --prompt "Explain ..." --minutes 1,5
- *  Kokoro local neural narration is the demo default — no speech key needed, and the
- *  persistent server auto-starts itself if it isn't already running (run
- *  scripts/setup-kokoro.sh once first). Each (source, minutes) pair is generated
- *  sequentially, then exported to MP4 under --out-dir. Requires OPENROUTER_API_KEY.
- *  Pass --tts elevenlabs for natural voice (needs ELEVENLABS_API_KEY +
- *  ELEVENLABS_VOICE_ID). */
+ *  Local narration is the demo default via the bundled voice-engine
+ *  (Supertonic/Piper, all languages, no key; run `cd voice-engine && npm run setup`
+ *  once first). Each (source, minutes) pair is generated sequentially, then exported
+ *  to MP4 under --out-dir. Requires OPENROUTER_API_KEY. Pass `--tts piper` or
+ *  `--tts supertonic` to pin a provider, `--language <code>` for other languages, or
+ *  `--tts elevenlabs` for natural voice (needs ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID). */
 import {JobStore} from '../src/jobs.js';
 import {ingestSource} from '../src/sources.js';
 import {detectFigures,describeFigures} from '../src/figures.js';
 import {buildRichBrief,briefStats} from '../src/prompt-builder.js';
+import {budgetForMinutes} from '../src/budgets.js';
 import {resolve,join} from 'node:path';
 import {mkdir,readFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
@@ -41,8 +42,9 @@ if (urlArg) for (const url of urlArg.split(',').map(s => s.trim()).filter(Boolea
   rawSources.push({input:{kind:'url', url}, label: url});
 if (!rawSources.length) throw new Error('Give a source: --url, --pdf, --prompt, or --text');
 const minutesList = (arg('--minutes', '1')!).split(',').map(Number);
-for (const m of minutesList) if (![1, 5, 10, 30].includes(m)) throw new Error(`--minutes must be 1, 5, 10 or 30 (got ${m})`);
-const budgetPerMinute = Number(arg('--budget-per-minute', '0.5'));
+for (const m of minutesList) if (![1, 5, 10, 30, 60].includes(m)) throw new Error(`--minutes must be 1, 5, 10, 30 or 60 (got ${m})`);
+// Per-duration hard budget (USD): 1m $0.5, 5m $0.7, 10m $1, 30m $1.2, 60m $2. --budget overrides all.
+const budgetOverride = arg('--budget', null);
 const jobRetries = Number(arg('--retries', '3'));
 const narrate = !flag('--no-narration');
 // Robot (local) voice is the demo default: no speech key, unlimited use.
@@ -50,8 +52,8 @@ const narrate = !flag('--no-narration');
 const ttsArg = arg('--tts', 'voice-engine')!;
 const voiceEngineProviders = ['voice-engine', 'piper', 'supertonic'];
 if (ttsArg === 'piper' || ttsArg === 'supertonic') process.env.VOICE_ENGINE_PROVIDER = ttsArg;
-else if (!voiceEngineProviders.includes(ttsArg) && ttsArg !== 'elevenlabs' && ttsArg !== 'kokoro')
-  throw new Error(`--tts must be voice-engine, piper, supertonic, elevenlabs or kokoro (got ${ttsArg})`);
+else if (!voiceEngineProviders.includes(ttsArg) && ttsArg !== 'elevenlabs')
+  throw new Error(`--tts must be voice-engine, piper, supertonic or elevenlabs (got ${ttsArg})`);
 const ttsProvider = voiceEngineProviders.includes(ttsArg) ? 'voice-engine' : ttsArg;
 const modelFlag = arg('--model', null);
 if (modelFlag) process.env.OPENROUTER_MODEL = modelFlag;
@@ -125,8 +127,8 @@ for (const {input, label: sourceLabel} of rawSources) {
       try {
         const options: GenerationOptions = {
           mode: 'model', source: {...jobSource}, ...(figures?.length ? {figures} : {}), durationMinutes: minutes,
-          maxCostUsd: Math.min(10, Math.max(0.2, budgetPerMinute * minutes)),
-          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'kokoro'|'voice-engine', visualCritic, cachePrompts,
+          maxCostUsd: budgetOverride ? Number(budgetOverride) : budgetForMinutes(minutes),
+          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'voice-engine', visualCritic, cachePrompts,
           ...(voiceId ? {voiceId} : {}),
           ...(language ? {language} : {}),
         };

@@ -13,8 +13,8 @@ import {hasIllustration} from './illustrations.js';
 import {hasIcon} from './icons.js';
 import {progressionFrames,staticIntervalMs,connectorThroughNode} from './progression.js';
 import type {Plan,Scene,SourceDocument,Usage} from './types.js';
-export const DURATIONS=[1,5,10,30] as const;
-export function validateDuration(value:number):number {if(!DURATIONS.includes(value as any))throw new Error('Duration must be 1, 5, 10 or 30 minutes');return value;}
+export const DURATIONS=[1,5,10,30,60] as const;
+export function validateDuration(value:number):number {if(!DURATIONS.includes(value as any))throw new Error('Duration must be 1, 5, 10, 30 or 60 minutes');return value;}
 interface PlannerOptions {env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;signal?:AbortSignal;durationMinutes?:number;maxCostUsd?:number;visualCritic?:boolean;sessionId?:string;cachePrompts?:boolean;onUsage?:(usage:Usage)=>void;onResponse?:(value:unknown,index:number)=>Promise<void>;onContentReady?:(chapter:number,scenes:Array<{id:string;narration:string}>)=>void;cacheDir?:string}
 // Optional Stage 3 — Visual Critic (openai/gpt-5.6-luna): reviews a rendered scene thumbnail
 // and may request one bounded repair pass. Off by default (extra cost/latency); never fails
@@ -507,10 +507,20 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
   };
   // Model router: per-task model ids (MODEL_ROUTER JSON > per-task env > base model).
   const router=loadModelRouter(env,model);
-  const OUTLINE_MODEL=router.outline;
+  let OUTLINE_MODEL=router.outline;
+  // Google's structured-output endpoint rejects an outline schema asking for >18 chapters
+  // (measured: 18 accepted, 19+ → HTTP 400 INVALID_ARGUMENT). For 30/60-minute targets,
+  // fall back to a non-Google outline model when the configured one is Google.
+  const GOOGLE_OUTLINE_MAX_CHAPTERS=18;
+  if(durationMinutes>GOOGLE_OUTLINE_MAX_CHAPTERS&&OUTLINE_MODEL.startsWith('google/')){
+    const fallback=env.OPENROUTER_OUTLINE_FALLBACK||'deepseek/deepseek-v4-flash';
+    const available=catalog.data?.some((m:{id:string})=>m.id===fallback);
+    if(available){log('planner.outline-model-fallback',{from:OUTLINE_MODEL,to:fallback,chapters:durationMinutes},'warn');OUTLINE_MODEL=fallback;}
+    else throw new Error(`Outline model ${OUTLINE_MODEL} rejects >${GOOGLE_OUTLINE_MAX_CHAPTERS} chapters; set OPENROUTER_OUTLINE_MODEL or OPENROUTER_OUTLINE_FALLBACK to an available non-Google model`);
+  }
   const CONTENT_MODEL=router.content;
   const DIRECTOR_MODEL=router.director;
-  log('planner.models',{router,base:model});
+  log('planner.models',{router:{...router,outline:OUTLINE_MODEL},base:model});
   // Grounding applies only when there is a real source document. A bare prompt is
   // allowed to use general knowledge, so citing the prompt text is meaningless there.
   const groundingApplies=source.kind!=='prompt';
