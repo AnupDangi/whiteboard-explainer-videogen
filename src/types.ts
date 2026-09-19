@@ -26,7 +26,7 @@ export interface MapSection { id:string; title:string; page:number; start:number
 export interface DocumentMap { kind:'book'|'paper'|'unknown'; sections:MapSection[] }
 /** P2: one detected+described figure/table from a PDF source — planning input only. */
 export interface SourceFigure { page:number; kind:'figure'|'table'; caption:string; dataHint:string; keyNumbers:string[] }
-export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; figures?:SourceFigure[]; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'elevenlabs'|'kokoro'; voiceId?:string; visualCritic?:boolean; cachePrompts?:boolean }
+export interface GenerationOptions { mode:'model'|'fixture'; fixture?:string; prompt?:string; source?:SourceInput; figures?:SourceFigure[]; durationMinutes?:number; maxCostUsd?:number; delayMs?:number; narration:boolean; ttsProvider?:'elevenlabs'|'kokoro'|'voice-engine'; voiceId?:string; language?:string; visualCritic?:boolean; cachePrompts?:boolean }
 export interface CompiledNode extends PlanNode { x:number; y:number; w:number; h:number; fontSize:number; lines:string[]; color:string; fillOpacity?:number; startMs:number; drawMs:number }
 export interface CompiledEdge extends PlanEdge { x1:number; y1:number; x2:number; y2:number; startMs:number; drawMs:number }
 export interface CompiledScene extends Scene { nodes:CompiledNode[]; edges:CompiledEdge[]; timing:Timing; audioUrl?:string; durationMs:number }

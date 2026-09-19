@@ -12,6 +12,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {fixtures} from './fixtures.js';
 import {validatePlan,compileScene,durationOf} from './engine.js';
 import {generateKokoroSpeech} from './kokoro-speech.js';
+import {generateVoiceEngineSpeech} from './voice-engine-client.js';
 import {createTtsPool,poolUrlsFromEnv} from './tts-pool.js';
 import {generateSpeech} from './providers.js';
 import {semaphore} from './concurrency.js';
@@ -26,7 +27,7 @@ export function classifyError(message:string):string {
   if(/content filter|provider refused/i.test(message))return 'provider-refused';
   if(/truncated|incomplete or refused|finish_reason/i.test(message))return 'provider-truncated';
   if(/Source|PDF|HTTPS|redirect|Link must|readable|OCR/i.test(message))return 'source';
-  if(/Speech|Kokoro|TTS|ElevenLabs/i.test(message))return 'speech';
+  if(/Speech|Kokoro|TTS|ElevenLabs|voice-engine/i.test(message))return 'speech';
   if(/Anchor|outline|Expected two scenes|Chapter contains|Teaching checks|Visual checks|fallback exhausted|budget|Invalid (conceptId|evidenceIds|visualIntent|node|kind)/i.test(message))return 'plan';
   if(/schema|OpenRouter|HTTP \d/i.test(message))return 'provider';
   if(/ffmpeg|sharp|export/i.test(message))return 'media';
@@ -56,7 +57,7 @@ export class JobStore {
     const delayMs=options.delayMs??0;
     if(!Number.isFinite(delayMs)||delayMs<0||delayMs>20000)throw new Error('Delay must be 0–20000 ms');
     if(typeof options.narration!=='boolean')throw new Error('Invalid narration option');
-    if(options.ttsProvider&&!['elevenlabs','kokoro'].includes(options.ttsProvider))throw new Error('Unknown TTS provider');
+    if(options.ttsProvider&&!['elevenlabs','kokoro','voice-engine'].includes(options.ttsProvider))throw new Error('Unknown TTS provider');
     if(options.visualCritic!==undefined&&typeof options.visualCritic!=='boolean')throw new Error('Invalid visual critic option');
     if(options.cachePrompts!==undefined&&typeof options.cachePrompts!=='boolean')throw new Error('Invalid cache prompts option');
     if(options.voiceId&& !/^[a-zA-Z0-9_-]{1,100}$/.test(options.voiceId))throw new Error('Invalid voice ID');
@@ -64,11 +65,11 @@ export class JobStore {
     if(active.length>=2)throw new Error('Two jobs already active; wait or cancel one.');
     const job:InternalJob={id:randomUUID(),status:'queued',revision:0,createdAt:Date.now(),mode:options.mode,
       targetMinutes:options.durationMinutes??1,plannerBudgetUsd:options.maxCostUsd??1,ttsCharacters:0,
-      timingMode:options.narration?(options.ttsProvider==='elevenlabs'?'provider-aligned':'kokoro-aligned'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[],manifestVersion:GENERATION_MANIFEST_VERSION};
+      timingMode:options.narration?(options.ttsProvider==='elevenlabs'?'provider-aligned':options.ttsProvider==='voice-engine'?'engine-estimated':'kokoro-aligned'):'estimated',simulatedDelayMs:delayMs,scenes:[],availableMs:0,events:[],manifestVersion:GENERATION_MANIFEST_VERSION};
     this.jobs.set(job.id,job);await mkdir(join(this.root,job.id),{recursive:true});
     await this.save(job,'queued');
     const controller=new AbortController();job.controller=controller;
-    log('job.created',{jobId:job.id,mode:options.mode,fixture:options.fixture,narration:options.narration,ttsProvider:options.ttsProvider||'kokoro',voiceId:options.voiceId||process.env.ELEVENLABS_VOICE_ID,targetMinutes:job.targetMinutes,budgetUsd:job.plannerBudgetUsd,simulatedDelayMs:delayMs});
+    log('job.created',{jobId:job.id,mode:options.mode,fixture:options.fixture,narration:options.narration,ttsProvider:options.ttsProvider||'voice-engine',voiceId:options.voiceId||process.env.ELEVENLABS_VOICE_ID,targetMinutes:job.targetMinutes,budgetUsd:job.plannerBudgetUsd,simulatedDelayMs:delayMs});
     job.task=logContext.run({...logContext.getStore(),jobId:job.id},()=>this.run(job,{...options,delayMs},controller.signal));
     return this.snapshot(job);
   }
@@ -95,7 +96,7 @@ export class JobStore {
     // dispatches by chapter/scene order so scene 1 is first, and measures queue wait and
     // service time separately. Character reservation moves to enqueue, so speculative
     // synthesis can no longer blow TTS_MAX_CHARACTERS_PER_JOB before the cap is checked.
-    const usePool=!!(options.narration&&options.ttsProvider!=='elevenlabs');
+    const usePool=!!(options.narration&&options.ttsProvider==='kokoro');
     const pool=usePool?createTtsPool({
       urls:poolUrlsFromEnv(process.env),
       env:process.env,
@@ -206,7 +207,13 @@ export class JobStore {
                       ? speculative.promise
                       : pool.enqueue({key:source.id,priority:plan.scenes.indexOf(source),text:source.narration,voice:options.voiceId}));
                   } else {
-                    speech=await (this.providers.speech||(options.ttsProvider==='elevenlabs'?generateSpeech:generateKokoroSpeech))(source.narration,{signal,voiceId:options.voiceId});
+                    // Provider-independent speech boundary: explicit elevenlabs/kokoro tiers keep
+                    // their adapters; the default is the local voice-engine (Piper/Supertonic).
+                    const speechProvider=this.providers.speech
+                      ??(options.ttsProvider==='elevenlabs'?generateSpeech
+                        :options.ttsProvider==='kokoro'?generateKokoroSpeech
+                        :(t:string,o:{signal?:AbortSignal;voiceId?:string})=>generateVoiceEngineSpeech(t,{env:process.env,voiceId:o.voiceId,language:options.language}));
+                    speech=await speechProvider(source.narration,{signal,voiceId:options.voiceId});
                   }
                   signal.throwIfAborted();timing=speech.timing;
                   ttsMsByScene[source.id]=Math.round(performance.now()-speechStarted);

@@ -46,14 +46,20 @@ const budgetPerMinute = Number(arg('--budget-per-minute', '0.5'));
 const jobRetries = Number(arg('--retries', '3'));
 const narrate = !flag('--no-narration');
 // Robot (local) voice is the demo default: no speech key, unlimited use.
-const ttsProvider = arg('--tts', 'kokoro');
-if (ttsProvider !== 'elevenlabs' && ttsProvider !== 'kokoro') throw new Error(`--tts must be elevenlabs or kokoro (got ${ttsProvider})`);
+// Default local provider is the bundled voice-engine (Supertonic/Piper).
+const ttsArg = arg('--tts', 'voice-engine')!;
+const voiceEngineProviders = ['voice-engine', 'piper', 'supertonic'];
+if (ttsArg === 'piper' || ttsArg === 'supertonic') process.env.VOICE_ENGINE_PROVIDER = ttsArg;
+else if (!voiceEngineProviders.includes(ttsArg) && ttsArg !== 'elevenlabs' && ttsArg !== 'kokoro')
+  throw new Error(`--tts must be voice-engine, piper, supertonic, elevenlabs or kokoro (got ${ttsArg})`);
+const ttsProvider = voiceEngineProviders.includes(ttsArg) ? 'voice-engine' : ttsArg;
 const modelFlag = arg('--model', null);
 if (modelFlag) process.env.OPENROUTER_MODEL = modelFlag;
 const enrich = !flag('--no-enrich');
 const cachePrompts = !flag('--no-cache');
 const visualCritic = flag('--visual-critic');
 const voiceId = arg('--voice', null);
+const language = arg('--language', null);
 const outDir = resolve(arg('--out-dir', 'output/videos')!);
 const fps = arg('--fps', '12')!;
 const width = arg('--width', '1280')!;
@@ -120,8 +126,9 @@ for (const {input, label: sourceLabel} of rawSources) {
         const options: GenerationOptions = {
           mode: 'model', source: {...jobSource}, ...(figures?.length ? {figures} : {}), durationMinutes: minutes,
           maxCostUsd: Math.min(10, Math.max(0.2, budgetPerMinute * minutes)),
-          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'kokoro', visualCritic, cachePrompts,
+          delayMs: 0, narration: narrate, ttsProvider: ttsProvider as 'elevenlabs'|'kokoro'|'voice-engine', visualCritic, cachePrompts,
           ...(voiceId ? {voiceId} : {}),
+          ...(language ? {language} : {}),
         };
         const created = await store.create(options);
         console.log(`Job ${created.id} started (target ${minutes} min, narration ${narrate ? 'on' : 'off'})`);

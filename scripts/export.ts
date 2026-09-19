@@ -6,6 +6,7 @@ import {resolve,dirname,join} from 'node:path';
 import {fixtures} from '../src/fixtures.js';
 import {compileScene,validatePlan,renderSVG,locateScene,durationOf} from '../src/engine.js';
 import {writeSceneArtifacts} from '../src/scene-output.js';
+import {segmentWords} from '../src/language.js';
 
 const argv=process.argv.slice(2);const option=(name:string,fallback:string|null)=>{const i=argv.indexOf(name);return i<0?fallback:argv[i+1];};
 const output=resolve(option('--out','output/attention.mp4')!);const input=option('--input',null);
@@ -20,7 +21,7 @@ const plan=validatePlan({version:1,title:source.title,scenes:source.scenes});
 const scenes=plan.scenes.map((s,i)=>{
   const timing=source.scenes[i].timing;
   if(timing){
-    if(timing.words?.length!==s.narration.trim().split(/\s+/).length||!Number.isFinite(timing.durationMs)||timing.durationMs>180000)throw new Error('Invalid imported timing');
+    if(timing.words?.length!==segmentWords(s.narration).length||!Number.isFinite(timing.durationMs)||timing.durationMs>180000)throw new Error('Invalid imported timing');
     let last=0;for(const w of timing.words){if(!Number.isFinite(w.startMs)||!Number.isFinite(w.endMs)||w.startMs<last||w.endMs<w.startMs||w.endMs>timing.durationMs)throw new Error('Invalid imported word time');last=w.startMs;}
   }
   return compileScene(s,timing);

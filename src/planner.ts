@@ -566,7 +566,7 @@ export async function* generateChapters(source:SourceDocument,{env=process.env,f
           log('planner.rate-limited',{label,waitSeconds:wait},'warn');
           try{await new Promise<void>((r,j)=>{const t=setTimeout(r,wait*1000);signal?.addEventListener('abort',()=>{clearTimeout(t);j(signal.reason);},{once:true});});}catch{/* abort propagates on next fetch */}
         }
-        if(!response||!response.ok){settle(0);if(response)log('planner.call-failed',{label,status:response.status},response.status===429?'warn':'error');throw new Error(`OpenRouter HTTP ${response?.status}; check key, quota or model access`);}
+        if(!response||!response.ok){settle(0);const bodyText=response?await response.text().catch(()=> ''):'';if(response)log('planner.call-failed',{label,status:response.status,body:bodyText.slice(0,500)},response.status===429?'warn':'error');throw new Error(`OpenRouter HTTP ${response?.status}; check key, quota or model access${bodyText?` — ${bodyText.slice(0,300)}`:''}`);}
         const data=await response.json();
         const finishReason=data.choices?.[0]?.finish_reason;
         if(finishReason==='length'&&lengthRetry===0){
