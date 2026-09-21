@@ -1,9 +1,12 @@
-import type {JobSnapshot,CompiledScene} from '../src/types.js';
-import {compileScene,renderSVG,sceneState,locateScene,durationOf,advancePlayback} from '../src/engine.js';
+import type {JobSnapshot,CompiledScene} from '../src/types/engine.js';
+import {compileScene,renderSVG,sceneState,locateScene,durationOf,advancePlayback} from '../src/generation/engine.js';
 const $=(id:string)=>document.getElementById(id) as any;
 const terminal=['complete','partial','error','cancelled','interrupted'];
-let scenes:CompiledScene[]=[],job:JobSnapshot|null=null,time=0,playing=false,last=0,poll:ReturnType<typeof setTimeout>|undefined=undefined,stalls=0,buffering=false,audioScene:string|null=null,audioTail=false,audioPending=false;
+let scenes:CompiledScene[]=[],job:JobSnapshot|null=null,time=0,playing=false,last=0,poll:ReturnType<typeof setTimeout>|undefined=undefined,eventStream:EventSource|undefined=undefined,stalls=0,buffering=false,audioScene:string|null=null,audioTail=false,audioPending=false;
 const audio=$('audio');const format=(t:number)=>`${Math.floor(t/60000)}:${String(Math.floor(t/1000)%60).padStart(2,'0')}`;let lastDraw=0,transcriptScene:CompiledScene|null=null,activeWord=-1;
+let showTranscript=localStorage.getItem('explain.showTranscript')==='1';
+const transcriptToggle=$('show-transcript') as HTMLInputElement; transcriptToggle.checked=showTranscript; $('transcript').hidden=!showTranscript;
+transcriptToggle.onchange=()=>{showTranscript=transcriptToggle.checked;localStorage.setItem('explain.showTranscript',showTranscript?'1':'0');$('transcript').hidden=!showTranscript;};
 function reportPlayback(type:string){
   void fetch('/api/client-events',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type,jobId:job?.id||null,timeMs:time,rate:Number($('speed').value)})}).catch(()=>{});
 }
@@ -12,12 +15,13 @@ window.addEventListener('unhandledrejection',()=>reportPlayback('client-error'))
 function draw(){
   const found=locateScene(scenes,time);if(!found){$('board').replaceChildren();$('transcript').textContent=job&&terminal.includes(job.status)?(job.error||'No scenes were prepared.'):'Preparing the first scene…';return;}
   const {scene,index,localMs}=found;
-  $('board').innerHTML=renderSVG(scene,localMs);$('scene-name').textContent='Scene '+String(index+1).padStart(2,'0')+' / ' + (job?.totalScenes||scenes.length);
+  $('board').innerHTML=renderSVG(scene,localMs,{captions:job?.captionMode==='burn-in'});$('scene-name').textContent='Scene '+String(index+1).padStart(2,'0')+' / ' + (job?.totalScenes||scenes.length);
   const state=sceneState(scene,localMs);
   if(transcriptScene!==scene){transcriptScene=scene;activeWord=-1;const spans=scene.timing.words.map((w,i)=>{const span=document.createElement('span');span.textContent=w.word+' ';if(i===state.activeWord)span.className='spoken';return span;});$('transcript').replaceChildren(...spans);}
   if(activeWord!==state.activeWord){$('transcript').children[activeWord]?.classList.remove('spoken');$('transcript').children[state.activeWord]?.classList.add('spoken');activeWord=state.activeWord;}
   $('seek').max=Math.max(1,durationOf(scenes));$('seek').value=time;$('clock').textContent=format(time)+' / '+format(durationOf(scenes));
-  $('timing').textContent=scene.audioUrl?'Provider alignment · narrated':'Estimated timing · silent preview';
+  const source=scene.timing.timingSource==='provider'?'Provider alignment':scene.timing.timingSource==='aligner'?'Forced alignment':'Estimated timing';
+  $('timing').textContent=`${source} · ${scene.audioUrl?'narrated':'silent preview'}`;
   $('play').textContent=playing?'Ⅱ Pause':'▶ Play';$('buffer-metric').textContent=stalls;
 }
 let audioGeneration=0;
@@ -62,7 +66,6 @@ function frame(now:number){
 $('play').onclick=()=>{if(!scenes.length)return;if(time>=durationOf(scenes)&&(!job||terminal.includes(job.status))){time=0;resetAudio();}playing=!playing;reportPlayback(playing?'play':'pause');if(!playing)audio.pause();last=0;draw();};
 $('seek').oninput=()=>{time=Number($('seek').value);reportPlayback('seek');resetAudio();buffering=false;draw();};
 $('speed').onchange=()=>{reportPlayback('speed');audio.playbackRate=Number($('speed').value);};
-$('mode').onchange=()=>{$('fixture-fields').hidden=$('mode').value!=='fixture';$('prompt-fields').hidden=$('mode').value!=='model';};
 async function request(path:string,options:RequestInit={}){
   const res=await fetch(path,options);
   const data=await res.json();
@@ -75,11 +78,18 @@ function showJob(data:JobSnapshot){
   $('ready-metric').textContent=`${scenes.length} / ${data.totalScenes||'?'}`;
   $('events').replaceChildren(...data.events.slice(-10).map(e=>{const li=document.createElement('li');li.textContent=(`${(e.atMs/1000).toFixed(1)}s  ${e.type}  · ${format(e.availableMs)} ready`);return li;}));
   const ended=terminal.includes(data.status);$('first-metric').textContent=data.firstPlayableMs===undefined?'—':(data.firstPlayableMs/1000).toFixed(1)+' s';$('cancel').disabled=ended;$('create').disabled=!ended;
-  $('cost-metric').textContent=data.usage?`$${data.usage.costUsd.toFixed(4)} planning · ${data.usage.calls} calls · ${data.ttsCharacters} TTS characters`:data.mode==='fixture'?`${data.ttsCharacters} TTS characters · offline fixture`:'Waiting for provider usage';
+  $('cost-metric').textContent=data.usage?`$${data.usage.costUsd.toFixed(4)} planning · ${data.usage.calls} calls · ${data.ttsCharacters} TTS characters`:'Waiting for provider usage';
   if(data.error)$('message').textContent=data.error;
   draw();
 }
 async function refresh(id:string){try{const data=await request('/api/jobs/'+id);showJob(data);if(!terminal.includes(data.status))poll=setTimeout(()=>refresh(id),400);}catch(e){$('message').textContent=e instanceof Error?e.message:String(e);$('create').disabled=false;}}
+function follow(id:string){
+  eventStream?.close();clearTimeout(poll);
+  if(typeof EventSource==='undefined'){void refresh(id);return;}
+  const stream=new EventSource(`/api/jobs/${id}/events`);eventStream=stream;
+  stream.addEventListener('job-event',()=>{void request('/api/jobs/'+id).then(data=>{showJob(data);if(terminal.includes(data.status)){stream.close();eventStream=undefined;}}).catch(()=>{});});
+  stream.onerror=()=>{stream.close();if(eventStream===stream)eventStream=undefined;void refresh(id);};
+}
 $('generate').onsubmit=async (e:SubmitEvent)=>{
   e.preventDefault();clearTimeout(poll);playing=false;time=0;stalls=0;buffering=false;resetAudio();$('create').disabled=true;$('message').textContent='';job=null;scenes=[];transcriptScene=null;$('title').textContent='Preparing your explanation…';$('status').textContent='Submitting';draw();
   try{
@@ -89,10 +99,10 @@ $('generate').onsubmit=async (e:SubmitEvent)=>{
     const provider=$('tts-provider').value;
     const voiceId=provider==='elevenlabs'?($('voice').value==='custom'?$('custom-voice').value.trim():$('voice').value):undefined;
     const language=provider==='voice-engine'?($('engine-language').value||'en'):undefined;
-    const data=await request('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:$('mode').value,fixture:$('fixture').value,prompt:$('prompt').value,source,durationMinutes:Number($('duration').value),maxCostUsd:Number($('budget').value),delayMs:0,narration:$('narration').checked,ttsProvider:provider,...(voiceId?{voiceId}:{}),...(language?{language}:{}),visualCritic:$('visual-critic').checked})});showJob(data);refresh(data.id);}catch(error){$('message').textContent=error instanceof Error?error.message:String(error);$('create').disabled=false;$('status').textContent='Error';$('title').textContent='Explanation could not be prepared';$('voice-message').textContent='';}
+    const data=await request('/api/jobs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:'model',prompt:$('prompt').value,source,durationMinutes:Number($('duration').value),maxCostUsd:Number($('budget').value),delayMs:0,narration:$('narration').checked,ttsProvider:provider,...(voiceId?{voiceId}:{}),...(language?{language}:{}),visualCritic:$('visual-critic').checked})});showJob(data);follow(data.id);}catch(error){$('message').textContent=error instanceof Error?error.message:String(error);$('create').disabled=false;$('status').textContent='Error';$('title').textContent='Explanation could not be prepared';$('voice-message').textContent='';}
 };
-$('cancel').onclick=async()=>{if(job){await request('/api/jobs/'+job.id+'/cancel',{method:'POST'});clearTimeout(poll);await refresh(job.id);}};
-$('download').onclick=async()=>{if(!job||!['complete','partial'].includes(job.status)){$('message').textContent='Job must be complete to export video';return;}$('message').textContent='Exporting MP4...';const resp=await fetch(`/api/export?job=${job.id}`,{method:'GET'});const result=await resp.json();if(!resp.ok||result.status!=='complete'){$('message').textContent=result.error||'Export failed';return;}// `result.output` is a server route (/output/<jobId>.mp4), not a filesystem path — a browser
+$('cancel').onclick=async()=>{if(job){await request('/api/jobs/'+job.id+'/cancel',{method:'POST'});eventStream?.close();eventStream=undefined;clearTimeout(poll);await refresh(job.id);}};
+$('download').onclick=async()=>{if(!job||job.status!=='complete'){$('message').textContent='Job must be complete to export video';return;}$('message').textContent='Export queued…';let result=await request(`/api/jobs/${job.id}/exports`,{method:'POST'});while(result.status==='queued'||result.status==='running'){await new Promise(resolve=>setTimeout(resolve,500));result=await request(`/api/jobs/${job.id}/exports/${result.id}`);$('message').textContent='Rendering MP4…';}if(result.status!=='complete'){$('message').textContent=result.error||'Export failed';return;}// `result.output` is a server route (/output/<jobId>.mp4), not a filesystem path — a browser
 // can only fetch the former, so anything else here is a broken link rather than a download.
 if(typeof result.output!=='string'||!result.output.startsWith('/')){$('message').textContent='Export returned an unfetchable path';return;}
 $('message').textContent='Downloading MP4...';const mpxLink=document.createElement('a');mpxLink.href=result.output;mpxLink.download=`${job.title||'explanation'}-${job.id?.slice(0,8)}.mp4`;document.body.appendChild(mpxLink);mpxLink.click();mpxLink.remove();$('message').textContent='MP4 exported and downloaded.';setTimeout(()=>{$('message').textContent='';},2000);};
@@ -109,9 +119,10 @@ request('/api/config').then(function(c){
   else if(c.openRouter===false)$('message').textContent='Using legacy Anthropic planner; set OPENROUTER_API_KEY for OpenRouter.';
 }).catch(function(e){$('message').textContent=e instanceof Error?e.message:String(e);});
 $('source-kind').onchange=()=>{const kind=$('source-kind').value;$('prompt').hidden=!['prompt','text'].includes(kind);$('source-url').hidden=kind!=='url';$('source-file').hidden=kind!=='pdf';};
+$('duration').onchange=()=>{const minutes=Number($('duration').value);const defaults:Record<number,number>={1:0.50,5:0.70,10:1.00,30:1.20,60:1.50};$('budget').value=String(defaults[minutes]);$('budget').max=String(minutes===60?2.00:defaults[minutes]);};
 $('narration').onchange=()=>{$('voice-fields').hidden=!$('narration').checked;};
 $('tts-provider').onchange=()=>{const provider=$('tts-provider').value;$('elevenlabs-fields').hidden=provider!=='elevenlabs';$('engine-fields').hidden=provider!=='voice-engine';};
 $('voice').onchange=()=>{$('custom-voice').hidden=$('voice').value!=='custom';};
 const savedJob=new URLSearchParams(location.search).get('job');
-if(savedJob&&/^[a-f0-9-]{36}$/.test(savedJob))void refresh(savedJob);
+if(savedJob&&/^[a-f0-9-]{36}$/.test(savedJob))follow(savedJob);
 draw();requestAnimationFrame(frame);

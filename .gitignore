@@ -13,6 +13,9 @@ dist/
 # python build artifacts
 __pycache__/
 *.pyc
+.venv/
+parse-engine/models/
+rag-engine/models/
 
 # local tooling artifacts
 .playwright-mcp/

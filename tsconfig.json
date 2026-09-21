@@ -18,8 +18,5 @@
     "src/**/*.ts",
     "public/**/*.ts",
     "scripts/**/*.ts"
-  ],
-  "exclude": [
-    "scripts/publish-github.ts"
   ]
 }

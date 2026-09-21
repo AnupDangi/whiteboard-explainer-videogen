@@ -8,18 +8,20 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
     "typecheck": "tsc --noEmit",
     "start": "npm run build && node --env-file-if-exists=.env dist/src/server.js",
-    "test": "npm run build && APP_LOG_PATH=.data/test-app.log node --test test/*.test.js",
-    "benchmark": "npm run build && node dist/scripts/benchmark.js",
+    "test:postgres": "npm run build && node dist/scripts/postgres-smoke.js",
+    "benchmark": "npm run benchmark:domains",
+    "benchmark:domains": "npm run build && node dist/scripts/domain-smoke.js",
+    "benchmark:release-corpus": "npm run build && node dist/scripts/release-corpus.js",
     "export": "npm run build && node dist/scripts/export.js",
-    "test:live": "npm run build && node --env-file-if-exists=.env dist/scripts/live-evaluation.js",
-    "generate-video": "npm run build && node --env-file-if-exists=.env dist/scripts/generate-video.js",
     "voice-engine:setup": "sh -c 'cd voice-engine && npm run setup'",
     "router:report": "npm run build && node dist/scripts/router-report.js"
   },
   "optionalDependencies": {
+    "pg": "^8.23.0",
     "sharp": "0.35.4"
   },
   "devDependencies": {
