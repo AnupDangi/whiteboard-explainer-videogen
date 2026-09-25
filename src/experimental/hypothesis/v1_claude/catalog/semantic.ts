@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { CATALOG, type CatalogEntry } from './catalog.js';
 import { ENABLED_LIBRARIES } from './registry.js';
 import { CATALOG_DATA_DIR, loadCatalogLibraries } from './streamline.js';
+import type { QueryEmbeddingCache } from './queryEmbeddingCache.js';
 
 /**
  * Memoize concurrent initialization while allowing a later retry after a
@@ -39,7 +40,7 @@ export interface Candidate {
 }
 
 const DIMS = 384;
-const MODEL = 'Xenova/all-MiniLM-L6-v2';
+export const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';
 
 /** Every retrievable entry: enabled libraries in registry order, then the procedural seed catalog. */
 export function allCatalogEntries(): CatalogEntry[] {
@@ -65,27 +66,46 @@ function catalogMatrix(): Float32Array {
 type Embedder = (texts: string[], opts: { pooling: 'mean'; normalize: boolean }) => Promise<{ data: Float32Array | number[] }>;
 const getEmbedder = createRetryingLazyLoader<Embedder>(async () => {
   const m = await import('@huggingface/transformers');
-  return (await m.pipeline('feature-extraction', MODEL)) as unknown as Embedder;
+  return (await m.pipeline('feature-extraction', EMBEDDING_MODEL)) as unknown as Embedder;
 });
 
 /** Top-k enabled-library candidates per query by cosine similarity (vectors are unit-normalized). */
-export async function rankConcepts(queries: string[], k = 8): Promise<Map<string, Candidate[]>> {
+export async function rankConcepts(queries: string[], k = 8, cache?: QueryEmbeddingCache): Promise<Map<string, Candidate[]>> {
   const unique = [...new Set(queries.map((q) => q.trim().toLowerCase()).filter(Boolean))];
   const out = new Map<string, Candidate[]>();
   if (unique.length === 0) return out;
   const entries = loadCatalogLibraries().entries;
   const m = catalogMatrix();
   if (m.length !== entries.length * DIMS) throw new Error(`catalog embeddings (${m.length / DIMS} rows) do not match catalog entries (${entries.length}); rerun scripts/embed-catalog.mjs`);
-  const embed = await getEmbedder();
-  const q = await embed(unique, { pooling: 'mean', normalize: true });
-  const qv = Float32Array.from(q.data);
+
+  const vectors = new Map<string, Float32Array>();
+  const missing: string[] = [];
+  for (const query of unique) {
+    const cached = cache?.get(query);
+    if (cached && cached.length === DIMS && cached.every(Number.isFinite)) vectors.set(query, cached);
+    else missing.push(query);
+  }
+  if (missing.length) {
+    const embed = await getEmbedder();
+    const result = await embed(missing, { pooling: 'mean', normalize: true });
+    const embedded = Float32Array.from(result.data);
+    if (embedded.length !== missing.length * DIMS) throw new Error(`query embeddings (${embedded.length / DIMS} rows) do not match query count (${missing.length})`);
+    missing.forEach((query, index) => {
+      const vector = embedded.slice(index * DIMS, (index + 1) * DIMS);
+      vectors.set(query, vector);
+      cache?.set(query, vector);
+    });
+  }
+
   unique.forEach((query, qi) => {
+    const queryVector = vectors.get(query);
+    if (!queryVector) throw new Error(`missing query embedding for ${query} at index ${qi}`);
     const scores: Candidate[] = entries.map((e, ei) => {
       let dot = 0;
-      for (let d = 0; d < DIMS; d++) dot += qv[qi * DIMS + d] * m[ei * DIMS + d];
+      for (let d = 0; d < DIMS; d++) dot += queryVector[d] * m[ei * DIMS + d];
       return { id: e.id, name: e.names[0], score: dot };
     });
-    scores.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1));
+    scores.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     out.set(query, scores.slice(0, k));
   });
   return out;

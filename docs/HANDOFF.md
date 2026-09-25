@@ -53,6 +53,21 @@
 - **Verification:** Initial build failed as expected because `catalog/registry.ts` was absent. All 3 focused tests passed; `npm run typecheck:hypothesis` passed; `npm run test:hypothesis` passed (**342 Node tests and 17 Python tests**, 0 failures), including catalog, Streamline, and semantic-loader tests unchanged. `node --check scripts/embed-catalog.mjs` passed. Embeddings were not regenerated; Streamline remains the only enabled library, so its existing matrix is reused.
 - **Next bounded work:** Task 11 — ingest a user-supplied icon library if its path, license, and attribution are available; otherwise record it as `unmeasured` and continue to Task 12. The old fixed `streamline-catalog-v1` cache version is retired.
 
+## Entry — 2026-09-25, Task 11: user icon library input absent
+
+- **Status:** `unmeasured`, per the frozen plan's missing-input rule.
+- **Required input:** a directory path, SPDX license, and attribution text supplied by the user. None is present in the continuation request or objective file, so no external directory was inspected and no library was copied, ingested, embedded, or enabled.
+- **When supplied:** copy assets and any generated manifest only under `.data/icon-libraries/<libraryId>/`; retain the original library untouched. The manifest contract and accepted license list are recorded in the Task 9 entry above. Rejection counts/reasons and whether the library should share house style must be recorded before enabling it. E3/E4 and visual quality remain unmeasured.
+- **Next bounded work:** Task 12 — deterministic icon selection using cached query embeddings and lesson-level pins. It does not depend on a user library and can proceed with the Streamline catalog.
+
+## Entry — 2026-09-25, Task 12: deterministic query vectors and lesson icon pins
+
+- **Why:** Repeated query embedding inference could drift across runs, and paraphrased concept labels could resolve to different assets in one lesson. A persisted query cache and concept-identity pins address both.
+- **Implementation:** Added `QueryEmbeddingCache`, keyed by embedding model and normalized text, with sorted JSON serialization and atomic flush. `rankConcepts` embeds only missing vectors and accepts the cache; `EMBEDDING_MODEL` is exported. `iconPins.ts` keys by sorted concept IDs (or normalized concept text), collects first rung 2/3 resolutions without mutation or overwrite, and ignores rung 4 text fallbacks. `resolveObject` honors valid pins and chooses exact matches by asset ID order. `resolveScene` accepts pins. `runLive` shares one query cache under the stage-cache root (or output directory), flushes after S6/S7 processing, carries pins through scenes, and includes sorted pin entries in the S7 cache input. Resolve stage version is now `resvg-text-metrics-bundled-kalam-5-icon-pins`.
+- **Tests:** Added `__tests__/icon-determinism.test.ts` (5 tests) for pin keys, cross-scene consistency, no overwrite/no rung-4 pins, catalog-order independence, and cache round-trip/model separation.
+- **Verification:** Focused tests passed (5/5); `npm run typecheck:hypothesis` passed; `npm run test:hypothesis` passed (**347 Node tests and 17 Python tests**, 0 failures). Existing E2E suite passed twice (8/8 each), including byte-identical replay assertions. Search found no test pinning the old resolve-version literal. No paid calls were made.
+- **Next bounded work:** Task 13 — S1–S4 cold reliability harness. Task 11 remains `unmeasured` until the user provides the library directory, license, and attribution. S5 calibration and E1/E5 visual acceptance remain separate unmeasured gates.
+
 ## Entry — 2026-09-25, Task 5: few-shot exemplar bank v2 (template-complete, icon-rich)
 
 - **Why:** Bank v1 had 5 exemplars, all boxes-only; the planner had never seen an `object` icon, `plot`, `formula`, `meter`, `tokenStrip`, `operator`, cycle, hub, fan-out, list, stack, or title demonstration in a few-shot example. Bank v2 keeps v1 unchanged and adds 10 structural demonstrations so the combined bank covers all 13 `TemplateId`s.

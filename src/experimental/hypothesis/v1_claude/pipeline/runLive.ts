@@ -12,6 +12,9 @@ import { resolveMentions } from '../narration/resolveMentions.js';
 import { alignedWordTimingProblems } from '../narration/align.js';
 import { resolveScene } from '../resolveScene.js';
 import { catalogVersion } from '../catalog/registry.js';
+import { collectPins, type IconPin } from '../catalog/iconPins.js';
+import { EMBEDDING_MODEL, rankConcepts } from '../catalog/semantic.js';
+import { QueryEmbeddingCache } from '../catalog/queryEmbeddingCache.js';
 import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
@@ -22,7 +25,6 @@ import { safeParseSceneSpec } from '../schema.js';
 import type { PlannerSceneInput, PlannerTeachingContext } from '../planner/prompt.js';
 import { VISUAL_STAGE_VERSIONS } from './versions.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
-import { rankConcepts } from '../catalog/semantic.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
 import { encodeVideoAtomically, rasterizePng, type VideoScene } from '../export/videoEncode.js';
 import { STREAMLINE_ATTRIBUTION } from '../catalog/streamline.js';
@@ -147,6 +149,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const gateRecords: GateRunRecord[] = [];
   const stageArtifacts: Record<string, { key: string; contentHash: string; cacheHit: boolean }> = {};
   const outputDir = options.outputDir;
+  const queryEmbeddingCache = new QueryEmbeddingCache(path.join(ctx.artifactStore?.root ?? outputDir, 'query-embeddings.json'), EMBEDDING_MODEL);
   await mkdir(outputDir, { recursive: true });
   const runStartedAtMs = Date.now();
   const startedAt = new Date(runStartedAtMs).toISOString();
@@ -251,12 +254,13 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   };
   let previousBoxes: Map<string, { x: number; y: number; w: number; h: number }> | undefined;
   let previousElements: PlannerSceneInput['previousElements'];
+  let iconPins: Map<string, IconPin> = new Map();
   const totalUsage: RunUsage = { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: alignmentCacheHits.size };
 
   // Retrieval before planning (01 §3.3 item 3): top-k house-style icons per mention phrase.
   const scenePlanningStartedAtMs = Date.now();
   const mentionCandidatesStartedAtMs = Date.now();
-  const mentionCandidates = await rankConcepts(narration.scenes.flatMap((s) => s.mentions.map((m) => m.phrase)), 5);
+  const mentionCandidates = await rankConcepts(narration.scenes.flatMap((s) => s.mentions.map((m) => m.phrase)), 5, queryEmbeddingCache);
   recordLocalStage('S7-resolve', mentionCandidatesStartedAtMs, false);
   const hardAlignmentFailureCount = failures.filter((failure) => failure.stage === 'align' && failure.hard).length;
   if (ctx.planDespiteAlignmentFailure && hardAlignmentFailureCount > 0) {
@@ -349,13 +353,15 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     // S7 retrieval for the concepts the planner actually chose, then the pure resolve stage.
     const resolveStartedAtMs = Date.now();
     const objectConcepts = planned.spec.elements.flatMap((e) => (e.prim === 'object' ? [e.concept] : []));
-    const resolutionCandidates = await rankConcepts(objectConcepts, 5);
+    const resolutionCandidates = await rankConcepts(objectConcepts, 5, queryEmbeddingCache);
+    const pinsForCache = [...iconPins.entries()].sort(([left], [right]) => left.localeCompare(right));
     const resolvedStage = ctx.artifactStore
-      ? await ctx.artifactStore.run(`S7-resolve:${sceneInput.sceneId}`, { spec: planned.spec, candidates: resolutionCandidates }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: activeCatalogVersion }, () => resolveScene(planned.spec!, { candidates: resolutionCandidates }))
+      ? await ctx.artifactStore.run(`S7-resolve:${sceneInput.sceneId}`, { spec: planned.spec, candidates: resolutionCandidates, pins: pinsForCache }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: activeCatalogVersion }, () => resolveScene(planned.spec!, { candidates: resolutionCandidates, pins: iconPins }))
       : undefined;
     if (resolvedStage) stageArtifacts[`S7-resolve:${sceneInput.sceneId}`] = { key: resolvedStage.key, contentHash: resolvedStage.artifact.contentHash, cacheHit: resolvedStage.cacheHit };
     if (resolvedStage?.cacheHit) totalUsage.cacheHits += 1;
-    const resolved = resolvedStage?.artifact.payload ?? resolveScene(planned.spec, { candidates: resolutionCandidates });
+    const resolved = resolvedStage?.artifact.payload ?? resolveScene(planned.spec, { candidates: resolutionCandidates, pins: iconPins });
+    iconPins = collectPins(resolved, iconPins);
     const previousLayout = previousBoxes ? Object.fromEntries(previousBoxes) : undefined;
     recordLocalStage('S7-resolve', resolveStartedAtMs, Boolean(resolvedStage?.cacheHit));
     const layoutStartedAtMs = Date.now();
@@ -400,6 +406,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     scenes.push({ sceneId: sceneInput.sceneId, spec: planned.spec, resolved, laidOut, timeline, finalFrameSvg, plannerUsage: planned.usage, plannerRawResponses: planned.rawResponses });
     videoScenes.push({ laidOut, timeline, startMs: bounds.startMs, endMs: bounds.endMs });
   }
+
+  await queryEmbeddingCache.flush();
 
   if (ctx.budgetLedger) {
     try {

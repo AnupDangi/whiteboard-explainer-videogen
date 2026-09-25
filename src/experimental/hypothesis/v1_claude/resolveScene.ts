@@ -3,6 +3,7 @@ import { measureElement } from './layout/measure.js';
 import { renderPrimitive } from './render/primitives.js';
 import { resolveObject } from './catalog/ladder.js';
 import type { Candidate } from './catalog/semantic.js';
+import { iconPinKey, type IconPin } from './catalog/iconPins.js';
 
 /**
  * S7 — Resolution ladder. Every non-`object` primitive resolves procedurally
@@ -15,6 +16,8 @@ import type { Candidate } from './catalog/semantic.js';
 export interface ResolveOptions {
   /** Embedding-ranked catalog candidates per lower-cased concept (catalog/semantic.ts rankConcepts), computed before this sync stage. */
   candidates?: Map<string, Candidate[]>;
+  /** Lesson-level visual selections, keyed by stable source concept identity. */
+  pins?: ReadonlyMap<string, IconPin>;
 }
 
 export function resolveScene(spec: SceneSpec, options: ResolveOptions = {}): ResolvedScene {
@@ -27,6 +30,7 @@ export function resolveScene(spec: SceneSpec, options: ResolveOptions = {}): Res
         label: element.label ?? element.concept,
         fill: element.fill,
         candidates: options.candidates?.get(element.concept.trim().toLowerCase()),
+        pin: options.pins?.get(iconPinKey(element)),
         size: intrinsicSize,
       });
       const strokeLength = visual.paths.reduce((s, p) => s + p.length * (p.pxScale ?? 1), 0);

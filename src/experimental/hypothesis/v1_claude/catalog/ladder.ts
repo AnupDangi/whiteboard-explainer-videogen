@@ -6,6 +6,7 @@ import { LICENSE_ALLOWLIST, normalizeCatalogEntry } from './normalize.js';
 import { composeBadge } from './badges.js';
 import { styledTextBoxVisual } from '../render/primitives.js';
 import { isHouseSource } from './registry.js';
+import type { IconPin } from './iconPins.js';
 
 /** Lexical starting points only; experiment E4 has not calibrated these values. */
 export const TAU_HIGH = 0.6;
@@ -54,25 +55,30 @@ const singular = (s: string) => (s.length > 3 && s.endsWith('s') && !s.endsWith(
  */
 export function resolveObject(
   concept: string,
-  opts: { badge?: Badge; count?: number; label?: string; fill?: PaletteToken; candidates?: Candidate[]; size: { w: number; h: number } },
+  opts: { badge?: Badge; count?: number; label?: string; fill?: PaletteToken; candidates?: Candidate[]; pin?: IconPin; size: { w: number; h: number } },
   catalog: CatalogEntry[] = allCatalogEntries(),
 ): ObjectResolution {
   const conceptLower = concept.trim().toLowerCase().replace(/[_-]+/g, ' ');
   const wanted = new Set([conceptLower, singular(conceptLower)]);
   const isHouse = (e: CatalogEntry) => isHouseSource(e.source);
-  const exactOf = (pool: CatalogEntry[]) => pool.find((e) => e.names.some((n) => wanted.has(n.toLowerCase())));
+  const exactOf = (pool: CatalogEntry[]) => pool.filter((entry) => entry.names.some((name) => wanted.has(name.toLowerCase()))).sort((a, b) => a.id.localeCompare(b.id))[0];
   const topCandidate = opts.candidates?.[0];
   const candidateEntry = topCandidate ? catalog.find((e) => e.id === topCandidate.id) : undefined;
+  const pinnedEntry = opts.pin ? catalog.find((entry) => entry.id === opts.pin!.assetId) : undefined;
 
   // Preference keeps ONE style family on screen: house-style (Streamline) exact name,
   // then a strong house-style embedding match, and only then a procedural seed entry.
-  let best: { entry: CatalogEntry; score: number; rung: 2 | 3 } | undefined;
+  let best: { entry: CatalogEntry; score: number; rung: 2 | 3 } | undefined = pinnedEntry && opts.pin
+    ? { entry: pinnedEntry, score: opts.pin.score, rung: opts.pin.rung }
+    : undefined;
   const houseExact = exactOf(catalog.filter(isHouse));
   const anyExact = exactOf(catalog);
-  if (houseExact) best = { entry: houseExact, score: 1, rung: 2 };
-  else if (candidateEntry && topCandidate!.score >= TAU_HIGH_EMB) best = { entry: candidateEntry, score: topCandidate!.score, rung: 2 };
-  else if (anyExact) best = { entry: anyExact, score: 1, rung: 2 };
-  else if (candidateEntry && topCandidate!.score >= TAU_MID_EMB) best = { entry: candidateEntry, score: topCandidate!.score, rung: 3 };
+  if (!best) {
+    if (houseExact) best = { entry: houseExact, score: 1, rung: 2 };
+    else if (candidateEntry && topCandidate!.score >= TAU_HIGH_EMB) best = { entry: candidateEntry, score: topCandidate!.score, rung: 2 };
+    else if (anyExact) best = { entry: anyExact, score: 1, rung: 2 };
+    else if (candidateEntry && topCandidate!.score >= TAU_MID_EMB) best = { entry: candidateEntry, score: topCandidate!.score, rung: 3 };
+  }
   if (!best && !opts.candidates?.length) {
     let lex: { entry: CatalogEntry; score: number } | undefined;
     for (const entry of catalog) {
