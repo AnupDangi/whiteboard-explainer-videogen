@@ -219,19 +219,11 @@ export const PLAN_PROMPT_VARIANTS = {
 } as const;
 export type PlanPromptVariant = keyof typeof PLAN_PROMPT_VARIANTS;
 /**
- * Adopted 2026-09-26 from a measured `plan:calibrate` run (5 held-out non-G-10 sources, 3 cold
- * attempts each, qwen/qwen3.8-flash): v4-explicit-concepts passed 7/15 (47%), v5-fully-worked-example
- * passed 8/15 (53%), both with lower cost than v4 ($0.0316 vs $0.0353) — see
- * `harness/reports/2026-09-25-plan-calibration.{json,md}`. Both variants ran against the identical
- * cached ConceptGraph per source, so the gap is prompt text, not graph luck. This is a modest,
- * noisy result on a small sample (one attempt's difference); it targets a root cause traced from
- * real raw model output (`lessonBible.terminology`/every section's `requiredRelations` emitted as
- * `[]` on both the initial attempt and the repair — v4's worked example never demonstrated
- * `terminology` filled and only showed the trivial 1-relation case). Every failure this run carried
- * `repairs: 1` and real per-attempt cost, ruling out transport/network failure as the dominant
- * `S3_CALL_FAILED` cause (the harness's own generic code for any exhausted-repair failure,
- * regardless of which specific contract rule was violated on the losing attempt — a real harness
- * diagnostic gap, not evidence this fix targeted the wrong failure mode).
+ * Adopted 2026-09-26 from a measured `plan:calibrate` run: v4 47%, v5 53%, v5 also cheaper.
+ * Full adoption rationale, per-source breakdown (including a real composting regression this
+ * aggregate hides), and the repair-path caveat are in `docs/HANDOFF.md`'s 2026-09-26 entry —
+ * read that, not just this comment, before touching the default again. Data:
+ * `harness/reports/2026-09-25-plan-calibration.{json,md}`.
  * Change this only after a new `plan:calibrate` run measures a variant ahead of it.
  */
 export const DEFAULT_PLAN_PROMPT_VARIANT: PlanPromptVariant = 'v5-fully-worked-example';

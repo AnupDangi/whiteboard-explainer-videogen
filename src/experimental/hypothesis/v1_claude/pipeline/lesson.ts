@@ -4,7 +4,7 @@ import { analyzeTeachingPlan, type PlanAnalysis } from '../plan/analyze.js';
 import type { ConceptGraph, Script, TeachingPlan } from '../plan/schemas.js';
 import { teachingContractFindings, teachingContractProblems } from '../plan/contracts.js';
 import { sourceDocFromText, type SourceDoc } from '../plan/sourceDoc.js';
-import { buildConceptGraph, buildTeachingPlan, writeScript, type LessonRequest } from '../plan/stages.js';
+import { buildConceptGraph, buildTeachingPlan, writeScript, DEFAULT_PLAN_PROMPT_VARIANT, type LessonRequest } from '../plan/stages.js';
 import type { HypothesisLiveInput, LiveSceneInput } from './runLive.js';
 import type { PersistentBudgetLedger } from './budgetLedger.js';
 import { ContentAddressedArtifactStore } from '../artifactCache.js';
@@ -75,7 +75,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
   addUsage(usage, g.usage); failures.push(...g.failures); rawResponses.concepts = g.rawResponses;
   if (!g.value) return preparedResult({});
 
-  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v2', 'S3-teaching-plan-v5-fully-worked-example', () => buildTeachingPlan(groundedRequest, g.value!, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), 'S3-teaching-plan-prompt-v5');
+  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v2', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}`, () => buildTeachingPlan(groundedRequest, g.value!, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}`);
   const p = pRun.result;
   addUsage(usage, p.usage); failures.push(...p.failures); rawResponses.plan = p.rawResponses;
   if (!p.value) return preparedResult({ graph: g.value });
