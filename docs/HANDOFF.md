@@ -26,6 +26,15 @@
 - **Checkpoint:** Tasks 0–6 and the corrected Task 5 handoff were committed as `56ccc20` (`Implement hypothesis track tasks 0-6`).
 - **Next bounded work:** Task 8 — S6 calibration harness over cached S1–S5 artifacts. Paid calibration invocations remain separately gated by the plan's per-run approval requirement.
 
+## Entry — 2026-09-25, Task 8: S6 prompt-arm diagnostic calibration harness
+
+- **Why:** S6 prompt changes need measured planner validity, gate failures, richness, and cost across arms, using cached S1–S5 inputs. The report is explicitly diagnostic calibration and cannot count as E5 evidence while S5 alignment is uncalibrated and no timed video is reviewed.
+- **Implementation:** Extracted `buildPlannerSceneInput` and made `runLive` use it, preserving the existing planner input (verified by existing source-scene planner and E2E tests). Added `sceneCalibration.ts` to build items from run-directory preparation, narration, and aligned-audio artifacts, run prompt arms/repeats with `fallback: false`, and report validity, failure codes, repairs, cost, scene richness, and per-arm totals. Added `sceneCalibrationCli.ts` with run/arm/repeat/model/budget parsing, a persistent ledger capped at $1.00, and JSON/Markdown output whose first line labels the report `diagnostic-calibration`. Added `npm run scene:calibrate`.
+- **Tests:** Added `__tests__/scene-calibration.test.ts`. A stubbed provider verifies valid-rate/richness/cost aggregation; an invalid first reply plus failed repair is recorded invalid with no fallback and `planner-repair-failed`.
+- **Verification:** The initial build failed as expected because `sceneCalibration.ts` was missing. Focused tests passed (2/2); `npm run typecheck:hypothesis` passed; `npm run test:hypothesis` passed (**333 Node tests and 17 Python tests**, 0 failures), including existing source-scene planner and E2E tests unchanged. No paid provider request or calibration measurement was run.
+- **Checkpoints:** Initial Tasks 0–6 checkpoint: `56ccc20`. Task 7 checkpoint: `f711aaf`.
+- **Next bounded work:** Task 9 — pure, deterministic SVG icon-library ingest. The paid scene-calibration command remains unmeasured until its Task 14 invocation is approved.
+
 ## Entry — 2026-09-25, Task 5: few-shot exemplar bank v2 (template-complete, icon-rich)
 
 - **Why:** Bank v1 had 5 exemplars, all boxes-only; the planner had never seen an `object` icon, `plot`, `formula`, `meter`, `tokenStrip`, `operator`, cycle, hub, fan-out, list, stack, or title demonstration in a few-shot example. Bank v2 keeps v1 unchanged and adds 10 structural demonstrations so the combined bank covers all 13 `TemplateId`s.

@@ -16,6 +16,7 @@ import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
 import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
 import { planScene, plannerProblems, shouldSkipPaidPlanning, skipPlanAfterAlignmentFailure, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
+import { buildPlannerSceneInput } from '../planner/sceneInput.js';
 import { safeParseSceneSpec } from '../schema.js';
 import type { PlannerSceneInput, PlannerTeachingContext } from '../planner/prompt.js';
 import { VISUAL_STAGE_VERSIONS } from './versions.js';
@@ -268,15 +269,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     }
     const narrationScene = narration.scenes.find((s) => s.sceneId === sceneInput.sceneId)!;
     const remainingBudgetUsd = Math.max(0, options.maxCostUsd - totalUsage.costUsd);
-    const plannerInput: PlannerSceneInput = {
-      sceneId: sceneInput.sceneId,
-      raw: narrationScene.rawText,
-      plainText: narrationScene.plainText,
-      mentions: narrationScene.mentions.map((m) => ({ id: m.id, phrase: m.phrase })),
-      teachingContext: sceneInput.teachingContext,
-      candidates: Object.fromEntries(narrationScene.mentions.map((m) => [m.id, (mentionCandidates.get(m.phrase.trim().toLowerCase()) ?? []).map((c) => ({ name: c.name, score: c.score }))])),
-      previousElements,
-    };
+    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates, previousElements });
 
     if (input.runClass === 'generated-lesson') {
       const refs = sceneInput.teachingContext?.sourceEvidenceRefs ?? [];
