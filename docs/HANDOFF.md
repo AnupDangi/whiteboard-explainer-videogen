@@ -68,6 +68,14 @@
 - **Verification:** Focused tests passed (5/5); `npm run typecheck:hypothesis` passed; `npm run test:hypothesis` passed (**347 Node tests and 17 Python tests**, 0 failures). Existing E2E suite passed twice (8/8 each), including byte-identical replay assertions. Search found no test pinning the old resolve-version literal. No paid calls were made.
 - **Next bounded work:** Task 13 — S1–S4 cold reliability harness. Task 11 remains `unmeasured` until the user provides the library directory, license, and attribution. S5 calibration and E1/E5 visual acceptance remain separate unmeasured gates.
 
+## Entry — 2026-09-25, Task 13: cold S1–S4 reliability harness
+
+- **Why:** Reliability needs stage-conditional pass rates and failure-code counts over repeated, cold source-preparation runs. This harness measures existing behavior without changing pass contracts.
+- **Implementation:** Added `harness/reliability.ts` with cold `prepareLesson` attempts, conditional S2/S3/S4 rates, end-to-end rate, failure codes, transport retries, evidence-anchor markers, cost, and duration. Added `harness/reliabilityCli.ts`, which parses sources/durations/repeats/model/budget (maximum $1.00), creates a dated persistent ledger, and writes JSON plus a Markdown stage table and failure codes by count. Durations above 60 seconds are allowed and labeled as unimplemented long-form diagnostics. Added `npm run reliability:run`.
+- **Tests:** Added `__tests__/reliability-harness.test.ts` for conditional stage rates, code counts, total cost, and empty reports.
+- **Verification:** Initial build failed as expected because the reliability module was absent. Focused tests passed (2/2); `npm run typecheck:hypothesis` passed; `npm run test:hypothesis` passed (**349 Node tests and 17 Python tests**, 0 failures). No provider calls or paid measurements were run.
+- **Next bounded work:** Task 14 — update architecture and evidence ledgers, record paid measurements only after per-command approval, leave unapproved runs `unmeasured`, then run the final offline gate. Task 11 remains `unmeasured`; C6/E1/E5 and S5 calibration remain unmeasured.
+
 ## Entry — 2026-09-25, Task 5: few-shot exemplar bank v2 (template-complete, icon-rich)
 
 - **Why:** Bank v1 had 5 exemplars, all boxes-only; the planner had never seen an `object` icon, `plot`, `formula`, `meter`, `tokenStrip`, `operator`, cycle, hub, fan-out, list, stack, or title demonstration in a few-shot example. Bank v2 keeps v1 unchanged and adds 10 structural demonstrations so the combined bank covers all 13 `TemplateId`s.
