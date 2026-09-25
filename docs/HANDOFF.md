@@ -1,5 +1,26 @@
 # HANDOFF — Claude hypothesis track
 
+## Entry — 2026-09-25, Task 14 documentation and continuation audit
+
+- **Current checkpoint:** Tasks 0–13 are implemented and committed through `6ac1f67` (`Add S1-S4 reliability harness`). The frozen plan remains locked. Task 14's evidence-ledger and architecture updates are complete. Final verification passed: `npm run typecheck:hypothesis && npm run test:hypothesis` — 349 Node tests and 17 Python tests, 0 failures.
+- **Task 11 re-audit:** `.data/icon-libraries/` now contains manifests and SVGs for AssetLab MIT, ISC, and Apache-2.0 sets. Existing generated report/catalog files show assetlab-mit 162/214 accepted (36 unknown-color, 15 no-ink, 1 bad-geometry), assetlab-isc 13/13 accepted, and assetlab-apache20 0/20 accepted (all no-ink). Unknown-color affects 16.8% of the MIT input set, below the plan's 30% pre-flatten amendment threshold. These are workspace artifacts only: no source path, license, attribution, or house-style decision has been supplied by the user in chat for this run; each manifest points to an `ATTRIBUTION.md` that is absent. Therefore Task 11 stays `unmeasured`, these libraries remain disabled, and their untracked generated catalogs are not treated as validated/approved assets.
+- **Task 14 paid work:** no Task 14 paid command has run and no spend was incurred (`$0.00`). Prepared sources and matching stage caches are present. Each command below requires explicit user approval under the frozen plan:
+
+```bash
+npm run reliability:run -- --durations=60 --repeats=3 --budget=1.00
+npm run run:lesson -- --source=.data/sources/ocean-tides.md --duration=60 --plan-despite-alignment-failure --prompt-arm=zero --stage-cache=.data/hypothesis-runs/claude/phase0-live/ocean-tides-60s-mixed/stage-cache --out=.data/hypothesis-runs/claude/diagnostic-s6/ocean-tides-zero
+npm run run:lesson -- --source=.data/sources/bicycle-balance.md --duration=60 --plan-despite-alignment-failure --prompt-arm=zero --stage-cache=.data/hypothesis-runs/claude/phase0-live/bicycle-balance-60s-mixed/stage-cache --out=.data/hypothesis-runs/claude/diagnostic-s6/bicycle-balance-zero
+npm run run:lesson -- --source=.data/sources/composting.md --duration=60 --plan-despite-alignment-failure --prompt-arm=zero --stage-cache=.data/hypothesis-runs/claude/phase0-live/composting-60s-mixed3/stage-cache --out=.data/hypothesis-runs/claude/diagnostic-s6/composting-zero
+npm run scene:calibrate -- --runs=.data/hypothesis-runs/claude/phase0-live/ocean-tides-60s-mixed,.data/hypothesis-runs/claude/phase0-live/bicycle-balance-60s-mixed,.data/hypothesis-runs/claude/phase0-live/composting-60s-mixed3 --arms=zero,mechanism,diverse --repeats=2 --budget=1.00
+```
+
+Caps: reliability $1.00, each diagnostic lesson $0.30, scene calibration $1.00. The diagnostic runs must retain failed S5 gates and must not be visually scored; calibration remains diagnostic and cannot promote an arm.
+- **Documentation updated:** Task 6–14 implementation and measurement states are recorded in `hypothesis/v1_claude/02-IMPLEMENTATION-PLAN.md` and `03-VALIDATION-HARNESS.md`; `docs/ARCHITECTURE.md` now lists the Task 6–13 modules, cache behavior, and CLI commands. No Task 14 measurement is claimed.
+- **Known gates:** S5 alignment calibration still requires two independent human reviewers. C6/E1/E5 remain `unmeasured`. Long-form 5/10-minute generation remains unimplemented; `maxConcepts` is capped at 14.
+- **Next bounded work:** verify the final diff and frozen-plan hash/mode, commit the tracked Task 14 documentation, then request approval for any selected paid invocation. Resolve AssetLab source/license/attribution and house-style intent before enabling any candidate library.
+
+## Historical initial continuation audit
+
 ## Entry — 2026-09-25, continuation audit and resume point
 
 - The objective file confirms the requested continuation: finish the frozen 15-task plan, keep this handoff and the SDD progress ledger current after each task, and commit completed work so another coding agent can resume.

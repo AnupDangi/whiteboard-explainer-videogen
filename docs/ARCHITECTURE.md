@@ -26,8 +26,8 @@ LessonRequest (text, Markdown, PDF, DOCX, PPTX + duration)    plan/sourceIntake.
                            mention (local MiniLM)
   S6  Scene Planner        code compiles typed context, then planner/{context,exemplars,prompt,plan}.ts
                            one visual-model call + 1 repair;
-                           hard S5 alignment errors skip paid planning;
-                           list_icon fallback is failed preview
+                           hard S5 alignment errors skip paid planning by default;
+                           diagnostic opt-in preserves failures and failed status
   S7  resolve (ladder)     exact -> embedding -> lexical ->  resolveScene.ts, catalog/*
                            styled text box
   S8  layout               templates + measured text bounds  layout/measure.ts, solver.ts,
@@ -41,6 +41,18 @@ LessonRequest (text, Markdown, PDF, DOCX, PPTX + duration)    plan/sourceIntake.
   S12 gates + judge        deterministic gates on every      validation/gates.ts, shared/evaluation.ts,
                            run; VLM judge on dev runs        harness/*
 ```
+
+## Task 6–13 modules and commands
+
+- `harness/sceneRichness.ts` reports deterministic structural metrics for a scene or set of scenes. These metrics are diagnostic and are not visual-acceptance evidence.
+- `lessonCli.ts --plan-despite-alignment-failure` opts into diagnostic S6 planning when S5 has hard alignment failures. The opt-in is part of run/cache identity; S5 failures remain hard and the run remains failed.
+- `planner/sceneInput.ts` supplies the same planner input builder to live runs and the calibration harness. `harness/sceneCalibration.ts` and `sceneCalibrationCli.ts` implement cached S1–S5 prompt-arm diagnostics; `npm run scene:calibrate` writes explicitly labeled reports with a per-invocation budget ledger.
+- `catalog/libraryIngest.ts` and `scripts/ingest-icon-library.mjs` normalize a supported SVG subset and write a catalog plus rejection report. `npm run icons:ingest -- <library-dir>` enforces the manifest license list and rejects paths escaping the library root.
+- `catalog/registry.ts` defines enabled libraries and hashes each enabled catalog and embedding matrix into `catalogVersion()`. Retrieval, run/config identity, and S6/S7 cache inputs use that version. The registry currently enables Streamline only; AssetLab workspace artifacts are not enabled pending source and attribution verification.
+- `catalog/queryEmbeddingCache.ts` caches vectors by embedding model and normalized query. `catalog/iconPins.ts` pins resolved icons by concept identity across scenes; the pin set participates in S7 cache identity.
+- `harness/reliability.ts` and `reliabilityCli.ts` implement cold S1–S4 reliability measurement. `npm run reliability:run` records conditional stage rates, end-to-end rate, failure codes, retries, evidence-anchor markers, cost, and duration under a capped persistent ledger.
+
+These CLIs have offline contract tests. No Task 14 paid reliability, diagnostic S6, or prompt-arm calibration run has been approved or measured yet.
 
 `pipeline/run.ts` remains an offline S4→S10 runner for supplied SceneSpecs. Retained Attention/math
 SceneSpecs are historical artifacts and are not loaded by current tests or used for visual evaluation.
@@ -68,22 +80,21 @@ Explicit benchmark/script paths can still resolve their frozen targets.
 The existing S3 call also produces a `LessonBible` and one source-grounded `SceneContract` per section.
 Code checks concept/relation coverage and exact source span IDs before narration; concepts reused across
 sections must be declared persistent, and each persistent concept must have one canonical terminology
-entry that agrees with the source concept label. These checks are part of S3 prompt v3, which invalidates
+entry that agrees with the source concept label. These checks are part of S3 prompt v4, which invalidates
 previous teaching-plan cache entries. SourceDoc v2 carries native PDF page, PPTX slide, and DOCX body
 paragraph/table locations on spans, resolved evidence, concept graphs, and S6 contexts. PDF/PPTX locators
 come from extractor-generated character ranges rather than parsing visible page/slide headings, so source
 text cannot spoof them; the Scene Planner must copy locators exactly, and its gate rejects altered values. DOCX body-block ordinals are extraction
 locators rather than durable XML IDs. S1's stage/schema/prompt versions invalidate earlier cached source
-documents. S6 prompt v12 explicitly requires the schema's `prim` discriminator,
+documents. S6 prompt v13 explicitly requires the schema's `prim` discriminator and adds topic-neutral visual recipe cards,
 separate from nested primitive payloads. Its planner gate requires every persistent concept
 shown in a scene to use its canonical term visibly on a concept-linked element. S4 marked narration
 and S5 measured mention times enrich that contract deterministically into `ScenePlanningContext`.
 Code compiles the S6 prompt with one visual-director instruction; there is no prompt-writing model.
-New generated lessons default to zero-shot. The old fixed Attention/math fixtures are absent from
-runtime prompts and E5 arms. The `text`, `mechanism`, and `diverse` arms use a versioned cross-domain experimental bank;
+New generated lessons default to zero-shot. The exemplar bank is mechanism-bank/v4, covers all templates and several primitive families, and remains experimental with review states pending. The old fixed Attention/math fixtures are absent from runtime prompts and E5 arms. The `text`, `mechanism`, and `diverse` arms use a versioned cross-domain experimental bank;
 selection, context, prompt hashes, and versions are logged. The context hash includes every selected
 example field actually sent to the model (intent, SceneSpec, rationale, and provenance), plus its
-retrieval score; prompt assembly and hash payload share one serializer. Bank v3 stores provenance, an explicit
+retrieval score; prompt assembly and hash payload share one serializer. Bank v4 stores provenance, an explicit
 evaluation split, and separate factuality, visual, license, leakage, and human review states; an
 `approved` entry fails validation unless every review passes with an identified reviewer and
 timestamp. Retrieval excludes every example linked to an evaluation golden, all development/test
@@ -195,7 +206,7 @@ Timing comes from the Lamina reference pack (`harness/reference/lamina/OBSERVATI
 
 ## Visual vocabulary
 
-- **Icons**: 1,992 Streamline free duotone icons (plump-color, flex-color, color), CC BY 4.0.
+- **Icons**: the registry currently enables 1,992 Streamline free duotone icons (plump-color, flex-color, color), CC BY 4.0. Other libraries remain disabled until their source and attribution are verified.
   - They are ingested offline by `scripts/build-catalog.mjs` from a local `@iconify/json`.
   - At render time each icon is normalized: the outline becomes the house ink at 5.5 px, the body takes
     the element's palette token, and white highlights stay white.
