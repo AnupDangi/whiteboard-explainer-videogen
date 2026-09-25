@@ -1,5 +1,92 @@
 # HANDOFF — Claude hypothesis track
 
+## Entry — 2026-09-26, S3 root-cause fix: v5-fully-worked-example adopted as default
+
+- **Root cause** (systematic-debugging, Phase 1-4): the 2026-09-25 `reliability:run` measured
+  S3's conditional pass rate at 0.231 (down from a prior 40% baseline), top failure
+  `plan-repair-failed`. Traced to raw model output from a real failed attempt
+  (`bicycle-balance-md`, saved at `.data/hypothesis-runs/claude/diagnostic-s6/bicycle-balance-zero/`):
+  the model returned `lessonBible.terminology: []` and every section's
+  `contract.requiredRelations: []`, on **both** the initial attempt and the repair, despite a
+  real 6-entry `persistentConceptIds` list and 6 real graph relations. `v4-explicit-concepts`'s
+  worked example never demonstrates `terminology` filled anywhere, and only shows the trivial
+  2-concept/1-relation case for `requiredRelations` — real failing sections have 3-4 concepts
+  and 2+ relations, a shape the model was never shown.
+- **Fix**: new prompt variant `v5-fully-worked-example` in `plan/stages.ts` — byte-identical to
+  v4's rules paragraph; only the worked example changed, to a full `lessonBible` (terminology
+  filled) plus a 3-concept/2-relation section. Guarded by a new regression test,
+  `__tests__/plan-prompt-v5.test.ts` (asserts the worked example text itself, not model behavior
+  — the real measurement is the calibration harness).
+- **Measured** (`plan:calibrate --variants=v4-explicit-concepts,v5-fully-worked-example --repeats=3`,
+  same 5 held-out sources as the original v3→v4 calibration, real spend $0.0669 total): v4 7/15
+  (47%), v5 8/15 (53%), v5 also cheaper ($0.0316 vs $0.0353) and fewer total failures (7 vs 8).
+  Full data: `harness/reports/2026-09-25-plan-calibration.{json,md}`. This is a modest, noisy
+  result on a small sample (one attempt's difference) — not a dramatic jump like v3→v4's
+  0%→40%.
+  **Per-source breakdown (do not read the aggregate alone — an earlier draft of this entry did,
+  and it hid a real regression):**
+  | source | v4 | v5 | note |
+  |---|---|---|---|
+  | ocean-tides | 1/3 | 1/3 | unchanged |
+  | bicycle-balance | 1/3 | 1/3 | unchanged |
+  | composting | **3/3** | **1/3** | **regressed** |
+  | rainbow-formation | 1/3 | 3/3 | improved |
+  | mirror-images | 1/3 | 2/3 | improved |
+  The net +6pp is entirely driven by rainbow-formation and mirror-images improving while masking
+  that composting — perfect under the outgoing v4 default — now fails 2 of 3 times under v5. If
+  composting-shaped sources matter to you, v5 is currently worse for them, not better. This needs
+  its own targeted look; it's logged here, not fixed.
+  **Repair path, not just first-attempt rate**: the cited bicycle-balance root-cause sample
+  already had `persistentConceptIds` populated, so `structuredCall`'s `validate` callback would
+  have raised `PERSISTENT_CONCEPT_MISSING_TERMINOLOGY` on attempt 1 and fed that exact message
+  into the repair prompt (`buildRepairPrompt`) for attempt 2 — and attempt 2 *still* returned
+  `terminology: []`. So "root cause fixed" overstates it: v5 fixes the *cold first-attempt* rate
+  by giving a better worked example, but on at least this sample, targeted per-field repair
+  feedback was already given and the model didn't act on it. bicycle-balance stayed 1/3 in both
+  variants — v5 did not fix the hard cases, only added more easy ones.
+  Every failing attempt in both variants carried `repairs: 1` and real per-attempt spend, which
+  rules out transport/network failure as the dominant cause of the harness's generic
+  `S3_CALL_FAILED` code (a real diagnostic gap in `planCalibration.ts`: it doesn't surface which
+  specific `ContractFinding` code was violated on an exhausted-repair failure, only on a
+  first-attempt failure that still produced parseable JSON — worth tightening later).
+  **Separate, pre-existing gap surfaced by this work**: `teachingContractFindings` only forces
+  `persistentConceptIds`/`terminology` nonempty when a concept recurs across 2+ sections
+  (`RECURRING_CONCEPT_NOT_DECLARED_PERSISTENT`); a plan with one concept per section and both
+  arrays empty passes every `lessonBible` check silently (`LessonBibleSchema` has no `.min(1)`
+  either). The exact failure mode this diff targets can recur completely undetected — no contract
+  finding, no repair feedback — on any lesson where concepts don't repeat across sections. Not
+  fixed here; flagged for a future targeted task.
+- **Adopted**: `DEFAULT_PLAN_PROMPT_VARIANT = 'v5-fully-worked-example'`. Cache identity bumped
+  (`S3-teaching-plan-v4-keyword-guard` → `...-v5-fully-worked-example`,
+  `S3-teaching-plan-prompt-v4` → `...-prompt-v5`) so no warm cache can replay a stale v4 result.
+  These two literals are hardcoded in `pipeline/lesson.ts` with no compile-time link to
+  `PlanPromptVariant`/`DEFAULT_PLAN_PROMPT_VARIANT` in `plan/stages.ts` — a future variant swap
+  that forgets to bump them would silently replay stale cached output. Not fixed in this pass;
+  worth deriving automatically from the variant name later.
+- Verification: `npm run typecheck:hypothesis` clean; `npm run test:hypothesis` passed 351 Node
+  (350 prior + 1 new) + 17 Python.
+- **Confirming `reliability:run` re-measurement** (same command/cap as Task 14 Step 1, real spend
+  $0.0274): S2 0.333, **S3 (conditional) 0.600** (up from 0.231 pre-fix — the fix's target metric
+  moved, confirmed), S4 (conditional) 0.667, end-to-end **0.133** (down from 0.200). The S3 fix
+  worked on its own metric; end-to-end got worse this round because S2 hit heavy, unrelated
+  transport-exhausted failures (`concepts-call-failed: 10` — OpenRouter routing/rate-limit
+  rejections for qwen, zero completions produced, nothing to repair) — the same live provider
+  instability documented throughout this project's history, not a regression from this change.
+  Full data: `harness/reports/2026-09-25-reliability.{json,md}` (overwritten in place; the
+  pre-fix numbers are preserved above in the Task 14 Step 1 entry below).
+- **`/code-review` audit of this diff** (8-angle high-effort pass, all converged/verified): found
+  the composting regression and the dropped repair-path nuance above (both fixed in this entry),
+  plus a real efficiency issue (`buildV5FullyWorkedExamplePrompt` was building and discarding
+  v4's entire `user` string, including a second full `JSON.stringify(graph)`, just to read
+  `.system` — fixed below by extracting a shared `buildV4SystemPrompt` helper) and the
+  cache-version hardcoding noted above. Minor findings (worked-example scaffold now duplicated
+  3× across v3/v4/v5, a test mock duplicating an existing `okBody` helper, a regex-based
+  relation-count check in the new test, this docstring duplicating this HANDOFF narrative) were
+  logged but not fixed — deferred cleanup, not correctness issues.
+- **Next bounded work**: investigate why composting regressed under v5 specifically; investigate
+  why the repair path doesn't act on targeted per-field feedback even when given; close the
+  single-section-concept validation gap in `teachingContractFindings`/`LessonBibleSchema`.
+
 ## Entry — 2026-09-25, Task 14 Step 3: S6 prompt-arm calibration (paid, user-approved) — 0 valid scenes, real spend $0.00
 
 - Ran `npm run scene:calibrate -- --runs=<ocean-tides,bicycle-balance,composting phase0-live dirs> --arms=zero,mechanism,diverse --repeats=2 --budget=1.00`. 14 scene items loaded from the three cached run directories (this harness reads `lesson-prep.json`/`narration.json`/`aligned-audio.json` directly, not through the version-gated stage-cache, so it did not hit the same cache-invalidation issue as Step 2). 84 total attempts (14 scenes × 2 repeats × 3 arms).

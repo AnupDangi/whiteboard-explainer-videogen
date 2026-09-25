@@ -155,8 +155,8 @@ ${JSON.stringify(graph, null, 1)}`,
  * with an explicit, harder-to-miss consequence, and the mapping placeholder becomes one small,
  * fully worked, topic-neutral example (fake ids) instead of a bare shape — never real content.
  */
-const buildV4ExplicitConceptsPrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
-  system: `You are a teaching architect. Turn a concept graph into a time-budgeted plan for a narrated whiteboard video, one scene per section.
+/** The v4/v5 system prompt depends only on `scenes`/`req`, never `graph` — factored out so v5 can reuse it without also building (and discarding) v4's `user` text, which re-serializes the whole concept graph. */
+const buildV4SystemPrompt = ({ scenes, req }: Pick<PlanPromptContext, 'scenes' | 'req'>): string => `You are a teaching architect. Turn a concept graph into a time-budgeted plan for a narrated whiteboard video, one scene per section.
 Return ONE JSON object: { "targetDurationSec", "intro": {"sourceTitle","sections"}, "lessonBible": {"audience","domain"?,"terminology","persistentConceptIds"}, "sections": [...], "recap": {"keyPoints"} }.
 Rules:
 - The bible audience is the supplied audience or "general learner"; optional domain is a broad subject label used only as a low-weight example-retrieval signal. Terminology entries use unique concept IDs and exact labels from the graph. List every concept used in more than one section in persistentConceptIds; each persistent concept needs exactly one terminology entry and must keep that canonical name across scenes. Do not invent visual facts or icon choices.
@@ -167,7 +167,10 @@ Rules:
 - Math: build intuition before notation. For a multi-step idea, give each step its own "step" section (the learner sees one move at a time), then an "example" or "recap". A one-step idea fits in one "explain" section.
 - Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
 - If any concept has level "multi-step", at least 2 sections must have kind "step" (one per step of that idea).
-- Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.`,
+- Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.`;
+
+const buildV4ExplicitConceptsPrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
+  system: buildV4SystemPrompt({ scenes, req }),
   user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
 
 VALID CONCEPT IDS (copy IDs exactly into both arrays for every section):
@@ -181,19 +184,57 @@ CONCEPT GRAPH:
 ${JSON.stringify(graph, null, 1)}`,
 });
 
+/**
+ * Candidate variant targeting the root failure mode found in the 2026-09-25/26
+ * reliability run (conditional S3 pass rate 0.231, down from v4's measured 40%):
+ * raw model output showed `lessonBible.terminology: []` and every section's
+ * `contract.requiredRelations: []`, on both the initial attempt and the repair,
+ * despite a real persistentConceptIds list and real graph relations. v4's worked
+ * example never shows `terminology` filled at all, and its `requiredRelations`
+ * example covers only the trivial 2-concept/1-relation case — real failing
+ * sections have 3-4 concepts and 2+ relations. Same text as v4 everywhere except
+ * the worked example, which now shows a full lessonBible (terminology filled)
+ * and a 3-concept/2-relation section, matching the shape that was failing.
+ */
+const buildV5FullyWorkedExamplePrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
+  system: buildV4SystemPrompt({ scenes, req }),
+  user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
+
+VALID CONCEPT IDS (copy IDs exactly into both arrays for every section):
+${conceptIdChecklist}
+
+WORKED EXAMPLE (a fictional graph unrelated to yours — shows the exact required shape only, never real content). Given concepts concept_a ("Example A"), concept_b ("Example B"), concept_c ("Example C") and two relations {"from":"concept_a","to":"concept_b","type":"causes"} and {"from":"concept_b","to":"concept_c","type":"produces"}, a correctly filled lessonBible and section look like:
+{"lessonBible":{"audience":"general learner","terminology":[{"conceptId":"concept_a","label":"Example A"},{"conceptId":"concept_b","label":"Example B"},{"conceptId":"concept_c","label":"Example C"}],"persistentConceptIds":["concept_a","concept_b","concept_c"]}}
+{"id":"sec_1","title":"Example title","goal":"Example goal sentence","kind":"explain","conceptIds":["concept_a","concept_b","concept_c"],"budgetSec":18,"contract":{"learningDelta":"Example goal sentence","targetDurationSec":18,"requiredConceptIds":["concept_a","concept_b","concept_c"],"requiredRelations":[{"from":"concept_a","to":"concept_b","type":"causes"},{"from":"concept_b","to":"concept_c","type":"produces"}],"evidenceSpanIds":["<span ids covering all three concepts and both relations>"],"teachingSkill":"mechanism","candidateMechanisms":["chain"]}}
+Notice conceptIds and requiredConceptIds are identical and nonempty, terminology has one entry per concept in persistentConceptIds (never an empty array when persistentConceptIds is nonempty), and requiredRelations lists EVERY relation whose two endpoints are BOTH in this section's conceptIds — not just one of them, not an empty array. A section with 3+ concepts commonly has 2+ relations; list all of them. Replace every value with graph-backed data from YOUR concept graph below — do not reuse concept_a/concept_b/concept_c or this example's facts.
+
+CONCEPT GRAPH:
+${JSON.stringify(graph, null, 1)}`,
+});
+
 export const PLAN_PROMPT_VARIANTS = {
   'v3-baseline': buildV3BaselinePrompt,
   'v4-explicit-concepts': buildV4ExplicitConceptsPrompt,
+  'v5-fully-worked-example': buildV5FullyWorkedExamplePrompt,
 } as const;
 export type PlanPromptVariant = keyof typeof PLAN_PROMPT_VARIANTS;
 /**
- * Adopted 2026-09-25 from a measured `plan:calibrate` run (5 held-out non-G-10 sources, 3 cold
- * attempts each, qwen/qwen3.8-flash): v3-baseline passed 0/15 (0%), v4-explicit-concepts passed
- * 6/15 (40%) — see `harness/reports/2026-09-24-plan-calibration.{json,md}`. Both variants ran
- * against the identical cached ConceptGraph per source, so the gap is prompt text, not graph luck.
+ * Adopted 2026-09-26 from a measured `plan:calibrate` run (5 held-out non-G-10 sources, 3 cold
+ * attempts each, qwen/qwen3.8-flash): v4-explicit-concepts passed 7/15 (47%), v5-fully-worked-example
+ * passed 8/15 (53%), both with lower cost than v4 ($0.0316 vs $0.0353) — see
+ * `harness/reports/2026-09-25-plan-calibration.{json,md}`. Both variants ran against the identical
+ * cached ConceptGraph per source, so the gap is prompt text, not graph luck. This is a modest,
+ * noisy result on a small sample (one attempt's difference); it targets a root cause traced from
+ * real raw model output (`lessonBible.terminology`/every section's `requiredRelations` emitted as
+ * `[]` on both the initial attempt and the repair — v4's worked example never demonstrated
+ * `terminology` filled and only showed the trivial 1-relation case). Every failure this run carried
+ * `repairs: 1` and real per-attempt cost, ruling out transport/network failure as the dominant
+ * `S3_CALL_FAILED` cause (the harness's own generic code for any exhausted-repair failure,
+ * regardless of which specific contract rule was violated on the losing attempt — a real harness
+ * diagnostic gap, not evidence this fix targeted the wrong failure mode).
  * Change this only after a new `plan:calibrate` run measures a variant ahead of it.
  */
-export const DEFAULT_PLAN_PROMPT_VARIANT: PlanPromptVariant = 'v4-explicit-concepts';
+export const DEFAULT_PLAN_PROMPT_VARIANT: PlanPromptVariant = 'v5-fully-worked-example';
 
 export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph, m: StageModel, variant: PlanPromptVariant = DEFAULT_PLAN_PROMPT_VARIANT): Promise<StructuredCallResult<TeachingPlan>> {
   const scenes = Math.max(1, Math.round(req.targetDurationSec / 18));

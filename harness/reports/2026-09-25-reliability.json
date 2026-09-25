@@ -1,34 +1,30 @@
 {
-  "generatedAt": "2026-09-25T12:37:42.229Z",
+  "generatedAt": "2026-09-25T20:08:19.468Z",
   "model": "qwen/qwen3.8-flash",
   "attempts": [
     {
       "sourceId": "ocean-tides",
       "durationSec": 60,
       "attempt": 1,
-      "reached": "S3",
-      "passed": false,
-      "failureCodes": [
-        "plan-repair-failed"
-      ],
+      "reached": "done",
+      "passed": true,
+      "failureCodes": [],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.004644716,
-      "durationMs": 99991
+      "costUsd": 0.007441606,
+      "durationMs": 257802
     },
     {
       "sourceId": "ocean-tides",
       "durationSec": 60,
       "attempt": 2,
-      "reached": "S3",
-      "passed": false,
-      "failureCodes": [
-        "plan-repair-failed"
-      ],
+      "reached": "done",
+      "passed": true,
+      "failureCodes": [],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.003859284,
-      "durationMs": 77013
+      "costUsd": 0.007265743999999999,
+      "durationMs": 235383
     },
     {
       "sourceId": "ocean-tides",
@@ -39,55 +35,13 @@
       "failureCodes": [
         "plan-repair-failed"
       ],
-      "transportRetries": 2,
-      "anchoredEvidence": false,
-      "costUsd": 0.006345072,
-      "durationMs": 289908
-    },
-    {
-      "sourceId": "bicycle-balance",
-      "durationSec": 60,
-      "attempt": 1,
-      "reached": "S3",
-      "passed": false,
-      "failureCodes": [
-        "plan-repair-failed"
-      ],
-      "transportRetries": 2,
-      "anchoredEvidence": false,
-      "costUsd": 0.004151162,
-      "durationMs": 313523
-    },
-    {
-      "sourceId": "bicycle-balance",
-      "durationSec": 60,
-      "attempt": 2,
-      "reached": "S2",
-      "passed": false,
-      "failureCodes": [
-        "concepts-repair-failed"
-      ],
-      "transportRetries": 0,
-      "anchoredEvidence": false,
-      "costUsd": 0.004108868,
-      "durationMs": 88681
-    },
-    {
-      "sourceId": "bicycle-balance",
-      "durationSec": 60,
-      "attempt": 3,
-      "reached": "S3",
-      "passed": false,
-      "failureCodes": [
-        "plan-repair-failed"
-      ],
       "transportRetries": 1,
       "anchoredEvidence": false,
-      "costUsd": 0.00403792,
-      "durationMs": 169025
+      "costUsd": 0.00340609,
+      "durationMs": 145696
     },
     {
-      "sourceId": "composting",
+      "sourceId": "bicycle-balance",
       "durationSec": 60,
       "attempt": 1,
       "reached": "S3",
@@ -97,125 +51,174 @@
       ],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.003665802,
-      "durationMs": 77352
+      "costUsd": 0.0038562500000000003,
+      "durationMs": 80698
     },
     {
-      "sourceId": "composting",
+      "sourceId": "bicycle-balance",
       "durationSec": 60,
       "attempt": 2,
-      "reached": "S3",
+      "reached": "S4",
       "passed": false,
       "failureCodes": [
-        "plan-repair-failed"
+        "script-call-failed"
       ],
-      "transportRetries": 0,
+      "transportRetries": 2,
       "anchoredEvidence": false,
-      "costUsd": 0.004372022,
-      "durationMs": 135144
+      "costUsd": 0.005478906,
+      "durationMs": 478994
     },
     {
-      "sourceId": "composting",
+      "sourceId": "bicycle-balance",
       "durationSec": 60,
       "attempt": 3,
       "reached": "S2",
       "passed": false,
       "failureCodes": [
-        "concepts-repair-failed"
+        "concepts-call-failed"
       ],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.002545018,
-      "durationMs": 57265
+      "costUsd": 0,
+      "durationMs": 2
+    },
+    {
+      "sourceId": "composting",
+      "durationSec": 60,
+      "attempt": 1,
+      "reached": "S2",
+      "passed": false,
+      "failureCodes": [
+        "concepts-call-failed"
+      ],
+      "transportRetries": 0,
+      "anchoredEvidence": false,
+      "costUsd": 0,
+      "durationMs": 1
+    },
+    {
+      "sourceId": "composting",
+      "durationSec": 60,
+      "attempt": 2,
+      "reached": "S2",
+      "passed": false,
+      "failureCodes": [
+        "concepts-call-failed"
+      ],
+      "transportRetries": 0,
+      "anchoredEvidence": false,
+      "costUsd": 0,
+      "durationMs": 1
+    },
+    {
+      "sourceId": "composting",
+      "durationSec": 60,
+      "attempt": 3,
+      "reached": "S2",
+      "passed": false,
+      "failureCodes": [
+        "concepts-call-failed"
+      ],
+      "transportRetries": 0,
+      "anchoredEvidence": false,
+      "costUsd": 0,
+      "durationMs": 1
     },
     {
       "sourceId": "rainbow-formation",
       "durationSec": 60,
       "attempt": 1,
-      "reached": "done",
-      "passed": true,
-      "failureCodes": [],
+      "reached": "S2",
+      "passed": false,
+      "failureCodes": [
+        "concepts-call-failed"
+      ],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.006526321999999999,
-      "durationMs": 159441
+      "costUsd": 0,
+      "durationMs": 1
     },
     {
       "sourceId": "rainbow-formation",
       "durationSec": 60,
       "attempt": 2,
-      "reached": "S3",
+      "reached": "S2",
       "passed": false,
       "failureCodes": [
-        "plan-repair-failed"
+        "concepts-call-failed"
       ],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.005020502,
-      "durationMs": 125175
+      "costUsd": 0,
+      "durationMs": 0
     },
     {
       "sourceId": "rainbow-formation",
       "durationSec": 60,
       "attempt": 3,
-      "reached": "S3",
+      "reached": "S2",
       "passed": false,
       "failureCodes": [
-        "plan-repair-failed"
+        "concepts-call-failed"
       ],
-      "transportRetries": 1,
+      "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.004401808,
-      "durationMs": 195854
+      "costUsd": 0,
+      "durationMs": 1
     },
     {
       "sourceId": "mirror-images",
       "durationSec": 60,
       "attempt": 1,
-      "reached": "done",
-      "passed": true,
-      "failureCodes": [],
+      "reached": "S2",
+      "passed": false,
+      "failureCodes": [
+        "concepts-call-failed"
+      ],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.004543854,
-      "durationMs": 120110
+      "costUsd": 0,
+      "durationMs": 1
     },
     {
       "sourceId": "mirror-images",
       "durationSec": 60,
       "attempt": 2,
-      "reached": "S3",
+      "reached": "S2",
       "passed": false,
       "failureCodes": [
-        "plan-repair-failed"
+        "concepts-call-failed"
       ],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.002785492,
-      "durationMs": 88064
+      "costUsd": 0,
+      "durationMs": 1
     },
     {
       "sourceId": "mirror-images",
       "durationSec": 60,
       "attempt": 3,
-      "reached": "done",
-      "passed": true,
-      "failureCodes": [],
+      "reached": "S2",
+      "passed": false,
+      "failureCodes": [
+        "concepts-call-failed"
+      ],
       "transportRetries": 0,
       "anchoredEvidence": false,
-      "costUsd": 0.005252286,
-      "durationMs": 127324
+      "costUsd": 0,
+      "durationMs": 0
     }
   ],
   "byStage": {
-    "s2PassRate": 0.8666666666666667,
-    "s3PassRate": 0.23076923076923078,
-    "s4PassRate": 1,
-    "endToEndPassRate": 0.2
+    "s2PassRate": 0.3333333333333333,
+    "s3PassRate": 0.6,
+    "s4PassRate": 0.6666666666666666,
+    "endToEndPassRate": 0.13333333333333333
   },
   "failureCodeCounts": {
-    "concepts-repair-failed": 2,
-    "plan-repair-failed": 10
+    "concepts-call-failed": 10,
+    "plan-repair-failed": 2,
+    "script-call-failed": 1
   },
-  "totalCostUsd": 0.066260128
+  "totalCostUsd": 0.027448596
 }
