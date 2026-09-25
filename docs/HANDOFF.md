@@ -2,7 +2,7 @@
 
 ## Entry — 2026-09-25, Task 14 documentation and continuation audit
 
-- **Current checkpoint:** Tasks 0–13 are implemented and committed through `6ac1f67` (`Add S1-S4 reliability harness`). The frozen plan remains locked. Task 14's evidence-ledger and architecture updates are complete. Final verification passed: `npm run typecheck:hypothesis && npm run test:hypothesis` — 349 Node tests and 17 Python tests, 0 failures.
+- **Current checkpoint:** Tasks 0–13 are implemented and committed through `6ac1f67` (`Add S1-S4 reliability harness`). Task 14's evidence-ledger and architecture update is committed as `e0f39ea` (`Document hypothesis tasks and measurement gates`). The frozen plan remains locked. Final verification passed: `npm run typecheck:hypothesis && npm run test:hypothesis` — 349 Node tests and 17 Python tests, 0 failures.
 - **Task 11 re-audit:** `.data/icon-libraries/` now contains manifests and SVGs for AssetLab MIT, ISC, and Apache-2.0 sets. Existing generated report/catalog files show assetlab-mit 162/214 accepted (36 unknown-color, 15 no-ink, 1 bad-geometry), assetlab-isc 13/13 accepted, and assetlab-apache20 0/20 accepted (all no-ink). Unknown-color affects 16.8% of the MIT input set, below the plan's 30% pre-flatten amendment threshold. These are workspace artifacts only: no source path, license, attribution, or house-style decision has been supplied by the user in chat for this run; each manifest points to an `ATTRIBUTION.md` that is absent. Therefore Task 11 stays `unmeasured`, these libraries remain disabled, and their untracked generated catalogs are not treated as validated/approved assets.
 - **Task 14 paid work:** no Task 14 paid command has run and no spend was incurred (`$0.00`). Prepared sources and matching stage caches are present. Each command below requires explicit user approval under the frozen plan:
 
@@ -17,7 +17,7 @@ npm run scene:calibrate -- --runs=.data/hypothesis-runs/claude/phase0-live/ocean
 Caps: reliability $1.00, each diagnostic lesson $0.30, scene calibration $1.00. The diagnostic runs must retain failed S5 gates and must not be visually scored; calibration remains diagnostic and cannot promote an arm.
 - **Documentation updated:** Task 6–14 implementation and measurement states are recorded in `hypothesis/v1_claude/02-IMPLEMENTATION-PLAN.md` and `03-VALIDATION-HARNESS.md`; `docs/ARCHITECTURE.md` now lists the Task 6–13 modules, cache behavior, and CLI commands. No Task 14 measurement is claimed.
 - **Known gates:** S5 alignment calibration still requires two independent human reviewers. C6/E1/E5 remain `unmeasured`. Long-form 5/10-minute generation remains unimplemented; `maxConcepts` is capped at 14.
-- **Next bounded work:** verify the final diff and frozen-plan hash/mode, commit the tracked Task 14 documentation, then request approval for any selected paid invocation. Resolve AssetLab source/license/attribution and house-style intent before enabling any candidate library.
+- **Next bounded work:** ask which, if any, of the listed paid invocations the user approves, and request the missing AssetLab source path, license evidence, attribution text, and house-style decision. After approval, run only the selected commands, record the measured results and actual spend, and commit the resulting reports and handoff update. No local Task 14 offline work remains.
 
 ## Historical initial continuation audit
 
