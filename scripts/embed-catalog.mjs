@@ -9,6 +9,8 @@ import { pipeline } from '@huggingface/transformers';
 // Keep in sync with ENABLED_LIBRARIES in src/experimental/hypothesis/v1_claude/catalog/registry.ts.
 const ENABLED_LIBRARIES = [
   { libraryId: 'streamline', file: 'streamline.json', embeddings: 'streamline.emb.bin' },
+  { libraryId: 'assetlab-mit', file: 'assetlab-mit.json', embeddings: 'assetlab-mit.emb.bin' },
+  { libraryId: 'assetlab-isc', file: 'assetlab-isc.json', embeddings: 'assetlab-isc.emb.bin' },
 ];
 const dataDir = 'src/experimental/hypothesis/v1_claude/catalog/data';
 const embed = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');

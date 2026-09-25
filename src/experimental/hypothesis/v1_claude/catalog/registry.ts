@@ -12,6 +12,8 @@ export interface CatalogLibrary {
 
 export const ENABLED_LIBRARIES: readonly CatalogLibrary[] = [
   { libraryId: 'streamline', file: 'streamline.json', embeddings: 'streamline.emb.bin', house: true },
+  { libraryId: 'assetlab-mit', file: 'assetlab-mit.json', embeddings: 'assetlab-mit.emb.bin', house: false },
+  { libraryId: 'assetlab-isc', file: 'assetlab-isc.json', embeddings: 'assetlab-isc.emb.bin', house: false },
 ];
 
 let dataDirectory: string | undefined;

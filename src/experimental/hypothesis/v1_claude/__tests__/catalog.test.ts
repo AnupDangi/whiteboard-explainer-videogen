@@ -59,7 +59,10 @@ test('ladder: a strong embedding candidate from the house catalog beats a proced
 });
 
 test('ladder: a weak embedding candidate (< TAU_MID_EMB) falls through to the text box rather than a wrong icon', () => {
-  const { resolution } = resolveObject('chloroplast', { size: { w: 150, h: 220 }, candidates: [{ id: 'streamline-color:leaf', name: 'leaf', score: 0.35 }] });
+  // 'qzxjklp' is a nonsense probe with no exact-name match in any enabled catalog (Streamline,
+  // the ingested user libraries, or the procedural seed set) — unlike a real word, it can't
+  // accidentally start matching rung 2 as more libraries are ingested.
+  const { resolution } = resolveObject('qzxjklp', { size: { w: 150, h: 220 }, candidates: [{ id: 'streamline-color:leaf', name: 'leaf', score: 0.35 }] });
   assert.equal(resolution.rung, 4);
 });
 
