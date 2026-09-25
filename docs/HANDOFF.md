@@ -1,5 +1,40 @@
 # HANDOFF — Claude hypothesis track
 
+## Entry — 2026-09-26, 5-domain single-attempt video test (real, no cache, no extra retries)
+
+- User-requested test: 5 different-domain 60s lessons, **one real attempt each** (not the
+  harnesses' usual 3 repeats), no `--stage-cache` (all prior caches invalidated by this session's
+  version bumps anyway). The pipeline's own built-in single-repair-per-stage still applied
+  normally — that's shipped behavior, not an extra retry. Real spend: $0.0247 total across 5 runs.
+- **Result: 1/5 produced a real video.mp4. 4/5 failed at S3 (teaching-plan), repair included.**
+  | domain | total time | result | stopped at |
+  |---|---|---|---|
+  | ocean-tides | 81s | failed | S3 (`plan-repair-failed`) |
+  | bicycle-balance | 125s | failed | S3 (`plan-repair-failed`) |
+  | composting | 96s | failed | S3 (`plan-repair-failed`) |
+  | rainbow-formation | 186s | failed | S3 (`plan-repair-failed`) |
+  | mirror-images | 350s | **video produced** | S5/S6 hard-failed by design; S1–S12 still completed |
+- This is consistent with the measured harness numbers, not a new surprise: v5's conditional S3
+  pass rate is 0.600 (Task-14-era reliability re-run), so ~2/5 single independent attempts
+  passing S3 is within normal variance for that rate; landing at 1/5 is slightly below the
+  measured rate on n=5, not evidence of a further regression.
+- **The one video** (`.data/hypothesis-runs/claude/demo-5video-20260926/mirror-images/mirror-images-md/video.mp4`,
+  1,127,715 bytes): verified with `ffprobe` — real h264 video + real aac audio, both exactly
+  60.000s. Sent to the user directly (no hosting infrastructure in this session). Status is
+  correctly `failed`, not `passed` — S5 hit `alignment-calibration-unmeasured` (the standing
+  human-review gate) and 2 of its S6 scenes hit `planner-call-failed` (OpenRouter routing
+  rejection for `anthropic/claude-sonnet-5`, the same live provider instability documented
+  repeatedly this session) and fell back to deterministic layout; S1–S12 still ran to completion
+  and produced a real, muxed MP4 rather than crashing.
+- **Timing breakdown for the one completed run** (scenes vs audio, as requested): content
+  generation S2+S3+S4 (concepts→plan→narration) 286s; audio S5 (TTS+alignment) 20s; scene
+  planning S6 (2/2 attempted scenes fell back) 31s; render+encode S7–S12 13s.
+- Nothing was mutated into a pass; every `failed` status is real and stage-attributed. No source,
+  fixture, or gate was modified to make this test look better.
+- **Next bounded work** (unchanged from the prior entry): the composting-shaped repair-relation-
+  stranding pattern, OpenRouter routing availability for `anthropic/claude-sonnet-5` (external,
+  still unresolved), and the user's S5 human review (still the only path to any `passed` status).
+
 ## Entry — 2026-09-26, S3 root-cause fix: v5-fully-worked-example adopted as default
 
 - **Root cause** (systematic-debugging, Phase 1-4): the 2026-09-25 `reliability:run` measured
@@ -83,9 +118,30 @@
   3× across v3/v4/v5, a test mock duplicating an existing `okBody` helper, a regex-based
   relation-count check in the new test, this docstring duplicating this HANDOFF narrative) were
   logged but not fixed — deferred cleanup, not correctness issues.
-- **Next bounded work**: investigate why composting regressed under v5 specifically; investigate
-  why the repair path doesn't act on targeted per-field feedback even when given; close the
-  single-section-concept validation gap in `teachingContractFindings`/`LessonBibleSchema`.
+- **Composting regression, root-caused** (fresh diagnostic run, `.data/hypothesis-runs/claude/debug-composting-v5/`,
+  real spend, single attempt, v5 default): a **distinct, second failure pattern**, not the
+  terminology bug. Attempt 1 had `learningDelta` mismatched against the section goal on all 4
+  sections, plus 2 concepts (`microbe_requirements`, `thermophilic_stage`) recurring across
+  sections without being declared in `persistentConceptIds`. The repair fixed all 4
+  `learningDelta` mismatches — but in whatever reorganization it did to fix them, it **stranded 5
+  relations** that were not flagged as problems in attempt 1 (`sec_1..4 omits source relation ...`,
+  `lesson omits source relation ... from every SceneContract`), and still didn't declare either
+  concept persistent. The model corrected one violation class while introducing a different one,
+  rather than holding the full constraint set through the edit — consistent with "if you move a
+  concept out of a section, move its relations with it" (already stated in the prompt) not being
+  followed during a repair driven by a different error. Not fixed here — this is real evidence
+  for a possible v6 candidate (a repair-specific reminder about relation-stranding when
+  reorganizing sections), not something to prompt-engineer blind; would need its own
+  `plan:calibrate` measurement.
+- **Single-section contract-validation "gap" re-examined, not a bug**: on reflection, empty
+  `terminology`/`persistentConceptIds` is the semantically correct state for a lesson where no
+  concept recurs across scenes — the schema's own design ties `persistentConceptIds` to
+  recurrence. `RECURRING_CONCEPT_NOT_DECLARED_PERSISTENT` already catches the case that matters
+  (a concept recurs but isn't declared persistent). No fix applied; the earlier framing of this
+  as a coverage gap overstated it.
+- **Next bounded work**: measure a repair-specific relation-stranding reminder as a v6 candidate
+  if composting-shaped sources keep failing; the provider-routing instability (external,
+  unresolved all session); your S5 human review (still the hard blocker on any `passed` status).
 
 ## Entry — 2026-09-25, Task 14 Step 3: S6 prompt-arm calibration (paid, user-approved) — 0 valid scenes, real spend $0.00
 
