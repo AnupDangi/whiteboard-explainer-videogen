@@ -1,0 +1,315 @@
+import { z } from 'zod';
+import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from '../llm/structuredCall.js';
+import { parseMarkers } from '../narration/markers.js';
+import { ConceptGraphSchema, ScriptSchema, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
+import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan } from './analyze.js';
+import { sourceDocFromText, sourcePrompt, type SourceDoc } from './sourceDoc.js';
+import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
+import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
+import { teachingContractProblems } from './contracts.js';
+import { schemaKeywordLeaks } from '../prompt/builder.js';
+
+/**
+ * S2 -> S3 -> S4 (claude_pipeline.md §1-§4). Mid-tier ("flash") model; every
+ * output is zod-validated plus semantic checks, with exactly one repair.
+ * The hypothesis order is preserved: the narration script is final before any
+ * scene is planned (no pre-narration visual story, claude_pipeline.md §27).
+ */
+export interface StageModel {
+  model: string;
+  apiKey: string;
+  remainingBudgetUsd: number;
+  budgetLedger?: PersistentBudgetLedger;
+  /** Test seam for deterministic stage-contract tests; production defaults to global fetch. */
+  fetcher?: typeof fetch;
+}
+
+export interface LessonRequest {
+  /** Prompt and/or source text (plain text or Markdown). */
+  source: string;
+  /** What the learner wants (may be empty). */
+  instruction?: string;
+  targetDurationSec: number;
+  /** Learner level, used for depth and examples, never to change facts. */
+  audience?: string;
+  sourceDoc?: SourceDoc;
+  sourceFormat?: SourceDoc['format'];
+}
+
+// ---------------------------------------------------------------------------
+// S2 — ConceptGraph
+// ---------------------------------------------------------------------------
+
+export async function buildConceptGraph(req: LessonRequest, m: StageModel): Promise<StructuredCallResult<ConceptGraph>> {
+  const sourceDoc = req.sourceDoc ?? sourceDocFromText(req.source, req.sourceFormat ?? 'text');
+  // Bound graph size to the lesson's actual teaching time. The model still
+  // selects source-grounded concepts; this is a generic capacity limit.
+  const maxConcepts = Math.min(14, Math.max(3, Math.ceil(req.targetDurationSec / 10)));
+  const maxRelations = Math.min(24, maxConcepts * 2);
+  const maxPrerequisites = Math.min(20, maxConcepts * 2);
+  // A full-size concept graph (label/kind/definition/1-3 evidence quotes per concept, endpoints/type/evidence
+  // per relation) does not fit the generic 4000-token structuredCall default: a live run truncated mid-object
+  // at exactly that ceiling. Scale the completion budget from the same capacity numbers above instead of a
+  // flat constant, matching the pattern writeScript already uses for its own (smaller) per-scene maxTokens.
+  const maxConceptGraphTokens = Math.min(8000, 800 + maxConcepts * 350 + maxRelations * 250 + maxPrerequisites * 20);
+  const system = `You extract the teachable structure of a source for a short narrated whiteboard lesson.
+Return ONE JSON object: { "concepts": [...], "relations": [...], "prerequisites": [...] }.
+- concepts: at most ${maxConcepts} ideas a learner must understand, in teaching order. Prefer the minimum set needed for this lesson; omit incidental details. id: lowercase snake_case. label: <=4 words. kind: entity|process|quantity|formula|event|role|rule. definition: one plain sentence grounded in the source. evidence: 1-3 exact {spanId, quote} references; quote must occur verbatim in that source span.
+- For mathematical ideas give "latex" (valid TeX, no $ signs) when there is a formula, and set "level": "multi-step" when understanding it takes several dependent steps (e.g. a derivation, an algorithm, a rule applied repeatedly), otherwise "one-step".
+- relations: at most ${maxRelations} directed links between concept ids (causes, feeds, contains, compares, transforms, requires, produces, opposes). Keep only the most important source-stated teaching relations; include 1-3 exact evidence references for each. Do not create summary/model nodes to collect several facts.
+- prerequisites: at most ${maxPrerequisites} { concept, needs } links, only when a concept cannot be understood without another one.
+- Never invent facts that are not in the source. Keep it to what fits the requested duration (about one concept per 10-15 seconds).`;
+  const user = `Target duration: ${req.targetDurationSec} seconds.${req.audience ? `\nAudience: ${req.audience}.` : ''}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
+
+SOURCE DOCUMENT (text is exact source; span index preserves markdown structure and positions):
+${sourcePrompt(sourceDoc)}`;
+  const result = await structuredCall({
+    stage: 'concepts', subject: 'concept graph', model: m.model, apiKey: m.apiKey, system, user,
+    schema: ConceptGraphSchema, schemaName: 'concept_graph', maxTokens: maxConceptGraphTokens, remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
+    validate: (g) => {
+      const ids = new Set(g.concepts.map((c) => c.id));
+      const problems: string[] = [];
+      if (g.concepts.length > maxConcepts) problems.push(`concept graph has ${g.concepts.length} concepts; at most ${maxConcepts} fit this ${req.targetDurationSec}-second lesson`);
+      if (g.relations.length > maxRelations) problems.push(`concept graph has ${g.relations.length} relations; at most ${maxRelations} fit this lesson`);
+      if (g.prerequisites.length > maxPrerequisites) problems.push(`concept graph has ${g.prerequisites.length} prerequisites; at most ${maxPrerequisites} fit this lesson`);
+      if (ids.size !== g.concepts.length) problems.push('concept ids must be unique');
+      const leaked = schemaKeywordLeaks(g.concepts.map((c) => c.id));
+      if (leaked.length) problems.push(`concept ids ${leaked.map((id) => `"${id}"`).join(', ')} are JSON field names, not source concepts; give each concept a snake_case id derived from its own label`);
+      const relationIds = g.relations.map((r) => `${r.from}|${r.type}|${r.to}`);
+      if (new Set(relationIds).size !== relationIds.length) problems.push('relations must be unique');
+      const checkEvidence = (owner: string, evidence: Array<{ spanId: string; quote: string }>) => {
+        if (evidence.length === 0) problems.push(`${owner} has no source evidence`);
+        for (const ref of evidence) if (!anchorQuote(sourceDoc, ref.spanId, ref.quote)) problems.push(`${owner} evidence quote is absent from source span ${ref.spanId}; copy the words exactly as they appear in that span`);
+      };
+      for (const c of g.concepts) checkEvidence(`concept ${c.id}`, c.evidence);
+      for (const r of g.relations) {
+        if (!ids.has(r.from) || !ids.has(r.to)) problems.push(`relation ${r.from}->${r.to} references an unknown concept`);
+        checkEvidence(`relation ${r.from}->${r.to}`, r.evidence);
+      }
+      for (const p of g.prerequisites) if (!ids.has(p.concept) || !ids.has(p.needs)) problems.push(`prerequisite ${p.concept}<-${p.needs} references an unknown concept`);
+      return problems;
+    },
+  });
+  if (!result.value) return result as unknown as StructuredCallResult<ConceptGraph>;
+  const anchorCounts: Record<AnchorMatch, number> = { exact: 0, normalized: 0, relocated: 0 };
+  const enrich = (refs: Array<{ spanId: string; quote: string }>) => refs.map((ref) => {
+    const anchored = anchorQuote(sourceDoc, ref.spanId, ref.quote)!;
+    anchorCounts[anchored.match] += 1;
+    return anchored.ref;
+  });
+  const enriched = {
+    concepts: result.value.concepts.map(({ evidence, ...c }) => ({ ...c, evidence: enrich(evidence) })),
+    relations: result.value.relations.map(({ evidence, ...r }) => ({ ...r, evidence: enrich(evidence) })),
+    prerequisites: result.value.prerequisites,
+  };
+  const failures = anchorCounts.normalized + anchorCounts.relocated > 0
+    ? [...result.failures, { code: 'concepts-evidence-anchored', stage: 'concepts', message: `evidence anchored to verbatim source: ${anchorCounts.exact} exact, ${anchorCounts.normalized} normalized, ${anchorCounts.relocated} relocated`, hard: false }]
+    : result.failures;
+  return { ...result, failures, value: enriched };
+}
+
+// ---------------------------------------------------------------------------
+// S3 — TeachingPlan
+// ---------------------------------------------------------------------------
+
+/** Inputs every S3 prompt variant closes over — never lesson content, only request/graph shape. */
+interface PlanPromptContext {
+  scenes: number;
+  req: LessonRequest;
+  graph: ConceptGraph;
+  conceptIdChecklist: string;
+}
+type PlanPromptBuilder = (ctx: PlanPromptContext) => { system: string; user: string };
+
+/** Production default until a calibration run (`harness/planCalibrationCli.ts`) measures a challenger ahead of it. */
+const buildV3BaselinePrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
+  system: `You are a teaching architect. Turn a concept graph into a time-budgeted plan for a narrated whiteboard video, one scene per section.
+Return ONE JSON object: { "targetDurationSec", "intro": {"sourceTitle","sections"}, "lessonBible": {"audience","domain"?,"terminology","persistentConceptIds"}, "sections": [...], "recap": {"keyPoints"} }.
+Rules:
+- The bible audience is the supplied audience or "general learner"; optional domain is a broad subject label used only as a low-weight example-retrieval signal. Terminology entries use unique concept IDs and exact labels from the graph. List every concept used in more than one section in persistentConceptIds; each persistent concept needs exactly one terminology entry and must keep that canonical name across scenes. Do not invent visual facts or icon choices.
+- Assign concepts explicitly before writing each section: choose one or more exact concept IDs from the graph, put those IDs in section.conceptIds, then copy the identical nonempty ID list to contract.requiredConceptIds. These two arrays are required for EVERY section, including intro and recap. Never leave either array empty, and never put concept IDs only in the contract. Do not invent IDs or use concept labels in place of IDs.
+- The contract has learningDelta (exactly the section goal), targetDurationSec (exactly section budgetSec), requiredConceptIds (exactly section conceptIds), requiredRelations (every graph relation whose two endpoints appear in this section, each as {from,to,type}), evidenceSpanIds (all cited span IDs for those concepts and relations), teachingSkill (definition|mechanism|comparison|process|derivation|application|recap), candidateMechanisms (1-3 advisory values from focus|chain|convergence|fan_out|weighted_blend|cycle|threshold|comparison|trajectory|equation|state_transition). A mechanism is a generic visual idea, never a lesson-specific drawing instruction.
+- Before returning, verify section-by-section that conceptIds and requiredConceptIds are identical and nonempty, every ID occurs in the supplied graph, every required relation is included, and evidenceSpanIds exactly covers the listed concepts and relations. If a section is only an intro or recap, anchor it to the graph concepts it introduces or reviews; do not create an ungrounded scene.
+- Order by prerequisites: a concept is never taught before what it needs.
+- Math: build intuition before notation. For a multi-step idea, give each step its own "step" section (the learner sees one move at a time), then an "example" or "recap". A one-step idea fits in one "explain" section.
+- Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
+- If any concept has level "multi-step", at least 2 sections must have kind "step" (one per step of that idea).
+- Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.`,
+  user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
+
+VALID CONCEPT IDS (copy IDs exactly into both arrays for every section):
+${conceptIdChecklist}
+
+REQUIRED MAPPING SHAPE (illustrative placeholders only; replace every value with graph-backed data):
+{"sections":[{"conceptIds":["<graph_concept_id>"],"contract":{"requiredConceptIds":["<same_graph_concept_id>"]}}]}
+
+CONCEPT GRAPH:
+${JSON.stringify(graph, null, 1)}`,
+});
+
+/**
+ * Candidate variant targeting the one root failure mode found across live cold attempts:
+ * the model empties a section's conceptIds (usually while self-correcting something else
+ * during its one repair), which mechanically fails the conceptIds/contract match AND makes
+ * that section's relations vanish from every SceneContract. The rule paragraph is rewritten
+ * with an explicit, harder-to-miss consequence, and the mapping placeholder becomes one small,
+ * fully worked, topic-neutral example (fake ids) instead of a bare shape — never real content.
+ */
+const buildV4ExplicitConceptsPrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
+  system: `You are a teaching architect. Turn a concept graph into a time-budgeted plan for a narrated whiteboard video, one scene per section.
+Return ONE JSON object: { "targetDurationSec", "intro": {"sourceTitle","sections"}, "lessonBible": {"audience","domain"?,"terminology","persistentConceptIds"}, "sections": [...], "recap": {"keyPoints"} }.
+Rules:
+- The bible audience is the supplied audience or "general learner"; optional domain is a broad subject label used only as a low-weight example-retrieval signal. Terminology entries use unique concept IDs and exact labels from the graph. List every concept used in more than one section in persistentConceptIds; each persistent concept needs exactly one terminology entry and must keep that canonical name across scenes. Do not invent visual facts or icon choices.
+- Assign concepts explicitly before writing each section: choose one or more exact concept IDs from the graph, put those IDs in section.conceptIds, then copy the identical nonempty ID list to contract.requiredConceptIds. These two arrays are REQUIRED and must never be empty for ANY section, including intro and recap — not even while correcting a different problem. If a section genuinely should not exist without concepts, delete that entire section rather than leaving its conceptIds empty. Do not invent IDs or use concept labels in place of IDs. Every graph relation whose two endpoints are BOTH assigned to a section must appear in that section's contract.requiredRelations — if you move a concept out of a section, move its relations (and their other endpoint) with it; never leave a relation stranded with no section.
+- The contract has learningDelta (exactly the section goal), targetDurationSec (exactly section budgetSec), requiredConceptIds (exactly section conceptIds), requiredRelations (every graph relation whose two endpoints appear in this section, each as {from,to,type}), evidenceSpanIds (all cited span IDs for those concepts and relations), teachingSkill (definition|mechanism|comparison|process|derivation|application|recap), candidateMechanisms (1-3 advisory values from focus|chain|convergence|fan_out|weighted_blend|cycle|threshold|comparison|trajectory|equation|state_transition). A mechanism is a generic visual idea, never a lesson-specific drawing instruction.
+- Before returning, verify section-by-section that conceptIds and requiredConceptIds are identical and nonempty, every ID occurs in the supplied graph, every required relation is included, and evidenceSpanIds exactly covers the listed concepts and relations. If a section is only an intro or recap, anchor it to the graph concepts it introduces or reviews; do not create an ungrounded scene.
+- Order by prerequisites: a concept is never taught before what it needs.
+- Math: build intuition before notation. For a multi-step idea, give each step its own "step" section (the learner sees one move at a time), then an "example" or "recap". A one-step idea fits in one "explain" section.
+- Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
+- If any concept has level "multi-step", at least 2 sections must have kind "step" (one per step of that idea).
+- Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.`,
+  user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
+
+VALID CONCEPT IDS (copy IDs exactly into both arrays for every section):
+${conceptIdChecklist}
+
+WORKED EXAMPLE (a fictional graph unrelated to yours — shows the exact required shape only, never real content). Given concepts concept_a, concept_b and one relation {"from":"concept_a","to":"concept_b","type":"causes"}, a correctly filled section looks like:
+{"id":"sec_1","title":"Example title","goal":"Example goal sentence","kind":"explain","conceptIds":["concept_a","concept_b"],"budgetSec":18,"contract":{"learningDelta":"Example goal sentence","targetDurationSec":18,"requiredConceptIds":["concept_a","concept_b"],"requiredRelations":[{"from":"concept_a","to":"concept_b","type":"causes"}],"evidenceSpanIds":["<span ids covering both concepts and the relation>"],"teachingSkill":"mechanism","candidateMechanisms":["chain"]}}
+Notice conceptIds and requiredConceptIds are identical and nonempty, and the relation appears in requiredRelations only because BOTH its endpoints are in conceptIds. Replace every value with graph-backed data from YOUR concept graph below — do not reuse concept_a/concept_b or this example's facts.
+
+CONCEPT GRAPH:
+${JSON.stringify(graph, null, 1)}`,
+});
+
+export const PLAN_PROMPT_VARIANTS = {
+  'v3-baseline': buildV3BaselinePrompt,
+  'v4-explicit-concepts': buildV4ExplicitConceptsPrompt,
+} as const;
+export type PlanPromptVariant = keyof typeof PLAN_PROMPT_VARIANTS;
+/**
+ * Adopted 2026-09-25 from a measured `plan:calibrate` run (5 held-out non-G-10 sources, 3 cold
+ * attempts each, qwen/qwen3.8-flash): v3-baseline passed 0/15 (0%), v4-explicit-concepts passed
+ * 6/15 (40%) — see `harness/reports/2026-09-24-plan-calibration.{json,md}`. Both variants ran
+ * against the identical cached ConceptGraph per source, so the gap is prompt text, not graph luck.
+ * Change this only after a new `plan:calibrate` run measures a variant ahead of it.
+ */
+export const DEFAULT_PLAN_PROMPT_VARIANT: PlanPromptVariant = 'v4-explicit-concepts';
+
+export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph, m: StageModel, variant: PlanPromptVariant = DEFAULT_PLAN_PROMPT_VARIANT): Promise<StructuredCallResult<TeachingPlan>> {
+  const scenes = Math.max(1, Math.round(req.targetDurationSec / 18));
+  const conceptIdChecklist = graph.concepts.map((concept) => `- ${concept.id}: ${concept.label}`).join('\n');
+  const { system, user } = PLAN_PROMPT_VARIANTS[variant]({ scenes, req, graph, conceptIdChecklist });
+  const result = await structuredCall({
+    stage: 'plan', subject: 'teaching plan', model: m.model, apiKey: m.apiKey, system, user,
+    schema: TeachingPlanSchema, schemaName: 'teaching_plan', remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
+    // The deterministic analyser's blocking checks run INSIDE validation, against the model's raw
+    // output. Nothing here mutates the plan before it is checked: a missing SceneContract or an
+    // unsupported relation must surface as a real problem and consume the one repair call, never
+    // get silently fixed and reported as clean.
+    validate: (p) => {
+      const problems: string[] = [];
+      if (p.targetDurationSec !== req.targetDurationSec) problems.push(`targetDurationSec must be ${req.targetDurationSec}`);
+      problems.push(...analyzeTeachingPlan(p, graph).findings.filter((f) => f.severity === 'error').map((f) => f.message));
+      problems.push(...teachingContractProblems(p, graph, req.audience ?? 'general learner'));
+      const leakedIds = schemaKeywordLeaks(p.sections.flatMap((s) => [...s.conceptIds, ...(s.contract?.requiredConceptIds ?? [])]));
+      if (leakedIds.length) problems.push(`section concept ids ${[...new Set(leakedIds)].map((id) => `"${id}"`).join(', ')} are JSON field names; use only ids from VALID CONCEPT IDS`);
+      return problems;
+    },
+  });
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// S4 — Script with [[id|phrase]] mention markers
+// ---------------------------------------------------------------------------
+
+export const MENTIONS_PER_SCENE = { min: 3, max: 8 };
+/** Audio is the master clock, so length only needs to be roughly right; the tolerance keeps scenes from being thin. */
+const WORD_TOLERANCE = 0.4;
+
+/** Deterministic S4 checks for ONE scene: markers parse, the spoken length fits the section budget, mentions are usable anchors. */
+export function validateSceneText(text: string, section: TeachingPlan['sections'][number]): string[] {
+  const problems: string[] = [];
+  if (/\[\[[^\]]*\[\[/.test(text)) problems.push('nested markers');
+  const { plainText, mentions } = parseMarkers(text);
+  if (/\[\[|\]\]/.test(plainText)) problems.push('malformed marker (use [[id|spoken words]])');
+  const words = plainText.trim().split(/\s+/).filter(Boolean).length;
+  const budget = section.budgetSec * WORDS_PER_SEC;
+  if (words < budget * (1 - WORD_TOLERANCE) || words > budget * (1 + WORD_TOLERANCE)) {
+    problems.push(`${words} spoken words, needs ${Math.round(budget * (1 - WORD_TOLERANCE))}-${Math.round(budget * (1 + WORD_TOLERANCE))} (${section.budgetSec}s at ${WORDS_PER_SEC} words/s)`);
+  }
+  if (mentions.length < MENTIONS_PER_SCENE.min || mentions.length > MENTIONS_PER_SCENE.max) problems.push(`${mentions.length} markers, needs ${MENTIONS_PER_SCENE.min}-${MENTIONS_PER_SCENE.max}`);
+  const seen = new Set<string>();
+  for (const mm of mentions) {
+    if (!/^[a-z0-9_]+$/.test(mm.id)) problems.push(`marker id "${mm.id}" must be lowercase snake_case`);
+    if (seen.has(mm.id)) problems.push(`marker id "${mm.id}" used twice`);
+    seen.add(mm.id);
+  }
+  return problems;
+}
+
+/** Whole-script checks: one scene per section, in plan order, each scene valid. */
+export function validateScript(script: Script, plan: TeachingPlan): string[] {
+  const problems: string[] = [];
+  if (script.scenes.length !== plan.sections.length) problems.push(`expected ${plan.sections.length} scenes (one per section), got ${script.scenes.length}`);
+  plan.sections.forEach((section, i) => {
+    const scene = script.scenes[i];
+    if (!scene) return;
+    if (scene.sectionId !== section.id) problems.push(`scene ${i + 1} must have sectionId "${section.id}", got "${scene.sectionId}"`);
+    problems.push(...validateSceneText(scene.text, section).map((p) => `${section.id}: ${p}`));
+  });
+  return problems;
+}
+
+const SceneTextSchema = z.object({ text: z.string().min(1).max(2000) }).strict();
+
+/**
+ * S4 is written one scene per call, in parallel: a flash model reliably hits
+ * one scene's word and marker budget, but not six at once (observed live).
+ * Each scene sees the whole plan so the narration stays one continuous lesson,
+ * and each scene gets its own single repair.
+ */
+export async function writeScript(req: LessonRequest, graph: ConceptGraph, plan: TeachingPlan, m: StageModel): Promise<StructuredCallResult<Script>> {
+  const system = `You write the narration for ONE scene of a whiteboard teaching video. A tutor speaks while drawing each thing as it is named.
+Return ONE JSON object: { "text": "..." }.
+
+MENTION MARKERS (required): wrap each phrase whose drawing should appear the moment it is spoken as [[id|spoken words]].
+- The spoken words stay in the sentence exactly as said; id is lowercase snake_case, unique within the scene.
+- The scene needs ${MENTIONS_PER_SCENE.min} to ${MENTIONS_PER_SCENE.max} markers, spread from the first sentence to the last. Mark the concrete things the board shows: objects, quantities, symbols of a formula, each step.
+- Example (18 s, ${Math.round(18 * WORDS_PER_SEC)} words, 5 markers):
+  "Picture [[line|a straight line]] climbing across the page. Pick [[two_points|two points]] on it, one on the left and one further right. The sideways distance between them is [[run|the run]], and the upward distance is [[rise|the rise]]. Divide the rise by the run, and that single number is [[slope|the slope]] of the line."
+
+SPOKEN TEXT ONLY: this text goes straight to a text-to-speech voice. Write every symbol as the words a teacher would say — "P of A given B", "x squared", "theta t plus one", "eta times the gradient" — never symbols, LaTeX, | [ ] or equations. The board shows the notation; the voice explains it.
+LENGTH (required): spoken at ${WORDS_PER_SEC} words per second — write the number of words you are given (count them).
+STYLE: warm, plain, second person; short sentences; this scene's single idea only (earlier scenes already covered theirs, later scenes will cover theirs); intuition before notation; for math, say what each symbol means as it appears and walk steps in order. No markdown, lists, or stage directions. Facts only from the source.`;
+  const outline = plan.sections.map((s, i) => `${i + 1}. [${s.kind}] ${s.title} — ${s.goal}`).join('\n');
+  const perScene = m.remainingBudgetUsd / Math.max(1, plan.sections.length);
+  const results = await Promise.all(
+    plan.sections.map((section, i) => {
+      const concepts = section.conceptIds.map((c) => graph.concepts.find((x) => x.id === c)).filter(Boolean);
+      const words = Math.round(section.budgetSec * WORDS_PER_SEC);
+      const user = `${req.audience ? `Audience: ${req.audience}\n` : ''}LESSON OUTLINE:
+${outline}
+
+WRITE SCENE ${i + 1}: "${section.title}" (${section.kind})
+Goal: ${section.goal}
+Concepts: ${JSON.stringify(concepts)}
+Length: about ${words} words (${section.budgetSec} s). Markers: ${MENTIONS_PER_SCENE.min}-${MENTIONS_PER_SCENE.max}.
+
+SOURCE (facts must come from these source spans; evidence stays attached in the concept graph):
+${sourcePrompt(req.sourceDoc ?? sourceDocFromText(req.source, req.sourceFormat ?? 'text'))}`;
+      return structuredCall({
+        stage: 'script', subject: `scene ${section.id}`, model: m.model, apiKey: m.apiKey, system, user,
+        schema: SceneTextSchema, schemaName: 'scene_narration', remainingBudgetUsd: perScene, maxTokens: 2500,
+        validate: (v) => validateSceneText(v.text, section), budgetLedger: m.budgetLedger, fetcher: m.fetcher,
+      });
+    }),
+  );
+  const usage = emptyUsage();
+  const failures = results.flatMap((r) => r.failures);
+  const rawResponses = results.flatMap((r) => r.rawResponses);
+  for (const r of results) addUsage(usage, r.usage);
+  if (results.some((r) => !r.value)) return { usage, failures, rawResponses };
+  const script: Script = { scenes: plan.sections.map((s, i) => ({ sectionId: s.id, text: results[i].value!.text })) };
+  return { value: script, usage, failures, rawResponses };
+}

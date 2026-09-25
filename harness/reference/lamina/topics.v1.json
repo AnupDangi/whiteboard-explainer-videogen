@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "lamina-reference-topics/v1",
+  "topics": {
+    "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213 (1).mp4": "attention",
+    "simi.mp4": "photosynthesis"
+  },
+  "aliases": {
+    "attention": ["attention", "transformer attention", "attention mechanism"],
+    "photosynthesis": ["photosynthesis", "photosynthetic process"]
+  },
+  "unclassifiedVideos": [
+    "ssstwitter.com_1789986843490.mp4",
+    "ssstwitter.com_1789987782899.mp4"
+  ],
+  "policy": "Only explicitly tagged topic matches may be compared as matched Simi references; untagged runs are style-only."
+}

@@ -18,7 +18,26 @@
     "benchmark:release-corpus": "npm run build && node dist/scripts/release-corpus.js",
     "export": "npm run build && node dist/scripts/export.js",
     "voice-engine:setup": "sh -c 'cd voice-engine && npm run setup'",
-    "router:report": "npm run build && node dist/scripts/router-report.js"
+    "router:report": "npm run build && node dist/scripts/router-report.js",
+    "typecheck:hypothesis": "tsc --noEmit -p tsconfig.json",
+    "test:hypothesis": "npm run build && node --test dist/src/experimental/hypothesis/v1_claude/__tests__/*.test.js && python3 -m unittest discover -s src/experimental/hypothesis/shared/alignment -p 'test_*.py'",
+    "fixture:hypothesis": "npm run test:hypothesis",
+    "run:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/cli.js",
+    "preview:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/player/previewCli.js",
+    "run:hypothesis:live": "npm run build && node dist/src/experimental/hypothesis/v1_claude/liveCli.js",
+    "run:lesson": "npm run build && node dist/src/experimental/hypothesis/v1_claude/lessonCli.js",
+    "catalog:build": "node scripts/build-catalog.mjs && node scripts/embed-catalog.mjs",
+    "catalog:e4:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/catalog/e4CalibrationCli.js",
+    "plan:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/planCalibrationCli.js",
+    "reference:lamina": "node scripts/lamina-reference.mjs ../lamina-labs-video harness/reference/lamina",
+    "judge:hypothesis": "node dist/src/experimental/hypothesis/v1_claude/harness/judgeCli.js",
+    "judge:human:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/humanReviewCli.js",
+    "judge:human:pack:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/humanReviewPackCli.js",
+    "judge:e5:human:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/e5HumanReviewCli.js",
+    "judge:e5:human:pack:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/e5HumanReviewPackCli.js",
+    "strip:scene": "node scripts/render-strip.mjs",
+    "baseline:freeze": "node scripts/baselines.mjs --freeze",
+    "baseline:verify": "node scripts/baselines.mjs"
   },
   "optionalDependencies": {
     "pg": "^8.23.0",
@@ -29,7 +48,14 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
+    "@resvg/resvg-js": "^2.6.2",
     "cheerio": "^1.2.0",
-    "ipaddr.js": "^2.5.0"
+    "ipaddr.js": "^2.5.0",
+    "mathjax-full": "^3.2.1",
+    "perfect-freehand": "^1.2.3",
+    "roughjs": "^4.6.6",
+    "svg-path-properties": "^2.1.0",
+    "zod": "^4.6.5"
   }
 }

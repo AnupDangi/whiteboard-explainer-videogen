@@ -1,0 +1,572 @@
+{
+  "schemaVersion": "baseline-inventory/v2",
+  "baselineVersion": 2,
+  "frozenAt": "2026-09-23T21:22:38.989Z",
+  "immutable": true,
+  "parentManifestSha256": "80ccf98db088f5bd46b3d7005a6224392cf9dce7c54be6e0c143b5748a3b315b",
+  "correction": "simi-scene01.png is from photosynthesis simi.mp4; lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene01.png is the Attention reference. The earlier token-strip comparison is withdrawn.",
+  "entries": [
+    {
+      "path": "../lamina-labs-video/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213 (1).mp4",
+      "sha256": "35d7ec410917c09325200b3df5cc3dba079c62ee4015a233ae009447001eb315",
+      "role": "reference-video"
+    },
+    {
+      "path": "../lamina-labs-video/simi.mp4",
+      "sha256": "51570ad663c8a925787cf9dd0031956fa893ae497c04fe712ee40b4507f0c8c7",
+      "role": "reference-video"
+    },
+    {
+      "path": "../lamina-labs-video/ssstwitter.com_1789986843490.mp4",
+      "sha256": "bb698bc0b661c9d05f99db7ede8ef1f6d3aab4133eccbf4555e0bf08fb8cd83b",
+      "role": "reference-video"
+    },
+    {
+      "path": "../lamina-labs-video/ssstwitter.com_1789987782899.mp4",
+      "sha256": "e62455ba46267291cfe213a50544d2b5afc1708ef2cfd874e3686aca99d19b49",
+      "role": "reference-video"
+    },
+    {
+      "path": "harness/reference/lamina/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene01.png",
+      "sha256": "814408dedb65a734d19a362f912d06097503a2676d168d20286f3e61aa3fb53b",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene02.png",
+      "sha256": "4f02bbd02534095b32540755e404533f99e8fabafee8dd322db8a6e7594ddc4b",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene03.png",
+      "sha256": "b400953b8b26d0077abd42de30e8098fd7298aa0a018c283e74bfe763552fb61",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene04.png",
+      "sha256": "15006e789843283ccf06dbdf692023ca568871869ae819599a7cb973f201d4fa",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/simi-scene01.png",
+      "sha256": "03c557b3cd7757f2002e488f79f758e232f310042c8a371a8eefcf0f02b73f2e",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/simi-scene02.png",
+      "sha256": "0fe5c2a55057645e4c7257c39a1f1c7cf4b64b2db50d35f718cec868192b7cf5",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/simi-scene03.png",
+      "sha256": "c6c50456807192aaac51d482b7d8e35076b61b837172de98aef29447f9df14ca",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/simi-scene04.png",
+      "sha256": "876aab82a200b878e1df2c5298fd6b6e59d45c54d8caa99959b31455ead45e7c",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene01.png",
+      "sha256": "32f2732cb5ba69d3b67306d219b7069cbbeaf00ee8a437fa3406f3a3276eb1ac",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene02.png",
+      "sha256": "c77eb64b133fe6cd6e065161e015498a34ba8ed3e9c2a6402ffff3cbcfb6d712",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene03.png",
+      "sha256": "bb7ddd8491d308d1cf38ed2e66cd6318e52bc306dfa175370b7563b8e979870d",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene04.png",
+      "sha256": "577d191253dd18f0c85daf030f2b3e7588225bc30b43a4b563efe0f8df65bb7a",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene05.png",
+      "sha256": "f0c1fbb3684889d1e96297bd3073d79215d4d1834990920341f5c07bfd3b1bce",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene06.png",
+      "sha256": "58ae900394cb76e18ba3ec374cd30484771d571a9b627ce4a5f24e1257f61fe9",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene07.png",
+      "sha256": "fe151d59085d52b95a7f27b77740a6724e4be0e653f5b2357b7fb9882008d4a7",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene08.png",
+      "sha256": "88ff5f298f9b93380a960026f12fa193355955117c5ef54953c1b4a83d6fadae",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene01.png",
+      "sha256": "44579918f6eb751dab3407b3b458df588b45d45b663c8d696bab7a0d15da7ad2",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene02.png",
+      "sha256": "b11c873f2cbb5b7847670898cb38357894f4aa40ebac5031911086d075322d1d",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene03.png",
+      "sha256": "de82207470c70b7a4e37fbc9ab4d5d21b2b36af014fe42d66c9e0ca9d14b172c",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene04.png",
+      "sha256": "223aa0bfae17ea53ef12768eac6c14f0ebd6deb1cf81838bffabc7333059fa8a",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene05.png",
+      "sha256": "c9df6dd2656b93dadeabbe6b51790c4a994446d10f98dc97db60c0fd181d112e",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene06.png",
+      "sha256": "0428f97b32fb787392dcb6120e1affe6fe359876361b9858a7b23920ee477de5",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene07.png",
+      "sha256": "12ab6aab9dc1863caf982c80921ec75a3a2d5c7b354522d74a87d5540628dd91",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene08.png",
+      "sha256": "df2ab7e7dab1cbe7c62cb845696238b1c6e9798a1986751f943fbf7568039d73",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene09.png",
+      "sha256": "e1b56d545dd7e6830b3efc742abeee5ec9e75c6a6db58bafaf2156ed17b297d0",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene10.png",
+      "sha256": "0244db1da1a2a500c320d4b180cc604999955bee016ba1c257f812801058dff8",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene11.png",
+      "sha256": "41a4262af299b5052df9ba9e8dfd21302be7ad8db4f66d9e7abb108053870606",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene12.png",
+      "sha256": "194ebabdd69ff8efecead730727297cd8c2ae499a945981d05cd6c2e9326b92d",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene13.png",
+      "sha256": "2fb73fd8f9755afe90c6e0a4c883cf25903c152ac2bf34302d01ffe8ac4be92e",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene14.png",
+      "sha256": "6800f22c6aab969008770788793e2acfe570db5293473b792e200a3bb8664588",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene15.png",
+      "sha256": "bc9a9657d61cadda4def7bb1d7413a7fba74afbd54cf3cd4c45cd544435a53d2",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene16.png",
+      "sha256": "052d369ee1c717167eea7504f46d0ae3b53a7f76cb6de8b29c38aca82738a85f",
+      "role": "reference-frame"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene17.png",
+      "sha256": "fd4e94046ae9393dbd3a9aa858ce54ff231a3e8cd145a1003488a647d0dbca66",
+      "role": "reference-frame"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention/contact-sheet.svg",
+      "sha256": "2d0ef0e11a9d6297a3288225511c8daaced8f3dab7ac349ed4b6252d3f4210c2",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "775ec7c28608a0efa0378647a3879b3f69e062840c6cf2c60062fd2f1eb64510"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention/evaluation-bundle.json",
+      "sha256": "e72d5d4d5e55c17e681096fe38bac2bb25592f31ee697e3698ade12f34020c5a",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "775ec7c28608a0efa0378647a3879b3f69e062840c6cf2c60062fd2f1eb64510"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention/run-manifest.json",
+      "sha256": "336c6a9c0338d0b3307793f24b6513f3eb5290963abb04d6a2c29a88f4fd9522",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "775ec7c28608a0efa0378647a3879b3f69e062840c6cf2c60062fd2f1eb64510"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention/video.mp4",
+      "sha256": "7849471ce3a7e956181417d710b1485091091ba68ab19e44637265c66e98c01d",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "775ec7c28608a0efa0378647a3879b3f69e062840c6cf2c60062fd2f1eb64510"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-final/contact-sheet.svg",
+      "sha256": "e5d501d2a89e82aafb49baf51c43b07bd5c77f3033ac3a2c9a12dee2cc0542f1",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "26f092b9725224aae36a873ec97268cacf4d83e0bdef7d2454d5bf1d9cdfe4a4"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-final/evaluation-bundle.json",
+      "sha256": "9c30347b6f07fa5c441f333c250519829314b2580dfc06a67d0b12f36987046c",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "26f092b9725224aae36a873ec97268cacf4d83e0bdef7d2454d5bf1d9cdfe4a4"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-final/run-manifest.json",
+      "sha256": "23d7ad61f24a992135a800dcc01f8e0961165bd923ddf2e4efb76a66c504e0bf",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "26f092b9725224aae36a873ec97268cacf4d83e0bdef7d2454d5bf1d9cdfe4a4"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-g6/contact-sheet.svg",
+      "sha256": "e5d501d2a89e82aafb49baf51c43b07bd5c77f3033ac3a2c9a12dee2cc0542f1",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "49db3dc12e7182726f5a12af556efc6e4e03da65f073e4d464bda4928905fc72"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-g6/evaluation-bundle.json",
+      "sha256": "d6f010801a18fa225432aba99f4e42d0368c73148058b70b7ec745aa57e97c01",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "49db3dc12e7182726f5a12af556efc6e4e03da65f073e4d464bda4928905fc72"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-g6/run-manifest.json",
+      "sha256": "1308e887cb1f881af6a50b104a55cab4bf881d2015bc1e2d03e5b681f66378c3",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "49db3dc12e7182726f5a12af556efc6e4e03da65f073e4d464bda4928905fc72"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-g6-v2/contact-sheet.svg",
+      "sha256": "e5d501d2a89e82aafb49baf51c43b07bd5c77f3033ac3a2c9a12dee2cc0542f1",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "216d69b45dfe6a8b3f294266ac9ce05362a5a071a4a5b3592fa0642ae5625563"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-g6-v2/evaluation-bundle.json",
+      "sha256": "75ae3d713b79a988d9b909a208fdfc59905db5767fdaf1f9a80c18dff532f540",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "216d69b45dfe6a8b3f294266ac9ce05362a5a071a4a5b3592fa0642ae5625563"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-g6-v2/run-manifest.json",
+      "sha256": "bee968b1f0bd091875a2ec0f87055e33b8a2cb2063eec0b281bd7843e5d75f72",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "216d69b45dfe6a8b3f294266ac9ce05362a5a071a4a5b3592fa0642ae5625563"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-resume/contact-sheet.svg",
+      "sha256": "56cb10f3db07c79034d97c4bcc3ac090f9819e192b4fabbb38fca12c0245d757",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "49db3dc12e7182726f5a12af556efc6e4e03da65f073e4d464bda4928905fc72"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-resume/evaluation-bundle.json",
+      "sha256": "25f55e781cddc8fecbbfdecaa004133965574fdcc469c610bec27605394bf15c",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "49db3dc12e7182726f5a12af556efc6e4e03da65f073e4d464bda4928905fc72"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-attention-c6-resume/run-manifest.json",
+      "sha256": "852e06e88206a025278144949e8cfe2e1ed5264d15d5e64f2c2e247bc187af50",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "draft",
+      "classProvenance": "manifest",
+      "runId": "49db3dc12e7182726f5a12af556efc6e4e03da65f073e4d464bda4928905fc72"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-math/contact-sheet.svg",
+      "sha256": "64810f2dae1977147b657b87143ab8a2b9557b506c19c2fd502830b062ea6d65",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "ca5c51f5eed9de20e1082a5a23cfedce3ffd0e392af0d89b926fadd78f45f10d"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-math/evaluation-bundle.json",
+      "sha256": "18d33f851398c9a61d68fa9d89e5fd9da2b5705d3816de1f0c76eea105af31a6",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "ca5c51f5eed9de20e1082a5a23cfedce3ffd0e392af0d89b926fadd78f45f10d"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-math/run-manifest.json",
+      "sha256": "2d6baa5ff153bdeb9e7771fc20f48a7ea23fd2d9f8788d27f0623ac49ab23b3a",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "ca5c51f5eed9de20e1082a5a23cfedce3ffd0e392af0d89b926fadd78f45f10d"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/fixtures/fixtures-math/video.mp4",
+      "sha256": "9def1741f8ac625c18a55da3c2b045ecc6a79fccb3bde087e50d3970f9660989",
+      "role": "retained-run-artifact",
+      "runClass": "renderer-fixture",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "ca5c51f5eed9de20e1082a5a23cfedce3ffd0e392af0d89b926fadd78f45f10d"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/electromagnetic-induction/contact-sheet.svg",
+      "sha256": "1349739011268b7ec016c457661ced8c9b0cef505a91ed20e5955cca2a4ffa3c",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "784dc6ec2fd9b8e1754e5a1e68f2c3b5a68ac266ee7bbb402d92e49f4ea7d60d"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/electromagnetic-induction/evaluation-bundle.json",
+      "sha256": "5bf6fd8eff415398b7cf93513ae82007cf562ab09145a55622013859ceb406ec",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "784dc6ec2fd9b8e1754e5a1e68f2c3b5a68ac266ee7bbb402d92e49f4ea7d60d"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/electromagnetic-induction/run-manifest.json",
+      "sha256": "60e35ffdb158be28b636906493a2ae34c996e1ed6f65d1d24443c807c6e77ab3",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "784dc6ec2fd9b8e1754e5a1e68f2c3b5a68ac266ee7bbb402d92e49f4ea7d60d"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/electromagnetic-induction/video.mp4",
+      "sha256": "b85d2369a2c43c812e994647bd1999e7cccea3ab63ed3680a83f487d31c2ae67",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "784dc6ec2fd9b8e1754e5a1e68f2c3b5a68ac266ee7bbb402d92e49f4ea7d60d"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/gradient-descent/contact-sheet.svg",
+      "sha256": "af6365c7f165f20596b5ce6dc3d3abfc8ec8bd8fe3650ca6db1a78456aee0e91",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "7eb9247ccd0e7aa88866692d912d3aa2638340ef6d3de47f6bb5a90fd8556e9f"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/gradient-descent/evaluation-bundle.json",
+      "sha256": "8e8374b2b1adf078473c618ee0669fee7d2faaf799586628802a2db2b5148d57",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "7eb9247ccd0e7aa88866692d912d3aa2638340ef6d3de47f6bb5a90fd8556e9f"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/gradient-descent/run-manifest.json",
+      "sha256": "6e2ac3f52f5e392004737d3237a6f2e9623e83625b643ec832db529d5f5da23d",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "7eb9247ccd0e7aa88866692d912d3aa2638340ef6d3de47f6bb5a90fd8556e9f"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/gradient-descent/video.mp4",
+      "sha256": "923c3b1b54639ea7de84910b6b63115d7c7aced8ff4312403e3acce24f71b963",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "7eb9247ccd0e7aa88866692d912d3aa2638340ef6d3de47f6bb5a90fd8556e9f"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/photosynthesis/contact-sheet.svg",
+      "sha256": "66384fc7801348f40710168db94f2984e0573ed5d1002f216c784f42f0cc7781",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "813ca5c20f8fe0709df319e8473973dd2eee0db11c8c2cee3f3aeb21bedea953"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/photosynthesis/evaluation-bundle.json",
+      "sha256": "68ce8889c44da2abc508fcc065ca4cb21ef23ba49d2735b44e684abbef002677",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "813ca5c20f8fe0709df319e8473973dd2eee0db11c8c2cee3f3aeb21bedea953"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/photosynthesis/run-manifest.json",
+      "sha256": "53ca3bb23a13ed158252cf330bb8cc3e7a4729075545e37c4b58e8878fb9bf3c",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "813ca5c20f8fe0709df319e8473973dd2eee0db11c8c2cee3f3aeb21bedea953"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/photosynthesis/video.mp4",
+      "sha256": "e46695a112aa2f76ac52cc4b806f90c91d56d07315e6cdb8afd0552f026fd6b2",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "813ca5c20f8fe0709df319e8473973dd2eee0db11c8c2cee3f3aeb21bedea953"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/transformer-attention/contact-sheet.svg",
+      "sha256": "95bee2691f11759f166e994bfecb0839f0cb52255ee3865cc73c0284fca3333a",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "8ef795a9d5a0e5d135807212f57d0e5cd9b6fbfe577d58c0b2f3ba604d2e394c"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/transformer-attention/evaluation-bundle.json",
+      "sha256": "7db27c940899828615e980f1edd9c20e4fe4ddfaf7361aac667aba348972c5f7",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "8ef795a9d5a0e5d135807212f57d0e5cd9b6fbfe577d58c0b2f3ba604d2e394c"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/transformer-attention/run-manifest.json",
+      "sha256": "d3c4388555a7d930ebc283bcb04229912812e60fbe3e26af153764f9b870f003",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "8ef795a9d5a0e5d135807212f57d0e5cd9b6fbfe577d58c0b2f3ba604d2e394c"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/live/transformer-attention/video.mp4",
+      "sha256": "4dda9f90635037ee219b70e03317c0de0bf89814e740e315e383fc8a86c539df",
+      "role": "retained-run-artifact",
+      "runClass": "hand-authored-script",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "8ef795a9d5a0e5d135807212f57d0e5cd9b6fbfe577d58c0b2f3ba604d2e394c"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/lessons/m2-pythagoras/contact-sheet.svg",
+      "sha256": "b79497c9ef9673c1614e44fbc5df2a8cf817dbc5c59ca56760f69f070086a2df",
+      "role": "retained-run-artifact",
+      "runClass": "generated-lesson",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "c31aac48d2e195a3b84242ba6ebdf77ddfd6b6fe1037b658d7b83b992a13ed09"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/lessons/m2-pythagoras/evaluation-bundle.json",
+      "sha256": "3ebef12329c5f1f9c6533d079a1b1d97355d1f2548e7ba78e5293d137631453f",
+      "role": "retained-run-artifact",
+      "runClass": "generated-lesson",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "c31aac48d2e195a3b84242ba6ebdf77ddfd6b6fe1037b658d7b83b992a13ed09"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/lessons/m2-pythagoras/run-manifest.json",
+      "sha256": "6f908d8bcf96b33356945aad92fb2f40475694880fdf02f8d52a4001c5337641",
+      "role": "retained-run-artifact",
+      "runClass": "generated-lesson",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "c31aac48d2e195a3b84242ba6ebdf77ddfd6b6fe1037b658d7b83b992a13ed09"
+    },
+    {
+      "path": ".data/hypothesis-runs/claude/lessons/m2-pythagoras/video.mp4",
+      "sha256": "72c265ddf58c4c191d51afb8254fc21edfbc301f132022e666937b413d81fa58",
+      "role": "retained-run-artifact",
+      "runClass": "generated-lesson",
+      "status": "legacy-unclassified",
+      "classProvenance": "inferred-from-run-directory",
+      "runId": "c31aac48d2e195a3b84242ba6ebdf77ddfd6b6fe1037b658d7b83b992a13ed09"
+    }
+  ],
+  "missingSets": [
+    {
+      "id": "G-10",
+      "status": "partial",
+      "reason": "Full ten-lesson frozen source set is not available."
+    },
+    {
+      "id": "G-DOC",
+      "status": "missing",
+      "reason": "Five unseen source documents are not frozen."
+    },
+    {
+      "id": "G-LONG",
+      "status": "missing",
+      "reason": "Four long-form inputs are not frozen."
+    }
+  ]
+}

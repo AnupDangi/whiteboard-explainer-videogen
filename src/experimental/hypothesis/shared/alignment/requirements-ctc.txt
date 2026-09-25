@@ -1,0 +1,3 @@
+# Optional English CTC comparison backend for compare_aligners.py.
+# The main alignment environment already installs torch through stable-ts.
+torchaudio==2.11.0

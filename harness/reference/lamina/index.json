@@ -1,0 +1,497 @@
+[
+  {
+    "video": "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213 (1).mp4",
+    "scene": 1,
+    "startS": 0,
+    "endS": 20.5,
+    "composite": "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene01.png",
+    "sampleTimesS": [
+      3.25,
+      6.51,
+      9.76,
+      13.02,
+      16.27,
+      19.52
+    ]
+  },
+  {
+    "video": "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213 (1).mp4",
+    "scene": 2,
+    "startS": 20.5,
+    "endS": 37.5,
+    "composite": "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene02.png",
+    "sampleTimesS": [
+      23.2,
+      25.9,
+      28.6,
+      31.29,
+      33.99,
+      36.69
+    ]
+  },
+  {
+    "video": "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213 (1).mp4",
+    "scene": 3,
+    "startS": 37.5,
+    "endS": 56,
+    "composite": "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene03.png",
+    "sampleTimesS": [
+      40.44,
+      43.37,
+      46.31,
+      49.25,
+      52.18,
+      55.12
+    ]
+  },
+  {
+    "video": "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213 (1).mp4",
+    "scene": 4,
+    "startS": 56,
+    "endS": 75.5,
+    "composite": "lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene04.png",
+    "sampleTimesS": [
+      59.1,
+      62.19,
+      65.29,
+      68.38,
+      71.48,
+      74.57
+    ]
+  },
+  {
+    "video": "simi.mp4",
+    "scene": 1,
+    "startS": 0,
+    "endS": 16.5,
+    "composite": "simi-scene01.png",
+    "sampleTimesS": [
+      2.62,
+      5.24,
+      7.86,
+      10.48,
+      13.1,
+      15.71
+    ]
+  },
+  {
+    "video": "simi.mp4",
+    "scene": 2,
+    "startS": 16.5,
+    "endS": 34.5,
+    "composite": "simi-scene02.png",
+    "sampleTimesS": [
+      19.36,
+      22.21,
+      25.07,
+      27.93,
+      30.79,
+      33.64
+    ]
+  },
+  {
+    "video": "simi.mp4",
+    "scene": 3,
+    "startS": 34.5,
+    "endS": 50.5,
+    "composite": "simi-scene03.png",
+    "sampleTimesS": [
+      37.04,
+      39.58,
+      42.12,
+      44.66,
+      47.2,
+      49.74
+    ]
+  },
+  {
+    "video": "simi.mp4",
+    "scene": 4,
+    "startS": 50.5,
+    "endS": 69,
+    "composite": "simi-scene04.png",
+    "sampleTimesS": [
+      53.44,
+      56.37,
+      59.31,
+      62.25,
+      65.18,
+      68.12
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789986843490.mp4",
+    "scene": 1,
+    "startS": 0,
+    "endS": 19.5,
+    "composite": "ssstwitter-com-1789986843490-scene01.png",
+    "sampleTimesS": [
+      3.1,
+      6.19,
+      9.29,
+      12.38,
+      15.48,
+      18.57
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789986843490.mp4",
+    "scene": 2,
+    "startS": 19.5,
+    "endS": 38.5,
+    "composite": "ssstwitter-com-1789986843490-scene02.png",
+    "sampleTimesS": [
+      22.52,
+      25.53,
+      28.55,
+      31.56,
+      34.58,
+      37.6
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789986843490.mp4",
+    "scene": 3,
+    "startS": 38.5,
+    "endS": 58.5,
+    "composite": "ssstwitter-com-1789986843490-scene03.png",
+    "sampleTimesS": [
+      41.67,
+      44.85,
+      48.02,
+      51.2,
+      54.37,
+      57.55
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789986843490.mp4",
+    "scene": 4,
+    "startS": 58.5,
+    "endS": 77.5,
+    "composite": "ssstwitter-com-1789986843490-scene04.png",
+    "sampleTimesS": [
+      61.52,
+      64.53,
+      67.55,
+      70.56,
+      73.58,
+      76.6
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789986843490.mp4",
+    "scene": 5,
+    "startS": 77.5,
+    "endS": 96.5,
+    "composite": "ssstwitter-com-1789986843490-scene05.png",
+    "sampleTimesS": [
+      80.52,
+      83.53,
+      86.55,
+      89.56,
+      92.58,
+      95.6
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789986843490.mp4",
+    "scene": 6,
+    "startS": 96.5,
+    "endS": 116.5,
+    "composite": "ssstwitter-com-1789986843490-scene06.png",
+    "sampleTimesS": [
+      99.67,
+      102.85,
+      106.02,
+      109.2,
+      112.37,
+      115.55
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789986843490.mp4",
+    "scene": 7,
+    "startS": 116.5,
+    "endS": 138.5,
+    "composite": "ssstwitter-com-1789986843490-scene07.png",
+    "sampleTimesS": [
+      119.99,
+      123.48,
+      126.98,
+      130.47,
+      133.96,
+      137.45
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789986843490.mp4",
+    "scene": 8,
+    "startS": 138.5,
+    "endS": 157,
+    "composite": "ssstwitter-com-1789986843490-scene08.png",
+    "sampleTimesS": [
+      141.44,
+      144.37,
+      147.31,
+      150.25,
+      153.18,
+      156.12
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 1,
+    "startS": 0,
+    "endS": 23.5,
+    "composite": "ssstwitter-com-1789987782899-scene01.png",
+    "sampleTimesS": [
+      3.73,
+      7.46,
+      11.19,
+      14.92,
+      18.65,
+      22.38
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 2,
+    "startS": 23.5,
+    "endS": 41,
+    "composite": "ssstwitter-com-1789987782899-scene02.png",
+    "sampleTimesS": [
+      26.28,
+      29.06,
+      31.83,
+      34.61,
+      37.39,
+      40.17
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 3,
+    "startS": 41,
+    "endS": 57.5,
+    "composite": "ssstwitter-com-1789987782899-scene03.png",
+    "sampleTimesS": [
+      43.62,
+      46.24,
+      48.86,
+      51.48,
+      54.1,
+      56.71
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 4,
+    "startS": 57.5,
+    "endS": 75.5,
+    "composite": "ssstwitter-com-1789987782899-scene04.png",
+    "sampleTimesS": [
+      60.36,
+      63.21,
+      66.07,
+      68.93,
+      71.79,
+      74.64
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 5,
+    "startS": 75.5,
+    "endS": 93,
+    "composite": "ssstwitter-com-1789987782899-scene05.png",
+    "sampleTimesS": [
+      78.28,
+      81.06,
+      83.83,
+      86.61,
+      89.39,
+      92.17
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 6,
+    "startS": 93,
+    "endS": 111.5,
+    "composite": "ssstwitter-com-1789987782899-scene06.png",
+    "sampleTimesS": [
+      95.94,
+      98.87,
+      101.81,
+      104.75,
+      107.68,
+      110.62
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 7,
+    "startS": 111.5,
+    "endS": 131,
+    "composite": "ssstwitter-com-1789987782899-scene07.png",
+    "sampleTimesS": [
+      114.6,
+      117.69,
+      120.79,
+      123.88,
+      126.98,
+      130.07
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 8,
+    "startS": 131,
+    "endS": 149,
+    "composite": "ssstwitter-com-1789987782899-scene08.png",
+    "sampleTimesS": [
+      133.86,
+      136.71,
+      139.57,
+      142.43,
+      145.29,
+      148.14
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 9,
+    "startS": 149,
+    "endS": 166,
+    "composite": "ssstwitter-com-1789987782899-scene09.png",
+    "sampleTimesS": [
+      151.7,
+      154.4,
+      157.1,
+      159.79,
+      162.49,
+      165.19
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 10,
+    "startS": 166,
+    "endS": 194.5,
+    "composite": "ssstwitter-com-1789987782899-scene10.png",
+    "sampleTimesS": [
+      170.52,
+      175.05,
+      179.57,
+      184.1,
+      188.62,
+      193.14
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 11,
+    "startS": 194.5,
+    "endS": 208,
+    "composite": "ssstwitter-com-1789987782899-scene11.png",
+    "sampleTimesS": [
+      196.64,
+      198.79,
+      200.93,
+      203.07,
+      205.21,
+      207.36
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 12,
+    "startS": 208,
+    "endS": 227,
+    "composite": "ssstwitter-com-1789987782899-scene12.png",
+    "sampleTimesS": [
+      211.02,
+      214.03,
+      217.05,
+      220.06,
+      223.08,
+      226.1
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 13,
+    "startS": 227,
+    "endS": 245,
+    "composite": "ssstwitter-com-1789987782899-scene13.png",
+    "sampleTimesS": [
+      229.86,
+      232.71,
+      235.57,
+      238.43,
+      241.29,
+      244.14
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 14,
+    "startS": 245,
+    "endS": 267,
+    "composite": "ssstwitter-com-1789987782899-scene14.png",
+    "sampleTimesS": [
+      248.49,
+      251.98,
+      255.48,
+      258.97,
+      262.46,
+      265.95
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 15,
+    "startS": 267,
+    "endS": 284.5,
+    "composite": "ssstwitter-com-1789987782899-scene15.png",
+    "sampleTimesS": [
+      269.78,
+      272.56,
+      275.33,
+      278.11,
+      280.89,
+      283.67
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 16,
+    "startS": 284.5,
+    "endS": 302.5,
+    "composite": "ssstwitter-com-1789987782899-scene16.png",
+    "sampleTimesS": [
+      287.36,
+      290.21,
+      293.07,
+      295.93,
+      298.79,
+      301.64
+    ]
+  },
+  {
+    "video": "ssstwitter.com_1789987782899.mp4",
+    "scene": 17,
+    "startS": 302.5,
+    "endS": 313,
+    "composite": "ssstwitter-com-1789987782899-scene17.png",
+    "sampleTimesS": [
+      304.17,
+      305.83,
+      307.5,
+      309.17,
+      310.83,
+      312.5
+    ]
+  }
+]

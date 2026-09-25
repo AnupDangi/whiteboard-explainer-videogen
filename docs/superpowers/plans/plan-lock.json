@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "plan-lock/v1",
+  "plans": [
+    {
+      "path": "docs/superpowers/plans/2026-09-25-visual-richness-and-deterministic-generation.md",
+      "sha256": "aedbc345c10da289cb4e8b787cbf7ccbe31a38177f1738e7821448d7d3dca4d7",
+      "amendmentsPath": "docs/superpowers/plans/2026-09-25-visual-richness-and-deterministic-generation.amendments.md",
+      "lockedAt": "2026-09-25"
+    }
+  ]
+}
