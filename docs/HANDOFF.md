@@ -35,6 +35,16 @@
 - **Checkpoints:** Initial Tasks 0–6 checkpoint: `56ccc20`. Task 7 checkpoint: `f711aaf`.
 - **Next bounded work:** Task 9 — pure, deterministic SVG icon-library ingest. The paid scene-calibration command remains unmeasured until its Task 14 invocation is approved.
 
+## Entry — 2026-09-25, Task 9: deterministic SVG icon-library ingest
+
+- **Why:** A user-provided library can be ingested through a stable manifest contract, normalized into the renderer's raw icon format, and reported one file at a time when an SVG is outside the supported subset.
+- **Implementation:** Added `catalog/libraryIngest.ts` with the Task 9 manifest/catalog interfaces and `MAX_ICON_PATHS = 40`. Supported shape geometry is normalized to paths; strokes receive measured lengths, fills map to `main`/`white`/`ink`, entries are sorted, and each entry receives a content hash. The whole library fails on an unallowlisted license; individual unsupported files carry a rejection reason. Added `scripts/ingest-icon-library.mjs` and `npm run icons:ingest`. The CLI resolves symlinks and rejects manifest paths that escape the library root. Its ingest report states that inline SVG `style` attributes are not parsed.
+- **Manifest contract for Task 11:** `manifest.json` uses `schemaVersion: "icon-library-manifest/v1"` and provides `libraryId`, `version`, SPDX `license`, attribution text, and `icons` with relative SVG `file`, one or more `names`, and optional tags/meaning/category. License must be one of `MIT`, `ISC`, `Apache-2.0`, `CC0-1.0`, `CC-BY-4.0`, or `manual`. SVGs need a numeric `viewBox`, supported presentation attributes, an ink stroke, and no transforms, references, gradients, patterns, or more than 40 normalized paths. Inline `style` attributes are unsupported.
+- **Tests:** Added `__tests__/library-ingest.test.ts` (6 tests) for stroke conversion, duotone roles, isolated rejections, manifest-order-independent bytes, license rejection, and the 40-path limit.
+- **Verification:** Initial build failed as expected because the module was absent. Then all six focused tests passed; `npm run typecheck:hypothesis` passed; `npm run test:hypothesis` passed (**339 Node tests and 17 Python tests**, 0 failures); `node --check scripts/ingest-icon-library.mjs` passed. No user library was available, so only synthetic SVGs were ingested. No paid calls were made.
+- **Checkpoints:** Task 7 `f711aaf`; Task 8 `b6bc761`.
+- **Next bounded work:** Task 10 — multi-library registry and catalog-version hashing. Task 11 remains `unmeasured` until the user supplies a directory, license, and attribution.
+
 ## Entry — 2026-09-25, Task 5: few-shot exemplar bank v2 (template-complete, icon-rich)
 
 - **Why:** Bank v1 had 5 exemplars, all boxes-only; the planner had never seen an `object` icon, `plot`, `formula`, `meter`, `tokenStrip`, `operator`, cycle, hub, fan-out, list, stack, or title demonstration in a few-shot example. Bank v2 keeps v1 unchanged and adds 10 structural demonstrations so the combined bank covers all 13 `TemplateId`s.

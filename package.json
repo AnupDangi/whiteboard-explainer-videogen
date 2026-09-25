@@ -30,6 +30,7 @@
     "catalog:e4:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/catalog/e4CalibrationCli.js",
     "plan:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/planCalibrationCli.js",
     "scene:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/sceneCalibrationCli.js",
+    "icons:ingest": "npm run build && node scripts/ingest-icon-library.mjs",
     "reference:lamina": "node scripts/lamina-reference.mjs ../lamina-labs-video harness/reference/lamina",
     "judge:hypothesis": "node dist/src/experimental/hypothesis/v1_claude/harness/judgeCli.js",
     "judge:human:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/humanReviewCli.js",
