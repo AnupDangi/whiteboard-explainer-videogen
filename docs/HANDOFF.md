@@ -17,6 +17,15 @@
 - **Limitations:** These metrics are a diagnostic only. They do not establish generated lesson quality or permit E1/E5 scoring. No paid provider calls were made.
 - **Next bounded work:** Task 7 — allow diagnostic S6 planning while the S5 alignment gate remains visibly failed.
 
+## Entry — 2026-09-25, Task 7: diagnostic S6 opt-in with S5 failure preserved
+
+- **Why:** S5 alignment remains uncalibrated and hard-fails, which normally skips paid S6 and leaves only a deterministic fallback. An explicit diagnostic opt-in now allows S6 to produce diagnostic SceneSpecs while preserving the original S5 failures and failed run status.
+- **Implementation:** Exported `shouldSkipPaidPlanning` and wired it through `LiveRunContext`, `runLive.ts`, and `lessonCli.ts`. `--plan-despite-alignment-failure` is recorded in the CLI summary, S6 cache input, run ID, config hash, and run manifest prompt-experiment record. Opted-in runs with hard S5 failures record soft `planner-ran-on-uncalibrated-alignment`; the S5 hard failures remain untouched and continue to block publish.
+- **Tests:** Added `__tests__/diagnostic-planning.test.ts`: default behavior skips S6 on hard alignment failure; explicit opt-in allows it; clean alignment and hand-authored SceneSpecs do not skip.
+- **Verification:** Test-first build failed as expected because `shouldSkipPaidPlanning` was not exported. After implementation, `npm run build && node --test dist/src/experimental/hypothesis/v1_claude/__tests__/diagnostic-planning.test.js` passed (3/3); `npm run typecheck:hypothesis` passed; `npm run test:hypothesis` passed (**331 Node tests and 17 Python tests**, 0 failures). Existing `publish-status.test.ts` passed unchanged. No paid provider calls were made.
+- **Checkpoint:** Tasks 0–6 and the corrected Task 5 handoff were committed as `56ccc20` (`Implement hypothesis track tasks 0-6`).
+- **Next bounded work:** Task 8 — S6 calibration harness over cached S1–S5 artifacts. Paid calibration invocations remain separately gated by the plan's per-run approval requirement.
+
 ## Entry — 2026-09-25, Task 5: few-shot exemplar bank v2 (template-complete, icon-rich)
 
 - **Why:** Bank v1 had 5 exemplars, all boxes-only; the planner had never seen an `object` icon, `plot`, `formula`, `meter`, `tokenStrip`, `operator`, cycle, hub, fan-out, list, stack, or title demonstration in a few-shot example. Bank v2 keeps v1 unchanged and adds 10 structural demonstrations so the combined bank covers all 13 `TemplateId`s.

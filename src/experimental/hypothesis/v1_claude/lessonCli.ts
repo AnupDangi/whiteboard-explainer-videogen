@@ -25,6 +25,7 @@ import type { ExampleOrder } from './planner/context.js';
  *   node lessonCli.js --source=notes.md --duration=60 --id=my-lesson
  *   [--planner=<model>] [--content=<model>] [--prompt-arm=zero|text|mechanism|diverse]
  *   [--example-order=ranked|reverse] [--stage-cache=<shared-cache-dir>]
+ *   [--plan-despite-alignment-failure] # diagnostic S6 opt-in; run remains failed
  *   [--out=.data/hypothesis-runs/claude/lessons]
  */
 async function main(): Promise<void> {
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
   const cacheMode = (arg('cache') ?? 'warm') as 'cold' | 'warm' | 'replay';
   const promptArm = (arg('prompt-arm') ?? 'zero') as PromptArm;
   const exampleOrder = (arg('example-order') ?? 'ranked') as ExampleOrder;
+  const planDespiteAlignmentFailure = args.includes('--plan-despite-alignment-failure');
   const sharedStageCache = arg('stage-cache') ? path.resolve(arg('stage-cache')!) : undefined;
   if (!['zero', 'text', 'mechanism', 'diverse'].includes(promptArm)) throw new Error(`unknown E5 prompt arm: ${promptArm}`);
   if (!['ranked', 'reverse'].includes(exampleOrder)) throw new Error(`unknown E5 example order: ${exampleOrder}`);
@@ -85,7 +87,7 @@ async function main(): Promise<void> {
     const prepFailures = prepared.failures.filter((f) => f.hard);
     if (!prepared.script || prepFailures.length) {
       for (const f of prepFailures) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
-      summary.push({ lesson: lesson.id, stage: 'prepare', status: 'failed', failures: prepFailures.length, costUsd: prepared.usage.costUsd, stageRuns: prepared.stageRuns });
+      summary.push({ lesson: lesson.id, stage: 'prepare', status: 'failed', planDespiteAlignmentFailure, failures: prepFailures.length, costUsd: prepared.usage.costUsd, stageRuns: prepared.stageRuns });
       continue;
     }
     const options: HypothesisRunOptions = {
@@ -101,16 +103,16 @@ async function main(): Promise<void> {
       maxCostUsd: Math.max(0.001, EXPERIMENT.maxClipCostUsd - prepared.usage.costUsd),
     };
     try {
-      const result = await runHypothesisLive(lessonToLiveInput(lesson.id, prepared), options, { openRouterApiKey: env.apiKey, plannerModel, budgetLedger, artifactStore, promptArm, exampleOrder });
+      const result = await runHypothesisLive(lessonToLiveInput(lesson.id, prepared), options, { openRouterApiKey: env.apiKey, plannerModel, budgetLedger, artifactStore, promptArm, exampleOrder, planDespiteAlignmentFailure });
       const hard = result.failures.filter((f) => f.hard);
       const cost = prepared.usage.costUsd + result.evaluationBundle.usage.costUsd;
       console.log(`status=${result.status} scenes=${result.scenes.length}/${prepared.plan!.sections.length} hard=${hard.length} fallbacks=${result.evaluationBundle.usage.fallbacks} cost=$${cost.toFixed(4)} wall=${((Date.now() - t0) / 1000).toFixed(0)}s video=${result.videoPath ?? 'NONE'}`);
       for (const f of hard) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
       const ledger = await budgetLedger.snapshot();
-      summary.push({ lesson: lesson.id, promptArm, exampleOrder, status: result.status, scenes: result.scenes.length, planned: prepared.plan!.sections.length, hardFailures: hard.length, fallbacks: result.evaluationBundle.usage.fallbacks, cacheHits: prepared.cacheHits.length + result.evaluationBundle.usage.cacheHits, cachedPreparationStages: prepared.cacheHits, costUsd: cost, ledgerSpentUsd: ledger.spentUsd, ledgerCalls: ledger.calls, budgetUsd: ledger.budgetUsd, prepCostUsd: prepared.usage.costUsd, plannerCostUsd: result.evaluationBundle.usage.costUsd, wallSec: (Date.now() - t0) / 1000, durationMs: result.alignedAudio.durationMs, video: result.videoPath ?? null, stageRuns: result.evaluationBundle.stageRuns, gateRecords: result.evaluationBundle.gateRecords, rungs: Object.fromEntries(Object.entries(result.evaluationBundle.metrics).filter(([k]) => k.startsWith('rung'))) });
+      summary.push({ lesson: lesson.id, promptArm, exampleOrder, planDespiteAlignmentFailure, status: result.status, scenes: result.scenes.length, planned: prepared.plan!.sections.length, hardFailures: hard.length, fallbacks: result.evaluationBundle.usage.fallbacks, cacheHits: prepared.cacheHits.length + result.evaluationBundle.usage.cacheHits, cachedPreparationStages: prepared.cacheHits, costUsd: cost, ledgerSpentUsd: ledger.spentUsd, ledgerCalls: ledger.calls, budgetUsd: ledger.budgetUsd, prepCostUsd: prepared.usage.costUsd, plannerCostUsd: result.evaluationBundle.usage.costUsd, wallSec: (Date.now() - t0) / 1000, durationMs: result.alignedAudio.durationMs, video: result.videoPath ?? null, stageRuns: result.evaluationBundle.stageRuns, gateRecords: result.evaluationBundle.gateRecords, rungs: Object.fromEntries(Object.entries(result.evaluationBundle.metrics).filter(([k]) => k.startsWith('rung'))) });
     } catch (error) {
       console.error(`  [LESSON FAILED] ${lesson.id}: ${error instanceof Error ? error.message : String(error)}`);
-      summary.push({ lesson: lesson.id, status: 'failed', error: error instanceof Error ? error.message : String(error) });
+      summary.push({ lesson: lesson.id, status: 'failed', planDespiteAlignmentFailure, error: error instanceof Error ? error.message : String(error) });
     }
   }
   await writeFile(path.join(outBase, `summary-${plannerModel.replace(/\W+/g, '_')}.json`), `${JSON.stringify(summary, null, 2)}\n`);

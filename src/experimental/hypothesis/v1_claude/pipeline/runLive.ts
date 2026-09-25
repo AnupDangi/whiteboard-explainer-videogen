@@ -15,7 +15,7 @@ import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
 import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
-import { planScene, plannerProblems, skipPlanAfterAlignmentFailure, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
+import { planScene, plannerProblems, shouldSkipPaidPlanning, skipPlanAfterAlignmentFailure, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
 import { safeParseSceneSpec } from '../schema.js';
 import type { PlannerSceneInput, PlannerTeachingContext } from '../planner/prompt.js';
 import { VISUAL_STAGE_VERSIONS } from './versions.js';
@@ -104,6 +104,8 @@ export interface LiveRunContext {
   promptArm?: PromptArm;
   /** E5 order-sensitivity condition; ranked is the normal deterministic order. */
   exampleOrder?: ExampleOrder;
+  /** Diagnostic only: run paid S6 even when S5 has hard failures. The S5 failures remain, so the run stays failed. */
+  planDespiteAlignmentFailure?: boolean;
 }
 
 /** A hand-authored spec goes through exactly the planner's validation (schema + mention ids + structure); no model call. */
@@ -255,6 +257,9 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const mentionCandidates = await rankConcepts(narration.scenes.flatMap((s) => s.mentions.map((m) => m.phrase)), 5);
   recordLocalStage('S7-resolve', mentionCandidatesStartedAtMs, false);
   const hardAlignmentFailureCount = failures.filter((failure) => failure.stage === 'align' && failure.hard).length;
+  if (ctx.planDespiteAlignmentFailure && hardAlignmentFailureCount > 0) {
+    failures.push({ code: 'planner-ran-on-uncalibrated-alignment', stage: 'planner', message: `S6 ran by explicit diagnostic opt-in despite ${hardAlignmentFailureCount} hard S5 failure(s); this run cannot publish`, hard: false });
+  }
 
   for (const sceneInput of input.scenes) {
     if (input.runClass === 'generated-lesson' && sceneInput.spec) {
@@ -303,7 +308,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const plannerStartedAtMs = Date.now();
     let plannerCacheHit = false;
     let plannerArtifactCostUsd: number | undefined;
-    const plannerSkipped = !sceneInput.spec && hardAlignmentFailureCount > 0;
+    const plannerSkipped = shouldSkipPaidPlanning({ hasHandAuthoredSpec: Boolean(sceneInput.spec), hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) });
     const compiledPrompt = sceneInput.spec || plannerSkipped ? undefined : buildScenePlannerPrompt(plannerInput);
     const promptHash = compiledPrompt ? sha256(stableJson(compiledPrompt)) : undefined;
     const promptAudit = compiledPrompt ? {
@@ -315,7 +320,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     } : undefined;
     if (sceneInput.spec) planned = handAuthored(sceneInput.spec, plannerInput);
     else if (ctx.artifactStore) {
-      const cached = await ctx.artifactStore.run<{ result: PlanSceneResult; promptAudit?: NonNullable<typeof promptAudit> }>('S6-scene-planner', { plannerInput, promptAudit, hardAlignmentFailureCount }, {
+      const cached = await ctx.artifactStore.run<{ result: PlanSceneResult; promptAudit?: NonNullable<typeof promptAudit> }>('S6-scene-planner', { plannerInput, promptAudit, hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) }, {
         schemaVersion: 'claude-scene-spec/v1', stageVersion: '4', promptVersion: SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion,
       }, async () => ({
         result: plannerSkipped
@@ -426,7 +431,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const ambiguousMentions = alignedAudio.mentions.filter((m) => m.ambiguous).length;
 
   const inputHash = sha256(stableJson({ caseId: input.caseId, scenes: input.scenes, targetDurationMs: input.targetDurationMs, runClass: input.runClass, sourceDoc: input.sourceDoc }));
-  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
+  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
   const evaluationBundle: EvaluationBundle = {
     schemaVersion: 'evaluation-bundle/v2',
     pipeline: 'claude',
@@ -435,7 +440,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     caseId: input.caseId,
     runId,
     commit: 'uncommitted-worktree',
-    configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
+    configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
     nativeArtifacts: {},
     claims: narration.scenes.map((s) => s.plainText),
     claimEvidence: Object.fromEntries(input.scenes.map((scene) => {
@@ -574,6 +579,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     promptExperiment: {
       arm: promptArm,
       exampleOrder,
+      planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure),
       bankVersion: EXAMPLE_BANK_VERSION,
       bankHash: EXAMPLE_BANK_HASH,
       rankVersion: EXAMPLE_RANK_VERSION,

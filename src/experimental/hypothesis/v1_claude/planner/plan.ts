@@ -377,6 +377,15 @@ export function skipPlanAfterAlignmentFailure(input: PlannerSceneInput, failureC
   return result;
 }
 
+/**
+ * Paid S6 planning is skipped after hard S5 alignment failures unless the
+ * caller explicitly opts in for diagnosis. The opt-in never removes the S5
+ * failures, so the run cannot pass publish gates.
+ */
+export function shouldSkipPaidPlanning(input: { hasHandAuthoredSpec: boolean; hardAlignmentFailureCount: number; planDespiteAlignmentFailure: boolean }): boolean {
+  return !input.hasHandAuthoredSpec && input.hardAlignmentFailureCount > 0 && !input.planDespiteAlignmentFailure;
+}
+
 export async function planScene(input: PlannerSceneInput, options: PlanSceneOptions): Promise<PlanSceneResult> {
   const prompt = options.compiledPrompt ?? buildScenePlannerPrompt(input);
   const result = await structuredCall({
