@@ -938,9 +938,11 @@ npm run test:hypothesis        -> tests 141, pass 141, fail 0  (114 before + 2 f
 
 ### What changed since the previous entry
 
-The 2026-09-22 audit (`docs/PIPELINE-AUDIT.md`) found three load-bearing gaps:
-no Scene Planner at all, fake TTS/alignment (`fixture://silence.wav`), and no
-MP4 export. This pass closes all three with REAL calls end to end — no
+A 2026-09-22 read-only audit (superseded by the 2026-09-23 audit below, and later
+removed as stale — its still-relevant facts are folded into this entry) found
+three load-bearing gaps: no Scene Planner at all, fake TTS/alignment
+(`fixture://silence.wav`), and no MP4 export. This pass closes all three with
+REAL calls end to end — no
 fixtures, no fake data, no golden-case special-casing — and produces real
 narrated `video.mp4` files for all 4 golden cases.
 
@@ -1012,7 +1014,7 @@ narrated `video.mp4` files for all 4 golden cases.
 3. **Real MP4 export (S10 export mode / S11) wired** —
    `export/videoEncode.ts`: `renderSVG(scene,timeline,t)` (unmodified, still
    pure) rasterized per-frame via `@resvg/resvg-js` (newly installed —
-   `docs/PIPELINE-AUDIT.md` confirmed it was absent; `npm install
+   confirmed absent beforehand; `npm install
    @resvg/resvg-js` added it, smoke-tested standalone before wiring) at
    1920×1080/30fps, piped as PNG frames into a system `ffmpeg` (`v9.0.1`,
    confirmed present) subprocess (`image2pipe` → `libx264`/`yuv420p`,

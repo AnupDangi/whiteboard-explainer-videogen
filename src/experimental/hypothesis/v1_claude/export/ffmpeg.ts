@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-/** Thin promise wrapper around a system `ffmpeg` invocation (v9.0.1 confirmed present, per docs/PIPELINE-AUDIT.md). Throws with the captured stderr tail on any non-zero exit. */
+/** Thin promise wrapper around a system `ffmpeg` invocation (v9.0.1 confirmed present as of 2026-09-22). Throws with the captured stderr tail on any non-zero exit. */
 export function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const ff = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
