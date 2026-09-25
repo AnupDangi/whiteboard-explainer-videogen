@@ -11,6 +11,7 @@ import { buildNarrationScene } from '../narration/markers.js';
 import { resolveMentions } from '../narration/resolveMentions.js';
 import { alignedWordTimingProblems } from '../narration/align.js';
 import { resolveScene } from '../resolveScene.js';
+import { catalogVersion } from '../catalog/registry.js';
 import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
@@ -238,7 +239,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const golden = goldenForRun(input);
 
   const scenes: LiveScenePipelineResult[] = [];
-  const catalogVersion = 'streamline-catalog-v1';
+  const activeCatalogVersion = catalogVersion();
   const videoScenes: VideoScene[] = [];
   const localStageMetrics = new Map<string, { durationMs: number; cacheHits: number; runs: number }>();
   const recordLocalStage = (stage: string, startedAtMs: number, cacheHit: boolean) => {
@@ -289,7 +290,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
         plannerInput.planningContext = compileScenePlanningContext(
           plannerInput, sceneInput.sceneContract, sceneInput.lessonBible,
           alignedAudio.mentions.filter((mention) => mention.sceneId === sceneInput.sceneId).map((mention) => ({ id: mention.mentionId, startMs: mention.startMs, endMs: mention.endMs })),
-          promptArm, catalogVersion, input.sourceDoc?.sourceId, input.caseId, exampleOrder,
+          promptArm, activeCatalogVersion, input.sourceDoc?.sourceId, input.caseId, exampleOrder,
         );
       } catch (error) {
         failures.push({ code: 'scene-context-invalid', stage: 'planner', message: error instanceof Error ? error.message : String(error), hard: true });
@@ -314,7 +315,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (sceneInput.spec) planned = handAuthored(sceneInput.spec, plannerInput);
     else if (ctx.artifactStore) {
       const cached = await ctx.artifactStore.run<{ result: PlanSceneResult; promptAudit?: NonNullable<typeof promptAudit> }>('S6-scene-planner', { plannerInput, promptAudit, hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) }, {
-        schemaVersion: 'claude-scene-spec/v1', stageVersion: '4', promptVersion: SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion,
+        schemaVersion: 'claude-scene-spec/v1', stageVersion: '4', promptVersion: SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
       }, async () => ({
         result: plannerSkipped
           ? skipPlanAfterAlignmentFailure(plannerInput, hardAlignmentFailureCount)
@@ -350,7 +351,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const objectConcepts = planned.spec.elements.flatMap((e) => (e.prim === 'object' ? [e.concept] : []));
     const resolutionCandidates = await rankConcepts(objectConcepts, 5);
     const resolvedStage = ctx.artifactStore
-      ? await ctx.artifactStore.run(`S7-resolve:${sceneInput.sceneId}`, { spec: planned.spec, candidates: resolutionCandidates }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: 'streamline-catalog-v1' }, () => resolveScene(planned.spec!, { candidates: resolutionCandidates }))
+      ? await ctx.artifactStore.run(`S7-resolve:${sceneInput.sceneId}`, { spec: planned.spec, candidates: resolutionCandidates }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: activeCatalogVersion }, () => resolveScene(planned.spec!, { candidates: resolutionCandidates }))
       : undefined;
     if (resolvedStage) stageArtifacts[`S7-resolve:${sceneInput.sceneId}`] = { key: resolvedStage.key, contentHash: resolvedStage.artifact.contentHash, cacheHit: resolvedStage.cacheHit };
     if (resolvedStage?.cacheHit) totalUsage.cacheHits += 1;
@@ -424,7 +425,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const ambiguousMentions = alignedAudio.mentions.filter((m) => m.ambiguous).length;
 
   const inputHash = sha256(stableJson({ caseId: input.caseId, scenes: input.scenes, targetDurationMs: input.targetDurationMs, runClass: input.runClass, sourceDoc: input.sourceDoc }));
-  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
+  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
   const evaluationBundle: EvaluationBundle = {
     schemaVersion: 'evaluation-bundle/v2',
     pipeline: 'claude',
@@ -433,7 +434,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     caseId: input.caseId,
     runId,
     commit: 'uncommitted-worktree',
-    configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
+    configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
     nativeArtifacts: {},
     claims: narration.scenes.map((s) => s.plainText),
     claimEvidence: Object.fromEntries(input.scenes.map((scene) => {
@@ -576,7 +577,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       bankVersion: EXAMPLE_BANK_VERSION,
       bankHash: EXAMPLE_BANK_HASH,
       rankVersion: EXAMPLE_RANK_VERSION,
-      catalogVersion,
+      catalogVersion: activeCatalogVersion,
       promptVersion: SCENE_PROMPT_VERSION,
       plannerModel: ctx.plannerModel,
     },

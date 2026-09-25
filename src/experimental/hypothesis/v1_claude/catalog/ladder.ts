@@ -5,6 +5,7 @@ import { allCatalogEntries, type Candidate } from './semantic.js';
 import { LICENSE_ALLOWLIST, normalizeCatalogEntry } from './normalize.js';
 import { composeBadge } from './badges.js';
 import { styledTextBoxVisual } from '../render/primitives.js';
+import { isHouseSource } from './registry.js';
 
 /** Lexical starting points only; experiment E4 has not calibrated these values. */
 export const TAU_HIGH = 0.6;
@@ -58,7 +59,7 @@ export function resolveObject(
 ): ObjectResolution {
   const conceptLower = concept.trim().toLowerCase().replace(/[_-]+/g, ' ');
   const wanted = new Set([conceptLower, singular(conceptLower)]);
-  const isHouse = (e: CatalogEntry) => e.source.startsWith('streamline:');
+  const isHouse = (e: CatalogEntry) => isHouseSource(e.source);
   const exactOf = (pool: CatalogEntry[]) => pool.find((e) => e.names.some((n) => wanted.has(n.toLowerCase())));
   const topCandidate = opts.candidates?.[0];
   const candidateEntry = topCandidate ? catalog.find((e) => e.id === topCandidate.id) : undefined;

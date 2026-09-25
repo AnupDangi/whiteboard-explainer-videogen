@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { CATALOG, type CatalogEntry } from './catalog.js';
-import { CATALOG_DATA_DIR, loadStreamlineCatalog } from './streamline.js';
+import { ENABLED_LIBRARIES } from './registry.js';
+import { CATALOG_DATA_DIR, loadCatalogLibraries } from './streamline.js';
 
 /**
  * Memoize concurrent initialization while allowing a later retry after a
@@ -40,16 +41,23 @@ export interface Candidate {
 const DIMS = 384;
 const MODEL = 'Xenova/all-MiniLM-L6-v2';
 
-/** Every retrievable entry: Streamline first (house style), then the procedural seed catalog. */
+/** Every retrievable entry: enabled libraries in registry order, then the procedural seed catalog. */
 export function allCatalogEntries(): CatalogEntry[] {
-  return [...loadStreamlineCatalog().entries, ...CATALOG];
+  return [...loadCatalogLibraries().entries, ...CATALOG];
 }
 
 let matrix: Float32Array | undefined;
 function catalogMatrix(): Float32Array {
   if (!matrix) {
-    const buf = readFileSync(resolve(CATALOG_DATA_DIR, 'streamline.emb.bin'));
-    matrix = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+    const buffers = ENABLED_LIBRARIES.map((library) => readFileSync(resolve(CATALOG_DATA_DIR, library.embeddings)));
+    const byteLength = buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
+    if (byteLength % 4 !== 0) throw new Error('catalog embedding files must contain complete Float32 values');
+    matrix = new Float32Array(byteLength / 4);
+    let offset = 0;
+    for (const buffer of buffers) {
+      if (buffer.byteLength % 4 !== 0) throw new Error('catalog embedding file length is not a multiple of 4');
+      for (let byte = 0; byte < buffer.byteLength; byte += 4) matrix[offset++] = buffer.readFloatLE(byte);
+    }
   }
   return matrix;
 }
@@ -60,12 +68,12 @@ const getEmbedder = createRetryingLazyLoader<Embedder>(async () => {
   return (await m.pipeline('feature-extraction', MODEL)) as unknown as Embedder;
 });
 
-/** Top-k Streamline candidates per query by cosine similarity (vectors are unit-normalized). */
+/** Top-k enabled-library candidates per query by cosine similarity (vectors are unit-normalized). */
 export async function rankConcepts(queries: string[], k = 8): Promise<Map<string, Candidate[]>> {
   const unique = [...new Set(queries.map((q) => q.trim().toLowerCase()).filter(Boolean))];
   const out = new Map<string, Candidate[]>();
   if (unique.length === 0) return out;
-  const entries = loadStreamlineCatalog().entries;
+  const entries = loadCatalogLibraries().entries;
   const m = catalogMatrix();
   if (m.length !== entries.length * DIMS) throw new Error(`catalog embeddings (${m.length / DIMS} rows) do not match catalog entries (${entries.length}); rerun scripts/embed-catalog.mjs`);
   const embed = await getEmbedder();

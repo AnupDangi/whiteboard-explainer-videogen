@@ -7,6 +7,7 @@ import type { PromptArm } from '../planner/exemplars.js';
 import { buildPlannerSceneInput } from '../planner/sceneInput.js';
 import { lessonToLiveInput, type PreparedLesson } from '../pipeline/lesson.js';
 import { rankConcepts } from '../catalog/semantic.js';
+import { catalogVersion } from '../catalog/registry.js';
 import { resolveScene } from '../resolveScene.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import { sceneRichness, summarizeRichness, type RichnessSummary, type SceneRichness } from './sceneRichness.js';
@@ -138,6 +139,7 @@ interface AlignedFile {
 /** Rebuild S6 inputs from a completed run directory's cached S1-S5 artifacts. No provider calls. */
 export async function loadSceneCalibrationItems(runDirs: string[]): Promise<SceneCalibrationItem[]> {
   const items: SceneCalibrationItem[] = [];
+  const activeCatalogVersion = catalogVersion();
   for (const dir of runDirs) {
     const prepared = JSON.parse(await readFile(path.join(dir, 'lesson-prep.json'), 'utf8')) as PreparedLesson;
     const narration = JSON.parse(await readFile(path.join(dir, 'narration.json'), 'utf8')) as NarrationFile;
@@ -166,7 +168,7 @@ export async function loadSceneCalibrationItems(runDirs: string[]): Promise<Scen
             scene.lessonBible!,
             mentionTimes,
             arm,
-            'streamline-catalog-v1',
+            activeCatalogVersion,
             live.sourceDoc?.sourceId,
             caseId,
             'ranked',

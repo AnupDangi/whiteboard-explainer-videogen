@@ -45,6 +45,14 @@
 - **Checkpoints:** Task 7 `f711aaf`; Task 8 `b6bc761`.
 - **Next bounded work:** Task 10 — multi-library registry and catalog-version hashing. Task 11 remains `unmeasured` until the user supplies a directory, license, and attribution.
 
+## Entry — 2026-09-25, Task 10: multi-library catalog registry and content version
+
+- **Why:** Retrieval, house-style preference, and artifact cache keys need to track every enabled catalog and embedding matrix.
+- **Implementation:** Added `catalog/registry.ts` with a Streamline-only house-style registry and `catalogVersion()` hashing each enabled JSON catalog and embedding file. `streamline.ts` now loads v1/v2 library catalogs in registry order, returns per-library attributions, memoizes by library list, and keeps `loadStreamlineCatalog()` behavior. `semantic.ts` combines enabled libraries and their Float32 matrices in the same order; `ladder.ts` now uses registry house prefixes. The embedding script loops over its registry mirror. `runLive.ts` and `sceneCalibration.ts` use the dynamic catalog version. Run IDs, config hashes, S6/S7 cache metadata, and scene context include the version, so an asset or embedding change invalidates the associated work.
+- **Tests:** Added `__tests__/catalog-registry.test.ts` for the default registry and legacy parity, house source classification, stable version hashes, and an embedding-byte change invalidating the version.
+- **Verification:** Initial build failed as expected because `catalog/registry.ts` was absent. All 3 focused tests passed; `npm run typecheck:hypothesis` passed; `npm run test:hypothesis` passed (**342 Node tests and 17 Python tests**, 0 failures), including catalog, Streamline, and semantic-loader tests unchanged. `node --check scripts/embed-catalog.mjs` passed. Embeddings were not regenerated; Streamline remains the only enabled library, so its existing matrix is reused.
+- **Next bounded work:** Task 11 — ingest a user-supplied icon library if its path, license, and attribution are available; otherwise record it as `unmeasured` and continue to Task 12. The old fixed `streamline-catalog-v1` cache version is retired.
+
 ## Entry — 2026-09-25, Task 5: few-shot exemplar bank v2 (template-complete, icon-rich)
 
 - **Why:** Bank v1 had 5 exemplars, all boxes-only; the planner had never seen an `object` icon, `plot`, `formula`, `meter`, `tokenStrip`, `operator`, cycle, hub, fan-out, list, stack, or title demonstration in a few-shot example. Bank v2 keeps v1 unchanged and adds 10 structural demonstrations so the combined bank covers all 13 `TemplateId`s.
