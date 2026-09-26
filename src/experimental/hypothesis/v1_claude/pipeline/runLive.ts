@@ -24,7 +24,7 @@ import { planScene, plannerProblems, shouldSkipPaidPlanning, skipPlanAfterAlignm
 import { buildPlannerSceneInput } from '../planner/sceneInput.js';
 import { safeParseSceneSpec } from '../schema.js';
 import type { PlannerSceneInput, PlannerTeachingContext } from '../planner/prompt.js';
-import { VISUAL_STAGE_VERSIONS } from './versions.js';
+import { VISUAL_STAGE_VERSIONS, S5_STAGE_VERSION, S5_MODEL_ID } from './versions.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
 import { encodeVideoAtomically, rasterizePng, type VideoScene } from '../export/videoEncode.js';
@@ -54,6 +54,20 @@ import { promptExperimentEligibilityProblems } from '../harness/promptExperiment
  */
 
 const SCENE_GAP_MS = 200; // mirrors narration/align.ts's fixture-mode convention
+
+/** Aligner pass order (least to most escalated); mirrors align.py's default -> fast_mode -> CTC -> bounded-repair sequence. */
+const ALIGNER_ESCALATION_ORDER: AlignedAudio['provider'][] = ['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair'];
+
+/** When audio is stitched from multiple independently-aligned scenes, record the most-escalated aligner among them (the most honest single-value summary of how that audio's timings were produced). */
+function mostEscalatedAligner(aligners: Iterable<AlignedAudio['provider']>): AlignedAudio['provider'] {
+  let worst: AlignedAudio['provider'] = 'stable-ts';
+  let worstRank = 0;
+  for (const aligner of aligners) {
+    const rank = ALIGNER_ESCALATION_ORDER.indexOf(aligner);
+    if (rank > worstRank) { worstRank = rank; worst = aligner; }
+  }
+  return worst;
+}
 
 export interface LiveSceneInput {
   sceneId: string;
@@ -253,6 +267,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const sceneAudioPaths: string[] = [];
   const sceneAudioPathById = new Map<string, string>();
   const sceneDurationMsById = new Map<string, number>();
+  const sceneAlignerById = new Map<string, AlignedAudio['provider']>();
   const alignmentCacheHits = new Set<string>();
   const alignmentStartedAtMs = Date.now();
   let cursorMs = 0;
@@ -274,9 +289,9 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       if (generated.audioPath !== audioPath) await writeFile(audioPath, await readFile(generated.audioPath));
       return { ...generated, audioPath };
     }
-    const cached = await ctx.artifactStore.run(`S5-tts-alignment:${scene.sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: 'voice-align-3-stable-ts-ctc-fallback', modelId: 'voice-engine:auto+stable-ts+wav2vec2-ctc-fallback:base' }, async () => {
+    const cached = await ctx.artifactStore.run(`S5-tts-alignment:${scene.sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, async () => {
       const generated = await align();
-      return { durationMs: generated.durationMs, words: generated.words, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
+      return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
     });
     stageArtifacts[`S5-tts-alignment:${scene.sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
     if (cached.cacheHit) alignmentCacheHits.add(scene.sceneId);
@@ -284,7 +299,13 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     await mkdir(sceneAudioDir, { recursive: true });
     const audioPath = path.join(sceneAudioDir, `${String(sequence).padStart(4, '0')}.wav`);
     await writeFile(audioPath, Buffer.from(cached.artifact.payload.audioBase64, 'base64'));
-    return { durationMs: cached.artifact.payload.durationMs, words: cached.artifact.payload.words, audioPath };
+    return {
+      durationMs: cached.artifact.payload.durationMs,
+      words: cached.artifact.payload.words,
+      aligner: cached.artifact.payload.aligner ?? 'stable-ts',
+      repairedWordIndexes: cached.artifact.payload.repairedWordIndexes ?? [],
+      audioPath,
+    };
   };
   const alignedScenePromises = narration.scenes.map((scene, sequence) => withSceneSynthesisSlot(() => synthesizeScene(scene, sequence)));
   const alignmentSettledAtPromise = Promise.all(alignedScenePromises).then(() => Date.now());
@@ -420,12 +441,14 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const aligned = await alignedScenePromises[sceneIndex];
     const alignedLocalWords = aligned.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs }));
     for (const problem of alignedWordTimingProblems(alignedLocalWords, aligned.durationMs)) failures.push({ code: 'invalid-word-alignment', stage: 'align', message: `${sceneInput.sceneId}: ${problem}`, hard: true });
+    if (aligned.repairedWordIndexes.length > 0) failures.push({ code: 'alignment-words-repaired', stage: 'align', message: `${sceneInput.sceneId}: repaired word indexes ${aligned.repairedWordIndexes.join(',')}`, hard: false });
     const sceneStartMs = cursorMs;
     sceneWords[sceneInput.sceneId] = alignedLocalWords.map((word) => ({ ...word, startMs: word.startMs + sceneStartMs, endMs: word.endMs + sceneStartMs }));
     sceneAudioPaths.push(aligned.audioPath);
     sceneAudioPathById.set(sceneInput.sceneId, aligned.audioPath);
     sceneDurationMsById.set(sceneInput.sceneId, aligned.durationMs);
-    const localAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: 'stable-ts', wavPath: aligned.audioPath, durationMs: aligned.durationMs, sceneWords: { [sceneInput.sceneId]: alignedLocalWords }, sceneBoundsMs: { [sceneInput.sceneId]: { startMs: 0, endMs: aligned.durationMs } }, mentions: [] };
+    sceneAlignerById.set(sceneInput.sceneId, aligned.aligner);
+    const localAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: aligned.aligner, wavPath: aligned.audioPath, durationMs: aligned.durationMs, sceneWords: { [sceneInput.sceneId]: alignedLocalWords }, sceneBoundsMs: { [sceneInput.sceneId]: { startMs: 0, endMs: aligned.durationMs } }, mentions: [] };
     const localScript: NarrationScript = { ...narration, scenes: narration.scenes.filter((scene) => scene.sceneId === sceneInput.sceneId) };
     const localMentionResolution = resolveMentions(localScript, localAudio);
     for (const mf of localMentionResolution.failures) failures.push({ code: `mention-${mf.reason}`, stage: 'align', message: `${mf.sceneId}/${mf.mentionId}: "${mf.phrase}"`, hard: true });
@@ -568,7 +591,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   }
 
   await concatSceneAudio(sceneAudioPaths, SCENE_GAP_MS, trailingPadMs, masterWavPath);
-  const alignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: 'stable-ts', wavPath: masterWavPath, durationMs: finalDurationMs, sceneWords, sceneBoundsMs, mentions };
+  const alignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: mostEscalatedAligner(sceneAlignerById.values()), wavPath: masterWavPath, durationMs: finalDurationMs, sceneWords, sceneBoundsMs, mentions };
   alignmentMs = (await alignmentSettledAtPromise) - alignmentStartedAtMs;
   const alignmentStageFailures = failures.filter((failure) => failure.stage === 'align');
   stageRuns.push({ stage: 'S5-tts-alignment', kind: 'local', status: alignmentStageFailures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: alignmentMs, startedAt: new Date(alignmentStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: alignmentCacheHits.size > 0, fallbackCount: 0, usage: { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: alignmentCacheHits.size }, failures: alignmentStageFailures.map(toRunFailure) });
@@ -683,7 +706,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
           const moduleBoundarySilenceMs = moduleIndex < input.modules.length - 1 ? SCENE_GAP_MS : 0;
           const moduleDurationMs = moduleCursor + moduleBoundarySilenceMs;
           await concatSceneAudio(orderedSceneIds.map((sceneId) => sceneAudioPathById.get(sceneId)!).filter(Boolean), SCENE_GAP_MS, moduleBoundarySilenceMs, moduleAudioPath);
-          const moduleAlignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: 'stable-ts', wavPath: moduleAudioPath, durationMs: moduleDurationMs, sceneWords: moduleWords, sceneBoundsMs: moduleBounds, mentions: moduleMentions };
+          const moduleAlignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: mostEscalatedAligner(orderedSceneIds.map((sceneId) => sceneAlignerById.get(sceneId) ?? 'stable-ts')), wavPath: moduleAudioPath, durationMs: moduleDurationMs, sceneWords: moduleWords, sceneBoundsMs: moduleBounds, mentions: moduleMentions };
           const moduleCaptionsPath = path.join(outputDir, 'module-audio', `${module.id}.vtt`);
           const moduleCaptions = buildWebVttForRun(moduleAlignedAudio, Boolean(options.diagnosticCaptionlessVideo));
           if (moduleCaptions.vtt) await writeFile(moduleCaptionsPath, moduleCaptions.vtt, 'utf8');

@@ -62,6 +62,41 @@ def load_model(model_size: str):
 
 _ctc_backend: tuple[Any, list[str], int] | None = None
 
+MIN_REPAIRED_WORD_MS = 40.0
+MAX_REPAIRED_FRACTION = 0.1
+
+
+def _repair_collapsed_words(words: list[dict], text: str, duration_ms: int) -> tuple[list[dict], list[int]]:
+    """Give stable-ts zero-length words (its 20 ms grid drops short words such as
+    "a"/"to") a small positive interval borrowed from the neighbouring word.
+    Deterministic, recorded, and bounded: raises when the word sequence differs
+    or more than MAX_REPAIRED_FRACTION of words collapsed."""
+    if [w['word'] for w in words] != text.split():
+        raise ValueError('cannot repair: word sequence differs from reference')
+    out = [dict(w) for w in words]
+    collapsed = [i for i, w in enumerate(out) if w['endMs'] <= w['startMs']]
+    if len(collapsed) > MAX_REPAIRED_FRACTION * len(out):
+        raise ValueError(f'cannot repair: {len(collapsed)}/{len(out)} words collapsed (limit {MAX_REPAIRED_FRACTION:.0%})')
+    for i in collapsed:
+        w = out[i]
+        prev_end = out[i - 1]['endMs'] if i > 0 else 0.0
+        next_start = out[i + 1]['startMs'] if i + 1 < len(out) else float(duration_ms)
+        if next_start - prev_end >= MIN_REPAIRED_WORD_MS and (next_start - w['startMs'] >= MIN_REPAIRED_WORD_MS or w['startMs'] - prev_end >= MIN_REPAIRED_WORD_MS):
+            start = min(max(prev_end, w['startMs']), next_start - MIN_REPAIRED_WORD_MS)
+            w['startMs'], w['endMs'] = start, start + MIN_REPAIRED_WORD_MS
+            continue
+        # No silence: take the tail of the previous word, else the head of the next.
+        if i > 0 and out[i - 1]['endMs'] - out[i - 1]['startMs'] >= 3 * MIN_REPAIRED_WORD_MS:
+            out[i - 1]['endMs'] -= MIN_REPAIRED_WORD_MS
+            w['startMs'], w['endMs'] = out[i - 1]['endMs'], out[i - 1]['endMs'] + MIN_REPAIRED_WORD_MS
+        elif i + 1 < len(out) and out[i + 1]['endMs'] - out[i + 1]['startMs'] >= 3 * MIN_REPAIRED_WORD_MS:
+            w['startMs'] = out[i + 1]['startMs']
+            w['endMs'] = w['startMs'] + MIN_REPAIRED_WORD_MS
+            out[i + 1]['startMs'] = w['endMs']
+        else:
+            raise ValueError(f'cannot repair word {i}: no neighbour long enough')
+    return out, collapsed
+
 
 def run_alignment(audio_path: str, text: str, language: str, model_size: str, model: Any = None, ctc_fallback=None) -> dict:
     if not text or not text.strip():
@@ -73,6 +108,7 @@ def run_alignment(audio_path: str, text: str, language: str, model_size: str, mo
     # we deliberately write the final JSON line.
     model = model if model is not None else load_model(model_size)
     duration_ms = wav_duration_ms(audio_path)
+    repaired: list[int] = []
     default_error = None
     try:
         result = model.align(audio_path, text, language=language)
@@ -81,6 +117,7 @@ def run_alignment(audio_path: str, text: str, language: str, model_size: str, mo
     except Exception as error:  # noqa: BLE001 - try a separate measured aligner below
         words = []
         default_error = f'{type(error).__name__}: {error}'
+    default_words = words
 
     if default_error:
         # stable-ts can leave some transcript words instantaneous when its
@@ -107,11 +144,22 @@ def run_alignment(audio_path: str, text: str, language: str, model_size: str, mo
                 words = []
                 ctc_error = f'{type(error).__name__}: {error}'
             if ctc_error:
-                raise RuntimeError(
-                    'word alignment failed validation for stable-ts default, stable-ts fast_mode, and CTC; '
-                    f'default={default_error}; fast_mode={retry_error}; ctc={ctc_error}'
-                )
-            aligner = 'torchaudio-wav2vec2-ctc'
+                # Last resort: repair the default pass's collapsed (zero-length)
+                # words instead of failing the whole lesson outright. Bounded
+                # and deterministic -- see _repair_collapsed_words.
+                try:
+                    words, repaired = _repair_collapsed_words(default_words, text, duration_ms)
+                    repair_error = _invalid_word_intervals(words, text, duration_ms)
+                except Exception as error:  # noqa: BLE001
+                    repair_error = f'{type(error).__name__}: {error}'
+                if repair_error:
+                    raise RuntimeError(
+                        'word alignment failed validation for stable-ts default, stable-ts fast_mode, CTC, and bounded repair; '
+                        f'default={default_error}; fast_mode={retry_error}; ctc={ctc_error}; repair={repair_error}'
+                    )
+                aligner = 'stable-ts+collapsed-repair'
+            else:
+                aligner = 'torchaudio-wav2vec2-ctc'
     else:
         aligner = 'stable-ts'
 
@@ -119,6 +167,7 @@ def run_alignment(audio_path: str, text: str, language: str, model_size: str, mo
         'durationMs': duration_ms,
         'words': words,
         'aligner': aligner,
+        'repairedWordIndexes': repaired,
     }
 
 

@@ -63,7 +63,15 @@ export interface ResolvedMention {
 
 export interface AlignedAudio {
   schemaVersion: 'claude-aligned-audio/v1';
-  provider: 'fixture' | 'stable-ts';
+  /**
+   * 'fixture' for deterministic fixture-mode timings; otherwise the aligner
+   * identity that actually produced this audio's timings (see
+   * shared/alignment/align.ts's AlignerIdentity). For audio stitched from
+   * multiple independently-aligned scenes, this is the most-escalated
+   * aligner among the contributing scenes (pass order: stable-ts ->
+   * stable-ts-fast-mode -> torchaudio-wav2vec2-ctc -> stable-ts+collapsed-repair).
+   */
+  provider: 'fixture' | 'stable-ts' | 'stable-ts-fast-mode' | 'torchaudio-wav2vec2-ctc' | 'stable-ts+collapsed-repair';
   wavPath: string;
   durationMs: number;
   /** Per scene, in narration order, word timings covering that scene's plainText only. */

@@ -9,6 +9,7 @@ import { prepareLesson } from '../pipeline/lesson.js';
 import { sourceDocFromText } from '../plan/sourceDoc.js';
 import { tokenizeWords } from '../narration/align.js';
 import { parseMarkers } from '../narration/markers.js';
+import { S5_STAGE_VERSION, S5_MODEL_ID } from '../pipeline/versions.js';
 
 test('measured module audio changes only the target of narration not yet written', async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'hypothesis-module-audio-'));
@@ -72,7 +73,7 @@ test('measured module audio changes only the target of narration not yet written
     const speechAligner = async (text: string): Promise<AlignmentResult & { audioPath: string }> => {
       alignmentCalls++;
       const words = tokenizeWords(text).map((word, index) => ({ word, startMs: index * 150, endMs: (index + 1) * 150 }));
-      return { durationMs: 18_050, words, audioPath };
+      return { durationMs: 18_050, words, aligner: 'stable-ts', repairedWordIndexes: [], audioPath };
     };
     const artifactStore = new ContentAddressedArtifactStore(path.join(temp, 'cache'), 'cold');
     const prepared = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 600 }, { model: 'test/audio-budget', apiKey: 'test-only', budgetUsd: 0.7, fetcher, speechAligner, artifactStore });
@@ -84,7 +85,7 @@ test('measured module audio changes only the target of narration not yet written
     assert.equal(prepared.modules?.[1]?.requestedBudgetSec, 300);
     assert.deepEqual(names.filter((name) => name === 'lesson_syllabus'), ['lesson_syllabus']);
     const firstScene = prepared.modules![0]!.script.scenes[0]!;
-    const reused = await artifactStore.run<{ durationMs: number; words: Array<{ word: string; startMs: number; endMs: number }>; audioBase64: string }>(`S5-tts-alignment:${firstScene.sectionId}`, { text: parseMarkers(firstScene.text).plainText, language: 'en', voice: undefined, provider: 'auto', model: 'base', calibrationMedianErrorMs: undefined }, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: 'voice-align-3-stable-ts-ctc-fallback', modelId: 'voice-engine:auto+stable-ts+wav2vec2-ctc-fallback:base' }, () => { throw new Error('live S5 must reuse audio measured at the module boundary'); });
+    const reused = await artifactStore.run<{ durationMs: number; words: Array<{ word: string; startMs: number; endMs: number }>; aligner: string; repairedWordIndexes: number[]; audioBase64: string }>(`S5-tts-alignment:${firstScene.sectionId}`, { text: parseMarkers(firstScene.text).plainText, language: 'en', voice: undefined, provider: 'auto', model: 'base', calibrationMedianErrorMs: undefined }, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, () => { throw new Error('live S5 must reuse audio measured at the module boundary'); });
     assert.equal(reused.cacheHit, true);
     assert.equal(reused.artifact.payload.durationMs, 18_050);
     assert.equal(alignmentCalls, prepared.modules!.reduce((sum, module) => sum + module.script.scenes.length, 0));

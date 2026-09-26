@@ -121,11 +121,62 @@ class AlignmentTimestampTests(unittest.TestCase):
                 audio.setsampwidth(2)
                 audio.setframerate(16_000)
                 audio.writeframes(b'\0\0' * 160)
-            with self.assertRaisesRegex(RuntimeError, 'default, stable-ts fast_mode, and CTC'):
+            with self.assertRaisesRegex(RuntimeError, 'stable-ts fast_mode, CTC, and bounded repair'):
                 ALIGN.run_alignment(str(wav_path), 'first scene', 'en', 'base', RetryModel(), lambda *_: [
                     {'word': 'first', 'startMs': 10, 'endMs': 10},
                     {'word': 'scene', 'startMs': 20, 'endMs': 20},
                 ])
+
+    def test_collapsed_short_words_are_repaired_after_all_measured_aligners_fail(self):
+        words = [
+            {'word': 'Pick', 'startMs': 0.0, 'endMs': 300.0},
+            {'word': 'a', 'startMs': 300.0, 'endMs': 300.0},
+            {'word': 'wheel', 'startMs': 300.0, 'endMs': 700.0},
+            {'word': 'now', 'startMs': 760.0, 'endMs': 1000.0},
+            {'word': 'to', 'startMs': 1000.0, 'endMs': 1000.0},
+            {'word': 'spin', 'startMs': 1000.0, 'endMs': 1400.0},
+            {'word': 'it', 'startMs': 1400.0, 'endMs': 1600.0},
+            {'word': 'and', 'startMs': 1600.0, 'endMs': 1800.0},
+            {'word': 'lean', 'startMs': 1800.0, 'endMs': 2100.0},
+            {'word': 'left', 'startMs': 2100.0, 'endMs': 2400.0},
+            {'word': 'slowly', 'startMs': 2400.0, 'endMs': 2900.0},
+            {'word': 'today', 'startMs': 2900.0, 'endMs': 3300.0},
+            {'word': 'please', 'startMs': 3300.0, 'endMs': 3700.0},
+            {'word': 'okay', 'startMs': 3700.0, 'endMs': 4000.0},
+            {'word': 'done', 'startMs': 4000.0, 'endMs': 4400.0},
+            {'word': 'here', 'startMs': 4400.0, 'endMs': 4800.0},
+            {'word': 'wow', 'startMs': 4800.0, 'endMs': 5000.0},
+            {'word': 'yes', 'startMs': 5000.0, 'endMs': 5200.0},
+            {'word': 'go', 'startMs': 5200.0, 'endMs': 5400.0},
+            {'word': 'end', 'startMs': 5400.0, 'endMs': 5600.0},
+        ]
+        text = ' '.join(w['word'] for w in words)
+        repaired, indexes = ALIGN._repair_collapsed_words(words, text, 6000)
+        self.assertEqual(indexes, [1, 4])
+        self.assertIsNone(ALIGN._invalid_word_intervals(repaired, text, 6000))
+        for prev, cur in zip(repaired, repaired[1:]):
+            self.assertLessEqual(prev['endMs'], cur['startMs'])
+        self.assertGreaterEqual(repaired[1]['endMs'] - repaired[1]['startMs'], ALIGN.MIN_REPAIRED_WORD_MS)
+
+    def test_repair_refuses_when_too_many_words_collapsed(self):
+        words = [{'word': w, 'startMs': 100.0, 'endMs': 100.0} for w in ['a', 'b', 'c']] + [{'word': 'long', 'startMs': 100.0, 'endMs': 900.0}]
+        with self.assertRaises(ValueError):
+            ALIGN._repair_collapsed_words(words, 'a b c long', 1000)
+
+    def test_run_alignment_reports_repair_identity_when_ctc_also_fails(self):
+        class Collapsing:
+            def align(self, audio_path, text, **kwargs):
+                return None
+        # Patch _result_words to return one collapsed word among 12 valid ones.
+        base = [{'word': f'w{i}', 'startMs': i * 100.0, 'endMs': i * 100.0 + 90.0} for i in range(12)]
+        base[5] = {'word': 'w5', 'startMs': 500.0, 'endMs': 500.0}
+        text = ' '.join(w['word'] for w in base)
+        with patch.object(ALIGN, '_result_words', return_value=base), patch.object(ALIGN, 'wav_duration_ms', return_value=2000):
+            model = Collapsing()
+            model.align = lambda *a, **k: object()
+            result = ALIGN.run_alignment('x.wav', text, 'en', 'base', model=model, ctc_fallback=lambda *a: (_ for _ in ()).throw(ValueError('ctc down')))
+        self.assertEqual(result['aligner'], 'stable-ts+collapsed-repair')
+        self.assertEqual(result['repairedWordIndexes'], [5])
 
 
 class CtcAlignmentContractTests(unittest.TestCase):

@@ -17,6 +17,7 @@ import { buildSourceBundle } from '../plan/sourceBundle.js';
 import { buildSyllabus, lessonCostCapUsd, rebudgetUnwrittenModules, type ModulePlan, type Syllabus } from '../plan/hierarchical.js';
 import { parseMarkers } from '../narration/markers.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
+import { S5_STAGE_VERSION, S5_MODEL_ID } from './versions.js';
 
 /**
  * S2 -> S3 -> plan analysis -> S4 for a free-form lesson request. Stops at
@@ -185,14 +186,20 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
           const alignmentInput = { text: plainText, language: m.speechLanguage ?? 'en', voice: m.speechVoice, provider: 'auto', model: 'base', calibrationMedianErrorMs: m.alignmentCalibrationMedianErrorMs };
           const generate = async () => {
             const generated = await m.speechAligner!(plainText, { language: m.speechLanguage ?? 'en', voice: m.speechVoice, provider: 'auto', model: 'base' });
-            return { durationMs: generated.durationMs, words: generated.words, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
+            return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
           };
           if (!m.artifactStore) return { sceneId, ...(await generate()), cacheHit: false };
-          const cached = await m.artifactStore.run(`S5-tts-alignment:${sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: 'voice-align-3-stable-ts-ctc-fallback', modelId: 'voice-engine:auto+stable-ts+wav2vec2-ctc-fallback:base' }, generate);
-          m.artifactStore.reuseWithinRun(`S5-tts-alignment:${sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: 'voice-align-3-stable-ts-ctc-fallback', modelId: 'voice-engine:auto+stable-ts+wav2vec2-ctc-fallback:base' }, cached.artifact);
+          const cached = await m.artifactStore.run(`S5-tts-alignment:${sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, generate);
+          m.artifactStore.reuseWithinRun(`S5-tts-alignment:${sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, cached.artifact);
           if (cached.cacheHit) cacheHits.push(`S5-tts-alignment:${sceneId}`);
           stageArtifacts[`S5-tts-alignment:${sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
-          return { sceneId, ...cached.artifact.payload, cacheHit: cached.cacheHit };
+          return {
+            sceneId,
+            ...cached.artifact.payload,
+            aligner: cached.artifact.payload.aligner ?? 'stable-ts',
+            repairedWordIndexes: cached.artifact.payload.repairedWordIndexes ?? [],
+            cacheHit: cached.cacheHit,
+          };
         }));
         const alignmentErrors = alignmentResults.flatMap((result, index) => result.status === 'rejected' ? [`${prefixedScenes[index]!.sectionId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`] : []);
         if (alignmentErrors.length) {

@@ -58,10 +58,15 @@ export interface AlignedWord {
   endMs: number;
 }
 
+export type AlignerIdentity = 'stable-ts' | 'stable-ts-fast-mode' | 'torchaudio-wav2vec2-ctc' | 'stable-ts+collapsed-repair';
+
 export interface AlignmentResult {
   durationMs: number;
   words: AlignedWord[];
-  aligner?: 'stable-ts' | 'stable-ts-fast-mode' | 'torchaudio-wav2vec2-ctc';
+  /** Which aligner actually produced these timings (pass order: default -> fast_mode -> CTC -> bounded repair). Defaults to 'stable-ts' when the sidecar output omits it (older cached payloads). */
+  aligner: AlignerIdentity;
+  /** Indexes (into `words`) of any words whose interval was synthesized by the bounded collapsed-word repair pass, rather than measured. Empty when no repair ran. */
+  repairedWordIndexes: number[];
 }
 
 export interface AlignAudioOptions {
@@ -256,11 +261,27 @@ function validateAlignmentResult(value: unknown): AlignmentResult {
     if (typeof word.endMs !== 'number' || !Number.isFinite(word.endMs)) throw new Error(`forced alignment word[${index}].endMs is not a finite number`);
     return {word: word.word, startMs: word.startMs, endMs: word.endMs};
   });
+  const alignerValues: AlignerIdentity[] = ['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair'];
   const aligner = record.aligner;
-  if (aligner !== undefined && !['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc'].includes(String(aligner))) {
+  if (aligner !== undefined && !alignerValues.includes(aligner as AlignerIdentity)) {
     throw new Error('forced alignment output has an unsupported aligner identity');
   }
-  return {durationMs: record.durationMs, words, ...(aligner ? {aligner: aligner as AlignmentResult['aligner']} : {})};
+  const repairedWordIndexesRaw = record.repairedWordIndexes;
+  if (repairedWordIndexesRaw !== undefined && !Array.isArray(repairedWordIndexesRaw)) {
+    throw new Error('forced alignment output repairedWordIndexes is not an array');
+  }
+  const repairedWordIndexes: number[] = Array.isArray(repairedWordIndexesRaw)
+    ? repairedWordIndexesRaw.map((value, index) => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`forced alignment repairedWordIndexes[${index}] is not a finite number`);
+      return value;
+    })
+    : [];
+  return {
+    durationMs: record.durationMs,
+    words,
+    aligner: aligner !== undefined ? (aligner as AlignerIdentity) : 'stable-ts',
+    repairedWordIndexes,
+  };
 }
 
 /** Minimal shape of voice-engine's `synthesize()` this adapter depends on. */
