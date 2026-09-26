@@ -195,7 +195,8 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
     ...(anthropic ? {} : { temperature: req.temperature }),
     max_tokens: req.maxTokens,
     ...(reasoningModel ? { reasoning: { max_tokens: Math.min(1200, Math.max(200, Math.round(req.maxTokens / 4))) } } : {}),
-    ...(anthropic && req.effort ? { reasoning: { effort: req.effort } } : {}),
+    // Effort is honoured by Anthropic and OpenAI reasoning routes; without it gpt-6-luna S6 calls ranged 9-70 s (2026-09-26).
+    ...((anthropic || !strict) && req.effort ? { reasoning: { effort: req.effort } } : {}),
     ...(constrained ? { response_format: { type: 'json_schema', json_schema: { name: req.schemaName, strict, schema: anthropicSchema ?? req.schema } } } : {}),
     ...(req.maxPriceUsdPerMillionTokens || reasoningModel || !constrained ? {
       provider: {
