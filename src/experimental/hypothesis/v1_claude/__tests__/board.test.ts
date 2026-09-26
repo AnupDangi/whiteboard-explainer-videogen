@@ -123,7 +123,7 @@ test('fallback board is built from data: concept-matched mentions, confident ico
 
 test('board prompt carries the scene data and per-mention candidates, never icon ids', () => {
   const prompt = buildBoardPrompt(scene);
-  assert.match(prompt.user, /"iconCandidates": \[\s*"flour"\s*\]/);
+  assert.match(prompt.user, /"iconSuggestions": \[\s*"flour"\s*\]/);
   assert.match(prompt.user, /"mustShow"/);
   assert.ok(!prompt.user.includes('lib:flour'));
   assert.match(prompt.system, /illustrative, not about this lesson/);
@@ -142,4 +142,19 @@ test('planBoardScene repairs once on a rule violation and returns the compiled s
   assert.equal(result.usage.repairs, 1);
   assert.equal(result.spec?.template, 'convergence');
   assert.equal(result.iconAssets?.n1, 'lib:flour');
+});
+
+test('with an icon catalog, any catalog icon is admissible (a metaphor), off-catalog names fail, suggestions stay hints', () => {
+  const withCatalog: PlannerSceneInput = { ...scene, iconCatalog: [{ id: 'lib:flour', name: 'flour' }, { id: 'lib:water', name: 'water' }, { id: 'lib:dough', name: 'dough' }, { id: 'lib:robot', name: 'robot' }] };
+  const enums = boardEnums(withCatalog);
+  assert.deepEqual(enums.icons, ['flour', 'water', 'dough', 'robot']);
+  const metaphor = goodBoard();
+  metaphor.nodes[2].icon = 'robot';
+  const checked = validateBoard(metaphor, withCatalog);
+  assert.deepEqual(checked.problems, []);
+  assert.equal(checked.iconAssets?.n3, 'lib:robot');
+  const offCatalog = goodBoard();
+  offCatalog.nodes[2].icon = 'rocket';
+  assert.ok(validateBoard(offCatalog, withCatalog).problems.some((problem) => problem.startsWith('nodes.2.icon')));
+  assert.match(buildBoardPrompt(withCatalog).system, /Icon catalog \(4 hand-drawn icons, one visual family\):\nflour, water, dough, robot/);
 });

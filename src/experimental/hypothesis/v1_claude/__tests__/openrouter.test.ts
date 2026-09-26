@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chatStructured, maxPriceForCallBudget } from '../llm/openrouter.js';
+import { chatStructured, maxPriceForCallBudget, schemaLimitLines } from '../llm/openrouter.js';
 
 test('call budget derives per-token provider ceilings with framing headroom', () => {
   const budget = 0.02;
@@ -63,4 +63,9 @@ test('OpenAI routes get the schema non-strict (they reject optional properties);
   };
   assert.equal(await strictFor('openai/gpt-test'), false);
   assert.equal(await strictFor('google/gemini-test'), true);
+});
+
+test('non-strict routes state schema length/count limits in the system prompt', () => {
+  const schema = { type: 'object', properties: { intro: { type: 'object', properties: { sections: { type: 'array', maxItems: 12, items: { type: 'string', maxLength: 80 } } } } } };
+  assert.deepEqual(schemaLimitLines(schema), ['intro.sections: at most 12 items', 'intro.sections[]: at most 80 characters']);
 });

@@ -28,7 +28,7 @@ import { VISUAL_STAGE_VERSIONS } from './versions.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
 import { encodeVideoAtomically, rasterizePng, type VideoScene } from '../export/videoEncode.js';
-import { attributionForSources } from '../catalog/streamline.js';
+import { attributionForSources, loadCatalogLibraries } from '../catalog/streamline.js';
 import { buildWebVtt } from '../export/captions.js';
 import { resolveSourceEvidence, type SourceDoc } from '../plan/sourceDoc.js';
 import { budgetLedgerAccountingProblems, type PersistentBudgetLedger } from './budgetLedger.js';
@@ -264,6 +264,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const scenePlanningStartedAtMs = Date.now();
   const mentionCandidatesStartedAtMs = Date.now();
   const mentionCandidates = await rankConcepts(narration.scenes.flatMap((s) => s.mentions.map((m) => m.phrase)), 5, queryEmbeddingCache);
+  // The board planner may pick any enabled-catalog icon (one entry per name, lowest id wins); retrieval hits stay as suggestions.
+  const iconCatalog = [...new Map([...loadCatalogLibraries().entries].sort((a, b) => a.id.localeCompare(b.id)).reverse().map((entry) => [entry.names[0], { id: entry.id, name: entry.names[0] }])).values()].sort((a, b) => a.name.localeCompare(b.name));
   recordLocalStage('S7-resolve', mentionCandidatesStartedAtMs, false);
   const hardAlignmentFailureCount = failures.filter((failure) => failure.stage === 'align' && failure.hard).length;
   if (ctx.planDespiteAlignmentFailure && hardAlignmentFailureCount > 0) {
@@ -277,7 +279,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     }
     const narrationScene = narration.scenes.find((s) => s.sceneId === sceneInput.sceneId)!;
     const remainingBudgetUsd = Math.max(0, options.maxCostUsd - totalUsage.costUsd);
-    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates, previousElements });
+    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates, previousElements, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
 
     if (input.runClass === 'generated-lesson') {
       const refs = sceneInput.teachingContext?.sourceEvidenceRefs ?? [];

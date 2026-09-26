@@ -158,6 +158,27 @@ export function toAnthropicSchema(node: unknown): unknown {
  */
 const STRICT_NEEDS_ALL_REQUIRED = ['openai/', '~openai/'];
 
+/**
+ * A non-strict route does not enforce length or count limits while decoding,
+ * so state them: one line per constrained field, derived from the schema
+ * itself (e.g. "intro.sections[]: at most 80 characters").
+ */
+export function schemaLimitLines(node: unknown, path = ''): string[] {
+  if (!node || typeof node !== 'object') return [];
+  const o = node as Record<string, unknown>;
+  const lines: string[] = [];
+  const where = path || '(root)';
+  if (typeof o.maxLength === 'number') lines.push(`${where}: at most ${o.maxLength} characters`);
+  if (typeof o.maxItems === 'number') lines.push(`${where}: at most ${o.maxItems} items`);
+  if (typeof o.minItems === 'number' && o.minItems > 0) lines.push(`${where}: at least ${o.minItems} items`);
+  if (o.properties && typeof o.properties === 'object') {
+    for (const [key, value] of Object.entries(o.properties as Record<string, unknown>)) lines.push(...schemaLimitLines(value, path ? `${path}.${key}` : key));
+  }
+  if (o.items) lines.push(...schemaLimitLines(o.items, `${path}[]`));
+  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) if (Array.isArray(o[key])) for (const branch of o[key] as unknown[]) lines.push(...schemaLimitLines(branch, path));
+  return [...new Set(lines)];
+}
+
 export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: typeof fetch = fetch): Promise<ChatResult> {
   const reasoningModel = HIDDEN_REASONING.some((p) => req.model.startsWith(p));
   const anthropic = req.model.startsWith('anthropic/');
@@ -165,13 +186,16 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
   // Too large for Anthropic's grammar compiler: fall back to the prompt's JSON contract; the caller
   // still validates the full zod schema and gets its one repair, so nothing is accepted unchecked.
   const constrained = !anthropic || countOptional(anthropicSchema) <= ANTHROPIC_MAX_OPTIONAL;
+  const strict = !STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix));
+  const limits = strict ? [] : schemaLimitLines(req.schema);
+  const system = limits.length ? `${req.system}\n\nField limits (validated; a response that breaks one is rejected):\n${limits.map((line) => `- ${line}`).join('\n')}` : req.system;
   const body = {
     model: req.model,
     ...(anthropic ? {} : { temperature: req.temperature }),
     max_tokens: req.maxTokens,
     ...(reasoningModel ? { reasoning: { max_tokens: Math.min(1200, Math.max(200, Math.round(req.maxTokens / 4))) } } : {}),
     ...(anthropic && req.effort ? { reasoning: { effort: req.effort } } : {}),
-    ...(constrained ? { response_format: { type: 'json_schema', json_schema: { name: req.schemaName, strict: !STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix)), schema: anthropicSchema ?? req.schema } } } : {}),
+    ...(constrained ? { response_format: { type: 'json_schema', json_schema: { name: req.schemaName, strict, schema: anthropicSchema ?? req.schema } } } : {}),
     ...(req.maxPriceUsdPerMillionTokens || reasoningModel || !constrained ? {
       provider: {
         ...(reasoningModel || !constrained ? { require_parameters: true } : {}),
@@ -180,8 +204,8 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
     } : {}),
     messages: [
       anthropic
-        ? { role: 'system', content: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }] }
-        : { role: 'system', content: req.system },
+        ? { role: 'system', content: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] }
+        : { role: 'system', content: system },
       { role: 'user', content: req.user },
     ],
     usage: { include: true },

@@ -7,6 +7,7 @@ export function buildPlannerSceneInput(args: {
   teachingContext: PlannerSceneInput['teachingContext'];
   mentionCandidates: Map<string, Array<{ id: string; name: string; score: number }>>;
   previousElements: PlannerSceneInput['previousElements'];
+  iconCatalog?: PlannerSceneInput['iconCatalog'];
 }): PlannerSceneInput {
   return {
     sceneId: args.sceneId,
@@ -19,5 +20,6 @@ export function buildPlannerSceneInput(args: {
       (args.mentionCandidates.get(mention.phrase.trim().toLowerCase()) ?? []).map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score })),
     ])),
     previousElements: args.previousElements,
+    ...(args.iconCatalog ? { iconCatalog: args.iconCatalog } : {}),
   };
 }

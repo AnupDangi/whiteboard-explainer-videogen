@@ -14,7 +14,7 @@ export interface BoardExample {
   origin: 'illustrative-example';
   sceneData: {
     narration: string;
-    mentions: Array<{ id: string; phrase: string; iconCandidates: string[] }>;
+    mentions: Array<{ id: string; phrase: string; iconSuggestions: string[] }>;
     concepts: Array<{ id: string; label: string }>;
     relations: Array<{ from: string; to: string; type: string }>;
   };
@@ -33,10 +33,10 @@ export const BOARD_EXAMPLES: readonly BoardExample[] = [
     sceneData: {
       narration: 'A baker mixes flour and water, the oven bakes the dough, and out comes bread.',
       mentions: [
-        { id: 'flour', phrase: 'flour', iconCandidates: ['bread', 'plant'] },
-        { id: 'water', phrase: 'water', iconCandidates: ['drop', 'water-glass'] },
-        { id: 'oven', phrase: 'oven bakes', iconCandidates: ['fire-nature', 'thermometer'] },
-        { id: 'bread', phrase: 'bread', iconCandidates: ['bread'] },
+        { id: 'flour', phrase: 'flour', iconSuggestions: ['bread', 'plant'] },
+        { id: 'water', phrase: 'water', iconSuggestions: ['drop', 'water-glass'] },
+        { id: 'oven', phrase: 'oven bakes', iconSuggestions: ['fire-nature', 'thermometer'] },
+        { id: 'bread', phrase: 'bread', iconSuggestions: ['bread'] },
       ],
       concepts: [
         { id: 'flour', label: 'Flour' },
@@ -68,9 +68,9 @@ export const BOARD_EXAMPLES: readonly BoardExample[] = [
     sceneData: {
       narration: 'A parcel leaves the warehouse, rides a truck across town, and reaches your house.',
       mentions: [
-        { id: 'warehouse', phrase: 'warehouse', iconCandidates: ['warehouse', 'factory'] },
-        { id: 'truck', phrase: 'truck', iconCandidates: ['delivery-truck', 'truck'] },
-        { id: 'house', phrase: 'your house', iconCandidates: ['house', 'home'] },
+        { id: 'warehouse', phrase: 'warehouse', iconSuggestions: ['warehouse', 'factory'] },
+        { id: 'truck', phrase: 'truck', iconSuggestions: ['delivery-truck', 'truck'] },
+        { id: 'house', phrase: 'your house', iconSuggestions: ['house', 'home'] },
       ],
       concepts: [
         { id: 'warehouse', label: 'Warehouse' },

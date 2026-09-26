@@ -1,3 +1,4 @@
+import { stableJson } from '../../shared/artifacts.js';
 import type { StageFailure } from '../types.js';
 import { addUsage, emptyUsage, type CallUsage, type StructuredCallAttemptRecord } from '../llm/structuredCall.js';
 import { analyzeTeachingPlan, type PlanAnalysis } from '../plan/analyze.js';
@@ -110,7 +111,8 @@ export function lessonToLiveInput(caseId: string, prepared: PreparedLesson): Hyp
     const relations = graph.relations.filter((r) => ids.has(r.from) && ids.has(r.to) && contract.requiredRelations.some((required) => required.from === r.from && required.to === r.to && required.type === r.type)).map(({ from, to, type, evidence }) => ({ from, to, type, evidenceRefs: evidence }));
     const sourceEvidenceRefs = [...new Map(
       [...concepts.flatMap((c) => c.evidence), ...relations.flatMap((r) => r.evidenceRefs)]
-        .map((ref) => [ref.sourceId + ':' + ref.spanId + ':' + ref.startChar, ref]),
+        // Key on the whole reference: two quotes from one span can share a start but end differently.
+        .map((ref) => [stableJson(ref), ref]),
     ).values()];
     return {
       sceneId: section.id,
