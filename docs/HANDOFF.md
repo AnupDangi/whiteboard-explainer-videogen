@@ -1,5 +1,11 @@
 # HANDOFF — Claude hypothesis track
 
+## 2026-09-27 — Simi parity recovery plan adopted
+- Plan: docs/superpowers/plans/2026-09-27-simi-parity-recovery.md (not plan-locked).
+- User approvals (chat, 2026-09-27): "Whatever you feel is best do it make sure first phase cleanup what is not required before that commit and move ahead.but complete and understand my end goal plan for that." / "Keep human gate, ship draft (Recommended)" / "LLM picks from full catalog (Recommended)".
+- Checkpoint commit c47631c holds Codex's uncommitted tree; baseline suite: `npm run typecheck:hypothesis` passed with 0 errors; `npm run test:hypothesis` — Node: 441 pass / 0 fail (441 tests total); Python: 21 tests OK + 12 tests OK (33 tests total, 0 failures). Full suite exit code 0.
+- Status: all tasks unmeasured.
+
 ## Entry — 2026-09-26, board schema v2 + sketchy icons + model bake-off + parallel scenes: 5/5 Anthropic-topic videos
 
 - Spec: `docs/superpowers/specs/2026-09-26-board-schema-v2-design.md` (approved in chat). Commits: 653bee0 (Phase 0 cleanup: 6,115 unreachable legacy lines removed, parse/RAG/voice engines kept; every model id now from `.env`, no code defaults), e9fdba8 (Assest-Library sketchy family: 462 ink+fill MIT icons, native colours, single registry file, per-library attribution), 1acb037 (S6 `claude-board/v2`: enum-constrained board, code-derived evidence/arrows/title), 35eeaf7/01a9b96/4e7fdac/2fca41f (OpenAI non-strict schema + stated limits, S3 token budget, evidence dedupe fix, catalog-wide icons, two-line labels, parallel S5/S6, board rule fixes). Assest-Library commits 2135293, 67e8166.
