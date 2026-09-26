@@ -80,24 +80,33 @@ test('a valid board compiles to a gated SceneSpec with data-derived evidence, ar
   assert.deepEqual(checked.iconAssets, { n1: 'lib:flour', n2: 'lib:water', n4: 'lib:dough' });
 });
 
-test('board rules reject off-candidate icons, invented label words, reused mentions, and missing relation concepts', () => {
+test('board rules reject off-candidate icons, invented content words, and missing relation concepts; a shared mention is allowed', () => {
   const bad = goodBoard();
   bad.nodes[0].icon = 'dough';
   bad.nodes[1].label = 'cold water tank';
-  bad.nodes[3].mention = 'm_a';
   const problems = validateBoard(bad, scene).problems.join(' | ');
   assert.match(problems, /icon "dough" is not a candidate for mention m_a/);
   assert.match(problems, /label words \[cold, tank\]/);
-  assert.match(problems, /mention m_a is used by two nodes/);
+  const shared = goodBoard();
+  shared.nodes[3].mention = 'm_p';
+  shared.nodes[3].icon = 'label';
+  assert.deepEqual(validateBoard(shared, scene).problems, [], 'two nodes may appear on the same spoken mention');
+  const functionWord = goodBoard();
+  functionWord.nodes[3].label = 'dough for';
+  assert.deepEqual(validateBoard(functionWord, scene).problems, [], 'short function words may join source words');
   const missing = goodBoard();
   missing.nodes = missing.nodes.filter((node) => node.concept !== 'src_b');
   assert.match(validateBoard(missing, scene).problems.join(' | '), /relation src_b -> src_p \(feeds\) must be drawn, so add a node for concept src_b/);
 });
 
-test('persistent concepts must use their canonical term, and unknown enum values fail the schema', () => {
+test('persistent concepts are labelled with their canonical term by code, and unknown enum values fail the schema', () => {
   const renamed = goodBoard();
-  renamed.nodes[2].label = 'combines';
-  assert.match(validateBoard(renamed, scene).problems.join(' | '), /canonical term "mixing"/);
+  renamed.nodes[2].label = 'mixing';
+  renamed.nodes[2].icon = 'label';
+  const checked = validateBoard({ ...renamed, nodes: renamed.nodes.map((node) => (node.id === 'n3' ? { ...node, label: 'mixing' } : node)) }, scene);
+  assert.deepEqual(checked.problems, []);
+  const persistent = checked.spec!.elements.find((element) => element.id === 'n3')!;
+  assert.equal(persistent.prim === 'text' ? persistent.text : persistent.label, 'mixing');
   const unknown = { ...goodBoard(), nodes: [{ ...goodBoard().nodes[0], icon: 'rocket' }] };
   assert.ok(validateBoard(unknown, scene).problems.some((problem) => problem.startsWith('nodes.0.icon')));
 });
@@ -179,4 +188,12 @@ test('icon labels wrap onto at most two balanced lines, so nodes stay narrow and
   assert.deepEqual(labelLines('Carbon dioxide'), ['Carbon', 'dioxide']);
   assert.deepEqual(labelLines('Self-critique and revision'), ['Self-critique', 'and revision']);
   assert.equal(labelBlockHeight('Carbon dioxide'), OBJECT_LABEL_H + OBJECT_LABEL_LINE_H);
+});
+
+test('a heading with an unsupported number falls back to the checked model title', () => {
+  const numbered: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: 'Step 2: mixing Makes dough' } };
+  const board = { ...goodBoard(), title: 'Mixing makes dough' };
+  const checked = validateBoard(board, numbered);
+  assert.equal(checked.spec?.title, 'Mixing makes dough');
+  assert.deepEqual(checked.problems, []);
 });

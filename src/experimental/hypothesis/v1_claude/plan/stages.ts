@@ -77,6 +77,7 @@ ${sourcePrompt(sourceDoc)}`;
       if (leaked.length) problems.push(`concept ids ${leaked.map((id) => `"${id}"`).join(', ')} are JSON field names, not source concepts; give each concept a snake_case id derived from its own label`);
       const relationIds = g.relations.map((r) => `${r.from}|${r.type}|${r.to}`);
       if (new Set(relationIds).size !== relationIds.length) problems.push('relations must be unique');
+      for (const r of g.relations) if (r.from === r.to) problems.push(`relation ${r.from} -> ${r.to} links a concept to itself; a relation must connect two different concepts`);
       const checkEvidence = (owner: string, evidence: Array<{ spanId: string; quote: string }>) => {
         if (evidence.length === 0) problems.push(`${owner} has no source evidence`);
         for (const ref of evidence) if (!anchorQuote(sourceDoc, ref.spanId, ref.quote)) problems.push(`${owner} evidence quote is absent from source span ${ref.spanId}; copy the words exactly as they appear in that span`);

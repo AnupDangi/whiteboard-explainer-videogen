@@ -100,6 +100,23 @@ export interface HypothesisLiveRunResult {
   captionsPath?: string;
 }
 
+/** Scenes processed at once in S5 (TTS + alignment sidecars). HYPOTHESIS_SCENE_CONCURRENCY overrides. */
+export const DEFAULT_SCENE_CONCURRENCY = Math.max(1, Number(process.env.HYPOTHESIS_SCENE_CONCURRENCY) || 4);
+
+/** Map with at most `limit` promises in flight; results keep input order. */
+export async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker));
+  return results;
+}
+
 export interface LiveRunContext {
   openRouterApiKey: string;
   plannerModel: string;
@@ -175,8 +192,9 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const alignmentCacheHits = new Set<string>();
   const alignmentStartedAtMs = Date.now();
   let cursorMs = 0;
-  for (let i = 0; i < narration.scenes.length; i++) {
-    const scene = narration.scenes[i];
+  // Scenes are synthesized and aligned independently, a few at a time (each alignment is its own sidecar
+  // process); they are stitched onto the master clock in scene order below, so output stays deterministic.
+  const synthesizeScene = async (scene: (typeof narration.scenes)[number]) => {
     const alignmentInput = { text: scene.plainText, language: options.voice.language, voice: options.voice.voiceId, provider: 'auto', model: 'base', calibrationMedianErrorMs: options.alignment.calibrationMedianErrorMs };
     const align = () => synthesizeAndAlign(scene.plainText, {
       language: options.voice.language,
@@ -184,20 +202,23 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       provider: 'auto',
       model: 'base',
     });
-    let aligned: { durationMs: number; words: Array<{ word: string; startMs: number; endMs: number }>; audioPath: string };
-    if (ctx.artifactStore) {
-      const cached = await ctx.artifactStore.run(`S5-tts-alignment:${scene.sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: 'voice-align-2-submillisecond', modelId: 'voice-engine:auto+stable-ts:base' }, async () => {
-        const generated = await align();
-        return { durationMs: generated.durationMs, words: generated.words, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
-      });
-      stageArtifacts[`S5-tts-alignment:${scene.sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
-      if (cached.cacheHit) alignmentCacheHits.add(scene.sceneId);
-      const sceneAudioDir = path.join(outputDir, 'scene-audio');
-      await mkdir(sceneAudioDir, { recursive: true });
-      const audioPath = path.join(sceneAudioDir, `${scene.sceneId}.wav`);
-      await writeFile(audioPath, Buffer.from(cached.artifact.payload.audioBase64, 'base64'));
-      aligned = { durationMs: cached.artifact.payload.durationMs, words: cached.artifact.payload.words, audioPath };
-    } else aligned = await align();
+    if (!ctx.artifactStore) return align();
+    const cached = await ctx.artifactStore.run(`S5-tts-alignment:${scene.sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: 'voice-align-2-submillisecond', modelId: 'voice-engine:auto+stable-ts:base' }, async () => {
+      const generated = await align();
+      return { durationMs: generated.durationMs, words: generated.words, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
+    });
+    stageArtifacts[`S5-tts-alignment:${scene.sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
+    if (cached.cacheHit) alignmentCacheHits.add(scene.sceneId);
+    const sceneAudioDir = path.join(outputDir, 'scene-audio');
+    await mkdir(sceneAudioDir, { recursive: true });
+    const audioPath = path.join(sceneAudioDir, `${scene.sceneId}.wav`);
+    await writeFile(audioPath, Buffer.from(cached.artifact.payload.audioBase64, 'base64'));
+    return { durationMs: cached.artifact.payload.durationMs, words: cached.artifact.payload.words, audioPath };
+  };
+  const alignedScenes = await mapWithConcurrency(narration.scenes, DEFAULT_SCENE_CONCURRENCY, synthesizeScene);
+  for (let i = 0; i < narration.scenes.length; i++) {
+    const scene = narration.scenes[i];
+    const aligned: { durationMs: number; words: Array<{ word: string; startMs: number; endMs: number }>; audioPath: string } = alignedScenes[i];
     for (const problem of alignedWordTimingProblems(aligned.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })), aligned.durationMs)) {
       failures.push({ code: 'invalid-word-alignment', stage: 'align', message: `${scene.sceneId}: ${problem}`, hard: true });
     }
@@ -272,14 +293,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     failures.push({ code: 'planner-ran-on-uncalibrated-alignment', stage: 'planner', message: `S6 ran by explicit diagnostic opt-in despite ${hardAlignmentFailureCount} hard S5 failure(s); this run cannot publish`, hard: false });
   }
 
-  for (const sceneInput of input.scenes) {
-    if (input.runClass === 'generated-lesson' && sceneInput.spec) {
-      failures.push({ code: 'fixture-spec-in-generated-lesson', stage: 'provenance', message: `${sceneInput.sceneId}: a hand-authored SceneSpec cannot be counted as a generated lesson`, hard: true });
-      continue;
-    }
+  type PlanStep = { failure: StageFailure } | { plannerInput: PlannerSceneInput; planned: PlanSceneResult; promptAudit?: Record<string, unknown>; plannerSkipped: boolean; plannerCacheHit: boolean; plannerArtifactCostUsd?: number; durationMs: number };
+  const planStep = async (sceneInput: LiveSceneInput, previousForPrompt: PlannerSceneInput['previousElements']): Promise<PlanStep> => {
     const narrationScene = narration.scenes.find((s) => s.sceneId === sceneInput.sceneId)!;
     const remainingBudgetUsd = Math.max(0, options.maxCostUsd - totalUsage.costUsd);
-    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates, previousElements, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
+    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates, previousElements: previousForPrompt, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
 
     if (input.runClass === 'generated-lesson') {
       const refs = sceneInput.teachingContext?.sourceEvidenceRefs ?? [];
@@ -288,12 +306,10 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
         return Boolean(resolved && resolved.sourceId === ref.sourceId && resolved.startChar === ref.startChar && resolved.endChar === ref.endChar && resolved.startLine === ref.startLine && resolved.endLine === ref.endLine);
       });
       if (!sourceRefsValid) {
-        failures.push({ code: 'source-evidence-invalid', stage: 'provenance', message: `${sceneInput.sceneId}: source references are absent or do not resolve to exact source offsets`, hard: true });
-        continue;
+        return { failure: { code: 'source-evidence-invalid', stage: 'provenance', message: `${sceneInput.sceneId}: source references are absent or do not resolve to exact source offsets`, hard: true } };
       }
       if (!sceneInput.sceneContract || !sceneInput.lessonBible) {
-        failures.push({ code: 'scene-contract-missing', stage: 'planner', message: `${sceneInput.sceneId}: generated scene lacks validated S3 contract or lesson bible`, hard: true });
-        continue;
+        return { failure: { code: 'scene-contract-missing', stage: 'planner', message: `${sceneInput.sceneId}: generated scene lacks validated S3 contract or lesson bible`, hard: true } };
       }
       try {
         plannerInput.planningContext = compileScenePlanningContext(
@@ -302,8 +318,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
           promptArm, activeCatalogVersion, input.sourceDoc?.sourceId, input.caseId, exampleOrder,
         );
       } catch (error) {
-        failures.push({ code: 'scene-context-invalid', stage: 'planner', message: error instanceof Error ? error.message : String(error), hard: true });
-        continue;
+        return { failure: { code: 'scene-context-invalid', stage: 'planner', message: error instanceof Error ? error.message : String(error), hard: true } };
       }
     }
 
@@ -337,11 +352,32 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       if (cached.cacheHit) {
         plannerCacheHit = true;
         plannerArtifactCostUsd = planned.usage.costUsd;
-        totalUsage.cacheHits += 1;
         planned = { ...planned, usage: { ...planned.usage, calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0 } };
       }
     } else if (plannerSkipped) planned = skip();
     else planned = await plan(compiledPrompt);
+    return { plannerInput, planned, promptAudit, plannerSkipped, plannerCacheHit, plannerArtifactCostUsd, durationMs: Date.now() - plannerStartedAtMs };
+  };
+  // A board prompt does not read the previous board, so every board scene is planned concurrently;
+  // results are accounted, resolved, and rendered in scene order below.
+  const boardMode = (ctx.scenePlanner ?? 'board-v2') === 'board-v2';
+  const plannedAhead = boardMode
+    ? await Promise.all(input.scenes.map((sceneInput) => (input.runClass === 'generated-lesson' && sceneInput.spec ? Promise.resolve(undefined) : planStep(sceneInput, undefined))))
+    : undefined;
+
+  for (const [sceneIndex, sceneInput] of input.scenes.entries()) {
+    if (input.runClass === 'generated-lesson' && sceneInput.spec) {
+      failures.push({ code: 'fixture-spec-in-generated-lesson', stage: 'provenance', message: `${sceneInput.sceneId}: a hand-authored SceneSpec cannot be counted as a generated lesson`, hard: true });
+      continue;
+    }
+    const step = plannedAhead?.[sceneIndex] ?? await planStep(sceneInput, previousElements);
+    if ('failure' in step) {
+      failures.push(step.failure);
+      continue;
+    }
+    const { plannerInput, promptAudit, plannerSkipped, plannerCacheHit, plannerArtifactCostUsd } = step;
+    let planned = step.planned;
+    if (plannerCacheHit) totalUsage.cacheHits += 1;
     totalUsage.calls += planned.usage.calls;
     totalUsage.promptTokens += planned.usage.promptTokens;
     totalUsage.completionTokens += planned.usage.completionTokens;
@@ -350,7 +386,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     totalUsage.repairs += planned.usage.repairs;
     totalUsage.fallbacks += planned.usage.fallbacks;
     failures.push(...planned.failures);
-    stageRuns.push({ stage: `S6-scene-planner:${sceneInput.sceneId}`, kind: plannerSkipped ? 'local' : 'provider', status: planned.failures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: Date.now() - plannerStartedAtMs, apiCostUsd: planned.usage.costUsd, ...(plannerArtifactCostUsd !== undefined ? { artifactApiCostUsd: plannerArtifactCostUsd } : {}), cacheHit: plannerCacheHit, fallbackCount: planned.usage.fallbacks, usage: { ...planned.usage, cacheHits: plannerCacheHit ? 1 : 0 }, failures: planned.failures.map(toRunFailure) });
+    stageRuns.push({ stage: `S6-scene-planner:${sceneInput.sceneId}`, kind: plannerSkipped ? 'local' : 'provider', status: planned.failures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: step.durationMs, apiCostUsd: planned.usage.costUsd, ...(plannerArtifactCostUsd !== undefined ? { artifactApiCostUsd: plannerArtifactCostUsd } : {}), cacheHit: plannerCacheHit, fallbackCount: planned.usage.fallbacks, usage: { ...planned.usage, cacheHits: plannerCacheHit ? 1 : 0 }, failures: planned.failures.map(toRunFailure) });
 
     await writeJsonArtifact(outputDir, `planner-log.${sceneInput.sceneId}.json`, { input: plannerInput, promptAudit, plannerSkipped, skipReason: plannerSkipped ? 'hard-s5-alignment-failure' : undefined, responses: planned.rawResponses, usage: planned.usage, failures: planned.failures, fallback: planned.fallback });
 
