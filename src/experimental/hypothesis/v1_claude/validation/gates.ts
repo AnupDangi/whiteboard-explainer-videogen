@@ -35,16 +35,6 @@ export function typedBoardAdequacyFailures(
     }
   }
 
-  for (const edge of scene.edges) {
-    const relation = edge.factualRelation;
-    if (!relation) continue;
-    const fromElements = elementsByConcept.get(relation.fromConceptId) ?? [];
-    const toElements = elementsByConcept.get(relation.toConceptId) ?? [];
-    const endpointsMatch = fromElements.some((element) => element.element.id === edge.from)
-      && toElements.some((element) => element.element.id === edge.to);
-    if (!endpointsMatch) continue;
-  }
-
   for (const relation of intent.requiredRelations) {
     const edge = scene.edges.find((candidate) => candidate.factualRelation?.fromConceptId === relation.from
       && candidate.factualRelation.toConceptId === relation.to
