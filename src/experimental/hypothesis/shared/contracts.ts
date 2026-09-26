@@ -17,7 +17,8 @@ export type NativeSourceLocation =
   | {kind:'pdf-page';page:number}
   | {kind:'pptx-slide';slide:number}
   | {kind:'docx-paragraph';bodyBlock:number;paragraph:number}
-  | {kind:'docx-table';bodyBlock:number;table:number};
+  | {kind:'docx-table';bodyBlock:number;table:number}
+  | {kind:'web-url';url:string;selector?:string};
 export interface EvidenceReference {sourceId:string;spanId:string;startChar:number;endChar:number;startLine:number;endLine:number;quote:string;sourceLocation?:NativeSourceLocation}
 export interface GoldenSourceFigure {id:string;path?:string;caption:string;mediaType:string;sha256?:string}
 export interface GoldenCase {
@@ -46,6 +47,8 @@ export interface HypothesisRunOptions {
   maxRepairs:1;
   cache:'cold'|'warm'|'replay';
   maxCostUsd:number;
+  /** Explicitly allow an invalid caption clock to omit captions while retaining a failed diagnostic MP4. */
+  diagnosticCaptionlessVideo?:boolean;
   seed?:number;
 }
 
@@ -66,10 +69,17 @@ export interface StageRunRecord {
   kind:'provider'|'local'|'mixed';
   status:'completed'|'failed';
   durationMs:number;
+  /** Wall-clock interval for overlap and critical-path analysis. */
+  startedAt?:string;
+  completedAt?:string;
   /** Provider/API spend incurred by this invocation (zero for a cache hit). */
   apiCostUsd:number;
+  /** This stage's cost is an aggregate also represented by detailed child provider stage records. */
+  accountingRole?:'aggregate';
   /** Original provider spend represented by a cached artifact, when known. */
   artifactApiCostUsd?:number;
+  /** True when spend is a bounded estimate because a sidecar has no provider invoice usage. */
+  costEstimated?:boolean;
   /** False when source intake happened before this run and its original wall time is unavailable. */
   timingKnown?:boolean;
   cacheHit:boolean;
@@ -119,6 +129,14 @@ export interface HypothesisRunManifest {
   caseId:string;
   startedAt:string;
   completedAt:string;
+  /** End-to-end CLI interval includes source intake and S1-S4 preparation. */
+  executionTiming?:{
+    startedAt:string;
+    completedAt:string;
+    wallMs:number;
+    pipelineStartedAt:string;
+    preparationMs:number;
+  };
   options:HypothesisRunOptions;
   /** Versioned Claude S6 treatment metadata used to audit matched E5 comparisons. */
   promptExperiment?: {
@@ -143,7 +161,7 @@ export interface HypothesisRunManifest {
 export function assertCommonRunOptions(value:HypothesisRunOptions):void{
   if(value.render.width!==EXPERIMENT.width||value.render.height!==EXPERIMENT.height||value.render.fps!==EXPERIMENT.fps)throw new Error('Scored runs require 1920x1080 at 30 fps');
   if(value.maxRepairs!==1)throw new Error('Exactly one schema repair is allowed');
-  if(value.maxCostUsd<=0||value.maxCostUsd>EXPERIMENT.maxClipCostUsd)throw new Error('Clip cost exceeds the $0.10 cap');
+  if(value.maxCostUsd<=0||value.maxCostUsd>EXPERIMENT.maxComparisonCostUsd)throw new Error('Clip cost exceeds the $1.00 hard cap');
   if(value.mode==='live'&&value.alignment.provider!=='stable-ts')throw new Error('Live scored runs require stable-ts alignment');
   const calibrationErrorMs=value.alignment.calibrationMedianErrorMs;
   if(value.mode==='live'&&calibrationErrorMs!==undefined&&(!Number.isFinite(calibrationErrorMs)||calibrationErrorMs<0||calibrationErrorMs>=80))throw new Error('Measured alignment calibration must be between 0ms and 80ms');

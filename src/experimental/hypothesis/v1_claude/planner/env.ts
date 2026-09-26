@@ -22,7 +22,24 @@ export interface OpenRouterEnv {
   contentModel: string;
   /** Vision judge. OPENROUTER_VISION_MODEL; undefined when not configured. */
   visionModel?: string;
+  /** Explicit provider settings needed by the Python RAG sidecar. */
+  ragSidecarEnv: RagSidecarEnv;
 }
+
+export type RagSidecarEnv = Partial<Record<
+  | 'OPENROUTER_API_KEY'
+  | 'OPENROUTER_BASE_URL'
+  | 'OPENROUTER_MODEL'
+  | 'OPENROUTER_VISION_MODEL'
+  | 'RAG_LLM_MODEL'
+  | 'RAG_VISION_MODEL'
+  | 'EMBEDDINGS_API_KEY'
+  | 'EMBEDDINGS_BASE_URL'
+  | 'EMBEDDINGS_API_URL'
+  | 'EMBEDDINGS_MODEL'
+  | 'EMBEDDINGS_DIM',
+  string
+>>;
 
 export function defaultEnvPath(): string {
   return process.env[ENV_FILE_VARIABLE] || resolve(process.cwd(), '.env');
@@ -44,7 +61,7 @@ function parseEnvFile(raw: string): Record<string, string> {
 }
 
 /** Reads credentials and model ids from the env file plus process env, without copying the file or mutating process.env. */
-export async function loadOpenRouterEnv(envPath: string = defaultEnvPath()): Promise<OpenRouterEnv> {
+export async function loadOpenRouterEnv(envPath: string = defaultEnvPath(), environment: NodeJS.ProcessEnv = process.env): Promise<OpenRouterEnv> {
   let raw: string;
   try {
     raw = await readFile(envPath, 'utf8');
@@ -52,7 +69,7 @@ export async function loadOpenRouterEnv(envPath: string = defaultEnvPath()): Pro
     throw new Error(`Could not read OpenRouter configuration from ${envPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
   const parsed = parseEnvFile(raw);
-  const value = (key: string): string | undefined => process.env[key] || parsed[key] || undefined;
+  const value = (key: string): string | undefined => environment[key] || parsed[key] || undefined;
   const required = (key: string, fallbackKey?: string): string => {
     const found = value(key) ?? (fallbackKey ? value(fallbackKey) : undefined);
     if (!found) throw new Error(`${key}${fallbackKey ? ` (or ${fallbackKey})` : ''} is not set in ${envPath} or the process environment`);
@@ -63,5 +80,16 @@ export async function loadOpenRouterEnv(envPath: string = defaultEnvPath()): Pro
   const sceneModel = required('OPENROUTER_SCENE_MODEL');
   const contentModel = required('OPENROUTER_CONTENT_MODEL', 'OPENROUTER_DIRECTOR_MODEL');
   const visionModel = value('OPENROUTER_VISION_MODEL');
-  return { apiKey, directorModel, sceneModel, contentModel, ...(visionModel ? { visionModel } : {}) };
+  const ragSidecarKeys = [
+    'OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL', 'OPENROUTER_MODEL', 'OPENROUTER_VISION_MODEL',
+    'RAG_LLM_MODEL', 'RAG_VISION_MODEL', 'EMBEDDINGS_API_KEY', 'EMBEDDINGS_BASE_URL',
+    'EMBEDDINGS_API_URL', 'EMBEDDINGS_MODEL', 'EMBEDDINGS_DIM',
+  ] as const;
+  const ragSidecarEnv: RagSidecarEnv = Object.fromEntries(
+    ragSidecarKeys.flatMap((key) => {
+      const configured = value(key);
+      return configured ? [[key, configured]] : [];
+    }),
+  );
+  return { apiKey, directorModel, sceneModel, contentModel, ...(visionModel ? { visionModel } : {}), ragSidecarEnv };
 }

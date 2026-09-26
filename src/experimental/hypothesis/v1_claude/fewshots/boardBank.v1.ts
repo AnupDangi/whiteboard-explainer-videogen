@@ -23,6 +23,7 @@ export interface BoardExample {
     title: string;
     layout: 'flow' | 'fan_out' | 'convergence' | 'list' | 'compare' | 'cycle' | 'hub';
     nodes: Array<{ id: string; mention: string; concept: string; icon: string; label: string; role: 'input' | 'process' | 'output' | 'item' | 'attribute' }>;
+    visual: { kind: 'process' } | { kind: 'comparison' };
   };
 }
 
@@ -54,6 +55,7 @@ export const BOARD_EXAMPLES: readonly BoardExample[] = [
       schemaVersion: 'claude-board/v2',
       title: 'Dough Becomes Bread',
       layout: 'convergence',
+      visual: { kind: 'process' },
       nodes: [
         { id: 'n1', mention: 'flour', concept: 'flour', icon: 'label', label: 'Flour', role: 'input' },
         { id: 'n2', mention: 'water', concept: 'water', icon: 'drop', label: 'Water', role: 'input' },
@@ -86,6 +88,7 @@ export const BOARD_EXAMPLES: readonly BoardExample[] = [
       schemaVersion: 'claude-board/v2',
       title: 'A Parcel Travels Home',
       layout: 'flow',
+      visual: { kind: 'process' },
       nodes: [
         { id: 'n1', mention: 'warehouse', concept: 'warehouse', icon: 'warehouse', label: 'Warehouse', role: 'input' },
         { id: 'n2', mention: 'truck', concept: 'delivery', icon: 'delivery-truck', label: 'Truck', role: 'process' },

@@ -8,6 +8,7 @@ import {route} from './router.js';
 import type {SynthesizeInput, SynthesizeResult} from './types.js';
 
 export {route} from './router.js';
+export {closeVoiceEngineWorkers} from './python-bridge.js';
 export * from './languages.js';
 export * from './voices.js';
 export type * from './types.js';

@@ -5,6 +5,7 @@ const normalizeToken = (s: string): string =>
   s
     .normalize('NFKC')
     .toLowerCase()
+    .replace(/[’‘ʼ]/gu, "'")
     .replace(/[^\p{L}\p{M}\p{N}'-]+/gu, '');
 
 interface SpanSearch {

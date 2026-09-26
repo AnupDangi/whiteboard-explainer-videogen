@@ -52,6 +52,7 @@ export interface ConceptGraph {
 }
 
 export const SECTION_KINDS = ['intro', 'explain', 'step', 'example', 'recap'] as const;
+export const SECTION_TITLE_MAX_WORDS = 7;
 
 export const TEACHING_SKILLS = ['definition', 'mechanism', 'comparison', 'process', 'derivation', 'application', 'recap'] as const;
 export const VISUAL_MECHANISMS = ['focus', 'chain', 'convergence', 'fan_out', 'weighted_blend', 'cycle', 'threshold', 'comparison', 'trajectory', 'equation', 'state_transition'] as const;
@@ -88,7 +89,7 @@ export const TeachingPlanSchema = z
         z
           .object({
             id: id(),
-            title: words(7),
+            title: words(SECTION_TITLE_MAX_WORDS),
             goal: z.string().min(1).max(240),
             kind: z.enum(SECTION_KINDS),
             conceptIds: z.array(id()).max(6),

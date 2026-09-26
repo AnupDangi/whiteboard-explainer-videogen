@@ -179,3 +179,23 @@ for (const [template, spec] of Object.entries(specs) as Array<[TemplateId, Scene
     );
   });
 }
+
+test('long chain wraps in order without shrinking readable text below the floor', () => {
+  const spec: SceneSpec = {
+    schemaVersion: 'claude-scene-spec/v1', sceneId: 'long-chain', title: 'Long chain', template: 'chain',
+    elements: ['First Process Label', 'Second Process Label', 'Third Process Label', 'Fourth Process Label', 'Fifth Process Label', 'Sixth Process Label']
+      .map((text, i) => ({ id: `node-${i + 1}`, slot: 'node', anchor: 'sceneStart' as const, prim: 'text' as const, text, size: 'body' as const })),
+    edges: [],
+  };
+  const laidOut = layoutScene(resolveScene(spec));
+  const boxes = laidOut.elements.map(({ bbox }) => bbox);
+  for (let i = 0; i < boxes.length; i++) {
+    assert.ok(inSafeArea(boxes[i]));
+    for (let j = i + 1; j < boxes.length; j++) assert.ok(!intersects(boxes[i], boxes[j]), `node-${i + 1} overlaps node-${j + 1}`);
+  }
+  for (const element of laidOut.elements) {
+    const scaleY = element.bbox.h / element.intrinsicSize.h;
+    for (const text of element.visual.texts) assert.ok(text.size * scaleY >= 32, `${element.id} text shrank to ${text.size * scaleY}px`);
+  }
+  assert.ok(new Set(boxes.map(({ y }) => Math.round(y))).size > 1, 'overflowing chain should wrap across rows');
+});

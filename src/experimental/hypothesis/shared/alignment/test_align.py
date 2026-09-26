@@ -1,6 +1,9 @@
 import importlib.util
 import tempfile
 import unittest
+import wave
+from unittest.mock import patch
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -22,6 +25,107 @@ class AlignmentTimestampTests(unittest.TestCase):
         self.assertAlmostEqual(ALIGN.seconds_to_ms(8.9801), 8980.1)
         self.assertAlmostEqual(ALIGN.seconds_to_ms(8.9802), 8980.2)
         self.assertGreater(ALIGN.seconds_to_ms(8.9802), ALIGN.seconds_to_ms(8.9801))
+
+    def test_worker_payload_reuses_model_for_repeated_scene_requests(self):
+        fake_model = SimpleNamespace(align=lambda audio_path, text, language: SimpleNamespace(segments=[SimpleNamespace(words=[SimpleNamespace(word=word, start=0.01, end=0.02) for word in text.split()])]))
+        with tempfile.TemporaryDirectory() as directory:
+            wav_path = Path(directory) / 'silent.wav'
+            with wave.open(str(wav_path), 'wb') as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(16_000)
+                audio.writeframes(b'\0\0' * 16_000)
+            models = {}
+            with patch.object(ALIGN, 'load_model', return_value=fake_model) as load:
+                one = ALIGN.run_payload({'audioPath': str(wav_path), 'text': 'first scene'}, models)
+                two = ALIGN.run_payload({'audioPath': str(wav_path), 'text': 'second scene'}, models)
+            self.assertEqual(len(one['words']), 2)
+            self.assertEqual(len(two['words']), 2)
+            self.assertEqual(load.call_count, 1)
+
+    def test_zero_duration_output_retries_with_model_fast_alignment(self):
+        first = SimpleNamespace(segments=[SimpleNamespace(words=[
+            SimpleNamespace(word='first', start=0.01, end=0.02),
+            SimpleNamespace(word='scene', start=0.02, end=0.02),
+        ])])
+        measured_retry = SimpleNamespace(segments=[SimpleNamespace(words=[
+            SimpleNamespace(word='first', start=0.01, end=0.08),
+            SimpleNamespace(word='scene', start=0.08, end=0.13),
+        ])])
+
+        class RetryModel:
+            def __init__(self):
+                self.calls = []
+
+            def align(self, audio_path, text, **kwargs):
+                self.calls.append(kwargs)
+                return first if len(self.calls) == 1 else measured_retry
+
+        model = RetryModel()
+        with tempfile.TemporaryDirectory() as directory:
+            wav_path = Path(directory) / 'speech.wav'
+            with wave.open(str(wav_path), 'wb') as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(16_000)
+                audio.writeframes(b'\0\0' * 16_000)
+            output = ALIGN.run_alignment(str(wav_path), 'first scene', 'en', 'base', model)
+
+        self.assertEqual(model.calls, [{'language': 'en'}, {'language': 'en', 'fast_mode': True}])
+        self.assertEqual([(word['startMs'], word['endMs']) for word in output['words']], [(10.0, 80.0), (80.0, 130.0)])
+        self.assertEqual(output['aligner'], 'stable-ts-fast-mode')
+
+    def test_invalid_stable_ts_results_use_measured_ctc_fallback(self):
+        instantaneous = SimpleNamespace(segments=[SimpleNamespace(words=[
+            SimpleNamespace(word='first', start=0.01, end=0.01),
+            SimpleNamespace(word='scene', start=0.02, end=0.02),
+        ])])
+        model = SimpleNamespace(align=lambda audio_path, text, **kwargs: instantaneous)
+        ctc_words = [
+            {'word': 'first', 'startMs': 10.0, 'endMs': 80.0},
+            {'word': 'scene', 'startMs': 80.0, 'endMs': 130.0},
+        ]
+        ctc_calls = []
+
+        def ctc_fallback(audio_path, text, language):
+            ctc_calls.append((audio_path, text, language))
+            return ctc_words
+
+        with tempfile.TemporaryDirectory() as directory:
+            wav_path = Path(directory) / 'speech.wav'
+            with wave.open(str(wav_path), 'wb') as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(16_000)
+                audio.writeframes(b'\0\0' * 16_000)
+            output = ALIGN.run_alignment(str(wav_path), 'first scene', 'en', 'base', model, ctc_fallback)
+
+        self.assertEqual(ctc_calls, [(str(wav_path), 'first scene', 'en')])
+        self.assertEqual(output['words'], ctc_words)
+        self.assertEqual(output['aligner'], 'torchaudio-wav2vec2-ctc')
+
+    def test_zero_duration_output_fails_when_model_retry_is_still_invalid(self):
+        instantaneous = SimpleNamespace(segments=[SimpleNamespace(words=[
+            SimpleNamespace(word='first', start=0.01, end=0.01),
+            SimpleNamespace(word='scene', start=0.02, end=0.02),
+        ])])
+
+        class RetryModel:
+            def align(self, audio_path, text, **kwargs):
+                return instantaneous
+
+        with tempfile.TemporaryDirectory() as directory:
+            wav_path = Path(directory) / 'speech.wav'
+            with wave.open(str(wav_path), 'wb') as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(16_000)
+                audio.writeframes(b'\0\0' * 160)
+            with self.assertRaisesRegex(RuntimeError, 'default, stable-ts fast_mode, and CTC'):
+                ALIGN.run_alignment(str(wav_path), 'first scene', 'en', 'base', RetryModel(), lambda *_: [
+                    {'word': 'first', 'startMs': 10, 'endMs': 10},
+                    {'word': 'scene', 'startMs': 20, 'endMs': 20},
+                ])
 
 
 class CtcAlignmentContractTests(unittest.TestCase):

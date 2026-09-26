@@ -1,4 +1,4 @@
-import {synthesize} from './index.js';
+import {closeVoiceEngineWorkers, synthesize} from './index.js';
 import type {SynthesizeInput} from './types.js';
 
 /** Async JSON stdin -> JSON stdout boundary for host apps. */
@@ -13,5 +13,5 @@ async function main(): Promise<void> {
 
 main().catch(error => {
   console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+  process.exitCode = 1;
+}).finally(closeVoiceEngineWorkers);

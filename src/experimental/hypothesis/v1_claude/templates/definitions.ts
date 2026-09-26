@@ -77,7 +77,26 @@ const chain: TemplateFn = (rect, elements) => {
   const plan: SlotPlanEntry[] = [{ name: 'node', capacity: 'many' }];
   const groups = assignSlots(elements, plan);
   const nodes = groups.get('node')!;
-  const boxes = new Map<string, BBox>(place(nodes, rowLayout(rect, nodes.map((n) => n.intrinsic), GAP)));
+  const totalWidth = (items: SlotAssignment[]) => items.reduce((sum, item) => sum + item.intrinsic.w, 0) + GAP * Math.max(0, items.length - 1);
+  let rowCount = 1;
+  // Preserve the one-line chain while it fits. Long sequences wrap in
+  // source order instead of shrinking every label to fit a single row.
+  while (rowCount < nodes.length) {
+    const rows: SlotAssignment[][] = Array.from({ length: rowCount }, () => []);
+    nodes.forEach((node, i) => rows[Math.floor(i * rowCount / nodes.length)].push(node));
+    if (rows.every((row) => totalWidth(row) <= rect.w)) break;
+    rowCount++;
+  }
+  const boxes = new Map<string, BBox>();
+  if (rowCount === 1) {
+    for (const [id, box] of place(nodes, rowLayout(rect, nodes.map((n) => n.intrinsic), GAP))) boxes.set(id, box);
+  } else {
+    for (let row = 0; row < rowCount; row++) {
+      const rowNodes = nodes.filter((_, i) => Math.floor(i * rowCount / nodes.length) === row);
+      const rowRect = band(rect, row / rowCount, (row + 1) / rowCount);
+      for (const [id, box] of place(rowNodes, rowLayout(rowRect, rowNodes.map((node) => node.intrinsic), GAP))) boxes.set(id, box);
+    }
+  }
   return { boxes, axis: 'x' };
 };
 

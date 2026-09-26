@@ -208,6 +208,23 @@ export interface Edge {
   };
 }
 
+/** Semantic requirements preserved from a validated board-v2 plan. */
+export interface BoardIntent {
+  schemaVersion: 'typed-board-intent/v1';
+  layout: 'flow' | 'fan_out' | 'convergence' | 'list' | 'compare' | 'cycle' | 'hub';
+  visualKind: 'process' | 'comparison' | 'worked-example' | 'formula' | 'plot' | 'matrix' | 'number-line';
+  roles: Array<{ elementId: string; role: 'input' | 'process' | 'output' | 'item' | 'attribute' }>;
+  /** Concepts required by the source-derived scene contract; empty for uncontracted boards. */
+  requiredConceptIds: string[];
+  /** Source-backed relations required by the current scene's teaching context. */
+  requiredRelations: Array<{
+    from: string;
+    to: string;
+    type: NonNullable<Edge['factualRelation']>['type'];
+    evidenceRefs: EvidenceReference[];
+  }>;
+}
+
 export interface SceneSpec {
   schemaVersion: 'claude-scene-spec/v1';
   sceneId: string;
@@ -220,6 +237,7 @@ export interface SceneSpec {
   titleConceptIds?: string[];
   titleEvidenceRefs?: EvidenceReference[];
   titleOrigin?: 'illustrative-example' | 'fixture';
+  boardIntent?: BoardIntent;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +333,7 @@ export interface ResolvedScene {
   edges: Edge[];
   focus: string[];
   carryOver: string[];
+  boardIntent?: BoardIntent;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +371,7 @@ export interface LaidOutScene {
   occupancy: number;
   carryOver: string[];
   focus: string[];
+  boardIntent?: BoardIntent;
 }
 
 // ---------------------------------------------------------------------------

@@ -147,5 +147,5 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
 
   const edges = routeEdges(scene.edges, boxes);
 
-  return { sceneId: scene.sceneId, title: scene.title, template: scene.template, elements, edges, occupancy, carryOver: scene.carryOver, focus: scene.focus };
+  return { sceneId: scene.sceneId, title: scene.title, template: scene.template, elements, edges, occupancy, carryOver: scene.carryOver, focus: scene.focus, ...(scene.boardIntent ? { boardIntent: scene.boardIntent } : {}) };
 }

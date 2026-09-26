@@ -17,10 +17,10 @@ export interface BudgetLedgerSnapshot {
 /** Compare durable spend with non-cached provider-stage costs before a run can be reported. */
 export function budgetLedgerAccountingProblems(
   snapshot: BudgetLedgerSnapshot,
-  stageRuns: Array<{ kind: string; apiCostUsd: number }>,
+  stageRuns: Array<{ kind: string; apiCostUsd: number; accountingRole?: 'aggregate' }>,
   toleranceUsd = 0.000001,
 ): string[] {
-  const providerCosts = stageRuns.filter((stage) => stage.kind === 'provider').map((stage) => stage.apiCostUsd);
+  const providerCosts = stageRuns.filter((stage) => stage.kind === 'provider' && stage.accountingRole !== 'aggregate').map((stage) => stage.apiCostUsd);
   if (providerCosts.some((cost) => !Number.isFinite(cost) || cost < 0)) return ['provider stage ledger contains an invalid API cost'];
   if (!Number.isFinite(toleranceUsd) || toleranceUsd < 0) throw new Error('budget accounting tolerance must be finite and non-negative');
   const reportedSpendUsd = providerCosts.reduce((sum, cost) => sum + cost, 0);

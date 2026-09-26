@@ -110,6 +110,14 @@ test('S6 context fails closed on missing evidence or measured alignment', () => 
   assert.throws(() => compileScenePlanningContext({ ...scene, teachingContext: { ...scene.teachingContext, sourceEvidenceRefs: [heatRef] } }, contract, bible, times, 'zero', 'catalog-v1'), /evidence does not match/);
 });
 
+test('S6 may compile semantic context before S5 without inventing mention times, then strict validation requires measurements', () => {
+  const pending = compileScenePlanningContext(scene, contract, bible, [], 'zero', 'catalog-v1', undefined, undefined, 'ranked', false);
+  assert.equal(pending.mentionTimingState, 'pending-s5');
+  assert.deepEqual(pending.mentionTimes, []);
+  assert.match(buildScenePlannerPrompt({ ...scene, planningContext: pending }).user, /"mentionTimingState":"pending-s5"/);
+  assert.throws(() => compileScenePlanningContext(scene, contract, bible, [], 'zero', 'catalog-v1'), /missing measured mention alignment/);
+});
+
 test('S6 only prompts with catalog candidates above the current feasibility threshold', () => {
   const input = { ...scene, candidates: { heat: [{ name: 'weak associated icon', score: 0.49 }], pressure: [{ name: 'pressure gauge', score: 0.72 }] } };
   const context = compileScenePlanningContext(input, contract, bible, times, 'zero', 'catalog-v1');

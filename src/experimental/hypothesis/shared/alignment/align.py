@@ -26,10 +26,15 @@ This script does forced alignment, not transcription: `text` is required
 and is not optional. If text is missing/empty this is a hard error.
 """
 import json
+import importlib.util
+import math
+import os
 import sys
 import wave
 from contextlib import redirect_stdout
 import io
+from pathlib import Path
+from typing import Any
 
 
 def wav_duration_ms(path: str) -> int:
@@ -50,7 +55,15 @@ def seconds_to_ms(seconds: float) -> float:
     return seconds * 1000.0
 
 
-def run_alignment(audio_path: str, text: str, language: str, model_size: str) -> dict:
+def load_model(model_size: str):
+    import stable_whisper
+    return stable_whisper.load_faster_whisper(model_size, device='cpu', compute_type='float32')
+
+
+_ctc_backend: tuple[Any, list[str], int] | None = None
+
+
+def run_alignment(audio_path: str, text: str, language: str, model_size: str, model: Any = None, ctc_fallback=None) -> dict:
     if not text or not text.strip():
         raise ValueError('text is required for forced alignment (blind transcription is not supported by this sidecar)')
 
@@ -58,13 +71,84 @@ def run_alignment(audio_path: str, text: str, language: str, model_size: str) ->
     # stdout/stderr during import/load/align; none of that may leak into our
     # stdout JSON contract, so import lazily and keep stdout captured until
     # we deliberately write the final JSON line.
-    import stable_whisper
+    model = model if model is not None else load_model(model_size)
+    duration_ms = wav_duration_ms(audio_path)
+    default_error = None
+    try:
+        result = model.align(audio_path, text, language=language)
+        words = _result_words(result) if result is not None else []
+        default_error = _invalid_word_intervals(words, text, duration_ms)
+    except Exception as error:  # noqa: BLE001 - try a separate measured aligner below
+        words = []
+        default_error = f'{type(error).__name__}: {error}'
 
-    model = stable_whisper.load_faster_whisper(model_size, device='cpu', compute_type='float32')
-    result = model.align(audio_path, text, language=language)
-    if result is None:
-        raise RuntimeError('stable-ts align() returned no result (alignment failed)')
+    if default_error:
+        # stable-ts can leave some transcript words instantaneous when its
+        # default alignment pass fails to place them. A fast-mode re-alignment
+        # is another model-derived timing attempt (not interpolation). Accept
+        # it only when it retains the exact reference word sequence and every
+        # interval is positive.
+        retry_error = None
+        try:
+            retry = model.align(audio_path, text, language=language, fast_mode=True)
+            retry_words = _result_words(retry) if retry is not None else []
+            retry_error = _invalid_word_intervals(retry_words, text, duration_ms)
+        except Exception as error:  # noqa: BLE001 - continue to the independent CTC aligner
+            retry_words = []
+            retry_error = f'{type(error).__name__}: {error}'
+        if not retry_error:
+            words = retry_words
+            aligner = 'stable-ts-fast-mode'
+        else:
+            try:
+                words = (ctc_fallback or _align_with_ctc)(audio_path, text, language)
+                ctc_error = _invalid_word_intervals(words, text, duration_ms)
+            except Exception as error:  # noqa: BLE001 - S5 remains a hard failure if no measured aligner works
+                words = []
+                ctc_error = f'{type(error).__name__}: {error}'
+            if ctc_error:
+                raise RuntimeError(
+                    'word alignment failed validation for stable-ts default, stable-ts fast_mode, and CTC; '
+                    f'default={default_error}; fast_mode={retry_error}; ctc={ctc_error}'
+                )
+            aligner = 'torchaudio-wav2vec2-ctc'
+    else:
+        aligner = 'stable-ts'
 
+    return {
+        'durationMs': duration_ms,
+        'words': words,
+        'aligner': aligner,
+    }
+
+
+def _align_with_ctc(audio_path: str, text: str, language: str) -> list[dict]:
+    if language.lower().split('-')[0] != 'en':
+        raise ValueError('the installed CTC fallback supports English only')
+    global _ctc_backend
+    if _ctc_backend is None:
+        import torchaudio
+
+        bundle = torchaudio.pipelines.WAV2VEC2_ASR_BASE_960H
+        model_dir = Path(os.environ.get('HYPOTHESIS_ALIGNMENT_MODEL_DIR', Path(__file__).resolve().parents[5] / '.data' / 'alignment-models'))
+        weights = model_dir / bundle._path
+        if not weights.is_file():
+            raise FileNotFoundError(f'local CTC fallback weights are missing: {weights}')
+        model = bundle.get_model(dl_kwargs={'model_dir': str(model_dir), 'map_location': 'cpu'}).eval()
+        _ctc_backend = (model, bundle.get_labels(), bundle.sample_rate)
+
+    model, labels, sample_rate = _ctc_backend
+    compare_path = Path(__file__).with_name('compare_aligners.py')
+    spec = importlib.util.spec_from_file_location('_hypothesis_alignment_compare_runtime', compare_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'could not load CTC alignment helper: {compare_path}')
+    compare = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(compare)
+    aligned, _samples, _original_rate, _mean_token_log_score = compare.align_ctc(Path(audio_path), text, model, labels, sample_rate)
+    return [{'word': item['word'], 'startMs': item['startMs'], 'endMs': item['endMs']} for item in aligned]
+
+
+def _result_words(result: Any) -> list[dict]:
     words = []
     for segment in result.segments:
         for word in segment.words:
@@ -73,14 +157,61 @@ def run_alignment(audio_path: str, text: str, language: str, model_size: str) ->
                 'startMs': seconds_to_ms(word.start),
                 'endMs': seconds_to_ms(word.end),
             })
+    return words
 
-    return {
-        'durationMs': wav_duration_ms(audio_path),
-        'words': words,
-    }
+
+def _invalid_word_intervals(words: list[dict], text: str, duration_ms: int) -> str | None:
+    expected = text.split()
+    actual = [word['word'] for word in words]
+    if actual != expected:
+        return f'word sequence differs from reference ({len(actual)} aligned, {len(expected)} expected)'
+    if not words:
+        return 'no aligned words'
+    for index, word in enumerate(words):
+        start, end = word['startMs'], word['endMs']
+        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)) or not math.isfinite(start) or not math.isfinite(end):
+            return f'word {index} has non-numeric timing'
+        if end <= start:
+            return f'word {index} has non-positive interval [{start}, {end})'
+        if start < 0 or end > duration_ms:
+            return f'word {index} interval [{start}, {end}) is outside {duration_ms}ms audio'
+    return None
+
+
+def run_payload(payload: dict, models: dict[str, Any]) -> dict:
+    audio_path = payload.get('audioPath')
+    text = payload.get('text')
+    language = payload.get('language') or 'en'
+    model_size = payload.get('model') or 'base'
+    if not audio_path:
+        raise ValueError('audioPath is required')
+    if model_size not in models:
+        models[model_size] = load_model(model_size)
+    return run_alignment(audio_path, text, language, model_size, models[model_size])
+
+
+def serve_stream() -> None:
+    """Newline-delimited JSON worker. The faster-whisper model stays loaded for this process."""
+    models: dict[str, Any] = {}
+    for raw in sys.stdin:
+        if not raw.strip():
+            continue
+        try:
+            payload = json.loads(raw)
+            captured = io.StringIO()
+            with redirect_stdout(captured):
+                result = run_payload(payload, models)
+            response = result
+        except Exception as error:  # noqa: BLE001 - return a request-scoped failure and keep the worker alive
+            response = {'error': str(error)}
+        sys.stdout.write(json.dumps(response) + '\n')
+        sys.stdout.flush()
 
 
 def main() -> None:
+    if '--worker' in sys.argv[1:]:
+        serve_stream()
+        return
     raw = sys.stdin.read()
     try:
         payload = json.loads(raw) if raw.strip() else {}

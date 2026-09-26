@@ -179,6 +179,34 @@ function renderEdge(edge: RoutedEdge, ev: TimelineEvent, timeMs: number, index: 
   return parts.join('');
 }
 
+function renderProcessRole(el: LaidOutElement, role: string, timeMs: number, event: TimelineEvent): string {
+  const p = event.track === 'hold' ? 1 : sharedProgress(timeMs, event.t0, event.t1);
+  if (p <= 0) return '';
+  const label = role.toUpperCase();
+  const fontSize = STYLE.font.sizes.note;
+  const width = Math.max(72, measureTextWidth(label, fontSize) + 24);
+  const height = fontSize + 16;
+  const x = el.bbox.x + 8;
+  // Role badges are semantic overlays, but should not obscure centered label
+  // text inside text-only nodes.
+  const y = el.bbox.y - height - 8;
+  return `<g opacity="${p}"><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="#fff" stroke="${STYLE.stroke.color}" stroke-width="${STYLE.stroke.width}"/><text x="${x + width / 2}" y="${y + fontSize + 2}" text-anchor="middle" font-family="${STYLE.font.family}" font-weight="${STYLE.font.weight}" font-size="${fontSize}" fill="${STYLE.stroke.color}">${escapeXml(label)}</text></g>`;
+}
+
+function renderComparisonCue(scene: LaidOutScene, timeline: Timeline, timeMs: number): string {
+  if (scene.boardIntent?.visualKind !== 'comparison' || scene.template !== 'compare_2') return '';
+  const p = sharedProgress(timeMs, timeline.sceneStartMs, timeline.sceneStartMs + 650);
+  if (p <= 0) return '';
+  const x = STYLE.canvas.w / 2;
+  const y = STYLE.canvas.h * 0.47;
+  const radius = 30;
+  const path = { d: `M ${x} ${y - 102} L ${x} ${y - radius}`, length: 102 - radius };
+  const line = strokeSvg(path, p);
+  const circle = `<circle cx="${x}" cy="${y}" r="${radius}" fill="#fff" stroke="${STYLE.stroke.color}" stroke-width="${STYLE.stroke.width}" opacity="${p}"/>`;
+  const text = `<text x="${x}" y="${y + STYLE.font.sizes.note / 3}" text-anchor="middle" font-family="${STYLE.font.family}" font-weight="${STYLE.font.weight}" font-size="${STYLE.font.sizes.note}" fill="${STYLE.stroke.color}" opacity="${p}">VS</text>`;
+  return `${line}${circle}${text}`;
+}
+
 /** Hand-lettered scene title, wiped in over the first `TITLE_WIPE_MS` of the scene. */
 export const TITLE_WIPE_MS = 700;
 export const TITLE_Y = 150;
@@ -201,7 +229,7 @@ function renderTitle(scene: LaidOutScene, timeline: Timeline, timeMs: number): s
 
 /** Inner markup of one frame (no <svg> wrapper), so the encoder can composite transitions. */
 export function renderSceneBody(scene: LaidOutScene, timeline: Timeline, timeMs: number): string {
-  const body: string[] = [renderTitle(scene, timeline, timeMs)];
+  const body: string[] = [renderTitle(scene, timeline, timeMs), renderComparisonCue(scene, timeline, timeMs)];
 
   // Containers render behind their children (z-order), independent of SceneSpec element order.
   const ordered = [...scene.elements].sort((a, b) => Number(b.element.prim === 'container') - Number(a.element.prim === 'container'));
@@ -225,6 +253,10 @@ export function renderSceneBody(scene: LaidOutScene, timeline: Timeline, timeMs:
     if (primary.track !== 'hold' && timeMs < primary.t0) continue;
     if (primary.track !== 'hold' && primary.t1 > primary.t0 && sharedProgress(timeMs, primary.t0, primary.t1) <= 0) continue;
     body.push(renderElement(el, primary, evs, timeMs));
+    const role = scene.boardIntent?.visualKind === 'process'
+      ? scene.boardIntent.roles.find((candidate) => candidate.elementId === el.id)?.role
+      : undefined;
+    if (role) body.push(renderProcessRole(el, role, timeMs, primary));
   }
 
   return body.join('');

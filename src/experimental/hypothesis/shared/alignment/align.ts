@@ -1,9 +1,8 @@
 /**
  * Node/TS adapter for the local forced-alignment Python sidecar (`align.py`).
  *
- * `alignAudio` spawns the sidecar as a subprocess (JSON on stdin, JSON on
- * stdout -- same convention voice-engine's own CLI uses) and returns
- * word-level timestamps. `synthesizeAndAlign` is a convenience that first
+ * `alignAudio` sends newline-delimited JSON to a persistent worker pool; each
+ * worker retains its stable-ts model between scene requests. `synthesizeAndAlign` first
  * calls the local voice-engine's `synthesize()` and then forced-aligns the
  * resulting WAV against the exact text that was synthesized.
  *
@@ -18,6 +17,7 @@
 import {spawn} from 'node:child_process';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {dirname, resolve, sep} from 'node:path';
+import {createInterface} from 'node:readline';
 
 const RAW_HERE = dirname(fileURLToPath(import.meta.url));
 /**
@@ -61,6 +61,7 @@ export interface AlignedWord {
 export interface AlignmentResult {
   durationMs: number;
   words: AlignedWord[];
+  aligner?: 'stable-ts' | 'stable-ts-fast-mode' | 'torchaudio-wav2vec2-ctc';
 }
 
 export interface AlignAudioOptions {
@@ -74,6 +75,143 @@ export interface AlignAudioOptions {
   alignScript?: string;
   /** Abort the alignment subprocess. */
   signal?: AbortSignal;
+  /** Number of persistent CPU aligner workers. Defaults to HYPOTHESIS_ALIGNMENT_WORKERS or 2. */
+  workerPoolSize?: number;
+}
+
+interface AlignmentRequest { audioPath: string; text: string; language: string; model: string }
+interface AlignmentTask { payload: AlignmentRequest; resolve: (value: AlignmentResult) => void; reject: (error: Error) => void; signal?: AbortSignal; abortListener?: () => void }
+interface AlignmentWorker { child: ReturnType<typeof spawn>; current?: AlignmentTask; stderr: string; dead: boolean }
+
+class AlignmentWorkerPool {
+  private readonly queue: AlignmentTask[] = [];
+  private readonly workers: AlignmentWorker[] = [];
+  private closed = false;
+  constructor(private readonly pythonBin: string, private readonly alignScript: string, private readonly size: number) {}
+
+  run(payload: AlignmentRequest, signal?: AbortSignal): Promise<AlignmentResult> {
+    return new Promise((resolvePromise, reject) => {
+      if (this.closed) return reject(new Error('alignment worker pool is closed'));
+      if (signal?.aborted) return reject(alignmentAbortError());
+      const task: AlignmentTask = { payload, resolve: resolvePromise, reject, signal };
+      if (signal) {
+        task.abortListener = () => {
+          const queuedIndex = this.queue.indexOf(task);
+          if (queuedIndex >= 0) {
+            this.queue.splice(queuedIndex, 1);
+            this.detachAbort(task);
+            task.reject(alignmentAbortError());
+            return;
+          }
+          const worker = this.workers.find((candidate) => candidate.current === task);
+          if (!worker) return;
+          this.detachAbort(task);
+          task.reject(alignmentAbortError());
+          worker.current = undefined;
+          this.failWorker(worker, alignmentAbortError());
+        };
+        signal.addEventListener('abort', task.abortListener, { once: true });
+      }
+      if (signal?.aborted) { this.detachAbort(task); reject(alignmentAbortError()); return; }
+      this.queue.push(task);
+      this.pump();
+    });
+  }
+
+  close(): void {
+    this.closed = true;
+    const error = new Error('alignment worker pool closed');
+    for (const task of this.queue.splice(0)) { this.detachAbort(task); task.reject(error); }
+    for (const worker of this.workers) {
+      worker.dead = true;
+      if (worker.current) { this.detachAbort(worker.current); worker.current.reject(error); }
+      worker.child.kill('SIGTERM');
+    }
+    this.workers.length = 0;
+  }
+
+  private pump(): void {
+    if (this.closed) return;
+    while (this.queue.length) {
+      let worker = this.workers.find((candidate) => !candidate.dead && !candidate.current);
+      if (!worker && this.workers.filter((candidate) => !candidate.dead).length < this.size) worker = this.startWorker();
+      if (!worker) return;
+      const task = this.queue.shift()!;
+      worker.current = task;
+      worker.child.stdin!.write(`${JSON.stringify(task.payload)}\n`, (error) => {
+        if (error) this.failWorker(worker!, new Error(`could not send alignment request: ${error.message}`));
+      });
+    }
+  }
+
+  private startWorker(): AlignmentWorker {
+    const child = spawn(this.pythonBin, [this.alignScript, '--worker'], {stdio: ['pipe', 'pipe', 'pipe']});
+    const worker: AlignmentWorker = { child, stderr: '', dead: false };
+    this.workers.push(worker);
+    const lines = createInterface({ input: child.stdout });
+    lines.on('line', (line) => {
+      const task = worker.current;
+      if (!task) return this.failWorker(worker, new Error('alignment worker returned an unsolicited response'));
+      worker.current = undefined;
+      this.detachAbort(task);
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (typeof parsed.error === 'string') task.reject(new Error(`forced alignment failed: ${parsed.error}`));
+        else task.resolve(validateAlignmentResult(parsed));
+      } catch (error) {
+        task.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+      this.pump();
+    });
+    child.stderr.on('data', (chunk) => { worker.stderr = `${worker.stderr}${String(chunk)}`.slice(-2000); });
+    child.on('error', (error) => this.failWorker(worker, new Error(`forced alignment worker failed to start: ${error.message}`)));
+    child.on('close', (code) => this.failWorker(worker, new Error(`forced alignment worker exited (${code}): ${worker.stderr.trim().slice(-500) || 'no stderr output'}`)));
+    return worker;
+  }
+
+  private failWorker(worker: AlignmentWorker, error: Error): void {
+    if (worker.dead) return;
+    worker.dead = true;
+    const index = this.workers.indexOf(worker);
+    if (index >= 0) this.workers.splice(index, 1);
+    worker.current?.reject(error);
+    if (worker.current) this.detachAbort(worker.current);
+    worker.current = undefined;
+    worker.child.kill('SIGTERM');
+    this.pump();
+  }
+
+  private detachAbort(task: AlignmentTask): void {
+    if (task.signal && task.abortListener) task.signal.removeEventListener('abort', task.abortListener);
+    task.abortListener = undefined;
+  }
+}
+
+function alignmentAbortError(): Error {
+  const error = new Error('forced alignment request was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+const workerPools = new Map<string, AlignmentWorkerPool>();
+function alignmentPool(pythonBin: string, alignScript: string, model: string, language: string, size: number): AlignmentWorkerPool {
+  const key = JSON.stringify({ pythonBin, alignScript, model, language, size });
+  let pool = workerPools.get(key);
+  if (!pool) { pool = new AlignmentWorkerPool(pythonBin, alignScript, size); workerPools.set(key, pool); }
+  return pool;
+}
+
+/** Stop persistent model workers during application shutdown and tests. */
+export function closeAlignmentWorkers(): void {
+  for (const pool of workerPools.values()) pool.close();
+  workerPools.clear();
+}
+
+let cachedCloseVoiceEngineWorkers: (() => void) | undefined;
+/** Close both sides of the local speech pipeline from one-shot lesson CLIs. */
+export function closeSpeechWorkers(): void {
+  closeAlignmentWorkers();
+  cachedCloseVoiceEngineWorkers?.();
 }
 
 /**
@@ -92,51 +230,15 @@ export async function alignAudio(
 
   const pythonBin = options.pythonBin ?? DEFAULT_PYTHON_BIN;
   const alignScript = options.alignScript ?? DEFAULT_ALIGN_SCRIPT;
-  const payload = JSON.stringify({
+  const payload = {
     audioPath,
     text,
     language: options.language ?? 'en',
     model: options.model ?? 'base',
-  });
-
-  const stdout = await new Promise<string>((resolvePromise, reject) => {
-    let out = '';
-    let err = '';
-    let settled = false;
-    const child = spawn(pythonBin, [alignScript], {stdio: ['pipe', 'pipe', 'pipe'], signal: options.signal});
-    child.stdout.on('data', chunk => {out += String(chunk);});
-    child.stderr.on('data', chunk => {err += String(chunk);});
-    const fail = (error: unknown) => {
-      if (settled) return;
-      settled = true;
-      reject(error instanceof Error ? error : new Error(String(error)));
-    };
-    child.on('error', error => {
-      const hint = (error as NodeJS.ErrnoException).code === 'ENOENT'
-        ? ` (python interpreter not found at ${pythonBin} -- run shared/alignment/setup.sh first)`
-        : '';
-      fail(new Error(`forced alignment subprocess failed to start: ${error.message}${hint}`));
-    });
-    child.on('close', code => {
-      if (settled) return;
-      if (code !== 0) {
-        fail(new Error(`forced alignment failed (exit ${code}): ${err.trim().slice(0, 500) || 'no stderr output'}`));
-        return;
-      }
-      settled = true;
-      resolvePromise(out);
-    });
-    child.stdin.end(payload);
-  });
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch (error) {
-    throw new Error(`forced alignment produced invalid JSON on stdout: ${error instanceof Error ? error.message : String(error)}`);
-  }
-
-  return validateAlignmentResult(parsed);
+  };
+  if (options.signal?.aborted) throw alignmentAbortError();
+  const size = Math.max(1, Math.min(8, Math.floor(options.workerPoolSize ?? (Number(process.env.HYPOTHESIS_ALIGNMENT_WORKERS) || 2))));
+  return alignmentPool(pythonBin, alignScript, payload.model, payload.language, size).run(payload, options.signal);
 }
 
 function validateAlignmentResult(value: unknown): AlignmentResult {
@@ -154,7 +256,11 @@ function validateAlignmentResult(value: unknown): AlignmentResult {
     if (typeof word.endMs !== 'number' || !Number.isFinite(word.endMs)) throw new Error(`forced alignment word[${index}].endMs is not a finite number`);
     return {word: word.word, startMs: word.startMs, endMs: word.endMs};
   });
-  return {durationMs: record.durationMs, words};
+  const aligner = record.aligner;
+  if (aligner !== undefined && !['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc'].includes(String(aligner))) {
+    throw new Error('forced alignment output has an unsupported aligner identity');
+  }
+  return {durationMs: record.durationMs, words, ...(aligner ? {aligner: aligner as AlignmentResult['aligner']} : {})};
 }
 
 /** Minimal shape of voice-engine's `synthesize()` this adapter depends on. */
@@ -194,6 +300,8 @@ async function resolveSynthesize(modulePath: string): Promise<SynthesizeFn> {
   }
   const candidate = (mod as {synthesize?: unknown}).synthesize;
   if (typeof candidate !== 'function') throw new Error(`synthesizeAndAlign: module at ${modulePath} does not export a synthesize() function`);
+  const closeWorkers = (mod as {closeVoiceEngineWorkers?: unknown}).closeVoiceEngineWorkers;
+  cachedCloseVoiceEngineWorkers = typeof closeWorkers === 'function' ? closeWorkers as () => void : undefined;
   cachedSynthesize = candidate as SynthesizeFn;
   cachedSynthesizeModulePath = modulePath;
   return cachedSynthesize;

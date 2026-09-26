@@ -125,6 +125,58 @@ test('S11: raster workers and ffmpeg produce a decodable MP4 from the shared fra
   }
 });
 
+test('module export keeps muxed audio, captions, and chapter boundaries on the clip clock', async (t) => {
+  const { spawnSync } = await import('node:child_process');
+  if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0 || spawnSync('ffprobe', ['-version'], { stdio: 'ignore' }).status !== 0) {
+    t.skip('system ffmpeg/ffprobe is unavailable');
+    return;
+  }
+  const { mkdtemp, readFile, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { assembleModuleVideos, encodeModuleVideos } = await import('../export/moduleVideo.js');
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-module-export-e2e-'));
+  try {
+    const sampleRate = 44_100;
+    const samples = sampleRate / 2;
+    const wav = Buffer.alloc(44 + samples * 2);
+    wav.write('RIFF', 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVE', 8);
+    wav.write('fmt ', 12); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20);
+    wav.writeUInt16LE(1, 22); wav.writeUInt32LE(sampleRate, 24); wav.writeUInt32LE(sampleRate * 2, 28);
+    wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(samples * 2, 40);
+    const audioPath = path.join(dir, 'module.wav');
+    const captionsPath = path.join(dir, 'module.vtt');
+    await writeFile(audioPath, wav);
+    await writeFile(captionsPath, 'WEBVTT\n\n00:00:00.100 --> 00:00:00.400\nA measured caption\n');
+
+    const sceneResult = await runHypothesis({ caseId: 'synthetic-contract', scenes: [SYNTHETIC_SCENES[0]!] }, options());
+    const sourceScene = sceneResult.scenes[0]!;
+    const modules = await encodeModuleVideos([{
+      id: 'module_1', title: 'Measured clip', durationMs: 500, audioPath, captionsPath,
+      scenes: [{ laidOut: sourceScene.laidOut, timeline: sourceScene.timeline, startMs: 0, endMs: 500 }],
+    }], path.join(dir, 'clips'), { fps: 2, workerCount: 1 });
+    const outputPath = path.join(dir, 'lesson.mp4');
+    const assembled = await assembleModuleVideos(modules, outputPath);
+    const probe = spawnSync('ffprobe', ['-v', 'error', '-show_streams', '-show_chapters', '-show_entries', 'format=duration', '-of', 'json', outputPath], { encoding: 'utf8' });
+    assert.equal(probe.status, 0, probe.stderr);
+    const metadata = JSON.parse(probe.stdout) as { streams: Array<{ codec_name: string; codec_type: string }>; chapters: Array<{ start_time: string; end_time: string; tags?: { title?: string } }>; format: { duration: string } };
+    const streamTypes = new Set(metadata.streams.map((stream) => stream.codec_type));
+    for (const required of ['video', 'audio', 'subtitle']) assert.ok(streamTypes.has(required), `assembled MP4 is missing its ${required} stream`);
+    assert.ok(metadata.streams.some((stream) => stream.codec_name === 'mov_text'));
+    assert.equal(metadata.chapters.length, 1);
+    assert.equal(metadata.chapters[0]!.tags?.title, 'Measured clip');
+    assert.equal(Number(metadata.chapters[0]!.start_time), 0);
+    assert.ok(Math.abs(Number(metadata.chapters[0]!.end_time) - modules[0]!.durationMs / 1000) < 0.002);
+    assert.ok(Math.abs(Number(metadata.format.duration) - 0.5) < 0.1, 'muxed audio/video duration should stay within 100ms of the WAV clock');
+    assert.ok(assembled.captionsPath);
+    assert.match(await readFile(assembled.captionsPath!, 'utf8'), /00:00:00\.100 --> 00:00:00\.400/);
+    const decode = spawnSync('ffmpeg', ['-v', 'error', '-i', outputPath, '-f', 'null', '-'], { encoding: 'utf8' });
+    assert.equal(decode.status, 0, decode.stderr);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('e2e contract: identical synthetic runs replay deterministically for cache integrity', async () => {
   const input = { caseId: 'synthetic-contract', scenes: SYNTHETIC_SCENES };
   const r1 = await runHypothesis(input, options());

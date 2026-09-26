@@ -116,18 +116,19 @@ const numberWords: Record<string, number> = {
 };
 
 function numericClaims(value: string): NumericClaim[] {
+  const normalized = value.replace(/[−–—]/gu, '-');
   const claims: NumericClaim[] = [];
   const suffixUnit = (offset: number): string | undefined => {
-    const suffix = value.slice(offset).match(/^\s*(%|percent(?:age)?s?|°[cf]|km\/h|m\/s|kpa|mpa|pa|bar|atm|kg|mg|g|km|cm|mm|m|min(?:ute)?s?|ms|s|hours?|days?)(?![\p{L}])/iu)?.[1]?.toLowerCase();
+    const suffix = normalized.slice(offset).match(/^\s*(%|percent(?:age)?s?|°[cf]|km\/h|m\/s|kpa|mpa|pa|bar|atm|kg|mg|g|km|cm|mm|m|min(?:ute)?s?|ms|s|hours?|days?)(?![\p{L}])/iu)?.[1]?.toLowerCase();
     return suffix?.startsWith('percent') ? '%' : suffix;
   };
-  const digitPattern = /(?<![\p{L}\p{N}])([+-]?\d[\d,]*(?:\.\d+)?)/giu;
-  for (const match of value.matchAll(digitPattern)) {
+  const digitPattern = /(?<![\p{L}\p{N}])([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:e[+-]?\d+)?)/giu;
+  for (const match of normalized.matchAll(digitPattern)) {
     const numeric = Number(match[1].replaceAll(',', ''));
     if (Number.isFinite(numeric)) claims.push({ value: numeric, unit: suffixUnit(match.index + match[0].length), text: `${match[0]}${suffixUnit(match.index + match[0].length) ?? ''}`.trim() });
   }
   const wordPattern = /(?<![\p{L}\p{N}])(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?![\p{L}\p{N}])/giu;
-  for (const match of value.matchAll(wordPattern)) claims.push({ value: numberWords[match[1].toLowerCase()], unit: suffixUnit(match.index + match[0].length), text: `${match[0]}${suffixUnit(match.index + match[0].length) ?? ''}`.trim() });
+  for (const match of normalized.matchAll(wordPattern)) claims.push({ value: numberWords[match[1].toLowerCase()], unit: suffixUnit(match.index + match[0].length), text: `${match[0]}${suffixUnit(match.index + match[0].length) ?? ''}`.trim() });
   return claims;
 }
 

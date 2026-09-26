@@ -48,6 +48,7 @@ const goodBoard = (w = WORDS, prefix = 'src'): Board => ({
   schemaVersion: BOARD_SCHEMA_VERSION,
   title: 'ignored when the heading fits',
   layout: 'convergence',
+  visual: { kind: 'process' },
   nodes: [
     { id: 'n1', mention: 'm_a', concept: `${prefix}_a`, icon: w.a, label: w.a, role: 'input' },
     { id: 'n2', mention: 'm_b', concept: `${prefix}_b`, icon: w.b, label: w.b, role: 'input' },
@@ -130,12 +131,130 @@ test('fallback board is built from data: concept-matched mentions, confident ico
   assert.equal(compileBoard(board, scene).spec.edges.length, 3);
 });
 
+test('board rejects duplicate source-concept nodes even when node ids differ', () => {
+  const duplicate = goodBoard();
+  duplicate.nodes[1] = { ...duplicate.nodes[1]!, concept: duplicate.nodes[0]!.concept, mention: duplicate.nodes[0]!.mention };
+  assert.match(validateBoard(duplicate, scene).problems.join(' | '), /duplicate concept src_a/);
+});
+
+test('typed visual forms compile into the existing deterministic SceneSpec primitives', () => {
+  const cases: Array<[Board['visual'], string, string]> = [
+    [{ kind: 'formula', latex: '\\text{flour}' }, 'formula_focus', 'formula'],
+    [{ kind: 'matrix', rows: [['flour', 'enters'], ['water', 'enters']] }, 'formula_focus', 'matrix'],
+    [{ kind: 'number-line', min: 0, max: 10, ticks: 6, points: [{ x: 5, label: 'enters' }] }, 'formula_focus', 'numberLine'],
+    [{ kind: 'plot', fn: 'linear', params: [1, 0], domain: [0, 1] }, 'plot_focus', 'plot'],
+  ];
+  for (const [visual, template, prim] of cases) {
+    const board = { ...goodBoard(), visual };
+    const compiled = compileBoard(board, scene);
+    assert.equal(compiled.spec.template, template);
+    assert.ok(compiled.spec.elements.some((element) => element.prim === prim));
+    assert.ok(compiled.spec.elements.find((element) => element.prim === prim)?.evidenceRefs?.length, `${prim} inherits source evidence from its linked concepts`);
+  }
+});
+
+test('typed visual lexical claims must occur in the scene source quotes', () => {
+  const unsupportedMatrix: Board = { ...goodBoard(), visual: { kind: 'matrix', rows: [['invented', 'value']] } };
+  assert.match(validateBoard(unsupportedMatrix, scene).problems.join(' | '), /visual matrix labels\/terms \[invented, value\] are absent/);
+  const supportedMatrix: Board = { ...goodBoard(), visual: { kind: 'matrix', rows: [['flour', 'enters']] } };
+  assert.ok(!validateBoard(supportedMatrix, scene).problems.some((problem) => problem.includes('visual matrix labels')));
+});
+
+test('plot and number-line geometry require every factual numeric value in source evidence', () => {
+  const plot: Board = { ...goodBoard(), visual: { kind: 'plot', fn: 'linear', params: [1, 0], domain: [0, 1] } };
+  assert.match(validateBoard(plot, scene).problems.join(' | '), /visual plot numeric values .*absent from the scene’s cited source evidence/);
+  const line: Board = { ...goodBoard(), visual: { kind: 'number-line', min: 0, max: 10, ticks: 6, points: [{ x: 5 }] } };
+  assert.match(validateBoard(line, scene).problems.join(' | '), /visual number-line numeric values .*absent from the scene’s cited source evidence/);
+});
+
+test('source-backed plot and number-line values accept decimal and scientific notation citations', () => {
+  const numericRef = { sourceId: 'src_doc', spanId: 'numeric_data', startChar: 200, endChar: 245, startLine: 2, endLine: 2, quote: 'linear coefficients include 1e3, 0.5, −2, and 1' };
+  const numericScene: PlannerSceneInput = {
+    ...scene,
+    teachingContext: {
+      ...scene.teachingContext!,
+      sourceEvidenceRefs: [...scene.teachingContext!.sourceEvidenceRefs!, numericRef],
+      concepts: scene.teachingContext!.concepts!.map((concept) => ({ ...concept, evidenceRefs: [...concept.evidenceRefs!, numericRef] })),
+    },
+  };
+  const plot: Board = { ...goodBoard(), visual: { kind: 'plot', fn: 'linear', params: [1000, 0.5], domain: [-2, 1] } };
+  assert.deepEqual(validateBoard(plot, numericScene).problems, []);
+  const line: Board = { ...goodBoard(), visual: { kind: 'number-line', min: -2, max: 1000, ticks: 6, points: [{ x: 0.5 }], interval: [-2, 1] } };
+  assert.deepEqual(validateBoard(line, numericScene).problems, []);
+});
+
+test('board rejects an exact consecutive visual repeat', () => {
+  const previousElements = goodBoard().nodes.map((node) => ({ id: node.id, prim: node.icon === 'label' ? 'text' : 'object', label: node.label, conceptIds: [node.concept] }));
+  assert.match(validateBoard(goodBoard(), { ...scene, previousElements }).problems.join(' | '), /repeats the immediately previous board/);
+});
+
+test('worked examples are arithmetically checked and visibly marked illustrative', () => {
+  const example: Board = { ...goodBoard(), visual: { kind: 'worked-example', steps: [{ operands: [6, 7], operator: '×', result: 42 }] } };
+  const compiled = compileBoard(example, scene);
+  assert.deepEqual(validateBoard(example, scene).problems, []);
+  assert.ok(compiled.spec.elements.some((element) => element.prim === 'text' && element.text === 'Illustrative example' && element.origin === 'illustrative-example'));
+  const incorrect: Board = { ...example, visual: { kind: 'worked-example', steps: [{ operands: [6, 7], operator: '×', result: 41 }] } };
+  assert.match(validateBoard(incorrect, scene).problems.join(' | '), /does not equal 6 × 7/);
+  const divideByZero: Board = { ...example, visual: { kind: 'worked-example', steps: [{ operands: [4, 0], operator: '÷', result: 0 }] } };
+  assert.match(validateBoard(divideByZero, scene).problems.join(' | '), /does not equal 4 ÷ 0/);
+  const derivationSteps: Extract<Board['visual'], { kind: 'worked-example' }>['steps'] = [
+    { operands: [6, 7], operator: '×', result: 42 },
+    { operands: [42, 2], operator: '÷', result: 21 },
+  ];
+  const derivation: Board = { ...example, visual: { kind: 'worked-example', steps: [...derivationSteps] } };
+  assert.equal(compileBoard(derivation, scene).spec.elements.filter((element) => element.prim === 'formula').length, 2);
+  const disconnected: Board = { ...derivation, visual: { kind: 'worked-example', steps: [derivationSteps[0], { operands: [2, 3], operator: '+', result: 5 }] } };
+  assert.match(validateBoard(disconnected, scene).problems.join(' | '), /does not use the prior result/);
+});
+
+test('typed comparison boards require compare layout and distinct options', () => {
+  const comparison: Board = { ...goodBoard(), layout: 'compare', visual: { kind: 'comparison' }, nodes: goodBoard().nodes.slice(0, 2) };
+  // Keep only source concepts needed by the selected comparison nodes.
+  const comparisonScene = { ...scene, teachingContext: { ...scene.teachingContext!, relations: [] }, planningContext: undefined };
+  assert.ok(validateBoard(comparison, comparisonScene).problems.every((problem) => !problem.includes('comparison form')));
+  const wrongLayout = { ...comparison, layout: 'flow' as const };
+  assert.ok(validateBoard(wrongLayout, comparisonScene).problems.some((problem) => problem.includes('comparison form requires compare layout')));
+});
+
 test('board prompt carries the scene data and per-mention candidates, never icon ids', () => {
   const prompt = buildBoardPrompt(scene);
   assert.match(prompt.user, /"iconSuggestions": \[\s*"flour"\s*\]/);
   assert.match(prompt.user, /"mustShow"/);
   assert.ok(!prompt.user.includes('lib:flour'));
   assert.match(prompt.system, /illustrative, not about this lesson/);
+});
+
+test('rainbow arc prompt handles many mentions for one source concept and retains process-role validation on repair', () => {
+  // Mirrors the authorized rainbow lesson's source-grounded scene shape: five spoken
+  // mentions all unpack one cited concept, rather than five separate concepts.
+  const concept = scene.teachingContext!.concepts![0]!;
+  const rainbowScene: PlannerSceneInput = {
+    ...scene,
+    sceneId: 'rainbow_arc_color_order',
+    plainText: 'Different drops send different colors: higher raindrops send red light, while lower ones send violet. On the rainbow arc, red is outside and violet is inside.',
+    mentions: [
+      { id: 'higher_drops', phrase: 'higher raindrops' },
+      { id: 'red_light', phrase: 'red light' },
+      { id: 'rainbow_arc', phrase: 'rainbow arc' },
+      { id: 'outer_edge', phrase: 'outside' },
+      { id: 'inner_edge', phrase: 'inside' },
+    ],
+    teachingContext: {
+      ...scene.teachingContext!,
+      displayText: 'Red Outside, Violet Inside',
+      visualIntent: 'Show one cited concept: the color order on a rainbow arc.',
+      concepts: [{ ...concept, id: 'colored_arc', label: 'Rainbow arc' }],
+      relations: [],
+    },
+    planningContext: {
+      ...scene.planningContext!,
+      sceneContract: { ...scene.planningContext!.sceneContract, requiredConceptIds: ['colored_arc'] },
+    },
+  };
+  const prompt = buildBoardPrompt(rainbowScene);
+  assert.match(prompt.user, /"mustShow": \[\s*"colored_arc"\s*\]/);
+  assert.match(prompt.system, /exactly one node per source concept, even when several mentions refer to that concept/);
+  assert.match(prompt.system, /visual\.kind "process" must include at least one node whose role is "process"/);
 });
 
 test('planBoardScene repairs once on a rule violation and returns the compiled scene with icon pins', async () => {
@@ -153,33 +272,41 @@ test('planBoardScene repairs once on a rule violation and returns the compiled s
   assert.equal(result.iconAssets?.n1, 'lib:flour');
 });
 
-test('with an icon catalog, any catalog icon is admissible (a metaphor), off-catalog names fail, suggestions stay hints', () => {
+test('with an icon catalog, only mention-specific retrieved icons are admissible', () => {
   const withCatalog: PlannerSceneInput = { ...scene, iconCatalog: [{ id: 'lib:flour', name: 'flour' }, { id: 'lib:water', name: 'water' }, { id: 'lib:dough', name: 'dough' }, { id: 'lib:robot', name: 'robot' }] };
   const enums = boardEnums(withCatalog);
-  assert.deepEqual(enums.icons, ['flour', 'water', 'dough', 'robot']);
-  const metaphor = goodBoard();
-  metaphor.nodes[2].icon = 'robot';
-  const checked = validateBoard(metaphor, withCatalog);
+  assert.deepEqual(enums.icons, ['flour', 'water', 'dough']);
+  const valid = goodBoard();
+  const checked = validateBoard(valid, withCatalog);
   assert.deepEqual(checked.problems, []);
-  assert.equal(checked.iconAssets?.n3, 'lib:robot');
+  assert.equal(checked.iconAssets?.n1, 'lib:flour');
+  const unrelated = goodBoard();
+  unrelated.nodes[0].icon = 'water';
+  assert.match(validateBoard(unrelated, withCatalog).problems.join(' | '), /icon "water" is not a candidate for mention m_a/);
+  const catalogOnly = goodBoard();
+  catalogOnly.nodes[2].icon = 'robot';
+  assert.match(validateBoard(catalogOnly, withCatalog).problems.join(' | '), /nodes\.2\.icon: Invalid option/);
   const offCatalog = goodBoard();
   offCatalog.nodes[2].icon = 'rocket';
   assert.ok(validateBoard(offCatalog, withCatalog).problems.some((problem) => problem.startsWith('nodes.2.icon')));
-  assert.match(buildBoardPrompt(withCatalog).system, /Icon catalog \(4 hand-drawn icons, one visual family\):\nflour, water, dough, robot/);
+  assert.match(buildBoardPrompt(withCatalog).system, /choose only an exact name from that mention's iconSuggestions/);
+  assert.doesNotMatch(buildBoardPrompt(withCatalog).system, /robot/);
 });
 
-test('large catalogs keep icon a plain string in the provider schema and check membership in code', () => {
+test('large catalogs do not widen the per-scene admissible icon set', () => {
   const iconCatalog = Array.from({ length: 70 }, (_, i) => ({ id: `lib:icon${i}`, name: `icon${i}` }));
   const big: PlannerSceneInput = { ...scene, iconCatalog };
-  const json = JSON.stringify(z.toJSONSchema(boardSchema(boardEnums(big))));
-  assert.ok(!json.includes('"icon69"'), 'a 70-name catalog is not sent as an enum');
+  const enums = boardEnums(big);
+  const json = JSON.stringify(z.toJSONSchema(boardSchema(enums)));
+  assert.ok(!json.includes('"icon69"'), 'catalog entries without mention-specific retrieval evidence are excluded');
+  assert.deepEqual(enums.icons, []);
   const board = goodBoard();
-  board.nodes[0].icon = 'icon7';
+  board.nodes[0].icon = 'label';
   board.nodes[1].icon = 'label';
   board.nodes[3].icon = 'label';
   assert.deepEqual(validateBoard(board, big).problems, []);
-  board.nodes[0].icon = 'rocket';
-  assert.match(validateBoard(board, big).problems.join(' | '), /icon "rocket" is not in the icon catalog/);
+  board.nodes[0].icon = 'icon7';
+  assert.ok(validateBoard(board, big).problems.length > 0, 'catalog membership alone does not make an icon admissible');
 });
 
 test('icon labels wrap onto at most two balanced lines, so nodes stay narrow and icons can grow', async () => {

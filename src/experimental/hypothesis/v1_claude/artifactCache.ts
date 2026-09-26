@@ -31,6 +31,8 @@ async function exists(filePath: string): Promise<boolean> {
 
 /** Claude hypothesis local stage store. Keys include every declared input and implementation contract. */
 export class ContentAddressedArtifactStore {
+  private readonly runLocalArtifacts = new Map<string, VersionedStageArtifact<unknown>>();
+
   constructor(readonly root: string, readonly mode: 'cold' | 'warm' | 'replay' = 'warm') {}
 
   key(input: unknown, meta: StageDefinition): string {
@@ -40,6 +42,10 @@ export class ContentAddressedArtifactStore {
   async run<T>(stage: string, input: unknown, meta: StageDefinition, produce: () => Promise<T> | T): Promise<CachedStage<T>> {
     const stageVersion = `${stage}:${meta.stageVersion}`;
     const key = this.key(input, { ...meta, stageVersion });
+    if (this.mode === 'cold') {
+      const runLocal = this.runLocalArtifacts.get(key) as VersionedStageArtifact<T> | undefined;
+      if (runLocal) return { artifact: runLocal, key, cacheHit: true };
+    }
     const artifactPath = join(this.root, key.slice(0, 2), `${key}.json`);
     if (this.mode !== 'cold') {
       try {
@@ -68,6 +74,16 @@ export class ContentAddressedArtifactStore {
     await writeFile(temporary, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');
     await rename(temporary, artifactPath);
     return { artifact, key, cacheHit: false };
+  }
+
+  /**
+   * Let a later stage in this same process reuse an artifact produced earlier
+   * in a cold run. This does not read or trust artifacts from a prior run.
+   */
+  reuseWithinRun<T>(stage: string, input: unknown, meta: StageDefinition, artifact: VersionedStageArtifact<T>): void {
+    if (this.mode !== 'cold') return;
+    const stageVersion = `${stage}:${meta.stageVersion}`;
+    this.runLocalArtifacts.set(this.key(input, { ...meta, stageVersion }), artifact);
   }
 
   /** Cache a large file as a content-addressed blob and materialize it in each run directory. */

@@ -165,6 +165,7 @@ export function buildUserPrompt(input: PlannerSceneInput): string {
     visualCandidates: planning.visualCandidates,
     availableTemplates: planning.availableTemplates,
     mentionTimes: planning.mentionTimes,
+    mentionTimingState: planning.mentionTimingState,
     selectedExampleIds: planning.examples.map(({ exemplar }) => exemplar.id),
     versions: planning.versions,
   }))}`);

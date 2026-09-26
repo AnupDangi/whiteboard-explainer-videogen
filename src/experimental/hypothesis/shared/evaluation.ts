@@ -8,7 +8,8 @@ export function deterministicGates(input:{golden?:GoldenCase;elements:NeutralEle
   for(const element of input.elements){
     if(ids.has(element.id))failures.push({code:'duplicate-element',stage:'schema',message:`Duplicate element ${element.id}`,hard:true});ids.add(element.id);
     const {x,y,w,h}=element.bbox;
-    if(w<=0||h<=0||x<EXPERIMENT.safeArea||y<EXPERIMENT.safeArea||x+w>EXPERIMENT.width-EXPERIMENT.safeArea||y+h>EXPERIMENT.height-EXPERIMENT.safeArea)failures.push({code:'safe-area',stage:'layout',message:`${element.id} escapes the safe area`,hard:true});
+    const epsilon = 1e-6; // absorb sub-micro-pixel floating-point layout noise only
+    if(w<=0||h<=0||x<EXPERIMENT.safeArea-epsilon||y<EXPERIMENT.safeArea-epsilon||x+w>EXPERIMENT.width-EXPERIMENT.safeArea+epsilon||y+h>EXPERIMENT.height-EXPERIMENT.safeArea+epsilon)failures.push({code:'safe-area',stage:'layout',message:`${element.id} escapes the safe area`,hard:true});
   }
   for(let i=0;i<input.elements.length;i++)for(let j=i+1;j<input.elements.length;j++)if(intersects(input.elements[i].bbox,input.elements[j].bbox))failures.push({code:'overlap',stage:'layout',message:`${input.elements[i].id} overlaps ${input.elements[j].id}`,hard:true});
   for(const event of input.timeline){

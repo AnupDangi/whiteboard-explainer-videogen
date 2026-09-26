@@ -49,5 +49,6 @@ export function resolveScene(spec: SceneSpec, options: ResolveOptions = {}): Res
     edges: spec.edges,
     focus: spec.focus ?? [],
     carryOver: spec.carryOver ?? [],
+    ...(spec.boardIntent ? { boardIntent: spec.boardIntent } : {}),
   };
 }

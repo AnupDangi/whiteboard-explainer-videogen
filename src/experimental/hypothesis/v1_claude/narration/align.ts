@@ -1,7 +1,7 @@
 import type { AlignedAudio, AlignedWord, NarrationScript } from '../types.js';
 
-/** Unicode-aware word tokenizer: letters/numbers/marks plus internal apostrophes and hyphens. */
-const WORD_RE = /[\p{L}\p{M}\p{N}]+(?:['-][\p{L}\p{M}\p{N}]+)*/gu;
+/** Unicode-aware word tokenizer, including curly apostrophes used in generated narration. */
+const WORD_RE = /[\p{L}\p{M}\p{N}]+(?:['’‘ʼ-][\p{L}\p{M}\p{N}]+)*/gu;
 
 export function tokenizeWords(text: string): string[] {
   return text.normalize('NFKC').match(WORD_RE) ?? [];

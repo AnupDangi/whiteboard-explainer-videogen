@@ -1,6 +1,6 @@
 import {mkdir} from 'node:fs/promises';
 import {DEFAULT_OUT_DIR} from './paths.js';
-import {route, synthesize} from './index.js';
+import {closeVoiceEngineWorkers, route, synthesize} from './index.js';
 
 /** ~10 seconds of English at a normal narration pace. */
 const TEXT = 'A good explanation does not start with the answer. It starts with a question you can almost answer, then closes the gap one step at a time.';
@@ -74,5 +74,5 @@ async function main(): Promise<void> {
 
 main().catch(error => {
   console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+  process.exitCode = 1;
+}).finally(closeVoiceEngineWorkers);

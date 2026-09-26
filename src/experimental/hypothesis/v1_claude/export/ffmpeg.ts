@@ -13,6 +13,23 @@ export function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
+/** Read the actual muxed file duration used later for chapter offsets. */
+export function probeMediaDurationMs(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = spawn('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    probe.stdout.on('data', (data) => { stdout += String(data); });
+    probe.stderr.on('data', (data) => { stderr += String(data); });
+    probe.on('error', (error) => reject(new Error(`ffprobe failed to start: ${error.message}`)));
+    probe.on('close', (code) => {
+      const seconds = Number(stdout.trim());
+      if (code !== 0 || !Number.isFinite(seconds) || seconds <= 0) return reject(new Error(`ffprobe could not read media duration: ${stderr.slice(-2000)}`));
+      resolve(Math.round(seconds * 1000));
+    });
+  });
+}
+
 /**
  * Spawn ffmpeg reading raw PNG frames from stdin (`image2pipe`) at `fps`,
  * muxing in the real audio track at `audioWavPath`, encoding H.264+AAC.

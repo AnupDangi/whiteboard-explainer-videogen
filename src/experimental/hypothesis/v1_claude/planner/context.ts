@@ -16,7 +16,7 @@ export type ExampleOrder = 'ranked' | 'reverse';
 const relationKey = (relation: { from: string; to: string; type: string }): string => `${relation.from}|${relation.type}|${relation.to}`;
 
 export interface ScenePlanningContext {
-  schemaVersion: 'scene-planning-context/v2';
+  schemaVersion: 'scene-planning-context/v3';
   sceneContract: SceneContract;
   lessonBible: LessonBible;
   narration: { raw: string; plainText: string; mentions: PlannerSceneInput['mentions'] };
@@ -25,6 +25,7 @@ export interface ScenePlanningContext {
   visualCandidates: PlannerSceneInput['candidates'];
   availableTemplates: Array<{ id: string; slots: Array<{ name: string; capacity: number | 'many' }> }>;
   mentionTimes: Array<{ id: string; startMs: number; endMs: number }>;
+  mentionTimingState: 'pending-s5' | 'measured';
   previousElements: PlannerSceneInput['previousElements'];
   promptArm: PromptArm;
   exampleOrder: ExampleOrder;
@@ -34,7 +35,7 @@ export interface ScenePlanningContext {
 }
 
 /** S4/S5 add anchors and timing to S3's semantic contract without a second planning call. */
-export function compileScenePlanningContext(input: PlannerSceneInput, contract: SceneContract, bible: LessonBible, mentionTimes: ScenePlanningContext['mentionTimes'], arm: PromptArm, catalogVersion: string, sourceId?: string, caseId?: string, exampleOrder: ExampleOrder = 'ranked'): ScenePlanningContext {
+export function compileScenePlanningContext(input: PlannerSceneInput, contract: SceneContract, bible: LessonBible, mentionTimes: ScenePlanningContext['mentionTimes'], arm: PromptArm, catalogVersion: string, sourceId?: string, caseId?: string, exampleOrder: ExampleOrder = 'ranked', requireMeasuredMentionTimes = true): ScenePlanningContext {
   if (arm === 'zero' && exampleOrder !== 'ranked') throw new Error('example order permutation requires a retrieval prompt arm');
   const requiredConceptIds = contract.requiredConceptIds;
   const suppliedConceptIds = (input.teachingContext?.concepts ?? []).map((concept) => concept.id);
@@ -61,7 +62,7 @@ export function compileScenePlanningContext(input: PlannerSceneInput, contract: 
     throw new Error(`${input.sceneId}: each required source relation must retain its evidence references in the scene evidence context`);
   }
   const seen = new Set(mentionTimes.map((mention) => mention.id));
-  if (input.mentions.some((mention) => !seen.has(mention.id))) throw new Error(`${input.sceneId}: missing measured mention alignment`);
+  if (requireMeasuredMentionTimes && input.mentions.some((mention) => !seen.has(mention.id))) throw new Error(`${input.sceneId}: missing measured mention alignment`);
   const visualCandidates = Object.fromEntries(Object.entries(input.candidates ?? {}).map(([mentionId, candidates]) => [mentionId, candidates.filter((candidate) => candidate.score >= TAU_MID_EMB)]));
   const capabilities = ['box', 'pill', 'text', 'operator', 'meter', 'tokenStrip', 'matrix', 'formula', 'plot', 'numberLine', 'shape', 'container', 'cylinder', 'stack', 'axis', 'hill'];
   if (Object.values(visualCandidates).some((candidates) => candidates.length > 0)) capabilities.push('object');
@@ -69,6 +70,6 @@ export function compileScenePlanningContext(input: PlannerSceneInput, contract: 
   const examples = exampleOrder === 'reverse' ? [...rankedExamples].reverse() : rankedExamples;
   const availableTemplates = Object.entries(TEMPLATE_SLOTS).map(([id, slots]) => ({ id, slots }));
   const versions = { prompt: SCENE_PROMPT_VERSION, skill: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, bank: EXAMPLE_BANK_VERSION, bankHash: EXAMPLE_BANK_HASH, rank: EXAMPLE_RANK_VERSION, catalog: catalogVersion, candidateFeasibility: CANDIDATE_FEASIBILITY_VERSION, recipes: RECIPE_VERSION };
-  const payload = { sceneContract: contract, lessonBible: bible, narration: { raw: input.raw, plainText: input.plainText, mentions: input.mentions }, teachingContext: input.teachingContext, evidence, visualCandidates, availableTemplates, mentionTimes, previousElements: input.previousElements, promptArm: arm, exampleOrder, examples: examples.map(exemplarContextRecord), versions };
-  return { schemaVersion: 'scene-planning-context/v2', ...payload, examples, contextHash: sha256(stableJson(payload)) };
+  const payload = { sceneContract: contract, lessonBible: bible, narration: { raw: input.raw, plainText: input.plainText, mentions: input.mentions }, teachingContext: input.teachingContext, evidence, visualCandidates, availableTemplates, mentionTimes, mentionTimingState: requireMeasuredMentionTimes ? 'measured' as const : 'pending-s5' as const, previousElements: input.previousElements, promptArm: arm, exampleOrder, examples: examples.map(exemplarContextRecord), versions };
+  return { schemaVersion: 'scene-planning-context/v3', ...payload, examples, contextHash: sha256(stableJson(payload)) };
 }

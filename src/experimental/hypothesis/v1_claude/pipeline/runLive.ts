@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AlignedAudio, AlignedWord, LaidOutScene, NarrationScript, ResolvedScene, SceneSpec, StageFailure, Timeline } from '../types.js';
 import { EXPERIMENT, assertCommonRunOptions, type EvaluationBundle, type GateRunRecord, type GoldenCase, type HypothesisRunOptions, type RunClass, type RunFailure, type RunStatus, type RunUsage, type StageRunRecord } from '../../shared/contracts.js';
@@ -28,10 +28,13 @@ import { VISUAL_STAGE_VERSIONS } from './versions.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
 import { encodeVideoAtomically, rasterizePng, type VideoScene } from '../export/videoEncode.js';
+import { assembleModuleVideos, encodeModuleVideos, type ModuleVideoArtifact, type ModuleVideoInput } from '../export/moduleVideo.js';
 import { attributionForSources, loadCatalogLibraries } from '../catalog/streamline.js';
-import { buildWebVtt } from '../export/captions.js';
-import { resolveSourceEvidence, type SourceDoc } from '../plan/sourceDoc.js';
+import { buildWebVtt, buildWebVttForRun } from '../export/captions.js';
+import { resolveSourceEvidence, type SourceDoc, type SourceBundle } from '../plan/sourceDoc.js';
+import { lessonCostCapUsd } from '../plan/hierarchical.js';
 import { budgetLedgerAccountingProblems, type PersistentBudgetLedger } from './budgetLedger.js';
+import { withHostResourcePermit } from '../../shared/hostResourcePool.js';
 import { ContentAddressedArtifactStore } from '../artifactCache.js';
 import type { LessonBible, SceneContract } from '../plan/schemas.js';
 import { CANDIDATE_FEASIBILITY_VERSION, compileScenePlanningContext, SCENE_PROMPT_VERSION, SCENE_SKILL_VERSION, type ExampleOrder } from '../planner/context.js';
@@ -69,10 +72,33 @@ export interface HypothesisLiveInput {
   scenes: LiveSceneInput[];
   runClass?: RunClass;
   sourceDoc?: SourceDoc;
-  /** Nominal clip length; real narration shorter than this is padded with silence on the last scene. Defaults to the 30 s golden length. */
+  sourceBundle?: SourceBundle;
+  requestedDurationSec?: number;
+  plannedDurationSec?: number;
+  coverageReason?: string;
+  /** Timing-quality findings from module-boundary audio measurement, rechecked in the live result. */
+  preflightAlignmentFailures?: StageFailure[];
+  modules?: Array<{ id: string; title: string; goal: string; budgetSec: number; requestedBudgetSec?: number; actualAudioDurationMs?: number; sceneIds: string[] }>;
+  /** Target duration for diagnostics. Generated lessons use real audio duration; golden clips may pad to this length. */
   targetDurationMs?: number;
   /** S1-S4 execution ledger from lesson preparation. */
   stageRuns?: StageRunRecord[];
+  /** Receives validated, playable scene descriptors in original scene order. */
+  onSceneReady?: (event: SceneReadyEvent) => void | Promise<void>;
+}
+
+export interface SceneReadyEvent {
+  type: 'scene.playable';
+  schemaVersion: 'hypothesis-scene-event/v1';
+  runId: string;
+  moduleId: string;
+  sceneId: string;
+  sequence: number;
+  /** Scene-local duration; audio bounds in the descriptor use the master clock. */
+  durationMs: number;
+  artifactHash: string;
+  /** Run-relative JSON descriptor path. */
+  previewLocation: string;
 }
 
 export interface LiveScenePipelineResult {
@@ -100,8 +126,47 @@ export interface HypothesisLiveRunResult {
   captionsPath?: string;
 }
 
+const configuredConcurrency = (name: string, fallback: number, maximum = 32): number => {
+  const parsed = Number(process.env[name]);
+  return Number.isInteger(parsed) && parsed >= 1 ? Math.min(parsed, maximum) : fallback;
+};
+
 /** Scenes processed at once in S5 (TTS + alignment sidecars). HYPOTHESIS_SCENE_CONCURRENCY overrides. */
-export const DEFAULT_SCENE_CONCURRENCY = Math.max(1, Number(process.env.HYPOTHESIS_SCENE_CONCURRENCY) || 4);
+export const DEFAULT_SCENE_CONCURRENCY = configuredConcurrency('HYPOTHESIS_SCENE_CONCURRENCY', 4);
+/** Scene Planner calls share provider and budget resources, so keep their run-wide fanout bounded. */
+export const DEFAULT_SCENE_PLANNER_CONCURRENCY = configuredConcurrency('HYPOTHESIS_S6_CONCURRENCY', 2);
+export const DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY = configuredConcurrency('HYPOTHESIS_TTS_ALIGNMENT_CONCURRENCY', 2);
+export const DEFAULT_HOST_RASTER_CONCURRENCY = configuredConcurrency('HYPOTHESIS_RASTER_CONCURRENCY', 2, 8);
+
+let activeScenePlannerCalls = 0;
+const scenePlannerWaiters: Array<() => void> = [];
+export async function withScenePlannerSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeScenePlannerCalls >= DEFAULT_SCENE_PLANNER_CONCURRENCY) {
+    await new Promise<void>((resolve) => scenePlannerWaiters.push(resolve));
+  } else {
+    activeScenePlannerCalls++;
+  }
+  try {
+    return await fn();
+  } finally {
+    const next = scenePlannerWaiters.shift();
+    if (next) next();
+    else activeScenePlannerCalls--;
+  }
+}
+
+let activeSceneSynthesisCalls = 0;
+const sceneSynthesisWaiters: Array<() => void> = [];
+async function withSceneSynthesisSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeSceneSynthesisCalls >= DEFAULT_SCENE_CONCURRENCY) await new Promise<void>((resolve) => sceneSynthesisWaiters.push(resolve));
+  else activeSceneSynthesisCalls++;
+  try { return await fn(); }
+  finally {
+    const next = sceneSynthesisWaiters.shift();
+    if (next) next();
+    else activeSceneSynthesisCalls--;
+  }
+}
 
 /** Map with at most `limit` promises in flight; results keep input order. */
 export async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
@@ -130,6 +195,8 @@ export interface LiveRunContext {
   planDespiteAlignmentFailure?: boolean;
   /** S6 output contract. `board-v2` (default) is the enum-constrained board; `scene-spec-v1` is the legacy primitive schema kept for rollback. */
   scenePlanner?: 'board-v2' | 'scene-spec-v1';
+  /** CLI-level timing includes source intake and S1-S4 preparation. */
+  executionTiming?: { startedAtMs: number; pipelineStartedAtMs: number };
 }
 
 /** A hand-authored spec goes through exactly the planner's validation (schema + mention ids + structure); no model call. */
@@ -158,13 +225,15 @@ export function goldenForRun(input: Pick<HypothesisLiveInput, 'caseId' | 'runCla
 export async function runHypothesisLive(input: HypothesisLiveInput, options: HypothesisRunOptions, ctx: LiveRunContext): Promise<HypothesisLiveRunResult> {
   assertCommonRunOptions(options);
   if (options.mode !== 'live') throw new Error('runHypothesisLive requires options.mode === "live"');
+  const allowedCostUsd = input.runClass === 'generated-lesson' ? lessonCostCapUsd(input.plannedDurationSec ?? input.requestedDurationSec ?? 60) : EXPERIMENT.maxClipCostUsd;
+  if (options.maxCostUsd > allowedCostUsd) throw new Error(`Run cost allowance $${options.maxCostUsd.toFixed(2)} exceeds the $${allowedCostUsd.toFixed(2)} cap for this lesson duration`);
   if (!options.outputDir) throw new Error('runHypothesisLive requires options.outputDir (real audio/video artifacts must land on disk)');
   const promptArm = ctx.promptArm ?? 'zero';
   const exampleOrder = ctx.exampleOrder ?? 'ranked';
   const experimentProblems = promptExperimentEligibilityProblems(input, promptArm, exampleOrder);
   if (experimentProblems.length) throw new Error(`invalid E5 prompt experiment: ${experimentProblems.join('; ')}`);
 
-  const failures: StageFailure[] = [];
+  const failures: StageFailure[] = [...(input.preflightAlignmentFailures ?? [])];
   const stageRuns: StageRunRecord[] = [...(input.stageRuns ?? [])];
   const gateRecords: GateRunRecord[] = [];
   const stageArtifacts: Record<string, { key: string; contentHash: string; cacheHit: boolean }> = {};
@@ -180,6 +249,12 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     failures.push({ code: 'source-document-missing', stage: 'provenance', message: 'generated lessons require the exact SourceDoc used by concept extraction', hard: true });
   }
 
+  const activeCatalogVersion = catalogVersion();
+  const inputHash = sha256(stableJson({ caseId: input.caseId, scenes: input.scenes, targetDurationMs: input.targetDurationMs, requestedDurationSec: input.requestedDurationSec, plannedDurationSec: input.plannedDurationSec, coverageReason: input.coverageReason, modules: input.modules, runClass: input.runClass, sourceDoc: input.sourceDoc, sourceBundle: input.sourceBundle }));
+  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: ctx.scenePlanner ?? 'board-v2', boardPromptVersion: BOARD_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
+  const sceneEventsPath = path.join(outputDir, 'scene-events.jsonl');
+  await writeFile(sceneEventsPath, '', 'utf8');
+
   const narration: NarrationScript = {
     schemaVersion: 'claude-narration-script/v1',
     scenes: input.scenes.map((s) => buildNarrationScene(s.sceneId, s.sectionId ?? s.sceneId, s.raw)),
@@ -188,22 +263,32 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   // --- S5: real TTS (voice-engine) + real forced alignment (shared/alignment), per scene, stitched onto one master clock ---
   const sceneWords: Record<string, AlignedWord[]> = {};
   const sceneBoundsMs: Record<string, { startMs: number; endMs: number }> = {};
+  const mentions: AlignedAudio['mentions'] = [];
   const sceneAudioPaths: string[] = [];
+  const sceneAudioPathById = new Map<string, string>();
+  const sceneDurationMsById = new Map<string, number>();
   const alignmentCacheHits = new Set<string>();
   const alignmentStartedAtMs = Date.now();
   let cursorMs = 0;
   // Scenes are synthesized and aligned independently, a few at a time (each alignment is its own sidecar
   // process); they are stitched onto the master clock in scene order below, so output stays deterministic.
-  const synthesizeScene = async (scene: (typeof narration.scenes)[number]) => {
+  const synthesizeScene = async (scene: (typeof narration.scenes)[number], sequence: number) => {
     const alignmentInput = { text: scene.plainText, language: options.voice.language, voice: options.voice.voiceId, provider: 'auto', model: 'base', calibrationMedianErrorMs: options.alignment.calibrationMedianErrorMs };
-    const align = () => synthesizeAndAlign(scene.plainText, {
+    const align = () => withHostResourcePermit('tts-alignment', DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY, () => synthesizeAndAlign(scene.plainText, {
       language: options.voice.language,
       voice: options.voice.voiceId,
       provider: 'auto',
       model: 'base',
-    });
-    if (!ctx.artifactStore) return align();
-    const cached = await ctx.artifactStore.run(`S5-tts-alignment:${scene.sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: 'voice-align-2-submillisecond', modelId: 'voice-engine:auto+stable-ts:base' }, async () => {
+    }));
+    if (!ctx.artifactStore) {
+      const generated = await align();
+      const sceneAudioDir = path.join(outputDir, 'scene-audio');
+      await mkdir(sceneAudioDir, { recursive: true });
+      const audioPath = path.join(sceneAudioDir, `${String(sequence).padStart(4, '0')}.wav`);
+      if (generated.audioPath !== audioPath) await writeFile(audioPath, await readFile(generated.audioPath));
+      return { ...generated, audioPath };
+    }
+    const cached = await ctx.artifactStore.run(`S5-tts-alignment:${scene.sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: 'voice-align-3-stable-ts-ctc-fallback', modelId: 'voice-engine:auto+stable-ts+wav2vec2-ctc-fallback:base' }, async () => {
       const generated = await align();
       return { durationMs: generated.durationMs, words: generated.words, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
     });
@@ -211,67 +296,28 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (cached.cacheHit) alignmentCacheHits.add(scene.sceneId);
     const sceneAudioDir = path.join(outputDir, 'scene-audio');
     await mkdir(sceneAudioDir, { recursive: true });
-    const audioPath = path.join(sceneAudioDir, `${scene.sceneId}.wav`);
+    const audioPath = path.join(sceneAudioDir, `${String(sequence).padStart(4, '0')}.wav`);
     await writeFile(audioPath, Buffer.from(cached.artifact.payload.audioBase64, 'base64'));
     return { durationMs: cached.artifact.payload.durationMs, words: cached.artifact.payload.words, audioPath };
   };
-  const alignedScenes = await mapWithConcurrency(narration.scenes, DEFAULT_SCENE_CONCURRENCY, synthesizeScene);
-  for (let i = 0; i < narration.scenes.length; i++) {
-    const scene = narration.scenes[i];
-    const aligned: { durationMs: number; words: Array<{ word: string; startMs: number; endMs: number }>; audioPath: string } = alignedScenes[i];
-    for (const problem of alignedWordTimingProblems(aligned.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })), aligned.durationMs)) {
-      failures.push({ code: 'invalid-word-alignment', stage: 'align', message: `${scene.sceneId}: ${problem}`, hard: true });
-    }
-    const sceneStart = cursorMs;
-    sceneWords[scene.sceneId] = aligned.words.map((w) => ({ w: w.word, startMs: sceneStart + w.startMs, endMs: sceneStart + w.endMs }));
-    sceneBoundsMs[scene.sceneId] = { startMs: sceneStart, endMs: sceneStart + aligned.durationMs };
-    sceneAudioPaths.push(aligned.audioPath);
-    cursorMs = sceneStart + aligned.durationMs + (i < narration.scenes.length - 1 ? SCENE_GAP_MS : 0);
-  }
-  const totalRawMs = cursorMs;
-  const targetMs = input.targetDurationMs ?? EXPERIMENT.targetDurationMs;
-  const finalDurationMs = Math.max(totalRawMs, targetMs);
-  const trailingPadMs = finalDurationMs - totalRawMs;
-  if (trailingPadMs > 0 && narration.scenes.length > 0) {
-    const lastSceneId = narration.scenes[narration.scenes.length - 1].sceneId;
-    sceneBoundsMs[lastSceneId] = { ...sceneBoundsMs[lastSceneId], endMs: sceneBoundsMs[lastSceneId].endMs + trailingPadMs };
-  }
-  if (trailingPadMs === 0 && totalRawMs > targetMs) {
-    failures.push({ code: 'av-sync-over-budget', stage: 'align', message: `real narrated audio (${totalRawMs}ms) exceeds the nominal ${targetMs}ms target — not truncated, recorded honestly`, hard: false });
-  }
-
-  const rawAudio: AlignedAudio = {
-    schemaVersion: 'claude-aligned-audio/v1',
-    provider: 'stable-ts',
-    wavPath: '',
-    durationMs: finalDurationMs,
-    sceneWords,
-    sceneBoundsMs,
-    mentions: [],
-  };
-  const { mentions, failures: mentionFailures } = resolveMentions(narration, rawAudio);
-  for (const mf of mentionFailures) {
-    failures.push({ code: `mention-${mf.reason}`, stage: 'align', message: `${mf.sceneId}/${mf.mentionId}: "${mf.phrase}"`, hard: true });
-  }
-
-  const masterWavPath = path.join(outputDir, 'audio.wav');
-  await concatSceneAudio(sceneAudioPaths, SCENE_GAP_MS, trailingPadMs, masterWavPath);
-  const alignedAudio: AlignedAudio = { ...rawAudio, wavPath: masterWavPath, mentions };
-  const alignmentMs = Date.now() - alignmentStartedAtMs;
-  const alignmentStageFailures = failures.filter((failure) => failure.stage === 'align');
-  stageRuns.push({ stage: 'S5-tts-alignment', kind: 'local', status: alignmentStageFailures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: alignmentMs, apiCostUsd: 0, cacheHit: alignmentCacheHits.size > 0, fallbackCount: 0, usage: { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: alignmentCacheHits.size }, failures: alignmentStageFailures.map(toRunFailure) });
+  const alignedScenePromises = narration.scenes.map((scene, sequence) => withSceneSynthesisSlot(() => synthesizeScene(scene, sequence)));
+  const alignmentSettledAtPromise = Promise.all(alignedScenePromises).then(() => Date.now());
 
   // --- S6: Scene Planner (real OpenRouter call, <=1 repair, §9 fallback, cost-capped at options.maxCostUsd per clip) ---
   // A case ID/source filename must never select benchmark claims for a generated lesson.
   const golden = goldenForRun(input);
 
   const scenes: LiveScenePipelineResult[] = [];
-  const activeCatalogVersion = catalogVersion();
+  let firstPlayableSceneReadyAtMs: number | undefined;
+
   const videoScenes: VideoScene[] = [];
-  const localStageMetrics = new Map<string, { durationMs: number; cacheHits: number; runs: number }>();
+  const localStageMetrics = new Map<string, { durationMs: number; cacheHits: number; runs: number; startedAtMs: number; completedAtMs: number }>();
   const recordLocalStage = (stage: string, startedAtMs: number, cacheHit: boolean) => {
-    const current = localStageMetrics.get(stage) ?? { durationMs: 0, cacheHits: 0, runs: 0 };
-    current.durationMs += Date.now() - startedAtMs;
+    const completedAtMs = Date.now();
+    const current = localStageMetrics.get(stage) ?? { durationMs: 0, cacheHits: 0, runs: 0, startedAtMs, completedAtMs };
+    current.durationMs += completedAtMs - startedAtMs;
+    current.startedAtMs = Math.min(current.startedAtMs, startedAtMs);
+    current.completedAtMs = Math.max(current.completedAtMs, completedAtMs);
     current.cacheHits += cacheHit ? 1 : 0;
     current.runs += 1;
     localStageMetrics.set(stage, current);
@@ -288,15 +334,23 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   // The board planner may pick any enabled-catalog icon (one entry per name, lowest id wins); retrieval hits stay as suggestions.
   const iconCatalog = [...new Map([...loadCatalogLibraries().entries].sort((a, b) => a.id.localeCompare(b.id)).reverse().map((entry) => [entry.names[0], { id: entry.id, name: entry.names[0] }])).values()].sort((a, b) => a.name.localeCompare(b.name));
   recordLocalStage('S7-resolve', mentionCandidatesStartedAtMs, false);
+  // S6 semantic planning does not consume word timestamps. Calibration and S1-S4
+  // preflight findings are already known here; exact S5 timing is joined and
+  // validated before any timed layout or publish gate runs.
   const hardAlignmentFailureCount = failures.filter((failure) => failure.stage === 'align' && failure.hard).length;
   if (ctx.planDespiteAlignmentFailure && hardAlignmentFailureCount > 0) {
     failures.push({ code: 'planner-ran-on-uncalibrated-alignment', stage: 'planner', message: `S6 ran by explicit diagnostic opt-in despite ${hardAlignmentFailureCount} hard S5 failure(s); this run cannot publish`, hard: false });
   }
 
-  type PlanStep = { failure: StageFailure } | { plannerInput: PlannerSceneInput; planned: PlanSceneResult; promptAudit?: Record<string, unknown>; plannerSkipped: boolean; plannerCacheHit: boolean; plannerArtifactCostUsd?: number; durationMs: number };
+  type PlanStep = { failure: StageFailure } | { plannerInput: PlannerSceneInput; planned: PlanSceneResult; promptAudit?: Record<string, unknown>; plannerSkipped: boolean; plannerCacheHit: boolean; plannerArtifactCostUsd?: number; durationMs: number; startedAtMs: number; completedAtMs: number };
   const planStep = async (sceneInput: LiveSceneInput, previousForPrompt: PlannerSceneInput['previousElements']): Promise<PlanStep> => {
     const narrationScene = narration.scenes.find((s) => s.sceneId === sceneInput.sceneId)!;
-    const remainingBudgetUsd = Math.max(0, options.maxCostUsd - totalUsage.costUsd);
+    const priorProviderSpend = stageRuns.filter((record) => record.kind !== 'local').reduce((sum, record) => sum + record.apiCostUsd, 0);
+    const unallocatedRunBudgetUsd = Math.max(0, options.maxCostUsd - priorProviderSpend);
+    const perSceneBudgetUsd = unallocatedRunBudgetUsd / Math.max(1, input.scenes.length);
+    const remainingBudgetUsd = ctx.budgetLedger
+      ? Math.max(0, options.maxCostUsd - priorProviderSpend - totalUsage.costUsd)
+      : Math.min(perSceneBudgetUsd, Math.max(0, options.maxCostUsd - priorProviderSpend - totalUsage.costUsd));
     const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates, previousElements: previousForPrompt, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
 
     if (input.runClass === 'generated-lesson') {
@@ -312,10 +366,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
         return { failure: { code: 'scene-contract-missing', stage: 'planner', message: `${sceneInput.sceneId}: generated scene lacks validated S3 contract or lesson bible`, hard: true } };
       }
       try {
+        // Pending timing is explicit in the context hash and prompt. S6 may
+        // choose mention anchors by ID, but it is never given invented times.
         plannerInput.planningContext = compileScenePlanningContext(
-          plannerInput, sceneInput.sceneContract, sceneInput.lessonBible,
-          alignedAudio.mentions.filter((mention) => mention.sceneId === sceneInput.sceneId).map((mention) => ({ id: mention.mentionId, startMs: mention.startMs, endMs: mention.endMs })),
-          promptArm, activeCatalogVersion, input.sourceDoc?.sourceId, input.caseId, exampleOrder,
+          plannerInput, sceneInput.sceneContract, sceneInput.lessonBible, [],
+          promptArm, activeCatalogVersion, input.sourceDoc?.sourceId, input.caseId, exampleOrder, false,
         );
       } catch (error) {
         return { failure: { code: 'scene-context-invalid', stage: 'planner', message: error instanceof Error ? error.message : String(error), hard: true } };
@@ -330,7 +385,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const board = (ctx.scenePlanner ?? 'board-v2') === 'board-v2';
     const compiledPrompt = sceneInput.spec || plannerSkipped ? undefined : board ? buildBoardPrompt(plannerInput) : buildScenePlannerPrompt(plannerInput);
     const skip = () => (board ? skipBoardAfterAlignmentFailure : skipPlanAfterAlignmentFailure)(plannerInput, hardAlignmentFailureCount);
-    const plan = (prompt: typeof compiledPrompt) => (board ? planBoardScene : planScene)(plannerInput, { model: ctx.plannerModel, apiKey: ctx.openRouterApiKey, remainingBudgetUsd, budgetLedger: ctx.budgetLedger, ...(prompt ? { compiledPrompt: prompt } : {}) });
+    const plan = (prompt: typeof compiledPrompt) => withHostResourcePermit('provider-s6', DEFAULT_SCENE_PLANNER_CONCURRENCY, () => (board ? planBoardScene : planScene)(plannerInput, { model: ctx.plannerModel, apiKey: ctx.openRouterApiKey, remainingBudgetUsd, budgetLedger: ctx.budgetLedger, ...(prompt ? { compiledPrompt: prompt } : {}) }));
     const promptHash = compiledPrompt ? sha256(stableJson(compiledPrompt)) : undefined;
     const promptAudit = compiledPrompt ? {
       compiledPrompt,
@@ -356,26 +411,72 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       }
     } else if (plannerSkipped) planned = skip();
     else planned = await plan(compiledPrompt);
-    return { plannerInput, planned, promptAudit, plannerSkipped, plannerCacheHit, plannerArtifactCostUsd, durationMs: Date.now() - plannerStartedAtMs };
+    return { plannerInput, planned, promptAudit, plannerSkipped, plannerCacheHit, plannerArtifactCostUsd, durationMs: Date.now() - plannerStartedAtMs, startedAtMs: plannerStartedAtMs, completedAtMs: Date.now() };
   };
   // A board prompt does not read the previous board, so every board scene is planned concurrently;
   // results are accounted, resolved, and rendered in scene order below.
   const boardMode = (ctx.scenePlanner ?? 'board-v2') === 'board-v2';
   const plannedAhead = boardMode
-    ? await Promise.all(input.scenes.map((sceneInput) => (input.runClass === 'generated-lesson' && sceneInput.spec ? Promise.resolve(undefined) : planStep(sceneInput, undefined))))
+    ? input.scenes.map((sceneInput) => (input.runClass === 'generated-lesson' && sceneInput.spec ? Promise.resolve(undefined) : withScenePlannerSlot(() => planStep(sceneInput, undefined))))
     : undefined;
 
+  const targetMs = input.targetDurationMs ?? EXPERIMENT.targetDurationMs;
+  const masterWavPath = path.join(outputDir, 'audio.wav');
+  let totalRawMs = 0;
+  let finalDurationMs = 0;
+  let trailingPadMs = 0;
+  let alignmentMs = 0;
+  const eventDirectory = path.join(outputDir, 'preview-scenes');
+  await mkdir(eventDirectory, { recursive: true });
+  const sceneEvents: SceneReadyEvent[] = [];
+
   for (const [sceneIndex, sceneInput] of input.scenes.entries()) {
+    const aligned = await alignedScenePromises[sceneIndex];
+    const alignedLocalWords = aligned.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs }));
+    for (const problem of alignedWordTimingProblems(alignedLocalWords, aligned.durationMs)) failures.push({ code: 'invalid-word-alignment', stage: 'align', message: `${sceneInput.sceneId}: ${problem}`, hard: true });
+    const sceneStartMs = cursorMs;
+    sceneWords[sceneInput.sceneId] = alignedLocalWords.map((word) => ({ ...word, startMs: word.startMs + sceneStartMs, endMs: word.endMs + sceneStartMs }));
+    sceneAudioPaths.push(aligned.audioPath);
+    sceneAudioPathById.set(sceneInput.sceneId, aligned.audioPath);
+    sceneDurationMsById.set(sceneInput.sceneId, aligned.durationMs);
+    const localAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: 'stable-ts', wavPath: aligned.audioPath, durationMs: aligned.durationMs, sceneWords: { [sceneInput.sceneId]: alignedLocalWords }, sceneBoundsMs: { [sceneInput.sceneId]: { startMs: 0, endMs: aligned.durationMs } }, mentions: [] };
+    const localScript: NarrationScript = { ...narration, scenes: narration.scenes.filter((scene) => scene.sceneId === sceneInput.sceneId) };
+    const localMentionResolution = resolveMentions(localScript, localAudio);
+    for (const mf of localMentionResolution.failures) failures.push({ code: `mention-${mf.reason}`, stage: 'align', message: `${mf.sceneId}/${mf.mentionId}: "${mf.phrase}"`, hard: true });
+    const sceneMentions = localMentionResolution.mentions.map((mention) => ({ ...mention, startMs: mention.startMs + sceneStartMs, endMs: mention.endMs + sceneStartMs }));
+    sceneBoundsMs[sceneInput.sceneId] = { startMs: sceneStartMs, endMs: sceneStartMs + aligned.durationMs };
+    for (const mention of sceneMentions) mentions.push(mention);
+    cursorMs = sceneStartMs + aligned.durationMs + (sceneIndex < input.scenes.length - 1 ? SCENE_GAP_MS : 0);
+    if (sceneIndex === input.scenes.length - 1) {
+      totalRawMs = cursorMs;
+      finalDurationMs = input.runClass === 'generated-lesson' ? totalRawMs : Math.max(totalRawMs, targetMs);
+      trailingPadMs = finalDurationMs - totalRawMs;
+      if (trailingPadMs > 0) sceneBoundsMs[sceneInput.sceneId].endMs += trailingPadMs;
+      if (input.runClass === 'generated-lesson' && totalRawMs !== targetMs) failures.push({ code: 'av-duration-budget-delta', stage: 'align', message: `measured narration is ${totalRawMs}ms against a ${targetMs}ms lesson budget; output uses measured audio without padding or truncation`, hard: false });
+      else if (trailingPadMs === 0 && totalRawMs > targetMs) failures.push({ code: 'av-sync-over-budget', stage: 'align', message: `real narrated audio (${totalRawMs}ms) exceeds the nominal ${targetMs}ms target — not truncated, recorded honestly`, hard: false });
+    }
+
     if (input.runClass === 'generated-lesson' && sceneInput.spec) {
       failures.push({ code: 'fixture-spec-in-generated-lesson', stage: 'provenance', message: `${sceneInput.sceneId}: a hand-authored SceneSpec cannot be counted as a generated lesson`, hard: true });
       continue;
     }
-    const step = plannedAhead?.[sceneIndex] ?? await planStep(sceneInput, previousElements);
+
+    const step = plannedAhead ? await plannedAhead[sceneIndex] : await planStep(sceneInput, previousElements);
+    if (!step) continue;
     if ('failure' in step) {
       failures.push(step.failure);
       continue;
     }
     const { plannerInput, promptAudit, plannerSkipped, plannerCacheHit, plannerArtifactCostUsd } = step;
+    if (input.runClass === 'generated-lesson' && sceneInput.sceneContract && sceneInput.lessonBible) {
+      try {
+        compileScenePlanningContext(plannerInput, sceneInput.sceneContract, sceneInput.lessonBible,
+          sceneMentions.map((mention) => ({ id: mention.mentionId, startMs: mention.startMs, endMs: mention.endMs })),
+          promptArm, activeCatalogVersion, input.sourceDoc?.sourceId, input.caseId, exampleOrder, true);
+      } catch (error) {
+        failures.push({ code: 'scene-context-invalid', stage: 'planner', message: error instanceof Error ? error.message : String(error), hard: true });
+      }
+    }
     let planned = step.planned;
     if (plannerCacheHit) totalUsage.cacheHits += 1;
     totalUsage.calls += planned.usage.calls;
@@ -386,7 +487,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     totalUsage.repairs += planned.usage.repairs;
     totalUsage.fallbacks += planned.usage.fallbacks;
     failures.push(...planned.failures);
-    stageRuns.push({ stage: `S6-scene-planner:${sceneInput.sceneId}`, kind: plannerSkipped ? 'local' : 'provider', status: planned.failures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: step.durationMs, apiCostUsd: planned.usage.costUsd, ...(plannerArtifactCostUsd !== undefined ? { artifactApiCostUsd: plannerArtifactCostUsd } : {}), cacheHit: plannerCacheHit, fallbackCount: planned.usage.fallbacks, usage: { ...planned.usage, cacheHits: plannerCacheHit ? 1 : 0 }, failures: planned.failures.map(toRunFailure) });
+    stageRuns.push({ stage: `S6-scene-planner:${sceneInput.sceneId}`, kind: plannerSkipped ? 'local' : 'provider', status: planned.failures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: step.durationMs, startedAt: new Date(step.startedAtMs).toISOString(), completedAt: new Date(step.completedAtMs).toISOString(), apiCostUsd: planned.usage.costUsd, ...(plannerArtifactCostUsd !== undefined ? { artifactApiCostUsd: plannerArtifactCostUsd } : {}), cacheHit: plannerCacheHit, fallbackCount: planned.usage.fallbacks, usage: { ...planned.usage, cacheHits: plannerCacheHit ? 1 : 0 }, failures: planned.failures.map(toRunFailure) });
 
     await writeJsonArtifact(outputDir, `planner-log.${sceneInput.sceneId}.json`, { input: plannerInput, promptAudit, plannerSkipped, skipReason: plannerSkipped ? 'hard-s5-alignment-failure' : undefined, responses: planned.rawResponses, usage: planned.usage, failures: planned.failures, fallback: planned.fallback });
 
@@ -426,8 +527,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     previousBoxes = new Map(laidOut.elements.map((e) => [e.id, e.bbox]));
     previousElements = laidOut.elements.map((e) => ({ id: e.id, prim: e.element.prim, label: e.element.label ?? (e.element.prim === 'object' ? e.element.concept : undefined), conceptIds: e.element.conceptIds }));
 
-    const bounds = alignedAudio.sceneBoundsMs[sceneInput.sceneId] ?? { startMs: 0, endMs: finalDurationMs };
-    const sceneMentions = alignedAudio.mentions.filter((m) => m.sceneId === sceneInput.sceneId);
+    const bounds = sceneBoundsMs[sceneInput.sceneId] ?? { startMs: 0, endMs: finalDurationMs };
     const timelineStartedAtMs = Date.now();
     const timelineStage = ctx.artifactStore
       ? await ctx.artifactStore.run(`S9-timeline:${sceneInput.sceneId}`, { laidOut, sceneMentions, bounds }, { schemaVersion: 'claude-timeline/v1', stageVersion: VISUAL_STAGE_VERSIONS.timeline }, () => compileTimelineFull(laidOut, sceneMentions, bounds.startMs, bounds.endMs))
@@ -450,13 +550,42 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const finalFrameSvg = renderStage?.artifact.payload ?? renderSVG(laidOut, timeline, bounds.endMs - 1);
     recordLocalStage('S10-render', renderStartedAtMs, Boolean(renderStage?.cacheHit));
     const sceneLicenses = laidOut.elements.map((e) => e.resolution?.license).filter((l): l is string => Boolean(l));
-    const gateFailures = deterministicGates({ ...(golden ? { golden } : {}), elements: toNeutralElements(laidOut), timeline: toNeutralEvents(laidOut, timeline), durationMs: alignedAudio.durationMs, svg: finalFrameSvg, licenses: sceneLicenses });
+    const gateFailures = deterministicGates({ ...(golden ? { golden } : {}), elements: toNeutralElements(laidOut), timeline: toNeutralEvents(laidOut, timeline, bounds.startMs), durationMs: Math.max(0, bounds.endMs - bounds.startMs), svg: finalFrameSvg, licenses: sceneLicenses });
     failures.push(...gateFailures.map((f) => ({ code: f.code, stage: f.stage, message: f.message, hard: f.hard })));
     gateRecords.push({ gateSet: 'shared', sceneId: sceneInput.sceneId, passed: gateFailures.length === 0, failures: gateFailures, warnings: [] });
 
     scenes.push({ sceneId: sceneInput.sceneId, spec: planned.spec, resolved, laidOut, timeline, finalFrameSvg, plannerUsage: planned.usage, plannerRawResponses: planned.rawResponses });
     videoScenes.push({ laidOut, timeline, startMs: bounds.startMs, endMs: bounds.endMs });
+    const moduleId = input.modules?.find((module) => module.sceneIds.includes(sceneInput.sceneId))?.id ?? sceneInput.sectionId ?? sceneInput.sceneId;
+    const sequence = sceneEvents.length;
+    const audioArtifactIndex = sceneIndex;
+    const previewLocation = `preview-scenes/${String(sequence).padStart(4, '0')}.json`;
+    const scenePath = `scene-audio/${String(audioArtifactIndex).padStart(4, '0')}.wav`;
+    const sceneContentHash = sha256(await readFile(aligned.audioPath));
+    const descriptor = {
+      schemaVersion: 'hypothesis-scene-preview/v1', runId, moduleId, sceneId: sceneInput.sceneId, sequence,
+      durationMs: Math.max(0, bounds.endMs - bounds.startMs), sceneSpec: planned.spec, resolved,
+      laidOut, timeline,
+      audio: { path: 'audio.wav', startMs: bounds.startMs, endMs: bounds.endMs, scenePath, sceneContentHash },
+      alignment: { sceneId: sceneInput.sceneId, words: alignedLocalWords },
+      render: { ...options.render, fontSha256: KALAM_FONT_SHA256, versions: VISUAL_STAGE_VERSIONS },
+    };
+    const descriptorBytes = `${stableJson(descriptor)}\n`;
+    const artifactHash = sha256(descriptorBytes);
+    await writeFile(path.join(outputDir, previewLocation), descriptorBytes, 'utf8');
+    const event: SceneReadyEvent = { type: 'scene.playable', schemaVersion: 'hypothesis-scene-event/v1', runId, moduleId, sceneId: sceneInput.sceneId, sequence, durationMs: descriptor.durationMs, artifactHash, previewLocation };
+    await appendFile(sceneEventsPath, `${JSON.stringify(event)}\n`, 'utf8');
+    sceneEvents.push(event);
+    if (firstPlayableSceneReadyAtMs === undefined) firstPlayableSceneReadyAtMs = Date.now();
+    try { await input.onSceneReady?.(event); }
+    catch (error) { failures.push({ code: 'scene-ready-callback-failed', stage: 'preview', message: `${event.sceneId}: ${error instanceof Error ? error.message : String(error)}`, hard: false }); }
   }
+
+  await concatSceneAudio(sceneAudioPaths, SCENE_GAP_MS, trailingPadMs, masterWavPath);
+  const alignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: 'stable-ts', wavPath: masterWavPath, durationMs: finalDurationMs, sceneWords, sceneBoundsMs, mentions };
+  alignmentMs = (await alignmentSettledAtPromise) - alignmentStartedAtMs;
+  const alignmentStageFailures = failures.filter((failure) => failure.stage === 'align');
+  stageRuns.push({ stage: 'S5-tts-alignment', kind: 'local', status: alignmentStageFailures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: alignmentMs, startedAt: new Date(alignmentStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: alignmentCacheHits.size > 0, fallbackCount: 0, usage: { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: alignmentCacheHits.size }, failures: alignmentStageFailures.map(toRunFailure) });
 
   await queryEmbeddingCache.flush();
 
@@ -476,15 +605,13 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const combinedSvg = svgDocument(scenes.map((s) => s.finalFrameSvg).join(''));
 
   for (const [stage, metric] of localStageMetrics) {
-    stageRuns.push({ stage, kind: 'local', status: 'completed', durationMs: metric.durationMs, apiCostUsd: 0, cacheHit: metric.runs > 0 && metric.cacheHits === metric.runs, fallbackCount: 0, usage: { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: metric.cacheHits }, failures: [] });
+    stageRuns.push({ stage, kind: 'local', status: 'completed', durationMs: metric.durationMs, startedAt: new Date(metric.startedAtMs).toISOString(), completedAt: new Date(metric.completedAtMs).toISOString(), apiCostUsd: 0, cacheHit: metric.runs > 0 && metric.cacheHits === metric.runs, fallbackCount: 0, usage: { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: metric.cacheHits }, failures: [] });
   }
 
   const rungCounts: Record<string, number> = {};
   for (const s of scenes) for (const e of s.laidOut.elements) if (e.resolution) rungCounts[`rung${e.resolution.rung}`] = (rungCounts[`rung${e.resolution.rung}`] ?? 0) + 1;
   const ambiguousMentions = alignedAudio.mentions.filter((m) => m.ambiguous).length;
 
-  const inputHash = sha256(stableJson({ caseId: input.caseId, scenes: input.scenes, targetDurationMs: input.targetDurationMs, runClass: input.runClass, sourceDoc: input.sourceDoc }));
-  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: ctx.scenePlanner ?? 'board-v2', boardPromptVersion: BOARD_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
   const evaluationBundle: EvaluationBundle = {
     schemaVersion: 'evaluation-bundle/v2',
     pipeline: 'claude',
@@ -513,7 +640,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     elements: allElements,
     timeline: allEvents,
     provenance: Object.fromEntries(scenes.flatMap((s) => s.laidOut.elements.filter((e) => e.resolution).map((e) => [`${s.sceneId}:${e.id}`, [e.resolution!.lane, `rung${e.resolution!.rung}`, e.resolution!.source]]))),
-    metrics: { ...rungCounts, ambiguousMentions, sceneCount: scenes.length, meanOccupancy: scenes.length ? scenes.reduce((sum, s) => sum + s.laidOut.occupancy, 0) / scenes.length : 0, realNarratedMs: totalRawMs, trailingPadMs, inputHash, sourceClaimEvidenceRefs: Object.values(input.scenes).reduce((count, scene) => count + (scene.teachingContext?.sourceEvidenceRefs?.length ?? 0), 0), visualEvidenceRefs: Object.values(scenes).reduce((count, scene) => count + (scene.spec.titleEvidenceRefs?.length ?? 0) + scene.spec.elements.reduce((n, element) => n + (element.evidenceRefs?.length ?? 0), 0) + scene.spec.edges.reduce((n, edge) => n + (edge.evidenceRefs?.length ?? edge.factualRelation?.evidenceRefs.length ?? 0), 0), 0), evaluationStatus: golden ? 'known-golden-duration-gated' : 'unscored-generic-input' },
+    metrics: { ...rungCounts, ambiguousMentions, sceneCount: scenes.length, meanOccupancy: scenes.length ? scenes.reduce((sum, s) => sum + s.laidOut.occupancy, 0) / scenes.length : 0, realNarratedMs: totalRawMs, targetDurationMs: targetMs, durationBudgetDeltaMs: totalRawMs - targetMs, trailingPadMs, ...(input.modules ? Object.fromEntries(input.modules.map((module) => [`module.${module.id}.audioMs`, module.actualAudioDurationMs ?? null])) : {}), inputHash, sourceClaimEvidenceRefs: Object.values(input.scenes).reduce((count, scene) => count + (scene.teachingContext?.sourceEvidenceRefs?.length ?? 0), 0), visualEvidenceRefs: Object.values(scenes).reduce((sum, scene) => sum + (scene.spec.titleEvidenceRefs?.length ?? 0) + scene.spec.elements.reduce((n, element) => n + (element.evidenceRefs?.length ?? 0), 0) + scene.spec.edges.reduce((n, edge) => n + (edge.evidenceRefs?.length ?? edge.factualRelation?.evidenceRefs.length ?? 0), 0), 0), evaluationStatus: golden ? 'known-golden-duration-gated' : 'unscored-generic-input' },
     usage: totalUsage,
     failures: failures.map(toRunFailure),
     stageRuns,
@@ -529,12 +656,62 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   // --- S11: real MP4 export (resvg PNG frames -> ffmpeg, real audio muxed in) ---
   let videoPath: string | undefined;
+  let diagnosticCaptionFailure: string | undefined;
+  let moduleVideoArtifacts: ModuleVideoArtifact[] = [];
   const encodeStartedAtMs = Date.now();
   if (videoScenes.length > 0) {
     videoPath = path.join(outputDir, 'video.mp4');
     try {
-      const produce = async () => { await encodeVideoAtomically(videoScenes, finalDurationMs, masterWavPath, videoPath!, options.render.fps); };
-      if (ctx.artifactStore) {
+      const produce = async () => {
+        if (!input.modules?.length) {
+          await withHostResourcePermit('raster', DEFAULT_HOST_RASTER_CONCURRENCY, () => encodeVideoAtomically(videoScenes, finalDurationMs, masterWavPath, videoPath!, options.render.fps));
+          return;
+        }
+        const moduleInputs: ModuleVideoInput[] = [];
+        for (const [moduleIndex, module] of input.modules.entries()) {
+          const moduleScenes: VideoScene[] = [];
+          const moduleWords: Record<string, AlignedWord[]> = {};
+          const moduleBounds: AlignedAudio['sceneBoundsMs'] = {};
+          const moduleMentions: AlignedAudio['mentions'] = [];
+          let moduleCursor = 0;
+          const orderedSceneIds = module.sceneIds.filter((sceneId) => scenes.some((scene) => scene.sceneId === sceneId));
+          for (const [moduleSceneIndex, sceneId] of orderedSceneIds.entries()) {
+            const scene = scenes.find((candidate) => candidate.sceneId === sceneId);
+            const sourceAudioPath = sceneAudioPathById.get(sceneId);
+            const sceneDurationMs = sceneDurationMsById.get(sceneId);
+            const masterBounds = sceneBoundsMs[sceneId];
+            if (!scene || !sourceAudioPath || sceneDurationMs === undefined || !masterBounds) continue;
+            const localStart = moduleCursor;
+            const localEnd = localStart + sceneDurationMs;
+            const masterStart = masterBounds.startMs;
+            moduleWords[sceneId] = (sceneWords[sceneId] ?? []).map((word) => ({ ...word, startMs: word.startMs - masterStart + localStart, endMs: word.endMs - masterStart + localStart }));
+            moduleBounds[sceneId] = { startMs: localStart, endMs: localEnd };
+            moduleMentions.push(...alignedAudio.mentions.filter((mention) => mention.sceneId === sceneId).map((mention) => ({ ...mention, startMs: mention.startMs - masterStart + localStart, endMs: mention.endMs - masterStart + localStart })));
+            const localShift = localStart - masterStart;
+            const localTimeline = { ...scene.timeline, sceneStartMs: scene.timeline.sceneStartMs + localShift, sceneEndMs: scene.timeline.sceneEndMs + localShift, events: scene.timeline.events.map((event) => ({ ...event, t0: event.t0 + localShift, t1: event.t1 + localShift })) };
+            moduleScenes.push({ laidOut: scene.laidOut, timeline: localTimeline, startMs: localStart, endMs: localEnd });
+            moduleCursor = localEnd + (moduleSceneIndex < orderedSceneIds.length - 1 ? SCENE_GAP_MS : 0);
+          }
+          if (moduleScenes.length === 0) throw new Error(`Module ${module.id} has no completed scenes`);
+          const moduleAudioPath = path.join(outputDir, 'module-audio', `${module.id}.wav`);
+          const moduleBoundarySilenceMs = moduleIndex < input.modules.length - 1 ? SCENE_GAP_MS : 0;
+          const moduleDurationMs = moduleCursor + moduleBoundarySilenceMs;
+          await concatSceneAudio(orderedSceneIds.map((sceneId) => sceneAudioPathById.get(sceneId)!).filter(Boolean), SCENE_GAP_MS, moduleBoundarySilenceMs, moduleAudioPath);
+          const moduleAlignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: 'stable-ts', wavPath: moduleAudioPath, durationMs: moduleDurationMs, sceneWords: moduleWords, sceneBoundsMs: moduleBounds, mentions: moduleMentions };
+          const moduleCaptionsPath = path.join(outputDir, 'module-audio', `${module.id}.vtt`);
+          const moduleCaptions = buildWebVttForRun(moduleAlignedAudio, Boolean(options.diagnosticCaptionlessVideo));
+          if (moduleCaptions.vtt) await writeFile(moduleCaptionsPath, moduleCaptions.vtt, 'utf8');
+          if (moduleCaptions.failure) diagnosticCaptionFailure ??= moduleCaptions.failure;
+          moduleInputs.push({ id: module.id, title: module.title, scenes: moduleScenes, durationMs: moduleDurationMs, audioPath: moduleAudioPath, ...(moduleCaptions.vtt ? { captionsPath: moduleCaptionsPath } : {}) });
+        }
+        if (diagnosticCaptionFailure) {
+          await Promise.all(moduleInputs.flatMap((module) => module.captionsPath ? [rm(module.captionsPath, { force: true })] : []));
+          for (const module of moduleInputs) delete module.captionsPath;
+        }
+        moduleVideoArtifacts = await encodeModuleVideos(moduleInputs, path.join(outputDir, 'module-clips'), { fps: options.render.fps });
+        await assembleModuleVideos(moduleVideoArtifacts, videoPath!);
+      };
+      if (ctx.artifactStore && !input.modules?.length) {
         const artifact = await ctx.artifactStore.runFile<{ outputSha256: string; outputBytes: number }>('S11-mp4-encode', {
           scenes: videoScenes.map((scene) => ({ laidOut: scene.laidOut, timeline: scene.timeline, startMs: scene.startMs, endMs: scene.endMs })),
           durationMs: finalDurationMs, audioSha256: sha256(await readFile(masterWavPath)), fps: options.render.fps, fontSha256: KALAM_FONT_SHA256,
@@ -550,16 +727,23 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     failures.push({ code: 'no-scenes', stage: 'render', message: 'no scenes survived planning/validation for this case — no video produced', hard: true });
   }
   const encodeMs = Date.now() - encodeStartedAtMs;
-  stageRuns.push({ stage: 'S11-mp4-encode', kind: 'local', status: videoPath ? 'completed' : 'failed', durationMs: encodeMs, apiCostUsd: 0, cacheHit: Boolean(stageArtifacts['S11-mp4-encode']?.cacheHit), fallbackCount: 0, failures: failures.filter((failure) => failure.stage === 'encode' || failure.stage === 'render').map(toRunFailure) });
+  stageRuns.push({ stage: 'S11-mp4-encode', kind: 'local', status: videoPath ? 'completed' : 'failed', durationMs: encodeMs, startedAt: new Date(encodeStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: Boolean(stageArtifacts['S11-mp4-encode']?.cacheHit), fallbackCount: 0, failures: failures.filter((failure) => failure.stage === 'encode' || failure.stage === 'render').map(toRunFailure) });
 
   await writeJsonArtifact(outputDir, 'narration.json', narration);
   await writeJsonArtifact(outputDir, 'aligned-audio.json', alignedAudio);
   if (input.sourceDoc) await writeJsonArtifact(outputDir, 'source-doc.json', input.sourceDoc);
+  if (input.sourceBundle) await writeJsonArtifact(outputDir, 'source-bundle.json', input.sourceBundle);
   let captionsPath: string | undefined;
   const captionsStartedAtMs = Date.now();
   try {
     captionsPath = path.join(outputDir, 'captions.vtt');
     let captions: string;
+    if (diagnosticCaptionFailure) throw new Error(diagnosticCaptionFailure);
+    const diagnosticCaptions = buildWebVttForRun(alignedAudio, Boolean(options.diagnosticCaptionlessVideo));
+    if (diagnosticCaptions.failure) {
+      diagnosticCaptionFailure = diagnosticCaptions.failure;
+      throw new Error(diagnosticCaptions.failure);
+    }
     if (ctx.artifactStore) {
       const stage = await ctx.artifactStore.run('S12-captions', alignedAudio, { schemaVersion: 'text/vtt', stageVersion: 'webvtt-word-clock-1' }, () => buildWebVtt(alignedAudio));
       stageArtifacts['S12-captions'] = { key: stage.key, contentHash: stage.artifact.contentHash, cacheHit: stage.cacheHit };
@@ -573,7 +757,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     failures.push({ code: 'captions-failed', stage: 'encode', message: error instanceof Error ? error.message : String(error), hard: true });
   }
   const captionsMs = Date.now() - captionsStartedAtMs;
-  stageRuns.push({ stage: 'S12-captions', kind: 'local', status: captionsPath ? 'completed' : 'failed', durationMs: captionsMs, apiCostUsd: 0, cacheHit: Boolean(stageArtifacts['S12-captions']?.cacheHit), fallbackCount: 0, failures: failures.filter((failure) => failure.code === 'captions-failed').map(toRunFailure) });
+  stageRuns.push({ stage: 'S12-captions', kind: 'local', status: captionsPath ? 'completed' : 'failed', durationMs: captionsMs, startedAt: new Date(captionsStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: Boolean(stageArtifacts['S12-captions']?.cacheHit), fallbackCount: 0, failures: failures.filter((failure) => failure.code === 'captions-failed').map(toRunFailure) });
   for (const s of scenes) {
     await writeJsonArtifact(outputDir, `scene-spec.${s.sceneId}.json`, s.spec);
     await writeJsonArtifact(outputDir, `resolved-scene.${s.sceneId}.json`, s.resolved);
@@ -606,7 +790,9 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   evaluationBundle.gateRecords = gateRecords;
   evaluationBundle.nativeArtifacts = {
     audio: 'audio.wav',
+    ...(sceneEvents.length ? { sceneEvents: 'scene-events.jsonl' } : {}),
     ...(input.sourceDoc ? { sourceDoc: 'source-doc.json' } : {}),
+    ...(input.sourceBundle ? { sourceBundle: 'source-bundle.json' } : {}),
     ...(videoPath ? { video: 'video.mp4' } : {}),
     ...(captionsPath ? { captions: 'captions.vtt' } : {}),
     ...(contactSheetPngPath ? { 'contact-sheet': 'contact-sheet.png' } : {}),
@@ -616,7 +802,38 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   evaluationBundle.metrics['timing.scenePlanningLayoutMs'] = scenePlanningLayoutMs;
   evaluationBundle.metrics['timing.encodeMs'] = encodeMs;
   evaluationBundle.metrics['timing.captionsMs'] = captionsMs;
-  evaluationBundle.metrics['timing.totalPipelineMs'] = Date.now() - runStartedAtMs;
+  const pipelineCompletedAtMs = Date.now();
+  evaluationBundle.metrics['timing.pipelineWallMs'] = pipelineCompletedAtMs - runStartedAtMs;
+  evaluationBundle.metrics['timing.totalPipelineMs'] = pipelineCompletedAtMs - runStartedAtMs;
+  const apiStageRuns = stageRuns.filter((record) => record.kind !== 'local' && record.accountingRole !== 'aggregate');
+  const scenePlannerRuns = stageRuns.filter((record) => record.stage.startsWith('S6-scene-planner:'));
+  const perSceneProviderRuns = stageRuns.filter((record) => record.accountingRole !== 'aggregate' && (record.stage.startsWith('S4-narration-script:') || record.stage.startsWith('S6-scene-planner:')));
+  const sharedPreparationCost = stageRuns.filter((record) => ['S2-concepts', 'S3-teaching-plan'].includes(record.stage)).reduce((sum, record) => sum + record.apiCostUsd, 0);
+  evaluationBundle.metrics['cost.apiUsd'] = apiStageRuns.reduce((sum, record) => sum + record.apiCostUsd, 0);
+  evaluationBundle.metrics['cost.estimatedApiUsd'] = apiStageRuns.filter((record) => record.costEstimated).reduce((sum, record) => sum + record.apiCostUsd, 0);
+  evaluationBundle.metrics['cost.sharedPreparationApiUsd'] = sharedPreparationCost;
+  evaluationBundle.metrics['cost.scenePlannerApiUsd'] = scenePlannerRuns.reduce((sum, record) => sum + record.apiCostUsd, 0);
+  evaluationBundle.metrics['cost.scenePlannerApiUsdPerScene'] = scenePlannerRuns.length ? scenePlannerRuns.reduce((sum, record) => sum + record.apiCostUsd, 0) / scenePlannerRuns.length : 0;
+  const perSceneCost = new Map<string, number>();
+  for (const record of perSceneProviderRuns) {
+    const sceneId = record.stage.startsWith('S4-narration-script:') ? record.stage.slice('S4-narration-script:'.length) : record.stage.slice('S6-scene-planner:'.length);
+    perSceneCost.set(sceneId, (perSceneCost.get(sceneId) ?? 0) + record.apiCostUsd);
+  }
+  evaluationBundle.metrics['cost.sceneApiUsd'] = [...perSceneCost.values()].reduce((sum, cost) => sum + cost, 0);
+  evaluationBundle.metrics['cost.sceneApiUsdPerScene'] = perSceneCost.size ? evaluationBundle.metrics['cost.sceneApiUsd'] as number / perSceneCost.size : 0;
+  for (const [sceneId, cost] of perSceneCost) evaluationBundle.metrics[`cost.scene.${sceneId}.apiUsd`] = cost;
+  if (firstPlayableSceneReadyAtMs !== undefined) evaluationBundle.metrics['timing.firstPlayableSceneMs'] = firstPlayableSceneReadyAtMs - runStartedAtMs;
+  const executionTiming = ctx.executionTiming ? {
+    startedAt: new Date(ctx.executionTiming.startedAtMs).toISOString(),
+    completedAt: new Date(pipelineCompletedAtMs).toISOString(),
+    wallMs: pipelineCompletedAtMs - ctx.executionTiming.startedAtMs,
+    pipelineStartedAt: new Date(ctx.executionTiming.pipelineStartedAtMs).toISOString(),
+    preparationMs: ctx.executionTiming.pipelineStartedAtMs - ctx.executionTiming.startedAtMs,
+  } : undefined;
+  if (executionTiming) {
+    evaluationBundle.metrics['timing.executionWallMs'] = executionTiming.wallMs;
+    evaluationBundle.metrics['timing.preparationMs'] = executionTiming.preparationMs;
+  }
   await writeJsonArtifact(outputDir, 'evaluation-bundle.json', evaluationBundle);
   const mediaSha256 = { audio: sha256(await readFile(masterWavPath)) };
   await writeJsonArtifact(outputDir, 'run-manifest.json', {
@@ -627,7 +844,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     runId,
     caseId: input.caseId,
     startedAt,
-    completedAt: new Date().toISOString(),
+    completedAt: new Date(pipelineCompletedAtMs).toISOString(),
+    streaming: false,
+    ...(sceneEvents.length ? { sceneEvents: 'scene-events.jsonl' } : {}),
+    ...(executionTiming ? { executionTiming } : {}),
+    ...(input.requestedDurationSec ? { lessonPlan: { requestedDurationSec: input.requestedDurationSec, plannedDurationSec: input.plannedDurationSec ?? input.requestedDurationSec, coverageReason: input.coverageReason ?? 'Full requested duration supported by source evidence.', modules: input.modules ?? [] } } : {}),
     options,
     mediaSha256,
     promptExperiment: {
@@ -648,8 +869,10 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       cacheRoot: ctx.artifactStore?.root ?? null,
       input: inputHash,
       ...(input.sourceDoc ? { sourceDoc: sha256(stableJson(input.sourceDoc)) } : {}),
+      ...(input.sourceBundle ? { sourceBundle: sha256(stableJson(input.sourceBundle)) } : {}),
       narration: sha256(stableJson(narration)),
       alignedAudio: sha256(stableJson({ ...alignedAudio, wavPath: 'REDACTED-PATH' })),
+      moduleVideos: moduleVideoArtifacts.map(({ moduleId, path: modulePath, durationMs, inputHash: moduleInputHash, contentHash, bytes, cacheHit }) => ({ moduleId, path: path.relative(outputDir, modulePath), durationMs, inputHash: moduleInputHash, contentHash, bytes, cacheHit })),
       ...Object.fromEntries(scenes.map((s) => [`sceneSpec:${s.sceneId}`, sha256(stableJson(s.spec))])),
       ...Object.fromEntries(scenes.map((s) => [`timeline:${s.sceneId}`, sha256(stableJson(s.timeline))])),
     },

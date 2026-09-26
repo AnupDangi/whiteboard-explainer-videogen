@@ -6,6 +6,8 @@ import { resolveScene } from '../resolveScene.js';
 import { layoutScene } from '../layout/solver.js';
 import { compileTimeline, compileTimelineFull, maxIdleWindowMs } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
+import { toNeutralElements, toNeutralEvents } from '../validation/gates.js';
+import { deterministicGates } from '../../shared/evaluation.js';
 
 const chainSpec: SceneSpec = {
   schemaVersion: 'claude-scene-spec/v1',
@@ -73,6 +75,23 @@ test('timeline: carry-over elements get a full-scene hold event, not a reveal', 
   assert.equal(ev.track, 'hold');
   assert.equal(ev.t0, 1000);
   assert.equal(ev.t1, 9000);
+});
+
+test('scene gates validate absolute lesson events against the local scene clock', () => {
+  const laidOut = layoutScene(resolveScene(chainSpec));
+  const sceneStartMs = 12_000;
+  const sceneEndMs = sceneStartMs + 8_000;
+  const timeline = compileTimelineFull(laidOut, [], sceneStartMs, sceneEndMs);
+  const svg = renderSVG(laidOut, timeline, sceneEndMs - 1);
+
+  const failures = deterministicGates({
+    elements: toNeutralElements(laidOut),
+    timeline: toNeutralEvents(laidOut, timeline, sceneStartMs),
+    durationMs: sceneEndMs - sceneStartMs,
+    svg,
+  });
+
+  assert.deepEqual(failures.filter((failure) => failure.code === 'timeline-bounds'), []);
 });
 
 test('timeline/layout: carry-over pins to a supplied previous bbox; omitting the id from carryOver resets to a freshly computed position', () => {

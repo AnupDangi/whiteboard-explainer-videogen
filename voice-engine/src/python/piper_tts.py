@@ -12,10 +12,13 @@ import sys
 import time
 import wave
 from pathlib import Path
+from typing import Any
 
 
-def main() -> None:
-    request = json.load(sys.stdin)
+_VOICES: dict[str, Any] = {}
+
+
+def synthesize(request: dict[str, Any]) -> dict[str, Any]:
     text = request["text"]
     voice_path = request["voicePath"]
     audio_path = request["audioPath"]
@@ -26,9 +29,10 @@ def main() -> None:
             f"`.venv/bin/python -m piper.download_voices <voice-id> --data-dir models/piper`"
         )
 
-    from piper import PiperVoice
-
-    voice = PiperVoice.load(voice_path)
+    if voice_path not in _VOICES:
+        from piper import PiperVoice
+        _VOICES[voice_path] = PiperVoice.load(voice_path)
+    voice = _VOICES[voice_path]
 
     started = time.perf_counter()
     with wave.open(audio_path, "wb") as handle:
@@ -38,7 +42,21 @@ def main() -> None:
     with wave.open(audio_path, "rb") as handle:
         duration_ms = handle.getnframes() / handle.getframerate() * 1000.0
 
-    json.dump({"audioPath": audio_path, "durationMs": duration_ms, "synthMs": synth_ms}, sys.stdout)
+    return {"audioPath": audio_path, "durationMs": duration_ms, "synthMs": synth_ms}
+
+
+def main() -> None:
+    if "--worker" in sys.argv[1:]:
+        for line in sys.stdin:
+            if not line.strip():
+                continue
+            try:
+                response = synthesize(json.loads(line))
+            except Exception as error:  # noqa: BLE001 - report request failure while keeping model worker alive
+                response = {"error": str(error)}
+            print(json.dumps(response), flush=True)
+        return
+    print(json.dumps(synthesize(json.load(sys.stdin))))
 
 
 if __name__ == "__main__":

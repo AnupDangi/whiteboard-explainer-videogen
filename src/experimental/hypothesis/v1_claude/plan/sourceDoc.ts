@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { EvidenceReference, NativeSourceLocation } from '../../shared/contracts.js';
 
-export type SourceSpanKind = 'heading' | 'paragraph' | 'list' | 'table' | 'equation' | 'figure-reference';
+export type SourceSpanKind = 'heading' | 'paragraph' | 'list' | 'table' | 'equation' | 'figure-reference' | 'figure';
 
 export interface SourceSpan {
   id: string;
@@ -11,6 +11,10 @@ export interface SourceSpan {
   startLine: number;
   endLine: number;
   sourceLocation?: NativeSourceLocation;
+  citationSourceId?: string;
+  sourceTitle?: string;
+  documentStartChar?: number;
+  documentStartLine?: number;
   text: string;
 }
 
@@ -19,20 +23,63 @@ export interface SourceDoc {
   sourceId: string;
   format: 'text' | 'markdown' | 'pdf' | 'docx' | 'pptx';
   title?: string;
+  sourceUrl?: string;
+  contentSha256?: string;
   text: string;
   spans: SourceSpan[];
+  retrievalEvidence?: EvidenceHit[];
+  figureAssets?: SourceFigureAsset[];
+}
+
+export interface SourceFigureAsset {
+  sourceId: string;
+  sha256: string;
+  page?: number;
+  sourceLocation?: NativeSourceLocation;
+  mediaType: string;
+  assetPath: string;
+  caption?: string;
+  derivationStatus: 'embedded-image-crop';
+  indexStatus: 'indexed' | 'not-indexed';
+}
+
+export interface EvidenceHit {
+  rank: number;
+  score: number;
+  text: string;
+  modality: 'text' | 'table' | 'equation' | 'figure-metadata';
+  retrievalMode: 'local-text' | 'deep-indexed+local-text';
+  citation: EvidenceReference;
+  documentSha256: string;
+  documentTitle: string;
+}
+
+export interface SourceBundle {
+  schemaVersion: 'source-bundle/v1';
+  bundleId: string;
+  documents: Array<{ sourceId: string; title: string; sha256: string; format: SourceDoc['format']; sourceUrl?: string }>;
+  figures: SourceFigureAsset[];
+  retrievalMode: 'local-text' | 'deep-indexed+local-text';
+  ragStatus?: { index: 'complete' | 'partial' | 'failed' | 'not-run'; retrieval: 'matched' | 'miss' | 'failed' | 'not-run'; exactSpanHits: number; expectedMultimodalItems?: number; completedMultimodalItems?: number; failedProviderCalls?: number };
+  evidenceHits: EvidenceHit[];
+  retrievalCost: { apiCostUsd: number; estimated: boolean; elapsedMs: number };
 }
 
 export interface NativeSourceLocationRange {
   startChar: number;
   endChar: number;
-  sourceLocation: NativeSourceLocation;
+  sourceLocation?: NativeSourceLocation;
+  citationSourceId?: string;
+  sourceTitle?: string;
+  documentStartChar?: number;
+  documentStartLine?: number;
 }
 
 /** Keep the exact source once in model prompts, with a compact structural/location index. */
 export function sourcePrompt(doc: SourceDoc): string {
-  const index = doc.spans.map(({ id, kind, startChar, endChar, startLine, endLine, sourceLocation }) => ({ id, kind, startChar, endChar, startLine, endLine, ...(sourceLocation ? { sourceLocation } : {}) }));
-  return JSON.stringify({ schemaVersion: doc.schemaVersion, sourceId: doc.sourceId, format: doc.format, title: doc.title, text: doc.text, spanIndex: index }, null, 1);
+  const index = doc.spans.map(({ id, kind, startChar, endChar, startLine, endLine, sourceLocation, citationSourceId, sourceTitle }) => ({ id, kind, startChar, endChar, startLine, endLine, ...(sourceLocation ? { sourceLocation } : {}), ...(citationSourceId ? { citationSourceId } : {}), ...(sourceTitle ? { sourceTitle } : {}) }));
+  const figureIndex = doc.figureAssets?.map(({ sourceId, sha256, page, sourceLocation, mediaType, caption, derivationStatus, indexStatus }) => ({ sourceId, sha256, ...(page ? { page } : {}), ...(sourceLocation ? { sourceLocation } : {}), mediaType, ...(caption ? { caption } : {}), derivationStatus, indexStatus }));
+  return JSON.stringify({ schemaVersion: doc.schemaVersion, sourceId: doc.sourceId, format: doc.format, title: doc.title, text: doc.text, spanIndex: index, ...(doc.retrievalEvidence ? { rankedEvidence: doc.retrievalEvidence } : {}), ...(figureIndex?.length ? { embeddedFigures: figureIndex } : {}) }, null, 1);
 }
 
 const hash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -42,6 +89,7 @@ function kindFor(line: string): SourceSpanKind {
   if (/^\s*\|.*\|\s*$/.test(line)) return 'table';
   if (/^\s*(\$\$|\\\[|\\\()/.test(line)) return 'equation';
   if (/^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(line)) return 'list';
+  if (/^\s*\[Figure metadata:/i.test(line)) return 'figure';
   if (/\[Figure reference:/i.test(line) || /\b(?:fig(?:ure)?|diagram|table)\s*(?:\d+|[A-Z])\b/i.test(line)) return 'figure-reference';
   return 'paragraph';
 }
@@ -57,12 +105,14 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
   let insideDisplayEquation = false;
   let nativeLocationIndex = 0;
   let currentSourceLocation: NativeSourceLocation | undefined;
-  let active: { kind: SourceSpanKind; startChar: number; startLine: number; sourceLocation?: NativeSourceLocation; text: string } | undefined;
+  let currentCitationSourceId: string | undefined;
+  let currentSourceTitle: string | undefined;
+  let active: { kind: SourceSpanKind; startChar: number; startLine: number; sourceLocation?: NativeSourceLocation; citationSourceId?: string; sourceTitle?: string; documentStartChar?: number; documentStartLine?: number; text: string } | undefined;
   const flush = (endChar: number, endLine: number) => {
     if (!active) return;
     const body = active.text;
     const id = 'span_' + hash(sourceId + '\0' + active.startChar + '\0' + endChar + '\0' + body).slice(0, 20);
-    spans.push({ id, kind: active.kind, startChar: active.startChar, endChar, startLine: active.startLine, endLine, ...(active.sourceLocation ? { sourceLocation: active.sourceLocation } : {}), text: body });
+    spans.push({ id, kind: active.kind, startChar: active.startChar, endChar, startLine: active.startLine, endLine, ...(active.sourceLocation ? { sourceLocation: active.sourceLocation } : {}), ...(active.citationSourceId ? { citationSourceId: active.citationSourceId } : {}), ...(active.sourceTitle ? { sourceTitle: active.sourceTitle } : {}), ...(active.documentStartChar !== undefined ? { documentStartChar: active.documentStartChar } : {}), ...(active.documentStartLine !== undefined ? { documentStartLine: active.documentStartLine } : {}), text: body });
     active = undefined;
   };
 
@@ -71,18 +121,22 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
     const trimmed = line.trim();
     while (nativeLocationIndex < nativeLocations.length && offset >= nativeLocations[nativeLocationIndex].endChar) nativeLocationIndex += 1;
     const range = nativeLocations[nativeLocationIndex];
-    const rangeLocation = range && offset >= range.startChar && offset < range.endChar ? range.sourceLocation : undefined;
+    const rangeMatches = Boolean(range && offset >= range.startChar && offset < range.endChar);
+    const rangeLocation = rangeMatches ? range!.sourceLocation : undefined;
     // Only extractor-authored ranges establish native provenance. Visible
     // document text can imitate generated Page/Slide headings and is untrusted.
     currentSourceLocation = rangeLocation;
+    currentCitationSourceId = rangeMatches ? range!.citationSourceId : undefined;
+    currentSourceTitle = rangeMatches ? range!.sourceTitle : undefined;
     const startsDisplayEquation = !insideDisplayEquation && /^(?:\$\$|\\\[)/.test(trimmed);
     const closesOnSameLine = startsDisplayEquation && trimmed.length > 2 && /(?:\$\$|\\\])$/.test(trimmed);
     const endsDisplayEquation = insideDisplayEquation && /^(?:\$\$|\\\])$/.test(trimmed);
     const kind = blank ? undefined : (insideDisplayEquation || startsDisplayEquation ? 'equation' : kindFor(line));
-    const contiguous = active && kind === active.kind && kind !== 'heading' && kind !== 'figure-reference' && JSON.stringify(active.sourceLocation ?? null) === JSON.stringify(currentSourceLocation ?? null);
+    const contiguous = active && kind === active.kind && kind !== 'heading' && kind !== 'figure-reference' && JSON.stringify(active.sourceLocation ?? null) === JSON.stringify(currentSourceLocation ?? null) && active.citationSourceId === currentCitationSourceId;
     if (!contiguous) flush(offset, lineNumber - 1);
     if (kind) {
-      if (!active) active = { kind, startChar: offset, startLine: lineNumber, ...(currentSourceLocation ? { sourceLocation: currentSourceLocation } : {}), text: '' };
+      const rangeLineOffset = rangeMatches ? text.slice(range!.startChar, offset).split('\n').length - 1 : 0;
+      if (!active) active = { kind, startChar: offset, startLine: lineNumber, ...(currentSourceLocation ? { sourceLocation: currentSourceLocation } : {}), ...(currentCitationSourceId ? { citationSourceId: currentCitationSourceId } : {}), ...(currentSourceTitle ? { sourceTitle: currentSourceTitle } : {}), ...(rangeMatches && range!.documentStartChar !== undefined ? { documentStartChar: range!.documentStartChar + offset - range!.startChar } : {}), ...(rangeMatches && range!.documentStartLine !== undefined ? { documentStartLine: range!.documentStartLine + rangeLineOffset } : {}), text: '' };
       active.text += line;
     }
     if (startsDisplayEquation && !closesOnSameLine) insideDisplayEquation = true;
@@ -93,7 +147,7 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
   flush(text.length, lineNumber - (text.endsWith('\n') ? 1 : 0));
 
   const title = spans.find((span) => span.kind === 'heading')?.text.replace(/^\s{0,3}#{1,6}\s*/, '').trim();
-  return { schemaVersion: 'source-doc/v2', sourceId, format, ...(title ? { title } : {}), text, spans };
+  return { schemaVersion: 'source-doc/v2', sourceId, format, contentSha256: hash(text), ...(title ? { title } : {}), text, spans };
 }
 
 export type SourceEvidenceRef = EvidenceReference;
@@ -102,9 +156,9 @@ export function resolveSourceEvidence(doc: SourceDoc, spanId: string, quote: str
   const span = doc.spans.find((candidate) => candidate.id === spanId);
   if (!span || !quote || !span.text.includes(quote)) return undefined;
   const relative = span.text.indexOf(quote);
-  const startChar = span.startChar + relative;
+  const startChar = (span.documentStartChar ?? span.startChar) + relative;
   const lineOffset = span.text.slice(0, relative).split('\n').length - 1;
-  const startLine = span.startLine + lineOffset;
+  const startLine = (span.documentStartLine ?? span.startLine) + lineOffset;
   const endLine = startLine + quote.split('\n').length - 1;
-  return { sourceId: doc.sourceId, spanId, startChar, endChar: startChar + quote.length, startLine, endLine, quote, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}) };
+  return { sourceId: span.citationSourceId ?? doc.sourceId, spanId, startChar, endChar: startChar + quote.length, startLine, endLine, quote, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}) };
 }

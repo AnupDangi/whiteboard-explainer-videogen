@@ -1,0 +1,3 @@
+openai/gpt-6-luna exit 0
+google/gemini-3.8-flash exit 0
+deepseek/deepseek-v4.1-flash exit 0

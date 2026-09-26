@@ -75,6 +75,9 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     assert.deepEqual(cold.plan.sections[0]?.contract?.evidenceSpanIds, [sourceSpan.id]);
     assert.ok(cold.graph.concepts.every((concept) => concept.evidence[0]?.sourceId === sourceDoc.sourceId));
     assert.equal(cold.script.scenes[0]?.sectionId, 'build_sugar');
+    const coldSceneRun = cold.stageRuns.find((stage) => stage.stage === 'S4-narration-script:build_sugar');
+    assert.ok(coldSceneRun?.startedAt && coldSceneRun.completedAt, 'scene API call records its wall-clock interval');
+    assert.equal(coldSceneRun?.apiCostUsd, 0.001, 'per-scene provider spend is retained');
 
     const warm = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 8 }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
@@ -85,6 +88,11 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     assert.deepEqual(warm.cacheHits, ['S2-concepts', 'S3-teaching-plan', 'S4-narration-script']);
     assert.equal(warm.usage.calls, 0);
     assert.equal(warm.script?.scenes[0]?.text, script.text);
+    const warmSceneRun = warm.stageRuns.find((stage) => stage.stage === 'S4-narration-script:build_sugar');
+    assert.equal(warmSceneRun?.cacheHit, true);
+    assert.equal(warmSceneRun?.apiCostUsd, 0);
+    assert.equal(warmSceneRun?.artifactApiCostUsd, 0.001, 'cached scene records distinguish current spend from original artifact spend');
+    assert.equal(warmSceneRun?.durationMs, 0);
 
     const relationOmittingPlan = structuredClone(plan);
     relationOmittingPlan.sections[0]!.contract!.requiredRelations = [];

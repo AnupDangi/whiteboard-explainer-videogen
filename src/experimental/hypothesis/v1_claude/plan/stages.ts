@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from '../llm/structuredCall.js';
 import { parseMarkers } from '../narration/markers.js';
-import { ConceptGraphSchema, ScriptSchema, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
+import { ConceptGraphSchema, RELATION_TYPES, SECTION_KINDS, SECTION_TITLE_MAX_WORDS, TEACHING_SKILLS, VISUAL_MECHANISMS, ScriptSchema, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
 import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan } from './analyze.js';
-import { sourceDocFromText, sourcePrompt, type SourceDoc } from './sourceDoc.js';
+import type { StageRunRecord } from '../../shared/contracts.js';
+import { sourceDocFromText, sourcePrompt, type SourceDoc, type SourceBundle } from './sourceDoc.js';
 import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import { teachingContractProblems } from './contracts.js';
+import { CONCEPT_STRUCTURE_GUIDANCE, PLAN_COMPONENT_GUIDANCE, relationalGraphProblems } from './goalShape.js';
 import { schemaKeywordLeaks } from '../prompt/builder.js';
 
 /**
@@ -33,8 +35,17 @@ export interface LessonRequest {
   /** Learner level, used for depth and examples, never to change facts. */
   audience?: string;
   sourceDoc?: SourceDoc;
+  sourceBundle?: SourceBundle;
+  sources?: LessonSourceInput[];
   sourceFormat?: SourceDoc['format'];
+  /** Internal scope used by the hierarchical planner; IDs and labels come from its global syllabus. */
+  conceptScope?: Array<{ id: string; label: string; definition: string }>;
 }
+
+export type LessonSourceInput =
+  | { kind: 'document'; path: string }
+  | { kind: 'url'; url: string }
+  | { kind: 'text'; text: string; format?: SourceDoc['format']; title?: string };
 
 // ---------------------------------------------------------------------------
 // S2 — ConceptGraph
@@ -44,7 +55,7 @@ export async function buildConceptGraph(req: LessonRequest, m: StageModel): Prom
   const sourceDoc = req.sourceDoc ?? sourceDocFromText(req.source, req.sourceFormat ?? 'text');
   // Bound graph size to the lesson's actual teaching time. The model still
   // selects source-grounded concepts; this is a generic capacity limit.
-  const maxConcepts = Math.min(14, Math.max(3, Math.ceil(req.targetDurationSec / 10)));
+  const maxConcepts = Math.min(14, req.conceptScope?.length ?? Math.max(3, Math.ceil(req.targetDurationSec / 10)));
   const maxRelations = Math.min(24, maxConcepts * 2);
   const maxPrerequisites = Math.min(20, maxConcepts * 2);
   // A full-size concept graph (label/kind/definition/1-3 evidence quotes per concept, endpoints/type/evidence
@@ -52,13 +63,15 @@ export async function buildConceptGraph(req: LessonRequest, m: StageModel): Prom
   // at exactly that ceiling. Scale the completion budget from the same capacity numbers above instead of a
   // flat constant, matching the pattern writeScript already uses for its own (smaller) per-scene maxTokens.
   const maxConceptGraphTokens = Math.min(8000, 800 + maxConcepts * 350 + maxRelations * 250 + maxPrerequisites * 20);
-  const system = `You extract the teachable structure of a source for a short narrated whiteboard lesson.
+  const scopeRule = req.conceptScope?.length ? `\n- This is a bounded module. Use every supplied syllabus concept exactly once in concepts, keeping each exact id and label unchanged; do not add concepts outside this scope.\nGLOBAL MODULE CONCEPTS:\n${JSON.stringify(req.conceptScope)}` : '';
+  const system = `You extract the teachable structure of a source for a narrated whiteboard lesson.
 Return ONE JSON object: { "concepts": [...], "relations": [...], "prerequisites": [...] }.
 - concepts: at most ${maxConcepts} ideas a learner must understand, in teaching order. Prefer the minimum set needed for this lesson; omit incidental details. id: lowercase snake_case. label: <=4 words. kind: entity|process|quantity|formula|event|role|rule. definition: one plain sentence grounded in the source. evidence: 1-3 exact {spanId, quote} references; quote must occur verbatim in that source span.
+- ${CONCEPT_STRUCTURE_GUIDANCE}
 - For mathematical ideas give "latex" (valid TeX, no $ signs) when there is a formula, and set "level": "multi-step" when understanding it takes several dependent steps (e.g. a derivation, an algorithm, a rule applied repeatedly), otherwise "one-step".
 - relations: at most ${maxRelations} directed links between concept ids (causes, feeds, contains, compares, transforms, requires, produces, opposes). Keep only the most important source-stated teaching relations; include 1-3 exact evidence references for each. Do not create summary/model nodes to collect several facts.
 - prerequisites: at most ${maxPrerequisites} { concept, needs } links, only when a concept cannot be understood without another one.
-- Never invent facts that are not in the source. Keep it to what fits the requested duration (about one concept per 10-15 seconds).`;
+- Never invent facts that are not in the source. Keep it to what fits the requested duration (about one concept per 10-15 seconds).${scopeRule}`;
   const user = `Target duration: ${req.targetDurationSec} seconds.${req.audience ? `\nAudience: ${req.audience}.` : ''}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
 
 SOURCE DOCUMENT (text is exact source; span index preserves markdown structure and positions):
@@ -72,6 +85,16 @@ ${sourcePrompt(sourceDoc)}`;
       if (g.concepts.length > maxConcepts) problems.push(`concept graph has ${g.concepts.length} concepts; at most ${maxConcepts} fit this ${req.targetDurationSec}-second lesson`);
       if (g.relations.length > maxRelations) problems.push(`concept graph has ${g.relations.length} relations; at most ${maxRelations} fit this lesson`);
       if (g.prerequisites.length > maxPrerequisites) problems.push(`concept graph has ${g.prerequisites.length} prerequisites; at most ${maxPrerequisites} fit this lesson`);
+      problems.push(...relationalGraphProblems(req.instruction, g.concepts.length, g.relations.length, Boolean(req.conceptScope?.length)));
+      if (req.conceptScope?.length) {
+        const expected = new Map(req.conceptScope.map((concept) => [concept.id, concept]));
+        if (g.concepts.length !== expected.size) problems.push(`module graph must contain all ${expected.size} syllabus concepts exactly once`);
+        for (const concept of g.concepts) {
+          const sourceConcept = expected.get(concept.id);
+          if (!sourceConcept) problems.push(`module graph added concept ${concept.id} outside the syllabus scope`);
+          else if (concept.label !== sourceConcept.label) problems.push(`module graph changed the global label for ${concept.id}; use "${sourceConcept.label}" exactly`);
+        }
+      }
       if (ids.size !== g.concepts.length) problems.push('concept ids must be unique');
       const leaked = schemaKeywordLeaks(g.concepts.map((c) => c.id));
       if (leaked.length) problems.push(`concept ids ${leaked.map((id) => `"${id}"`).join(', ')} are JSON field names, not source concepts; give each concept a snake_case id derived from its own label`);
@@ -122,6 +145,16 @@ interface PlanPromptContext {
 }
 type PlanPromptBuilder = (ctx: PlanPromptContext) => { system: string; user: string };
 
+/** Keep model-visible shape limits aligned with the Zod schema and generated-plan validator. */
+export const TEACHING_PLAN_PROMPT_SCHEMA_RULES = `SCHEMA LIMITS — follow these exactly; the output is rejected if they are violated:
+- Output exactly the documented top-level fields: targetDurationSec, intro, lessonBible, sections, recap. targetDurationSec is positive and must equal the requested duration.
+- intro.sourceTitle is 1-80 characters. intro.sections has at most 12 strings, each 1-80 characters.
+- lessonBible is required for generated plans. audience is 1-120 characters; optional domain is 1-50 characters; terminology has at most 14 entries, each with a graph concept ID and an exact concept label of at most 4 words; persistentConceptIds has at most 14 graph concept IDs.
+- sections has 1-40 entries. Each id is a unique lowercase snake_case token of 1-40 characters. Each title is 1-${SECTION_TITLE_MAX_WORDS} words (and at most ${SECTION_TITLE_MAX_WORDS * 12} characters); each goal is 1-240 characters. kind must be exactly one of: ${SECTION_KINDS.join(', ')}. conceptIds has at most 6 graph IDs and must be nonempty for generated plans. budgetSec is positive.
+- Every generated section requires a contract. learningDelta is 1-240 characters and exactly equals goal; targetDurationSec is positive and exactly equals budgetSec; requiredConceptIds has 1-8 IDs and exactly equals conceptIds; requiredRelations has at most 24 entries and each type must be one of: ${RELATION_TYPES.join(', ')} (and must match the graph). evidenceSpanIds has 1-96 valid cited span IDs. teachingSkill is exactly one of: ${TEACHING_SKILLS.join(', ')}. candidateMechanisms has 1-3 values, each exactly one of: ${VISUAL_MECHANISMS.join(', ')}.
+- recap.keyPoints has at most 6 strings, each 1-160 characters.
+- The schema also rejects unknown fields at every object level. All IDs must use lowercase snake_case and be at most 40 characters. Follow the requested duration, scene budget, graph coverage, relation, evidence, and teaching rules above as well as these shape limits.`;
+
 /** Production default until a calibration run (`harness/planCalibrationCli.ts`) measures a challenger ahead of it. */
 const buildV3BaselinePrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
   system: `You are a teaching architect. Turn a concept graph into a time-budgeted plan for a narrated whiteboard video, one scene per section.
@@ -130,12 +163,15 @@ Rules:
 - The bible audience is the supplied audience or "general learner"; optional domain is a broad subject label used only as a low-weight example-retrieval signal. Terminology entries use unique concept IDs and exact labels from the graph. List every concept used in more than one section in persistentConceptIds; each persistent concept needs exactly one terminology entry and must keep that canonical name across scenes. Do not invent visual facts or icon choices.
 - Assign concepts explicitly before writing each section: choose one or more exact concept IDs from the graph, put those IDs in section.conceptIds, then copy the identical nonempty ID list to contract.requiredConceptIds. These two arrays are required for EVERY section, including intro and recap. Never leave either array empty, and never put concept IDs only in the contract. Do not invent IDs or use concept labels in place of IDs.
 - The contract has learningDelta (exactly the section goal), targetDurationSec (exactly section budgetSec), requiredConceptIds (exactly section conceptIds), requiredRelations (every graph relation whose two endpoints appear in this section, each as {from,to,type}), evidenceSpanIds (all cited span IDs for those concepts and relations), teachingSkill (definition|mechanism|comparison|process|derivation|application|recap), candidateMechanisms (1-3 advisory values from focus|chain|convergence|fan_out|weighted_blend|cycle|threshold|comparison|trajectory|equation|state_transition). A mechanism is a generic visual idea, never a lesson-specific drawing instruction.
+- ${PLAN_COMPONENT_GUIDANCE}
 - Before returning, verify section-by-section that conceptIds and requiredConceptIds are identical and nonempty, every ID occurs in the supplied graph, every required relation is included, and evidenceSpanIds exactly covers the listed concepts and relations. If a section is only an intro or recap, anchor it to the graph concepts it introduces or reviews; do not create an ungrounded scene.
 - Order by prerequisites: a concept is never taught before what it needs.
 - Math: build intuition before notation. For a multi-step idea, give each step its own "step" section (the learner sees one move at a time), then an "example" or "recap". A one-step idea fits in one "explain" section.
 - Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
 - If any concept has level "multi-step", at least 2 sections must have kind "step" (one per step of that idea).
-- Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.`,
+- Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.
+
+${TEACHING_PLAN_PROMPT_SCHEMA_RULES}`,
   user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
 
 VALID CONCEPT IDS (copy IDs exactly into both arrays for every section):
@@ -168,7 +204,9 @@ Rules:
 - Math: build intuition before notation. For a multi-step idea, give each step its own "step" section (the learner sees one move at a time), then an "example" or "recap". A one-step idea fits in one "explain" section.
 - Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
 - If any concept has level "multi-step", at least 2 sections must have kind "step" (one per step of that idea).
-- Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.`;
+- Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.
+
+${TEACHING_PLAN_PROMPT_SCHEMA_RULES}`;
 
 const buildV4ExplicitConceptsPrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
   system: buildV4SystemPrompt({ scenes, req }),
@@ -229,14 +267,26 @@ export type PlanPromptVariant = keyof typeof PLAN_PROMPT_VARIANTS;
  */
 export const DEFAULT_PLAN_PROMPT_VARIANT: PlanPromptVariant = 'v5-fully-worked-example';
 
+/**
+ * Completion allowance for the full S3 JSON plan. A live 5-minute module with
+ * 7 concepts and 6 relations requested exactly 4,500 tokens and was cut at
+ * that boundary; section contracts repeat IDs, timings, relations, and source
+ * spans, so scene count must contribute directly to the allowance.
+ */
+export function teachingPlanTokenBudget(sceneCount: number, conceptCount: number, relationCount: number): number {
+  if (![sceneCount, conceptCount, relationCount].every(Number.isFinite) || sceneCount < 1 || conceptCount < 0 || relationCount < 0) {
+    throw new Error('teaching plan token budget inputs must be finite and non-negative (with at least one scene)');
+  }
+  return Math.min(10_000, 1_500 + Math.ceil(sceneCount) * 500 + Math.ceil(conceptCount) * 150 + Math.ceil(relationCount) * 100);
+}
+
 export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph, m: StageModel, variant: PlanPromptVariant = DEFAULT_PLAN_PROMPT_VARIANT): Promise<StructuredCallResult<TeachingPlan>> {
   const scenes = Math.max(1, Math.round(req.targetDurationSec / 18));
   const conceptIdChecklist = graph.concepts.map((concept) => `- ${concept.id}: ${concept.label}`).join('\n');
   const { system, user } = PLAN_PROMPT_VARIANTS[variant]({ scenes, req, graph, conceptIdChecklist });
-  // Same reason as S2: a full plan (lesson bible + one contract per section, each listing concepts,
-  // relations and evidence span ids) overran the generic 4000-token default mid-object in a live run
-  // (openai/gpt-6-luna, 2026-09-26). Scale the completion budget from the graph it must cover.
-  const maxTeachingPlanTokens = Math.min(8000, 1500 + graph.concepts.length * 300 + graph.relations.length * 150);
+  // Every section includes a full contract, so output size tracks scenes as well
+  // as graph size. Scale from both, with a bounded 10k completion ceiling.
+  const maxTeachingPlanTokens = teachingPlanTokenBudget(scenes, graph.concepts.length, graph.relations.length);
   const result = await structuredCall({
     stage: 'plan', subject: 'teaching plan', model: m.model, apiKey: m.apiKey, system, user,
     schema: TeachingPlanSchema, schemaName: 'teaching_plan', maxTokens: maxTeachingPlanTokens, remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
@@ -247,6 +297,7 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
     validate: (p) => {
       const problems: string[] = [];
       if (p.targetDurationSec !== req.targetDurationSec) problems.push(`targetDurationSec must be ${req.targetDurationSec}`);
+      if (relationalGraphProblems(req.instruction, graph.concepts.length, graph.relations.length, Boolean(req.conceptScope?.length)).length) problems.push('the learner request needs a relationship among distinct source concepts; repair the source concept graph before writing a plan');
       problems.push(...analyzeTeachingPlan(p, graph).findings.filter((f) => f.severity === 'error').map((f) => f.message));
       problems.push(...teachingContractProblems(p, graph, req.audience ?? 'general learner'));
       const leakedIds = schemaKeywordLeaks(p.sections.flatMap((s) => [...s.conceptIds, ...(s.contract?.requiredConceptIds ?? [])]));
@@ -307,7 +358,7 @@ const SceneTextSchema = z.object({ text: z.string().min(1).max(2000) }).strict()
  * Each scene sees the whole plan so the narration stays one continuous lesson,
  * and each scene gets its own single repair.
  */
-export async function writeScript(req: LessonRequest, graph: ConceptGraph, plan: TeachingPlan, m: StageModel): Promise<StructuredCallResult<Script>> {
+export async function writeScript(req: LessonRequest, graph: ConceptGraph, plan: TeachingPlan, m: StageModel): Promise<StructuredCallResult<Script> & { sceneStageRuns: StageRunRecord[] }> {
   const system = `You write the narration for ONE scene of a whiteboard teaching video. A tutor speaks while drawing each thing as it is named.
 Return ONE JSON object: { "text": "..." }.
 
@@ -324,6 +375,7 @@ STYLE: warm, plain, second person; short sentences; this scene's single idea onl
   const perScene = m.remainingBudgetUsd / Math.max(1, plan.sections.length);
   const results = await Promise.all(
     plan.sections.map((section, i) => {
+      const startedAtMs = Date.now();
       const concepts = section.conceptIds.map((c) => graph.concepts.find((x) => x.id === c)).filter(Boolean);
       const words = Math.round(section.budgetSec * WORDS_PER_SEC);
       const user = `${req.audience ? `Audience: ${req.audience}\n` : ''}LESSON OUTLINE:
@@ -340,14 +392,27 @@ ${sourcePrompt(req.sourceDoc ?? sourceDocFromText(req.source, req.sourceFormat ?
         stage: 'script', subject: `scene ${section.id}`, model: m.model, apiKey: m.apiKey, system, user,
         schema: SceneTextSchema, schemaName: 'scene_narration', remainingBudgetUsd: perScene, maxTokens: 2500,
         validate: (v) => validateSceneText(v.text, section), budgetLedger: m.budgetLedger, fetcher: m.fetcher,
-      });
+      }).then((result) => ({ section, result, startedAtMs, completedAtMs: Date.now() }));
     }),
   );
   const usage = emptyUsage();
-  const failures = results.flatMap((r) => r.failures);
-  const rawResponses = results.flatMap((r) => r.rawResponses);
-  for (const r of results) addUsage(usage, r.usage);
-  if (results.some((r) => !r.value)) return { usage, failures, rawResponses };
-  const script: Script = { scenes: plan.sections.map((s, i) => ({ sectionId: s.id, text: results[i].value!.text })) };
-  return { value: script, usage, failures, rawResponses };
+  const failures = results.flatMap(({ result }) => result.failures);
+  const rawResponses = results.flatMap(({ result }) => result.rawResponses);
+  for (const { result } of results) addUsage(usage, result.usage);
+  const sceneStageRuns: StageRunRecord[] = results.map(({ section, result, startedAtMs, completedAtMs }) => ({
+    stage: `S4-narration-script:${section.id}`,
+    kind: 'provider',
+    status: result.failures.some((failure) => failure.hard) || !result.value ? 'failed' : 'completed',
+    durationMs: completedAtMs - startedAtMs,
+    startedAt: new Date(startedAtMs).toISOString(),
+    completedAt: new Date(completedAtMs).toISOString(),
+    apiCostUsd: result.usage.costUsd,
+    cacheHit: false,
+    fallbackCount: 0,
+    usage: { ...result.usage, fallbacks: 0, cacheHits: 0 },
+    failures: result.failures.map((failure) => ({ code: failure.code, stage: failure.stage, message: failure.message, hard: failure.hard })),
+  }));
+  if (results.some(({ result }) => !result.value)) return { usage, failures, rawResponses, sceneStageRuns };
+  const script: Script = { scenes: results.map(({ section, result }) => ({ sectionId: section.id, text: result.value!.text })) };
+  return { value: script, usage, failures, rawResponses, sceneStageRuns };
 }

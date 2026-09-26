@@ -55,6 +55,23 @@ test('resolveMentions: Unicode phrase (accented characters) resolves correctly',
   assert.ok(mentions[0].wordRange[0] < mentions[1].wordRange[0]);
 });
 
+test('resolveMentions: curly possessives match curly or straight apostrophes in aligned words', () => {
+  const script = scriptOf('The [[output|the model’s output]] matters.');
+  const audio = alignFixture(script, 4000);
+  assert.deepEqual(resolveMentions(script, audio).failures, []);
+
+  const asciiAligned = {
+    ...audio,
+    sceneWords: {
+      s1: audio.sceneWords.s1.map((word) => ({ ...word, w: word.w.replaceAll('’', "'") })),
+    },
+  };
+  const resolved = resolveMentions(script, asciiAligned);
+  assert.deepEqual(resolved.failures, []);
+  assert.equal(resolved.mentions[0].mentionId, 'output');
+  assert.deepEqual(resolved.mentions[0].wordRange, [1, 4]);
+});
+
 test('resolveMentions: a phrase absent from the actual aligned words is a hard missing-span failure, never silently dropped', () => {
   // In fixture mode, alignFixture tokenizes the SAME plainText the marker
   // phrase was substituted into, so the phrase is always self-consistently

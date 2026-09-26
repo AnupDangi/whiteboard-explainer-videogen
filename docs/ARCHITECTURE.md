@@ -4,27 +4,41 @@ This is the implementation of the hypothesis in `claude_pipeline.md` and `hypoth
 lives under `src/experimental/`. Production code (`src/server.ts`, `src/runtime/*`, `src/gateway/*`, and the
 existing renderer) is not modified.
 
-## Pipeline order (fixed; stages are never reordered)
+## Pipeline order (logical dependency order)
+
+S1–S4 retain their dependency order. Once an S4 scene script is ready, S5 audio/alignment and timing-independent S6 semantic planning can run together. Each scene joins its own measured S5 result before mention-time validation, layout, timed gates, and its playable event. Scene events and final rendering remain in original lesson order.
 
 ```
-LessonRequest (text, Markdown, PDF, DOCX, PPTX + duration)    plan/sourceIntake.ts, lessonCli.ts
-  S2  ConceptGraph         content model, zod, exact source   plan/stages.ts buildConceptGraph
-                           evidence references + 1 repair    plan/sourceDoc.ts
-  S3  TeachingPlan         same content call emits the       plan/stages.ts buildTeachingPlan
-                           LessonBible + SceneContracts;     plan/contracts.ts
-                           analyser and evidence checks
-                           run inside validation
-      plan analysis        deterministic F-PED checks        plan/analyze.ts
-  S4  NarrationScript      one call per scene, in parallel,  plan/stages.ts writeScript
+LessonRequest (multiple local files, HTTPS HTML/text/PDF, text + duration)    plan/sourceIntake.ts, lessonCli.ts
+  S1  SourceBundle        per-document hashes/locations,     plan/sourceBundle.ts
+                           ranked exact EvidenceHits,
+                           local BM25 fallback, figure crops
+      optional RAG index  tables/equations/images through    plan/ragSidecar.ts, rag-engine/service.py
+                           RAG-Anything; estimated cost,
+                           disabled unless explicitly enabled
+  S1b Syllabus             canonical 60/300/600/1800s path, plan/hierarchical.ts
+                           supported-depth selection,
+                           global concept IDs and module map
+  S2-S3 Per module          local concept graph and bounded pipeline/lesson.ts, plan/stages.ts
+                           teaching plan; max 6 modules /
+                           8 syllabus concepts per module
+      legacy path           non-canonical internal fixtures plan/stages.ts
+                           retain the prior S2-S4 sequence
+      plan analysis        deterministic F-PED checks       plan/analyze.ts
+  S4  NarrationScript      one call per scene, in parallel, plan/stages.ts writeScript
                            [[id|phrase]] markers, word
                            budget of 2.6 words/s
-  S5  TTS + alignment      voice-engine + stable-ts;         pipeline/runLive.ts, shared/alignment
+  S5  TTS + alignment      persistent bounded voice and     pipeline/runLive.ts, voice-engine/src,
+                           stable-ts workers; overlaps S6   shared/alignment
+                           for that scene; validate each
+                           word interval before timed work
                            retain fractional-ms boundaries; hard-check word clocks before mention resolution
                            English CTC is comparison-only until its timing calibration passes
       mention resolution                                     narration/resolveMentions.ts
       retrieval            top-k Streamline icons for each   catalog/semantic.ts rankConcepts
                            mention (local MiniLM)
-  S6  Scene Planner        code compiles typed context, then planner/{context,exemplars,prompt,plan}.ts
+  S6  Scene Planner        timing-independent context;      planner/{context,exemplars,prompt,plan}.ts
+                           joins S5 before timed stages
                            one visual-model call + 1 repair;
                            hard S5 alignment errors skip paid planning by default;
                            diagnostic opt-in preserves failures and failed status
@@ -36,8 +50,9 @@ LessonRequest (text, Markdown, PDF, DOCX, PPTX + duration)    plan/sourceIntake.
                            tracks, <= 2 concurrent reveals
   S10 render               pure renderSVG(scene, timeline,   render/*
                            t)
-  S11 encode               resvg -> ffmpeg, erase            export/*
-                           transitions, attribution
+  S11 encode               deterministic raster frames,      export/*
+                           content-hashed module clips,
+                           chapter/caption mux and assembly
   S12 gates + judge        deterministic gates on every      validation/gates.ts, shared/evaluation.ts,
                            run; VLM judge on dev runs        harness/*
 ```
@@ -54,11 +69,45 @@ LessonRequest (text, Markdown, PDF, DOCX, PPTX + duration)    plan/sourceIntake.
 
 These CLIs have offline contract tests. No Task 14 paid reliability, diagnostic S6, or prompt-arm calibration run has been approved or measured yet.
 
+### Run identity and measurement
+
+`lessonCli.ts` gives each invocation a unique `runs/<timestamp>-<uuid>/` directory while keeping the lesson's content-addressed stage cache reusable under `<out>/<lesson>/stage-cache/` (or the explicit `--stage-cache` root). Per-run budgets, stage outputs, and manifests cannot overwrite sibling runs. The top-level CLI summary is also written to a unique temporary file and atomically renamed to a run-unique filename.
+
+Stage records include UTC start/end timestamps and measured elapsed time where available. S4 records each narration scene independently; cache replay reports zero current API spend and preserves original artifact spend separately. Run manifests distinguish full CLI wall time, source/S1–S4 preparation time, and S5–S12 pipeline wall time. Provider usage metrics separate shared concept/plan preparation, scene planner spend, and per-scene S6 spend. Overlapping parallel stage durations are diagnostic and must not be summed as end-to-end wall time.
+
+### Source bundles and retrieval
+
+`LessonRequest.sources` accepts multiple local PDF, DOCX, PPTX, Markdown, text, and JSON files plus public HTTPS URL sources returning HTML, plain text, or PDF. URL intake rejects credentials, custom ports, private/reserved DNS answers, validates every redirect, and pins the request to validated DNS answers. Office and PDF evidence retains native page/slide/paragraph/table locations. Embedded PDF, DOCX, and PPTX images are content-hashed into `.data/hypothesis-source-assets/` and indexed with their page/slide metadata.
+
+S1 creates `SourceBundle` and ranked `EvidenceHit` artifacts. The deterministic local BM25 retriever is always available and each hit resolves to an exact source quote and original document hash. Conflicting documents remain separate and cited. `sourcePrompt()` includes the ranked evidence and sanitized embedded-figure metadata; absolute asset paths are excluded from model prompts. If the optional `RAG_ENGINE=on` Python environment is installed, `ragSidecar.ts` indexes text, tables, equations, and embedded image assets through the existing RAG-Anything service. The lesson evidence contract still uses ranked exact local citations (`deep-indexed+local-text` mode); the sidecar's answer-only query string is never treated as cited evidence. The sidecar reports estimated cost because it does not expose invoice usage. If the environment is absent or indexing fails, the run stays in accurately labeled `local-text` mode.
+
+For repeated source inputs, use repeated CLI arguments such as `--source=notes.pdf --source=slides.pptx --url=https://example.org/lesson`. A direct URL source is fetched on each run and then its bytes and parser result are hashed; local document parser artifacts use the shared content-addressed S1 cache.
+
+### Duration-aware planning
+
+The lesson CLI accepts `--duration=60`, `--duration=300`, `--duration=600`, or `--duration=1800` seconds. Canonical requests start with a syllabus call that returns a learning objective, audience assumptions, stable global concept IDs and terminology, prerequisite order, distinct module goals, evidence coverage, and exact module budgets. Module budgets are `[60]`, `[300]`, `[300,300]`, or six 300-second modules. If the source cannot support the requested depth, the syllabus may select a shorter supported canonical duration and must give a coverage reason. The run stores requested and planned durations separately.
+
+Each module is planned independently with a scoped source excerpt and its assigned syllabus concepts. S2 enforces the global concept IDs and labels; S3 retains the existing per-response scene/schema limits; S4 writes one module. In generated lesson CLI runs, S5 then synthesizes and aligns that module before the next module is planned. Measured audio plus scene gaps rebudgets only unwritten modules; each completed module retains its original target and measured duration. The exact scene audio/alignment artifact is reused by the live S5 stage within the same cold run, so the module boundary does not synthesize scenes twice. Alignment words must match narration tokens and have valid, positive intervals to satisfy the timing gate; when a positive audio duration exists, the module clock can still rebudget later scenes while the alignment finding remains a hard publication failure. A global lesson bible is assembled after module validation, recurring concepts are marked persistent, and module scene IDs are namespaced to avoid collisions. `lessonToLiveInput()` flattens ordered scenes for the current player/export path while carrying module targets and measured audio durations. Generated lessons use actual concatenated audio duration and do not add trailing silence to satisfy the nominal target; their duration delta remains in run metrics. Golden diagnostic clips retain their existing target padding behavior. After an S4 scene script is available, the live path overlaps S5 for that scene with timing-independent S6 planning, then joins the measured audio before layout, gates, and scene-event emission.
+
+Mention matching and narration tokenization retain internal Unicode apostrophes. Mention comparison normalizes curly and straight apostrophes to the same form, so a script phrase such as “the model’s output” can resolve against either typography without changing or inferring audio timestamps.
+
+Generated lesson budgets are $0.10 / $0.50 / $0.70 / $1.00 for 60 / 300 / 600 / 1800 seconds. A shortened syllabus uses the cap for its planned duration. Renderer fixtures and golden clips retain the $0.10 cap. Syllabus and module artifacts use the shared content-addressed stage cache.
+
 `pipeline/run.ts` remains an offline S4→S10 runner for supplied SceneSpecs. Retained Attention/math
 SceneSpecs are historical artifacts and are not loaded by current tests or used for visual evaluation.
 Current plumbing tests use neutral inputs from `__tests__/support/syntheticScenes.ts`; their result
 class is `renderer-fixture`, and they make no generated-quality claim. Do not run the old lesson scenes
 as a substitute for missing source-generated lessons.
+
+## Progressive delivery and teaching boards (Phase 4/5 engineering)
+
+The live path writes `scene.playable` JSONL events only after a scene has passed its timing-dependent layout and deterministic gates. Events carry run/module/scene identity, a contiguous playable-scene sequence, local duration, descriptor SHA-256, and a run-relative preview location. The descriptor carries exact local aligned words and a content-hashed scene WAV. The loopback player polls during generation, retries transient artifact fetches, and plays the validated scene WAVs in event order.
+
+Cross-process filesystem leases configure host-wide limits through `HYPOTHESIS_PROVIDER_CONCURRENCY`, `HYPOTHESIS_SCENE_CONCURRENCY`, `HYPOTHESIS_S6_CONCURRENCY`, `HYPOTHESIS_TTS_ALIGNMENT_CONCURRENCY`, and `HYPOTHESIS_RASTER_CONCURRENCY` (defaults 2, 4, 2, 2, and 2). Module clips use content-addressed input manifests that include scene data, local audio/captions, canvas, frame rate, font, visual renderer version, and encoder. The frame cache keys exact rendered SVG bytes plus the complete Resvg options and measured render settings, verifies PNG hashes, and defaults to 256 MiB.
+
+Canonical module clips are assembled in syllabus order. Chapter offsets use probed clip durations, and the final MP4 carries H.264 video, AAC audio, chapter markers, and `mov_text` captions. Offline integration tests decode a synthetic assembled MP4 and verify its stream types, chapter bounds, external captions, and audio/video duration within 100 ms. These fixtures prove export plumbing only.
+
+Phase status and evidence are maintained in `docs/HANDOFF.md`: Phase 4 and 5 engineering is implemented and offline-tested, while generated-lesson quality is unmeasured. Two-human word-boundary calibration remains unmeasured, so Phase 3 and publication stay gated. Live RAG-Anything, 1/5/10/30-minute cold/warm runs, 1/3/5-job benchmarks, and human review of complete source-generated lessons remain outstanding.
 
 The golden-case live path (`liveCli.ts`) runs S5→S11 on frozen marked scripts. `lessonCli.ts --source=...`
 accepts text, Markdown, PDF, DOCX, and PPTX; PDF pages and office structural text are extracted to a
@@ -69,9 +118,16 @@ S5 calibration is currently explicitly `unmeasured`. The prior scratch-derived
 may collect diagnostic audio/alignment without that value, but `runLive.ts`
 records a hard S5 failure and will not publish. `word_boundary_review.py`
 creates blinded audio-only word-boundary packs from provider-generated source
-runs; aligner candidates remain in a separate organizer key. Human annotations
-and at least three independent SourceDoc hashes are required before a measured
-comparison can be reported. None exists yet.
+runs; aligner candidates remain in a separate organizer key. A five-source pack
+contains 29 clips and 793 words, but no human annotations have been submitted.
+The reviewer page now saves progress in browser storage, restores it on reopen,
+and disables vote export until every boundary is valid, ordered, and inside its
+clip. The resumable pages are in `.data/alignment-review/2026-09-26-five-topic-resumable/participants/`;
+their organizer key stays outside that participant tree.
+
+Voice-engine Supertonic/Piper bridges now accept newline-delimited worker requests and cache loaded provider models per process. `VOICE_ENGINE_WORKERS` defaults to 1 because each worker retains model memory; measured scene synthesis timing comes from the provider's synthesis interval, while run stage wall time includes worker queueing. Stable-ts uses `HYPOTHESIS_ALIGNMENT_WORKERS` (default 2, maximum 8), caches models inside long-lived Python workers, and returns each response independently. This checkout has stable-ts 2.19.1, faster-whisper 1.2.1, and cached `base`/`base.en` weights. A repeatable three-run batch of six real scenes from two generated topics measured pool-size-1 p50/p95 at 1.606/1.613 s and pool-size-2 at 1.396/1.399 s; exact token order held in all 18 aligned samples, while five of six scenes had invalid zero-duration intervals in each repeat. The existing CTC diagnostic across the five-source/29-scene pack counted 18 stable-ts zero intervals and zero CTC zero intervals. It compares utterance-edge RMS VAD, not interior word boundaries, so these findings do not calibrate or promote CTC. See `src/experimental/hypothesis/shared/alignment/README.md` and `.data/alignment-review/2026-09-26-five-topic/alignment-worker-benchmark.json` / `ctc-diagnostic-five-topic.json` for exact results. The two-human calibration gate remains open.
+
+The audio-master module boundary is implemented but its human calibration gate is not. A blinded review pack exists at `.data/alignment-review/2026-09-26-five-topic/`; until both independent annotators submit complete votes and the scorer produces a measured calibration, publication remains blocked. The local integration test uses a deterministic injected aligner solely to verify module-budget control and same-run audio-cache reuse; it is not alignment-quality or performance evidence.
 
 Golden target lookup is disabled for `runClass: generated-lesson`; case IDs and
 source-derived IDs can no longer activate benchmark claims or duration targets.

@@ -11,13 +11,30 @@ human review never repairs timestamps or changes the live S5 provider.
   without a checked-in clip manifest or per-sample evidence. It is **withdrawn
   as a calibration claim** and must not be used as the current run's calibration
   value.
-- The only current source-generated lesson has one source hash, three audio
-  scenes, and 126 narrated words. In that run, stable-ts produced three
-  zero-duration intervals. Local English CTC produced no zero intervals, but
-  its better utterance-edge VAD comparison is not interior-word truth.
-- The local ASR lexical check recognized all 126 words, but ASR correctness does
-  not establish word boundaries. The run and both aligners therefore remain
-  **uncalibrated**; no aligner has been promoted.
+- The current blinded pack uses five source-generated lessons (five distinct
+  SourceDoc hashes), 29 scene clips, and 793 words. The pack meets the
+  minimum-source and word-count requirements, but it has no human votes yet.
+- A local diagnostic re-aligned six scenes from two of those sources. All six
+  retained exact narration token order. Stable-ts `base` produced one or more
+  zero-duration intervals in five of six scenes (five zero intervals total);
+  `base.en` also had five zero intervals across the same sample. Stable-ts
+  `fast_mode=True` and `suppress_silence=False` did not remove them.
+- The project's CTC comparison ran against all 29 pack scenes and reported 18
+  zero-duration intervals for stable-ts versus zero for WAV2VEC2 CTC. The
+  report's RMS VAD comparison measures utterance edges only, not interior-word
+  truth, so this is a candidate-generation result and does not calibrate or
+  promote CTC.
+- A repeatable benchmark of the same six-scene diagnostic batch ran three times
+  per worker setting. Pool size 1 measured p50/p95 wall times of 1.606/1.613 s;
+  pool size 2 measured 1.396/1.399 s (about 1.15x p50 speedup). All 18 aligned
+  samples retained token order, and each worker setting reproduced five
+  invalid intervals per six-scene batch. This small warm-model batch is local
+  aligner timing, not end-to-end lesson or video timing.
+- The local alignment environment is present (`stable-ts 2.19.1`,
+  `faster-whisper 1.2.1`) and cached base/base.en weights were used offline.
+  The five-source run remains **uncalibrated**; no aligner has been promoted.
+- An earlier local ASR lexical check recognized its pilot narration, but ASR
+  correctness does not establish word boundaries.
 - Archived hand-authored or renderer-fixture audio is ineligible for this
   workflow and must not be used to measure timing.
 
@@ -33,7 +50,10 @@ sharing a SourceDoc hash are rejected so retries cannot inflate the independent
 document count. The reviewer HTML contains audio, waveform, and narration words
 only; it does not contain candidate aligner names or candidate timestamps. The
 organizer key with candidate timing is written separately from participant
-folders.
+folders. Progress is saved in that reviewer's browser storage and restored
+when the same page is reopened. Export stays disabled until every word has a
+valid, ordered, in-clip interval; the scorer independently validates the
+downloaded file as well.
 
 ```sh
 python3 src/experimental/hypothesis/shared/alignment/word_boundary_review.py pack \
@@ -62,11 +82,14 @@ separate review must examine language, voice, boundary-error distribution, and
 zero/missing words before any provider change. The existing live gate remains
 unchanged.
 
-The current one-source pilot pack is at
+The earlier one-source pilot pack is at
 `.data/alignment-review-pilot-20260924/participants/`; its separate organizer
-key is `.data/alignment-review-pilot-20260924/organizer-key.json`. It contains
-three clips / 126 words and remains `pilot-only-unmeasured`. No human votes or
-timing report have been collected.
+key is `.data/alignment-review-pilot-20260924/organizer-key.json`. It remains
+`pilot-only-unmeasured`. The current five-source pack is at
+`.data/alignment-review/2026-09-26-five-topic/participants/`; its organizer key
+is `.data/alignment-review/2026-09-26-five-topic/organizer-key.json`. Keep that
+key separate from participant materials. Neither pack has completed human
+annotations.
 
 ## CTC and ASR diagnostics
 
@@ -79,9 +102,18 @@ interior-word calibration.
 
 ## Setup and implementation notes
 
-`align.py` is the stable-ts sidecar; `align.ts` validates and calls it. The
-sidecar uses the local faster-whisper backend. To install its pinned Python
+`align.py --worker` serves newline-delimited JSON requests and keeps one
+stable-ts/faster-whisper model loaded for the lifetime of that worker.
+`align.ts` dispatches scene requests through a bounded, persistent worker pool;
+set `HYPOTHESIS_ALIGNMENT_WORKERS` (default 2, maximum 8) to tune local CPU
+parallelism. `closeAlignmentWorkers()` is available for orderly shutdown in
+tests and embedding applications. The one-shot JSON sidecar mode remains
+available for diagnostics. Workers use the local faster-whisper backend. To install its pinned Python
 dependencies, run `sh src/experimental/hypothesis/shared/alignment/setup.sh`.
 Model fetching occurs only when that setup/alignment workflow is deliberately
 run. `requirements-ctc.txt` contains optional dependencies for the comparison
-diagnostic.
+diagnostic. Reproduce the worker measurement with
+`node scripts/alignment-worker-benchmark.mjs --run-dir=<run-a> --run-dir=<run-b> --model=base --workers=1,2 --scenes-per-run=3 --repeats=3 --out=<report.json>`
+after `npm run build`. The tested report is
+`.data/alignment-review/2026-09-26-five-topic/alignment-worker-benchmark.json`;
+the five-topic CTC diagnostic is in `ctc-diagnostic-five-topic.json`.

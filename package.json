@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "voice-engine:setup": "sh -c 'cd voice-engine && npm run setup'",
     "typecheck:hypothesis": "tsc --noEmit -p tsconfig.json",
-    "test:hypothesis": "npm run build && node --test dist/src/experimental/hypothesis/v1_claude/__tests__/*.test.js && python3 -m unittest discover -s src/experimental/hypothesis/shared/alignment -p 'test_*.py'",
+    "test:hypothesis": "npm run build && node --test dist/src/experimental/hypothesis/v1_claude/__tests__/*.test.js && python3 -m unittest discover -s src/experimental/hypothesis/shared/alignment -p 'test_*.py' && python3 -m unittest discover -s rag-engine -p 'test_*.py'",
     "fixture:hypothesis": "npm run test:hypothesis",
     "run:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/cli.js",
     "preview:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/player/previewCli.js",

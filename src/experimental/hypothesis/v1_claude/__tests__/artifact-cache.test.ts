@@ -51,6 +51,27 @@ test('content-addressed stage cache reuses unchanged inputs and invalidates chan
   }
 });
 
+test('cold stage cache can share a measured artifact within its current run without warming across runs', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'hyp-cold-run-cache-'));
+  try {
+    const cold = new ContentAddressedArtifactStore(root, 'cold');
+    const input = { scene: 'scene-a', narrationHash: 'narration-a' };
+    const meta = { schemaVersion: 'aligned-scene/v1', stageVersion: 'align-1', modelId: 'local-voice+aligner' };
+    let calls = 0;
+    const produced = await cold.run('S5-tts-alignment:scene-a', input, meta, () => ({ durationMs: ++calls, audioBase64: 'YXVkaW8=' }));
+    cold.reuseWithinRun('S5-tts-alignment:scene-a', input, meta, produced.artifact);
+    const sameRun = await cold.run('S5-tts-alignment:scene-a', input, meta, () => ({ durationMs: ++calls, audioBase64: 'duplicate' }));
+    assert.equal(sameRun.cacheHit, true);
+    assert.deepEqual(sameRun.artifact.payload, { durationMs: 1, audioBase64: 'YXVkaW8=' });
+    const nextColdRun = new ContentAddressedArtifactStore(root, 'cold');
+    const nextRun = await nextColdRun.run('S5-tts-alignment:scene-a', input, meta, () => ({ durationMs: ++calls, audioBase64: 'new-cold-run' }));
+    assert.equal(nextRun.cacheHit, false);
+    assert.equal(calls, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('file stage cache materializes binary outputs across run directories and repairs missing blobs', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'hyp-file-cache-'));
   try {
@@ -226,6 +247,20 @@ test('run budget reconciliation ignores cached artifact cost and permits cumulat
   assert.match(budgetLedgerAccountingProblems(snapshot, [
     { kind: 'provider', apiCostUsd: 0.006 },
   ])[0] ?? '', /ledger reports only \$0\.004681 spent but this run's provider stages report \$0\.006000/);
+});
+
+test('run budget reconciliation counts S4 child calls once when the parent stage reports an aggregate', () => {
+  const snapshot = { schemaVersion: 'hypothesis-budget-ledger/v1' as const, budgetUsd: 0.1, spentUsd: 0.01640846, calls: 23, blocked: false, updatedAt: '2026-09-26T18:17:44.917Z' };
+  const detailedChildSpend = 0.0039288;
+  const otherProviderSpend = 0.01640846;
+  assert.deepEqual(budgetLedgerAccountingProblems(snapshot, [
+    { kind: 'provider', accountingRole: 'aggregate', apiCostUsd: detailedChildSpend },
+    { kind: 'provider', apiCostUsd: otherProviderSpend },
+  ]), [], 'the S4 parent cost is already represented by its detailed scene calls');
+  assert.match(budgetLedgerAccountingProblems({ ...snapshot, spentUsd: 0.015 }, [
+    { kind: 'provider', accountingRole: 'aggregate', apiCostUsd: detailedChildSpend },
+    { kind: 'provider', apiCostUsd: otherProviderSpend },
+  ])[0] ?? '', /ledger reports only \$0\.015000 spent but this run's provider stages report \$0\.016408/);
 });
 
 test('persistent budget ledger records known DNS/connection preflight failures without charging or blocking retry', async () => {

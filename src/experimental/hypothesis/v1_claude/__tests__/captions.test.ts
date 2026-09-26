@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildWebVtt } from '../export/captions.js';
+import { buildWebVtt, buildWebVttForRun } from '../export/captions.js';
 import type { AlignedAudio } from '../types.js';
 
 test('captions are grouped from the aligned word clock, split at sentences, and escaped', () => {
@@ -45,4 +45,16 @@ test('captions fail closed when measured alignment assigns a zero-duration word'
     sceneBoundsMs: {}, sceneWords: { s1: [{ w: 'word', startMs: 120, endMs: 120 }] }, mentions: [],
   };
   assert.throws(() => buildWebVtt(audio), /invalid or out-of-order aligned word/);
+});
+
+test('captionless diagnostic opt-in omits only invalid-timing captions and preserves the measured words', () => {
+  const audio = {
+    schemaVersion: 'claude-aligned-audio/v1', provider: 'stable-ts', wavPath: 'audio.wav', durationMs: 1000,
+    sceneWords: { scene: [{ w: 'zero', startMs: 200, endMs: 200 }] },
+    sceneBoundsMs: { scene: { startMs: 0, endMs: 1000 } }, mentions: [],
+  } as AlignedAudio;
+  const originalWords = structuredClone(audio.sceneWords);
+  assert.throws(() => buildWebVttForRun(audio), /invalid or out-of-order aligned word/);
+  assert.deepEqual(buildWebVttForRun(audio, true), { failure: 'cannot create captions: invalid or out-of-order aligned word in scene scene' });
+  assert.deepEqual(audio.sceneWords, originalWords, 'diagnostic export must not clamp or rewrite word timings');
 });

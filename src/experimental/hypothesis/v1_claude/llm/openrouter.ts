@@ -19,6 +19,8 @@
  *    supported", so it is omitted for anthropic/* and `temperatureApplied`
  *    reports that honestly.
  */
+import { withHostResourcePermit } from '../../shared/hostResourcePool.js';
+
 export interface ChatRequest {
   model: string;
   system: string;
@@ -69,6 +71,10 @@ function requiredUsageNumber(value: unknown, field: string): number {
 
 // Routes whose hidden reasoning counts against max_tokens; they get a bounded reasoning allowance (gemini-3.8-flash spent ~2.2k of 2.5k S6 tokens thinking and truncated its JSON, 2026-09-26).
 const HIDDEN_REASONING = ['qwen/', 'deepseek/', 'inclusionai/', 'google/'];
+const configuredProviderConcurrency = Number(process.env.HYPOTHESIS_PROVIDER_CONCURRENCY);
+const PROVIDER_CONCURRENCY = Number.isInteger(configuredProviderConcurrency) && configuredProviderConcurrency >= 1
+  ? Math.min(32, configuredProviderConcurrency)
+  : 2;
 
 /**
  * Split most of the remaining call budget across prompt and completion, with
@@ -215,7 +221,7 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
   const init: RequestInit = { method: 'POST', signal: req.signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-OpenRouter-Metadata': 'enabled' }, body: JSON.stringify(body) };
   let response!: Response;
   for (let throttle = 0; ; throttle++) {
-    response = await fetcher('https://openrouter.ai/api/v1/chat/completions', init);
+    response = await withHostResourcePermit('provider', PROVIDER_CONCURRENCY, () => fetcher('https://openrouter.ai/api/v1/chat/completions', init), { signal: req.signal });
     if (response.status !== 429 || throttle >= 2) break;
     const seconds = Number(response.headers.get('retry-after')) || [15, 30][throttle] || 30;
     await new Promise<void>((resolve, reject) => {
@@ -269,7 +275,7 @@ export async function chatVision(apiKey: string, req: { model: string; prompt: s
     messages: [{ role: 'user', content: [{ type: 'text', text: req.prompt }, ...req.imagesPng.map((png) => ({ type: 'image_url', image_url: { url: `data:image/png;base64,${png.toString('base64')}` } }))] }],
     usage: { include: true },
   };
-  const response = await fetcher('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', signal: req.signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const response = await withHostResourcePermit('provider', PROVIDER_CONCURRENCY, () => fetcher('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', signal: req.signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), { signal: req.signal });
   if (!response.ok) throw new Error(`OpenRouter HTTP ${response.status} — ${(await response.text().catch(() => '')).slice(0, 300)}`);
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: string }>; usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number } };
   const raw = data.choices?.[0]?.message?.content;

@@ -2,6 +2,13 @@ import type { AlignedAudio } from '../types.js';
 
 export interface CaptionCue { startMs: number; endMs: number; text: string; sceneId: string }
 
+export class InvalidCaptionTimingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCaptionTimingError';
+  }
+}
+
 const timestamp = (ms: number): string => {
   const rounded = Math.max(0, Math.round(ms));
   const hours = Math.floor(rounded / 3_600_000);
@@ -27,7 +34,7 @@ export function buildWebVtt(audio: AlignedAudio, maxWords = 8, maxDurationMs = 4
     };
     for (const word of words) {
       if (!Number.isFinite(word.startMs) || !Number.isFinite(word.endMs) || word.startMs < 0 || word.endMs <= word.startMs || word.endMs > audio.durationMs || word.startMs < lastStart || !word.w.trim()) {
-        throw new Error('cannot create captions: invalid or out-of-order aligned word in scene ' + sceneId);
+        throw new InvalidCaptionTimingError('cannot create captions: invalid or out-of-order aligned word in scene ' + sceneId);
       }
       lastStart = word.startMs;
       const elapsed = pending.length ? word.endMs - pending[0].startMs : 0;
@@ -39,4 +46,16 @@ export function buildWebVtt(audio: AlignedAudio, maxWords = 8, maxDurationMs = 4
   }
   if (!cues.length) throw new Error('cannot create captions: aligned audio contains no words');
   return 'WEBVTT\n\n' + cues.map((cue, i) => (i + 1) + '\n' + timestamp(cue.startMs) + ' --> ' + timestamp(cue.endMs) + '\n' + payload(cue.text) + '\n').join('\n');
+}
+
+/** Only an explicit diagnostic opt-in may omit invalid timed captions; aligned words are never rewritten. */
+export function buildWebVttForRun(audio: AlignedAudio, diagnosticCaptionlessVideo = false): { vtt?: string; failure?: string } {
+  try {
+    return { vtt: buildWebVtt(audio) };
+  } catch (error) {
+    if (diagnosticCaptionlessVideo && error instanceof InvalidCaptionTimingError) {
+      return { failure: error.message };
+    }
+    throw error;
+  }
 }

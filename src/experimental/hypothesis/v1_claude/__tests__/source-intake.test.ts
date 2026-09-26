@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { docxXmlToMarkdown, docxXmlToSource, pdfPagesToMarkdown, pdfPagesToSource, pptxSlideXmlToMarkdown, pptxSlideXmlToSource } from '../plan/sourceIntake.js';
+import { docxXmlToMarkdown, docxXmlToSource, isPublicSourceAddress, pdfPagesToMarkdown, pdfPagesToSource, pptxSlideXmlToMarkdown, pptxSlideXmlToSource, validatePublicHttpsSourceUrl } from '../plan/sourceIntake.js';
 import { resolveSourceEvidence, sourceDocFromText } from '../plan/sourceDoc.js';
+
+test('URL source DNS validation rejects loopback, private, link-local, and reserved addresses', () => {
+  for (const address of ['127.0.0.1', '10.1.2.3', '172.16.0.2', '192.168.1.2', '169.254.1.1', '::1', 'fc00::1', 'fe80::1', '::ffff:127.0.0.1', '192.0.2.1']) {
+    assert.equal(isPublicSourceAddress(address), false, `${address} must not be fetched`);
+  }
+  assert.equal(isPublicSourceAddress('8.8.8.8'), true);
+  assert.equal(isPublicSourceAddress('2606:4700:4700::1111'), true);
+});
+
+test('URL intake accepts only HTTPS without credentials or custom ports', () => {
+  assert.equal(validatePublicHttpsSourceUrl('https://example.org/course.pdf').hostname, 'example.org');
+  for (const value of ['http://example.org', 'https://user:pass@example.org', 'https://example.org:8443/file.pdf']) {
+    assert.throws(() => validatePublicHttpsSourceUrl(value), /public HTTPS/);
+  }
+});
 
 test('DOCX extraction retains headings, equations, tables, and figure references in body order', () => {
   const xml = `<w:document xmlns:w="w" xmlns:m="m" xmlns:wp="wp"><w:body>

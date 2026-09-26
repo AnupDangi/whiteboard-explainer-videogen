@@ -1,15 +1,153 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { basename, extname, join, posix, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { lookup } from 'node:dns/promises';
+import { request as httpsRequest } from 'node:https';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { load } from 'cheerio';
+import ipaddr from 'ipaddr.js';
 import { sourceDocFromText, type NativeSourceLocationRange, type SourceDoc } from './sourceDoc.js';
 import type { NativeSourceLocation } from '../../shared/contracts.js';
 
 const exec = promisify(execFile);
 const MAX_BYTES = 50 * 1024 * 1024;
 const MAX_TEXT = 5_000_000;
+
+export function isPublicSourceAddress(address: string): boolean {
+  try { return ipaddr.process(address).range() === 'unicast'; } catch { return false; }
+}
+
+export function validatePublicHttpsSourceUrl(value: string): URL {
+  const target = new URL(value);
+  if (target.protocol !== 'https:' || target.username || target.password || (target.port && target.port !== '443')) throw new Error('URL sources must use public HTTPS without credentials or a custom port');
+  return target;
+}
+
+async function fetchPublicHttps(url: string, redirects = 0): Promise<{ bytes: Buffer; contentType: string; finalUrl: string }> {
+  const target = validatePublicHttpsSourceUrl(url);
+  const addresses = await lookup(target.hostname.replace(/^\[|\]$/g, ''), { all: true });
+  if (!addresses.length || addresses.some(({ address }) => !isPublicSourceAddress(address))) throw new Error('Private or reserved network addresses are not allowed');
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(target, {
+      timeout: 60_000,
+      headers: { 'User-Agent': 'ExplainCanvasLab-Hypothesis/1.0', Accept: 'text/html,text/plain,application/pdf' },
+      lookup: ((_hostname: string, options: { all?: boolean }, callback: (...args: any[]) => void) => options.all
+        ? callback(null, addresses)
+        : callback(null, addresses[0]!.address, addresses[0]!.family)) as never,
+    }, (res) => {
+      const status = res.statusCode ?? 0;
+      if ([301, 302, 303, 307, 308].includes(status)) {
+        res.resume();
+        if (redirects >= 3 || !res.headers.location) return reject(new Error('Too many source URL redirects'));
+        return fetchPublicHttps(new URL(res.headers.location, target).href, redirects + 1).then(resolve, reject);
+      }
+      if (status !== 200) { res.resume(); return reject(new Error(`Source URL returned HTTP ${status}`)); }
+      const chunks: Buffer[] = [];
+      let length = 0;
+      res.on('data', (chunk: Buffer) => {
+        length += chunk.length;
+        if (length > MAX_BYTES) req.destroy(new Error('Source exceeds 50 MB'));
+        else chunks.push(chunk);
+      });
+      res.on('error', reject);
+      res.on('end', () => resolve({ bytes: Buffer.concat(chunks), contentType: String(res.headers['content-type'] ?? ''), finalUrl: target.href }));
+    });
+    req.on('timeout', () => req.destroy(new Error('Source URL request timed out')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+export function extractHtmlSource(bytes: Buffer, url: string): { text: string; title?: string; locations: NativeSourceLocationRange[]; figures: Array<{ url: string; caption?: string; selector: string }> } {
+  const $ = load(bytes.toString('utf8'));
+  const title = $('title').first().text().trim() || $('h1').first().text().trim() || undefined;
+  $('script,style,nav,footer,header,aside,noscript,svg,form').remove();
+  const blocks: Array<{ text: string; selector: string }> = [];
+  const figures: Array<{ url: string; caption?: string; selector: string }> = [];
+  const selector = 'main h1, main h2, main h3, main h4, main p, main li, main table, main figure, article h1, article h2, article h3, article h4, article p, article li, article table, article figure, body h1, body h2, body h3, body h4, body p, body li, body table, body figure';
+  $(selector).each((_index, element) => {
+    const node = $(element);
+    const tag = element.tagName.toLowerCase();
+    const content = (tag === 'figure' ? node.find('figcaption').first().text() || node.find('img').first().attr('alt') || '' : node.text()).replace(/\s+/g, ' ').trim();
+    if (tag === 'figure') {
+      const imageUrl = node.find('img').first().attr('src');
+      if (imageUrl) {
+        try { figures.push({ url: new URL(imageUrl, url).href, ...(content ? { caption: content } : {}), selector: `figure${node.attr('id') ? `#${node.attr('id')}` : ''}` }); } catch { /* malformed image URLs do not invalidate readable article text */ }
+      }
+    }
+    if (content.length < 2) return;
+    const text = tag.match(/^h[1-4]$/) ? `${'#'.repeat(Number(tag[1]))} ${content}` : tag === 'li' ? `- ${content}` : tag === 'table' ? content : tag === 'figure' ? `[Figure metadata: ${content}]` : content;
+    if (blocks.at(-1)?.text !== text) blocks.push({ text, selector: `${tag}${node.attr('id') ? `#${node.attr('id')}` : ''}` });
+  });
+  if (!blocks.length) throw new Error('HTML URL contains no readable article text');
+  let text = '';
+  const locations: NativeSourceLocationRange[] = [];
+  for (const [index, block] of blocks.entries()) {
+    if (index) text += '\n\n';
+    const startChar = text.length;
+    text += block.text;
+    locations.push({ startChar, endChar: text.length, sourceLocation: { kind: 'web-url', url, selector: block.selector } });
+  }
+  return { text, title, locations, figures };
+}
+
+async function fetchHtmlFigureAssets(figures: Array<{ url: string; caption?: string; selector: string }>, sourceId: string, pageUrl: string): Promise<NonNullable<SourceDoc['figureAssets']>> {
+  const selected = [...new Map(figures.map((figure) => [figure.url, figure])).values()].slice(0, 20);
+  const result: NonNullable<SourceDoc['figureAssets']> = [];
+  const assetDir = resolve(process.env.HYPOTHESIS_SOURCE_ASSETS_DIR ?? '.data/hypothesis-source-assets');
+  await mkdir(assetDir, { recursive: true });
+  let totalBytes = 0;
+  for (const figure of selected) {
+    try {
+      const fetched = await fetchPublicHttps(figure.url);
+      const mediaType = fetched.contentType.split(';')[0]!.trim().toLowerCase();
+      if (!mediaType.startsWith('image/') || mediaType === 'image/svg+xml') continue;
+      totalBytes += fetched.bytes.length;
+      if (totalBytes > 100 * 1024 * 1024) break;
+      const digest = createHash('sha256').update(fetched.bytes).digest('hex');
+      const extension = extname(new URL(fetched.finalUrl).pathname).toLowerCase().replace(/[^.a-z0-9]/g, '') || (mediaType === 'image/jpeg' ? '.jpg' : mediaType === 'image/png' ? '.png' : '.img');
+      const assetPath = join(assetDir, `${digest}${extension}`);
+      if (!existsSync(assetPath)) await writeFile(assetPath, fetched.bytes, { flag: 'wx' }).catch(async (error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+      result.push({ sourceId, sha256: digest, sourceLocation: { kind: 'web-url', url: pageUrl, selector: figure.selector }, mediaType, assetPath, ...(figure.caption ? { caption: figure.caption } : {}), derivationStatus: 'embedded-image-crop', indexStatus: 'not-indexed' });
+    } catch { /* unreachable or malformed image assets do not invalidate the source text */ }
+  }
+  return result;
+}
+
+/** Read a public HTML, text, or PDF URL with DNS pinning, redirect revalidation, and exact location provenance. */
+export async function loadSourceDocFromUrl(url: string): Promise<SourceDoc> {
+  const result = await fetchPublicHttps(url);
+  const isPdf = result.contentType.toLowerCase().includes('application/pdf') || result.bytes.subarray(0, 5).toString() === '%PDF-';
+  let doc: SourceDoc;
+  if (isPdf) {
+    const pdf = await pdfText(result.bytes);
+    const extraction = pdfPagesToSource(pdf.text);
+    doc = sourceDocFromText(extraction.text, 'pdf', extraction.nativeLocations);
+    doc.title = new URL(result.finalUrl).pathname.split('/').filter(Boolean).at(-1) ?? 'PDF source';
+  } else if (result.contentType.toLowerCase().includes('text/plain')) {
+    const text = result.bytes.toString('utf8');
+    if (text.trim().length < 20) throw new Error('Text URL contains fewer than 20 readable characters');
+    doc = sourceDocFromText(text, 'text', [{ startChar: 0, endChar: text.length, sourceLocation: { kind: 'web-url', url: result.finalUrl } }]);
+  } else if (result.contentType.toLowerCase().includes('text/html') || /<html[\s>]/i.test(result.bytes.toString('utf8', 0, 512))) {
+    const extracted = extractHtmlSource(result.bytes, result.finalUrl);
+    doc = sourceDocFromText(extracted.text, 'markdown', extracted.locations);
+    doc.title = extracted.title;
+    doc.sourceId = `src_${createHash('sha256').update(`${result.finalUrl}\0${doc.sourceId}`).digest('hex').slice(0, 20)}`;
+    doc.sourceUrl = result.finalUrl;
+    doc.figureAssets = await fetchHtmlFigureAssets(extracted.figures, doc.sourceId, result.finalUrl);
+  } else throw new Error('URL must return HTML, plain text, or PDF');
+  if (doc.text.length > MAX_TEXT) throw new Error(`Extracted source exceeds ${MAX_TEXT.toLocaleString()} characters`);
+  if (!doc.sourceUrl) {
+    doc.sourceId = `src_${createHash('sha256').update(`${result.finalUrl}\0${doc.sourceId}`).digest('hex').slice(0, 20)}`;
+    doc.sourceUrl = result.finalUrl;
+  }
+  doc.contentSha256 = createHash('sha256').update(result.bytes).digest('hex');
+  if (isPdf) doc.figureAssets = await extractPdfFigureAssets(result.bytes, doc.sourceId, doc.spans.filter((span) => span.sourceLocation?.kind === 'pdf-page').length);
+  return doc;
+}
 
 export interface OfficeTextExtraction { text: string; nativeLocations: NativeSourceLocationRange[] }
 
@@ -158,6 +296,84 @@ async function officeText(bytes: Buffer, kind: 'docx' | 'pptx'): Promise<OfficeT
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
+async function extractOfficeFigureAssets(bytes: Buffer, sourceId: string, kind: 'docx' | 'pptx'): Promise<NonNullable<SourceDoc['figureAssets']>> {
+  const dir = await mkdtemp(join(tmpdir(), 'hypothesis-office-images-'));
+  const archive = join(dir, 'source.zip');
+  await writeFile(archive, bytes);
+  const prefix = kind === 'docx' ? 'word' : 'ppt';
+  const mediaMembers = new Set<string>();
+  const locations = new Map<string, NativeSourceLocation[]>();
+  const addReference = (target: string, location: NativeSourceLocation) => {
+    const member = posix.normalize(`${prefix}/${target}`).replace(/^\.\//, '');
+    if (!member.startsWith(`${prefix}/media/`) || member.split('/').includes('..')) return;
+    mediaMembers.add(member);
+    const refs = locations.get(member) ?? [];
+    refs.push(location);
+    locations.set(member, refs);
+  };
+  const relationships = (xml: string): Map<string, string> => {
+    const map = new Map<string, string>();
+    const $ = load(xml, { xmlMode: true });
+    $('Relationship').each((_i, relation) => {
+      const id = $(relation).attr('Id');
+      const target = $(relation).attr('Target');
+      if (id && target && !target.startsWith('/')) map.set(id, target);
+    });
+    return map;
+  };
+  try {
+    const { stdout: listing } = await exec('unzip', ['-Z1', archive], { timeout: 20_000, maxBuffer: 2 * 1024 * 1024 });
+    const members = listing.split(/\r?\n/).filter(Boolean);
+    if (kind === 'docx') {
+      const [documentXml, relsXml] = await Promise.all([
+        unzipMember(archive, 'word/document.xml'),
+        unzipMember(archive, 'word/_rels/document.xml.rels').catch(() => '<Relationships/>'),
+      ]);
+      const rels = relationships(relsXml);
+      const $ = load(documentXml, { xmlMode: true });
+      let paragraph = 0;
+      let bodyBlock = 0;
+      $('w\\:body').children().each((_i, element) => {
+        bodyBlock += 1;
+        const node = $(element);
+        if (element.tagName.toLowerCase() !== 'w:p') return;
+        paragraph += 1;
+        const refs = [...node.find('a\\:blip').map((_j, image) => $(image).attr('r:embed')).get(), ...node.find('v\\:imagedata').map((_j, image) => $(image).attr('r:id')).get()].filter(Boolean) as string[];
+        for (const id of refs) { const target = rels.get(id); if (target) addReference(target, { kind: 'docx-paragraph', bodyBlock, paragraph }); }
+      });
+    } else {
+      const slides = members.filter((member) => /^ppt\/slides\/slide\d+\.xml$/.test(member));
+      for (const slidePath of slides) {
+        const slideNumber = Number(slidePath.match(/slide(\d+)\.xml$/)?.[1]);
+        const stem = slidePath.split('/').at(-1)!;
+        const relationshipPath = `ppt/slides/_rels/${stem}.rels`;
+        const [slideXml, relsXml] = await Promise.all([unzipMember(archive, slidePath), unzipMember(archive, relationshipPath).catch(() => '<Relationships/>')]);
+        const rels = relationships(relsXml);
+        const $ = load(slideXml, { xmlMode: true });
+        const refs = $('a\\:blip').map((_j, image) => $(image).attr('r:embed')).get().filter(Boolean) as string[];
+        for (const id of refs) { const target = rels.get(id); if (target) addReference(posix.normalize(`slides/${target}`), { kind: 'pptx-slide', slide: slideNumber }); }
+      }
+    }
+    if (mediaMembers.size > 100) throw new Error('Office document has more than 100 embedded figure assets');
+    const assetDir = resolve(process.env.HYPOTHESIS_SOURCE_ASSETS_DIR ?? '.data/hypothesis-source-assets');
+    await mkdir(assetDir, { recursive: true });
+    const figures: NonNullable<SourceDoc['figureAssets']> = [];
+    let totalBytes = 0;
+    for (const member of mediaMembers) {
+      const { stdout: raw } = await exec('unzip', ['-p', archive, member], { encoding: 'buffer', timeout: 20_000, maxBuffer: 50 * 1024 * 1024 });
+      const imageBytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+      totalBytes += imageBytes.length;
+      if (totalBytes > 250 * 1024 * 1024) throw new Error('Office embedded figures exceed 250 MB');
+      const digest = createHash('sha256').update(imageBytes).digest('hex');
+      const extension = extname(member).toLowerCase().replace(/[^.a-z0-9]/g, '') || '.bin';
+      const assetPath = join(assetDir, `${digest}${extension}`);
+      if (!existsSync(assetPath)) await writeFile(assetPath, imageBytes, { flag: 'wx' }).catch(async (error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+      for (const sourceLocation of locations.get(member) ?? []) figures.push({ sourceId, sha256: digest, sourceLocation, mediaType: extension === '.png' ? 'image/png' : extension === '.jpg' || extension === '.jpeg' ? 'image/jpeg' : 'application/octet-stream', assetPath, derivationStatus: 'embedded-image-crop', indexStatus: 'not-indexed' });
+    }
+    return figures;
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}
+
 async function pdfText(bytes: Buffer): Promise<OfficeTextExtraction> {
   if (bytes.length > MAX_BYTES || bytes.subarray(0, 5).toString() !== '%PDF-') throw new Error('Invalid PDF or source exceeds 50 MB');
   const dir = await mkdtemp(join(tmpdir(), 'hypothesis-pdf-'));
@@ -170,6 +386,38 @@ async function pdfText(bytes: Buffer): Promise<OfficeTextExtraction> {
     if (extractedText.length < 20) throw new Error('PDF contains fewer than 20 extractable text characters; scanned PDFs require OCR, which is not enabled');
     return pdfPagesToSource(stdout);
   } finally { await rm(dir, { recursive: true, force: true }); }
+}
+
+async function extractPdfFigureAssets(bytes: Buffer, sourceId: string, pages: number): Promise<NonNullable<SourceDoc['figureAssets']>> {
+  const dir = await mkdtemp(join(tmpdir(), 'hypothesis-pdf-images-'));
+  const pdfPath = join(dir, 'source.pdf');
+  await writeFile(pdfPath, bytes);
+  const assetDir = resolve(process.env.HYPOTHESIS_SOURCE_ASSETS_DIR ?? '.data/hypothesis-source-assets');
+  const figures: NonNullable<SourceDoc['figureAssets']> = [];
+  let totalBytes = 0;
+  try {
+    await mkdir(assetDir, { recursive: true });
+    for (let page = 1; page <= pages && figures.length < 100; page++) {
+      const prefix = join(dir, `page-${page}`);
+      try { await exec('pdfimages', ['-all', '-f', String(page), '-l', String(page), pdfPath, prefix], { timeout: 30_000, maxBuffer: 2 * 1024 * 1024 }); }
+      catch (error) { if (page === 1 && /ENOENT/.test(String(error))) break; continue; }
+      const files = (await readdir(dir)).filter((name) => name.startsWith(`page-${page}-`) && !name.endsWith('.pdf')).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      for (const filename of files) {
+        if (figures.length >= 100 || totalBytes >= 250 * 1024 * 1024) break;
+        const imageBytes = await readFile(join(dir, filename));
+        if (imageBytes.length < 256) continue;
+        totalBytes += imageBytes.length;
+        if (totalBytes > 250 * 1024 * 1024) break;
+        const digest = createHash('sha256').update(imageBytes).digest('hex');
+        const extension = extname(filename).toLowerCase().replace(/[^.a-z0-9]/g, '') || '.bin';
+        const assetPath = join(assetDir, `${digest}${extension}`);
+        if (!existsSync(assetPath)) await writeFile(assetPath, imageBytes, { flag: 'wx' }).catch(async (error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+        const mediaType = extension === '.jpg' || extension === '.jpeg' ? 'image/jpeg' : extension === '.png' ? 'image/png' : extension === '.jp2' ? 'image/jp2' : 'application/octet-stream';
+        figures.push({ sourceId, sha256: digest, page, mediaType, assetPath, derivationStatus: 'embedded-image-crop', indexStatus: 'not-indexed' });
+      }
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+  return figures;
 }
 
 function splitPdfPages(extractedText: string): string[] {
@@ -211,9 +459,14 @@ export async function loadSourceDoc(path: string): Promise<SourceDoc> {
   else if (ext === '.docx') { format = 'docx'; const office = await officeText(bytes, 'docx'); text = office.text; nativeLocations = office.nativeLocations; }
   else if (ext === '.pptx') { format = 'pptx'; const office = await officeText(bytes, 'pptx'); text = office.text; nativeLocations = office.nativeLocations; }
   else if (ext === '.md' || ext === '.markdown') { format = 'markdown'; text = bytes.toString('utf8'); }
-  else if (ext === '.txt' || ext === '.text') { format = 'text'; text = bytes.toString('utf8'); }
+  else if (ext === '.txt' || ext === '.text' || ext === '.json') { format = 'text'; text = ext === '.json' ? JSON.stringify(JSON.parse(bytes.toString('utf8')), null, 2) : bytes.toString('utf8'); }
   else throw new Error(`Unsupported source format ${ext || '(no extension)'}; use PDF, DOCX, PPTX, Markdown, or text`);
   if (text.length > MAX_TEXT) throw new Error(`Extracted source exceeds ${MAX_TEXT.toLocaleString()} characters`);
   if (text.trim().length < 20) throw new Error(`Source ${basename(path)} has fewer than 20 extractable characters`);
-  return sourceDocFromText(text, format, nativeLocations);
+  const doc = sourceDocFromText(text, format, nativeLocations);
+  if (!doc.title) doc.title = basename(path, ext);
+  doc.contentSha256 = createHash('sha256').update(bytes).digest('hex');
+  if (format === 'pdf') doc.figureAssets = await extractPdfFigureAssets(bytes, doc.sourceId, nativeLocations.length);
+  if (format === 'docx' || format === 'pptx') doc.figureAssets = await extractOfficeFigureAssets(bytes, doc.sourceId, format);
+  return doc;
 }

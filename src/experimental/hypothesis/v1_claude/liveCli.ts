@@ -8,6 +8,7 @@ import { LIVE_NARRATION_SCRIPTS, teachingContextFor } from './fixtures/liveNarra
 import { loadOpenRouterEnv } from './planner/env.js';
 import { runHypothesisLive, type HypothesisLiveInput } from './pipeline/runLive.js';
 import { loadAlignmentCalibration } from '../shared/alignment/calibration.js';
+import { closeSpeechWorkers } from '../shared/alignment/align.js';
 import { PersistentBudgetLedger } from './pipeline/budgetLedger.js';
 import { ContentAddressedArtifactStore } from './artifactCache.js';
 
@@ -110,4 +111,4 @@ async function main(): Promise<void> {
 main().catch((err) => {
   console.error(err);
   process.exitCode = 1;
-});
+}).finally(closeSpeechWorkers);

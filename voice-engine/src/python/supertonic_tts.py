@@ -13,19 +13,27 @@ import json
 import sys
 import time
 import wave
+from typing import Any
 
 
-def main() -> None:
-    request = json.load(sys.stdin)
+_TTS: Any = None
+_STYLES: dict[str, Any] = {}
+
+
+def synthesize(request: dict[str, Any]) -> dict[str, Any]:
+    global _TTS
     text = request["text"]
     language = request.get("language") or "en"
     voice = request.get("voice") or "F1"
     audio_path = request["audioPath"]
 
-    from supertonic import TTS
-
-    tts = TTS(auto_download=True)
-    style = tts.get_voice_style(voice_name=voice)
+    if _TTS is None:
+        from supertonic import TTS
+        _TTS = TTS(auto_download=True)
+    tts = _TTS
+    if voice not in _STYLES:
+        _STYLES[voice] = tts.get_voice_style(voice_name=voice)
+    style = _STYLES[voice]
 
     started = time.perf_counter()
     wav, _ = tts.synthesize(text=text, voice_style=style, lang=language)
@@ -36,7 +44,22 @@ def main() -> None:
     with wave.open(audio_path, "rb") as handle:
         duration_ms = handle.getnframes() / handle.getframerate() * 1000.0
 
-    json.dump({"audioPath": audio_path, "durationMs": duration_ms, "synthMs": synth_ms}, sys.stdout)
+    return {"audioPath": audio_path, "durationMs": duration_ms, "synthMs": synth_ms}
+
+
+def main() -> None:
+    if "--worker" in sys.argv[1:]:
+        for line in sys.stdin:
+            if not line.strip():
+                continue
+            try:
+                result = synthesize(json.loads(line))
+                response = result
+            except Exception as error:  # noqa: BLE001 - report request failure while keeping model worker alive
+                response = {"error": str(error)}
+            print(json.dumps(response), flush=True)
+        return
+    print(json.dumps(synthesize(json.load(sys.stdin))))
 
 
 if __name__ == "__main__":
