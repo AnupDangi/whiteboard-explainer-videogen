@@ -40,6 +40,8 @@ async function main(): Promise<void> {
   const promptArm = (arg('prompt-arm') ?? 'zero') as PromptArm;
   const exampleOrder = (arg('example-order') ?? 'ranked') as ExampleOrder;
   const planDespiteAlignmentFailure = args.includes('--plan-despite-alignment-failure');
+  const scenePlanner = arg('scene-planner') ?? 'board-v2';
+  if (scenePlanner !== 'board-v2' && scenePlanner !== 'scene-spec-v1') throw new Error('--scene-planner must be board-v2 or scene-spec-v1');
   const sharedStageCache = arg('stage-cache') ? path.resolve(arg('stage-cache')!) : undefined;
   if (!['zero', 'text', 'mechanism', 'diverse'].includes(promptArm)) throw new Error(`unknown E5 prompt arm: ${promptArm}`);
   if (!['ranked', 'reverse'].includes(exampleOrder)) throw new Error(`unknown E5 example order: ${exampleOrder}`);
@@ -103,7 +105,7 @@ async function main(): Promise<void> {
       maxCostUsd: Math.max(0.001, EXPERIMENT.maxClipCostUsd - prepared.usage.costUsd),
     };
     try {
-      const result = await runHypothesisLive(lessonToLiveInput(lesson.id, prepared), options, { openRouterApiKey: env.apiKey, plannerModel, budgetLedger, artifactStore, promptArm, exampleOrder, planDespiteAlignmentFailure });
+      const result = await runHypothesisLive(lessonToLiveInput(lesson.id, prepared), options, { openRouterApiKey: env.apiKey, plannerModel, budgetLedger, artifactStore, promptArm, exampleOrder, planDespiteAlignmentFailure, scenePlanner });
       const hard = result.failures.filter((f) => f.hard);
       const cost = prepared.usage.costUsd + result.evaluationBundle.usage.costUsd;
       console.log(`status=${result.status} scenes=${result.scenes.length}/${prepared.plan!.sections.length} hard=${hard.length} fallbacks=${result.evaluationBundle.usage.fallbacks} cost=$${cost.toFixed(4)} wall=${((Date.now() - t0) / 1000).toFixed(0)}s video=${result.videoPath ?? 'NONE'}`);

@@ -12,13 +12,14 @@ import { resolveMentions } from '../narration/resolveMentions.js';
 import { alignedWordTimingProblems } from '../narration/align.js';
 import { resolveScene } from '../resolveScene.js';
 import { catalogVersion } from '../catalog/registry.js';
-import { collectPins, type IconPin } from '../catalog/iconPins.js';
+import { collectPins, iconPinKey, type IconPin } from '../catalog/iconPins.js';
 import { EMBEDDING_MODEL, rankConcepts } from '../catalog/semantic.js';
 import { QueryEmbeddingCache } from '../catalog/queryEmbeddingCache.js';
 import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
 import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
+import { BOARD_PROMPT_VERSION, BOARD_SCHEMA_VERSION, buildBoardPrompt, planBoardScene, skipBoardAfterAlignmentFailure } from '../planner/board.js';
 import { planScene, plannerProblems, shouldSkipPaidPlanning, skipPlanAfterAlignmentFailure, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
 import { buildPlannerSceneInput } from '../planner/sceneInput.js';
 import { safeParseSceneSpec } from '../schema.js';
@@ -110,6 +111,8 @@ export interface LiveRunContext {
   exampleOrder?: ExampleOrder;
   /** Diagnostic only: run paid S6 even when S5 has hard failures. The S5 failures remain, so the run stays failed. */
   planDespiteAlignmentFailure?: boolean;
+  /** S6 output contract. `board-v2` (default) is the enum-constrained board; `scene-spec-v1` is the legacy primitive schema kept for rollback. */
+  scenePlanner?: 'board-v2' | 'scene-spec-v1';
 }
 
 /** A hand-authored spec goes through exactly the planner's validation (schema + mention ids + structure); no model call. */
@@ -307,7 +310,10 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     let plannerCacheHit = false;
     let plannerArtifactCostUsd: number | undefined;
     const plannerSkipped = shouldSkipPaidPlanning({ hasHandAuthoredSpec: Boolean(sceneInput.spec), hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) });
-    const compiledPrompt = sceneInput.spec || plannerSkipped ? undefined : buildScenePlannerPrompt(plannerInput);
+    const board = (ctx.scenePlanner ?? 'board-v2') === 'board-v2';
+    const compiledPrompt = sceneInput.spec || plannerSkipped ? undefined : board ? buildBoardPrompt(plannerInput) : buildScenePlannerPrompt(plannerInput);
+    const skip = () => (board ? skipBoardAfterAlignmentFailure : skipPlanAfterAlignmentFailure)(plannerInput, hardAlignmentFailureCount);
+    const plan = (prompt: typeof compiledPrompt) => (board ? planBoardScene : planScene)(plannerInput, { model: ctx.plannerModel, apiKey: ctx.openRouterApiKey, remainingBudgetUsd, budgetLedger: ctx.budgetLedger, ...(prompt ? { compiledPrompt: prompt } : {}) });
     const promptHash = compiledPrompt ? sha256(stableJson(compiledPrompt)) : undefined;
     const promptAudit = compiledPrompt ? {
       compiledPrompt,
@@ -319,11 +325,9 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (sceneInput.spec) planned = handAuthored(sceneInput.spec, plannerInput);
     else if (ctx.artifactStore) {
       const cached = await ctx.artifactStore.run<{ result: PlanSceneResult; promptAudit?: NonNullable<typeof promptAudit> }>('S6-scene-planner', { plannerInput, promptAudit, hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) }, {
-        schemaVersion: 'claude-scene-spec/v1', stageVersion: '4', promptVersion: SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
+        schemaVersion: board ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', stageVersion: board ? 'board-1' : '4', promptVersion: board ? BOARD_PROMPT_VERSION : SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
       }, async () => ({
-        result: plannerSkipped
-          ? skipPlanAfterAlignmentFailure(plannerInput, hardAlignmentFailureCount)
-          : await planScene(plannerInput, { model: ctx.plannerModel, apiKey: ctx.openRouterApiKey, remainingBudgetUsd, budgetLedger: ctx.budgetLedger, compiledPrompt }),
+        result: plannerSkipped ? skip() : await plan(compiledPrompt),
         ...(promptAudit ? { promptAudit } : {}),
       }));
       stageArtifacts[`S6-scene-planner:${sceneInput.sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
@@ -334,8 +338,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
         totalUsage.cacheHits += 1;
         planned = { ...planned, usage: { ...planned.usage, calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0 } };
       }
-    } else if (plannerSkipped) planned = skipPlanAfterAlignmentFailure(plannerInput, hardAlignmentFailureCount);
-    else planned = await planScene(plannerInput, { model: ctx.plannerModel, apiKey: ctx.openRouterApiKey, remainingBudgetUsd, budgetLedger: ctx.budgetLedger, ...(compiledPrompt ? { compiledPrompt } : {}) });
+    } else if (plannerSkipped) planned = skip();
+    else planned = await plan(compiledPrompt);
     totalUsage.calls += planned.usage.calls;
     totalUsage.promptTokens += planned.usage.promptTokens;
     totalUsage.completionTokens += planned.usage.completionTokens;
@@ -349,6 +353,15 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     await writeJsonArtifact(outputDir, `planner-log.${sceneInput.sceneId}.json`, { input: plannerInput, promptAudit, plannerSkipped, skipReason: plannerSkipped ? 'hard-s5-alignment-failure' : undefined, responses: planned.rawResponses, usage: planned.usage, failures: planned.failures, fallback: planned.fallback });
 
     if (!planned.spec) continue; // real, recorded planner failure for this scene.
+
+    // A board names its icon exactly; pin it (an earlier scene's pin for the same concept still wins, for lesson-wide consistency).
+    const boardIcons = (planned as { iconAssets?: Record<string, string> }).iconAssets ?? {};
+    for (const element of planned.spec.elements) {
+      const assetId = boardIcons[element.id];
+      if (element.prim !== 'object' || !assetId) continue;
+      const key = iconPinKey(element);
+      if (!iconPins.has(key)) iconPins = new Map(iconPins).set(key, { assetId, rung: 2, score: 1 });
+    }
 
     // S7 retrieval for the concepts the planner actually chose, then the pure resolve stage.
     const resolveStartedAtMs = Date.now();
@@ -433,7 +446,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const ambiguousMentions = alignedAudio.mentions.filter((m) => m.ambiguous).length;
 
   const inputHash = sha256(stableJson({ caseId: input.caseId, scenes: input.scenes, targetDurationMs: input.targetDurationMs, runClass: input.runClass, sourceDoc: input.sourceDoc }));
-  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
+  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: ctx.scenePlanner ?? 'board-v2', boardPromptVersion: BOARD_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
   const evaluationBundle: EvaluationBundle = {
     schemaVersion: 'evaluation-bundle/v2',
     pipeline: 'claude',
@@ -442,7 +455,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     caseId: input.caseId,
     runId,
     commit: 'uncommitted-worktree',
-    configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
+    configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: ctx.scenePlanner ?? 'board-v2', boardPromptVersion: BOARD_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: (ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
     nativeArtifacts: {},
     claims: narration.scenes.map((s) => s.plainText),
     claimEvidence: Object.fromEntries(input.scenes.map((scene) => {
@@ -587,7 +600,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       bankHash: EXAMPLE_BANK_HASH,
       rankVersion: EXAMPLE_RANK_VERSION,
       catalogVersion: activeCatalogVersion,
-      promptVersion: SCENE_PROMPT_VERSION,
+      promptVersion: (ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? BOARD_PROMPT_VERSION : SCENE_PROMPT_VERSION,
+      scenePlanner: ctx.scenePlanner ?? 'board-v2',
       plannerModel: ctx.plannerModel,
     },
     stages: {

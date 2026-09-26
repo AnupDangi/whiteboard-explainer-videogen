@@ -58,7 +58,7 @@ export interface PlannerSceneInput {
   mentions: Array<{ id: string; phrase: string }>;
   teachingContext?: PlannerTeachingContext;
   /** Top-k house-style icon candidates per mention id (catalog/semantic.ts). */
-  candidates?: Record<string, Array<{ name: string; score: number }>>;
+  candidates?: Record<string, Array<{ id?: string; name: string; score: number }>>;
   /** Elements on the previous scene's board, for carryOver continuity. */
   previousElements?: Array<{ id: string; prim: string; label?: string; conceptIds?: string[] }>;
   /** Present only for a generated lesson with a validated S3 contract and measured S5 mentions. */

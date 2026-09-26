@@ -61,7 +61,7 @@ export function resolveObject(
   const conceptLower = concept.trim().toLowerCase().replace(/[_-]+/g, ' ');
   const wanted = new Set([conceptLower, singular(conceptLower)]);
   const isHouse = (e: CatalogEntry) => isHouseSource(e.source);
-  const exactOf = (pool: CatalogEntry[]) => pool.filter((entry) => entry.names.some((name) => wanted.has(name.toLowerCase()))).sort((a, b) => a.id.localeCompare(b.id))[0];
+  const exactOf = (pool: CatalogEntry[]) => pool.filter((entry) => entry.names.some((name) => wanted.has(name.toLowerCase().replace(/[_-]+/g, ' ')))).sort((a, b) => a.id.localeCompare(b.id))[0];
   const topCandidate = opts.candidates?.[0];
   const candidateEntry = topCandidate ? catalog.find((e) => e.id === topCandidate.id) : undefined;
   const pinnedEntry = opts.pin ? catalog.find((entry) => entry.id === opts.pin!.assetId) : undefined;
