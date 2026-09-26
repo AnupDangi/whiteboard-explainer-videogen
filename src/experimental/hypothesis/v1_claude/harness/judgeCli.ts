@@ -18,8 +18,8 @@ async function main(): Promise<void> {
   const runsRoot = arg('runs') ?? '.data/hypothesis-runs/claude/lessons';
   const topic = arg('topic')?.trim().toLowerCase();
   const env = await loadOpenRouterEnv();
-  const raw = await readFile('../explain-canvas-lab/.env', 'utf8').catch(() => '');
-  const model = arg('judge') ?? process.env.OPENROUTER_VISION_MODEL ?? raw.match(/^OPENROUTER_VISION_MODEL=(.+)$/m)?.[1]?.trim() ?? 'deepseek/deepseek-v4-flash-vision-exp';
+  const model = arg('judge') ?? env.visionModel;
+  if (!model) throw new Error('No judge model: pass --judge=<model> or set OPENROUTER_VISION_MODEL in .env');
 
   // A topic must be explicit before any Simi comparison; untagged runs receive style/clarity scores only.
   const refRoot = 'harness/reference/lamina';

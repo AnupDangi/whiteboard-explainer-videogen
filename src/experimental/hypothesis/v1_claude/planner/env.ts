@@ -1,25 +1,32 @@
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 /**
- * Explicit-load-at-runtime source for OpenRouter credentials, per the live-run
- * task's instruction: the key lives in the sibling `explain-canvas-lab`
- * checkout's `.env` and must NEVER be copied into this worktree or committed.
- * This module only reads that file into `process.env` at process start; it
- * never writes it anywhere.
+ * Runtime source for OpenRouter credentials and model routing. Keys and model
+ * ids live only in `.env` (never in code, never committed). The file is read
+ * from `HYPOTHESIS_ENV_FILE` when set, otherwise from `.env` in the working
+ * directory. Process environment variables override file values.
+ *
+ * Every model id is configuration. There is no model default in code: a
+ * missing stage model is a startup error, so a run can never silently use a
+ * model nobody chose.
  */
-const SIBLING_ENV_PATH = '/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/explain-canvas-lab/.env';
+export const ENV_FILE_VARIABLE = 'HYPOTHESIS_ENV_FILE';
 
 export interface OpenRouterEnv {
   apiKey: string;
   directorModel: string;
-  /** S6 Scene Planner: strongest affordable model (01 §1). OPENROUTER_SCENE_MODEL overrides. */
+  /** S6 board planner. OPENROUTER_SCENE_MODEL. */
   sceneModel: string;
-  /** S2-S4 mid-tier model. OPENROUTER_CONTENT_MODEL overrides. */
+  /** S2-S4 content stages. OPENROUTER_CONTENT_MODEL, else OPENROUTER_DIRECTOR_MODEL. */
   contentModel: string;
+  /** Vision judge. OPENROUTER_VISION_MODEL; undefined when not configured. */
+  visionModel?: string;
 }
 
-/** Default S6 model: strongest Claude model that fits the $0.10 per 1-minute clip ceiling (Opus is ~2x the price). */
-export const DEFAULT_SCENE_MODEL = 'anthropic/claude-sonnet-5';
+export function defaultEnvPath(): string {
+  return process.env[ENV_FILE_VARIABLE] || resolve(process.cwd(), '.env');
+}
 
 function parseEnvFile(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -36,20 +43,25 @@ function parseEnvFile(raw: string): Record<string, string> {
   return out;
 }
 
-/** Reads OPENROUTER_API_KEY / OPENROUTER_DIRECTOR_MODEL from the sibling .env at runtime, without copying the file or mutating process.env by default. */
-export async function loadOpenRouterEnv(envPath: string = SIBLING_ENV_PATH): Promise<OpenRouterEnv> {
+/** Reads credentials and model ids from the env file plus process env, without copying the file or mutating process.env. */
+export async function loadOpenRouterEnv(envPath: string = defaultEnvPath()): Promise<OpenRouterEnv> {
   let raw: string;
   try {
     raw = await readFile(envPath, 'utf8');
   } catch (error) {
-    throw new Error(`Could not read OpenRouter credentials from ${envPath}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Could not read OpenRouter configuration from ${envPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
   const parsed = parseEnvFile(raw);
-  const apiKey = process.env.OPENROUTER_API_KEY || parsed.OPENROUTER_API_KEY;
-  const directorModel = process.env.OPENROUTER_DIRECTOR_MODEL || parsed.OPENROUTER_DIRECTOR_MODEL;
-  if (!apiKey) throw new Error(`OPENROUTER_API_KEY not found in ${envPath}`);
-  if (!directorModel) throw new Error(`OPENROUTER_DIRECTOR_MODEL not found in ${envPath}`);
-  const sceneModel = process.env.OPENROUTER_SCENE_MODEL || parsed.OPENROUTER_SCENE_MODEL || DEFAULT_SCENE_MODEL;
-  const contentModel = process.env.OPENROUTER_CONTENT_MODEL || parsed.OPENROUTER_CONTENT_MODEL || directorModel;
-  return { apiKey, directorModel, sceneModel, contentModel };
+  const value = (key: string): string | undefined => process.env[key] || parsed[key] || undefined;
+  const required = (key: string, fallbackKey?: string): string => {
+    const found = value(key) ?? (fallbackKey ? value(fallbackKey) : undefined);
+    if (!found) throw new Error(`${key}${fallbackKey ? ` (or ${fallbackKey})` : ''} is not set in ${envPath} or the process environment`);
+    return found;
+  };
+  const apiKey = required('OPENROUTER_API_KEY');
+  const directorModel = required('OPENROUTER_DIRECTOR_MODEL');
+  const sceneModel = required('OPENROUTER_SCENE_MODEL');
+  const contentModel = required('OPENROUTER_CONTENT_MODEL', 'OPENROUTER_DIRECTOR_MODEL');
+  const visionModel = value('OPENROUTER_VISION_MODEL');
+  return { apiKey, directorModel, sceneModel, contentModel, ...(visionModel ? { visionModel } : {}) };
 }
