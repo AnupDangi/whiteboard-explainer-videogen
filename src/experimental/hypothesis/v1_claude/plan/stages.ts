@@ -232,9 +232,13 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
   const scenes = Math.max(1, Math.round(req.targetDurationSec / 18));
   const conceptIdChecklist = graph.concepts.map((concept) => `- ${concept.id}: ${concept.label}`).join('\n');
   const { system, user } = PLAN_PROMPT_VARIANTS[variant]({ scenes, req, graph, conceptIdChecklist });
+  // Same reason as S2: a full plan (lesson bible + one contract per section, each listing concepts,
+  // relations and evidence span ids) overran the generic 4000-token default mid-object in a live run
+  // (openai/gpt-6-luna, 2026-09-26). Scale the completion budget from the graph it must cover.
+  const maxTeachingPlanTokens = Math.min(8000, 1500 + graph.concepts.length * 300 + graph.relations.length * 150);
   const result = await structuredCall({
     stage: 'plan', subject: 'teaching plan', model: m.model, apiKey: m.apiKey, system, user,
-    schema: TeachingPlanSchema, schemaName: 'teaching_plan', remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
+    schema: TeachingPlanSchema, schemaName: 'teaching_plan', maxTokens: maxTeachingPlanTokens, remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
     // The deterministic analyser's blocking checks run INSIDE validation, against the model's raw
     // output. Nothing here mutates the plan before it is checked: a missing SceneContract or an
     // unsupported relation must surface as a real problem and consume the one repair call, never

@@ -150,6 +150,14 @@ export function toAnthropicSchema(node: unknown): unknown {
   return out;
 }
 
+/**
+ * OpenAI strict structured outputs require every property to be listed in
+ * `required` (observed: HTTP 400 "Missing 'latex'" for our optional fields).
+ * Those routes get the same schema non-strict; the caller's zod validation and
+ * one repair still enforce the full contract, so nothing is accepted unchecked.
+ */
+const STRICT_NEEDS_ALL_REQUIRED = ['openai/', '~openai/'];
+
 export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: typeof fetch = fetch): Promise<ChatResult> {
   const reasoningModel = HIDDEN_REASONING.some((p) => req.model.startsWith(p));
   const anthropic = req.model.startsWith('anthropic/');
@@ -163,7 +171,7 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
     max_tokens: req.maxTokens,
     ...(reasoningModel ? { reasoning: { max_tokens: Math.min(1200, Math.max(200, Math.round(req.maxTokens / 4))) } } : {}),
     ...(anthropic && req.effort ? { reasoning: { effort: req.effort } } : {}),
-    ...(constrained ? { response_format: { type: 'json_schema', json_schema: { name: req.schemaName, strict: true, schema: anthropicSchema ?? req.schema } } } : {}),
+    ...(constrained ? { response_format: { type: 'json_schema', json_schema: { name: req.schemaName, strict: !STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix)), schema: anthropicSchema ?? req.schema } } } : {}),
     ...(req.maxPriceUsdPerMillionTokens || reasoningModel || !constrained ? {
       provider: {
         ...(reasoningModel || !constrained ? { require_parameters: true } : {}),

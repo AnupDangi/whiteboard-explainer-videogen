@@ -51,3 +51,16 @@ test('OpenRouter rejects a response with missing or invalid billing usage instea
     usage: { prompt_tokens: 1, completion_tokens: 1, cost: 'NaN' },
   }), { status: 200 })), /usage\.cost.*unverified spend/);
 });
+
+test('OpenAI routes get the schema non-strict (they reject optional properties); other routes stay strict', async () => {
+  const strictFor = async (model: string): Promise<unknown> => {
+    let body: Record<string, unknown> = {};
+    await chatStructured('test-key', { model, system: 'system', user: 'user', schema: { type: 'object' }, schemaName: 'test', maxTokens: 10, temperature: 0 }, async (_url, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.0001 } }), { status: 200 });
+    });
+    return (body.response_format as { json_schema: { strict: boolean } }).json_schema.strict;
+  };
+  assert.equal(await strictFor('openai/gpt-test'), false);
+  assert.equal(await strictFor('google/gemini-test'), true);
+});
