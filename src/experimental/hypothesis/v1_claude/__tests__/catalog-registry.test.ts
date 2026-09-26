@@ -3,26 +3,27 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ENABLED_LIBRARIES, catalogVersion, isHouseSource } from '../catalog/registry.js';
-import { CATALOG_DATA_DIR, loadCatalogLibraries, loadStreamlineCatalog } from '../catalog/streamline.js';
+import { ALL_LIBRARIES, ENABLED_LIBRARIES, catalogVersion, isHouseSource } from '../catalog/registry.js';
+import { CATALOG_DATA_DIR, attributionForSources, loadCatalogLibraries, loadStreamlineCatalog } from '../catalog/streamline.js';
 
-test('registry is Streamline (house) plus the ingested user libraries, all non-house', () => {
-  assert.deepEqual(ENABLED_LIBRARIES.map((library) => [library.libraryId, library.house]), [
-    ['streamline', true],
-    ['assetlab-mit', false],
-    ['assetlab-isc', false],
-  ]);
-  assert.equal(isHouseSource('streamline:plump-color'), true);
-  assert.equal(isHouseSource('assetlab-mit:assetlab-mit'), false);
+test('registry enables exactly one house icon family (sketchy) and keeps the older catalogs disabled', () => {
+  assert.deepEqual(ENABLED_LIBRARIES.map((library) => [library.libraryId, library.house]), [['assetlab-sketchy-downshift', true]]);
+  assert.deepEqual(ALL_LIBRARIES.map((library) => library.libraryId), ['assetlab-sketchy-downshift', 'streamline', 'assetlab-mit', 'assetlab-isc']);
+  assert.equal(isHouseSource('assetlab-sketchy-downshift:assetlab-sketchy-downshift'), true);
+  assert.equal(isHouseSource('streamline:plump-color'), false);
   assert.equal(isHouseSource('generated'), false);
 });
 
-test('the default multi-library load\'s streamline-sourced entries equal the legacy Streamline load', () => {
-  const legacy = loadStreamlineCatalog().entries.map((entry) => entry.id);
-  const streamlineFromDefault = loadCatalogLibraries().entries
-    .filter((entry) => entry.source.startsWith('streamline:'))
-    .map((entry) => entry.id);
-  assert.deepEqual(streamlineFromDefault, legacy);
+test('the default load contains only enabled-family entries; Streamline stays loadable for rollback', () => {
+  const sources = new Set(loadCatalogLibraries().entries.map((entry) => entry.source.split(':')[0]));
+  assert.deepEqual([...sources], ['assetlab-sketchy-downshift']);
+  assert.ok(loadStreamlineCatalog().entries.length > 1500);
+});
+
+test('attribution covers exactly the libraries that supplied assets', () => {
+  assert.deepEqual(attributionForSources([]), []);
+  assert.match(attributionForSources(['assetlab-sketchy-downshift:assetlab-sketchy-downshift']).join('\n'), /Sketchie.*MIT/);
+  assert.match(attributionForSources(['streamline:plump-color']).join('\n'), /Streamline/);
 });
 
 test('catalog version is stable and changes when an enabled library changes', async () => {
@@ -35,22 +36,21 @@ test('catalog version is stable and changes when an enabled library changes', as
     const before = catalogVersion(ENABLED_LIBRARIES, dir);
     assert.equal(catalogVersion(ENABLED_LIBRARIES, dir), before);
     assert.match(before, /^catalog-[0-9a-f]{16}$/);
-    await writeFile(path.join(dir, 'streamline.emb.bin'), Buffer.alloc(8));
+    await writeFile(path.join(dir, ENABLED_LIBRARIES[0].embeddings), Buffer.alloc(8));
     assert.notEqual(catalogVersion(ENABLED_LIBRARIES, dir), before);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('every ingested user library is enabled, licensed, and loads every accepted entry', () => {
-  const userLibraries = ENABLED_LIBRARIES.filter((library) => library.libraryId !== 'streamline');
-  assert.ok(userLibraries.length >= 2, 'expected assetlab-mit and assetlab-isc to be registered');
+test('every enabled library is licensed and loads every accepted entry with an ink outline', () => {
   const allEntries = loadCatalogLibraries().entries;
-  for (const lib of userLibraries) {
+  for (const lib of ENABLED_LIBRARIES) {
     const loaded = allEntries.filter((entry) => entry.source.startsWith(`${lib.libraryId}:`));
-    assert.ok(loaded.length > 0, `${lib.libraryId} must load at least one entry`);
+    assert.ok(loaded.length > 400, `${lib.libraryId} must load its accepted entries, got ${loaded.length}`);
     for (const entry of loaded) {
       assert.ok(['MIT', 'ISC', 'Apache-2.0', 'CC0-1.0', 'CC-BY-4.0'].includes(entry.license), entry.id);
+      assert.ok(entry.strokePaths > 0, entry.id);
     }
   }
 });

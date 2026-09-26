@@ -249,6 +249,8 @@ export interface StrokePath {
   pxScale?: number;
   /** Sub-group revealed by its own anchored `term` event (e.g. a plot's tangent or descent steps); ungrouped paths draw with the element. */
   group?: string;
+  /** Colour of a designed detail stroke (e.g. a white check mark); omitted for the ink outline. */
+  color?: string;
 }
 
 export interface FillShape {

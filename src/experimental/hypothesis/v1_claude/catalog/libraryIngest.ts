@@ -21,8 +21,10 @@ export interface LibraryRawEntry {
   tags: string[];
   category: string | null;
   vb: { w: number; h: number };
-  strokes: Array<{ d: string; len: number; w: number }>;
-  fills: Array<{ d: string; role: 'main' | 'white' | 'ink'; rule?: 'evenodd' }>;
+  /** `color` is set only on designed detail strokes; ink outline strokes omit it. */
+  strokes: Array<{ d: string; len: number; w: number; color?: string }>;
+  /** `color` keeps an icon's own designed body colour (lowercase #rrggbb) for `main` fills. */
+  fills: Array<{ d: string; role: 'main' | 'white' | 'ink'; rule?: 'evenodd'; color?: string }>;
   license: string;
   contentHash: string;
 }
@@ -85,6 +87,19 @@ function shapeToPath(tag: string, attrs: Record<string, string>): string | undef
   }
 }
 
+/** `var(--token, #hex)` resolves to its literal fallback, which is the designed colour. */
+export function resolvePaint(value: string): string {
+  const match = /^var\(\s*--[a-z0-9-]+\s*,\s*(#[0-9a-f]{3,8})\s*\)$/i.exec(value.trim());
+  return match ? match[1] : value.trim();
+}
+
+/** Lowercase #rrggbb for a 3- or 6-digit hex colour; undefined for anything else. */
+export function hexColor(value: string): string | undefined {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim())?.[1]?.toLowerCase();
+  if (!hex) return undefined;
+  return `#${hex.length === 3 ? hex.split('').map((char) => char + char).join('') : hex}`;
+}
+
 function paintRole(value: string): 'ink' | 'white' | 'main' | undefined {
   const paint = value.trim().toLowerCase();
   if (paint === 'currentcolor' || paint === 'black') return 'ink';
@@ -142,26 +157,29 @@ export function ingestSvg(svg: string, meta: { id: string; set: string; name: st
 
     const d = shapeToPath(tag, own);
     if (!d) return { ok: false, reason: `bad-geometry: <${tag}>` };
-    const fill = attrs.fill ?? 'black';
-    const stroke = attrs.stroke;
+    const fill = resolvePaint(attrs.fill ?? 'black');
+    const stroke = attrs.stroke === undefined ? undefined : resolvePaint(attrs.stroke);
     if (/^url\(/i.test(fill) || (stroke && /^url\(/i.test(stroke))) return { ok: false, reason: 'unsupported-paint: gradients and patterns are not allowed' };
 
     if (fill.toLowerCase() !== 'none') {
       const role = paintRole(fill);
       if (!role) return { ok: false, reason: `unknown-color: fill ${fill}` };
-      fills.push({ d, role, ...(attrs['fill-rule'] === 'evenodd' ? { rule: 'evenodd' as const } : {}) });
+      const color = role === 'main' ? hexColor(fill) : undefined;
+      fills.push({ d, role, ...(attrs['fill-rule'] === 'evenodd' ? { rule: 'evenodd' as const } : {}), ...(color ? { color } : {}) });
     }
     if (stroke && stroke.toLowerCase() !== 'none') {
       const role = paintRole(stroke);
-      if (role !== 'ink') return { ok: false, reason: `unknown-color: stroke ${stroke} is not dark ink` };
+      if (!role) return { ok: false, reason: `unknown-color: stroke ${stroke}` };
       const len = pathLength(d);
       if (len <= 0) return { ok: false, reason: `bad-geometry: stroke <${tag}> has no measurable path length` };
-      strokes.push({ d, len: Math.round(len * 100) / 100, w: number(attrs['stroke-width'], 1) });
+      // Non-ink strokes are designed details (white highlights, coloured veins); they keep their colour.
+      const color = role === 'ink' ? undefined : hexColor(stroke) ?? '#ffffff';
+      strokes.push({ d, len: Math.round(len * 100) / 100, w: number(attrs['stroke-width'], 1), ...(color ? { color } : {}) });
     }
   }
 
   if (!viewBox) return { ok: false, reason: 'no-viewbox: missing <svg> root' };
-  if (!strokes.length) return { ok: false, reason: 'no-ink: the reveal needs at least one dark outline stroke' };
+  if (!strokes.some((stroke) => stroke.color === undefined)) return { ok: false, reason: 'no-ink: the reveal needs at least one dark outline stroke' };
   if (strokes.length + fills.length > MAX_ICON_PATHS) return { ok: false, reason: `too-many-paths: ${strokes.length + fills.length} > ${MAX_ICON_PATHS}` };
 
   const body = { id: meta.id, set: meta.set, name: meta.name, tags: [...meta.tags].sort(), category: meta.category, vb: viewBox, strokes, fills, license: meta.license };

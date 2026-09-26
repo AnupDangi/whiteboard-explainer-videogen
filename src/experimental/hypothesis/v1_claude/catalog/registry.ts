@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** Enabled icon libraries in retrieval order; additions require review, ingest, and embeddings. */
 export interface CatalogLibrary {
@@ -10,11 +11,19 @@ export interface CatalogLibrary {
   house: boolean;
 }
 
-export const ENABLED_LIBRARIES: readonly CatalogLibrary[] = [
-  { libraryId: 'streamline', file: 'streamline.json', embeddings: 'streamline.emb.bin', house: true },
-  { libraryId: 'assetlab-mit', file: 'assetlab-mit.json', embeddings: 'assetlab-mit.emb.bin', house: false },
-  { libraryId: 'assetlab-isc', file: 'assetlab-isc.json', embeddings: 'assetlab-isc.emb.bin', house: false },
-];
+const REGISTRY_FILE = 'enabled-libraries.json';
+// tsc does not copy data files into dist/; read the registry from the source tree.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const DIST_SRC = `${sep}dist${sep}src${sep}`;
+const REGISTRY_DIR = resolve(HERE.includes(DIST_SRC) ? HERE.replace(DIST_SRC, `${sep}src${sep}`) : HERE, 'data');
+
+const REGISTRY = JSON.parse(readFileSync(resolve(REGISTRY_DIR, REGISTRY_FILE), 'utf8')) as { libraries: CatalogLibrary[]; disabled?: CatalogLibrary[] };
+
+/** Enabled libraries, read from `data/enabled-libraries.json` (shared with scripts/embed-catalog.mjs). */
+export const ENABLED_LIBRARIES: readonly CatalogLibrary[] = REGISTRY.libraries;
+
+/** Every ingested library, enabled or not (disabled ones stay loadable for rollback and tests). */
+export const ALL_LIBRARIES: readonly CatalogLibrary[] = [...REGISTRY.libraries, ...(REGISTRY.disabled ?? [])];
 
 let dataDirectory: string | undefined;
 

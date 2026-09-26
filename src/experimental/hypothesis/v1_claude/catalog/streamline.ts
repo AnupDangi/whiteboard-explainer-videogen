@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { PaletteToken, PrimitiveVisual } from '../types.js';
 import { STYLE, paletteFill } from '../style.js';
 import type { CatalogEntry } from './catalog.js';
-import { ENABLED_LIBRARIES, setCatalogDataDir, type CatalogLibrary } from './registry.js';
+import { ALL_LIBRARIES, ENABLED_LIBRARIES, setCatalogDataDir, type CatalogLibrary } from './registry.js';
 
 /**
  * Streamline icons (free duotone sets, CC BY 4.0) ingested offline by
@@ -24,8 +24,8 @@ interface RawEntry {
   tags: string[];
   category: string | null;
   vb: { w: number; h: number };
-  strokes: Array<{ d: string; len: number; w: number }>;
-  fills: Array<{ d: string; role: 'main' | 'white' | 'ink'; rule?: 'evenodd' }>;
+  strokes: Array<{ d: string; len: number; w: number; color?: string }>;
+  fills: Array<{ d: string; role: 'main' | 'white' | 'ink'; rule?: 'evenodd'; color?: string }>;
   license: string;
 }
 
@@ -67,12 +67,15 @@ function renderRaw(raw: RawEntry, size: { w: number; h: number }, fill?: Palette
   const tx = (size.w - raw.vb.w * s) / 2;
   const ty = (size.h - raw.vb.h * s) / 2;
   const transform = `translate(${+tx.toFixed(3)},${+ty.toFixed(3)}) scale(${+s.toFixed(5)})`;
-  const main = paletteFill(fill && fill !== 'none' ? fill : CATEGORY_FILL[raw.category ?? ''] ?? 'blue');
+  const explicit = fill && fill !== 'none';
+  const main = paletteFill(explicit ? fill : CATEGORY_FILL[raw.category ?? ''] ?? 'blue');
+  // An icon that carries its own designed colours keeps them unless the element names a palette fill.
+  const body = (f: RawEntry['fills'][number]): string => (!explicit && f.color ? f.color : main);
   return {
-    paths: raw.strokes.map((p) => ({ d: p.d, length: p.len, width: ICON_INK_PX / s, transform, pxScale: s })),
+    paths: raw.strokes.map((p) => ({ d: p.d, length: p.len, width: (p.color ? p.w : ICON_INK_PX / s), transform, pxScale: s, ...(p.color ? { color: p.color } : {}) })),
     fills: raw.fills.map((f) => ({
       d: f.d,
-      fill: f.role === 'main' ? main : f.role === 'white' ? '#FFFFFF' : STYLE.stroke.color,
+      fill: f.role === 'main' ? body(f) : f.role === 'white' ? '#FFFFFF' : STYLE.stroke.color,
       transform,
       ...(f.rule ? { fillRule: f.rule } : {}),
     })),
@@ -115,8 +118,22 @@ export function loadCatalogLibraries(libraries: readonly CatalogLibrary[] = ENAB
 }
 
 export function loadStreamlineCatalog(): { attribution: string; entries: CatalogEntry[] } {
-  const streamline = loadCatalogLibraries(ENABLED_LIBRARIES.filter((library) => library.libraryId === 'streamline'));
+  const streamline = loadCatalogLibraries(ALL_LIBRARIES.filter((library) => library.libraryId === 'streamline'));
   return { attribution: streamline.attribution[0] ?? '', entries: streamline.entries };
 }
 
 export const STREAMLINE_ATTRIBUTION = (): string => loadStreamlineCatalog().attribution;
+
+/**
+ * Attribution lines for every library that supplied an asset, keyed by the
+ * resolution `source` prefix (`<libraryId>:`). Written next to each video.
+ */
+export function attributionForSources(sources: readonly string[]): string[] {
+  const lines: string[] = [];
+  for (const library of ALL_LIBRARIES) {
+    const prefix = library.libraryId === 'streamline' ? 'streamline:' : `${library.libraryId}:`;
+    if (!sources.some((source) => source.startsWith(prefix))) continue;
+    lines.push(...loadCatalogLibraries([library]).attribution);
+  }
+  return lines;
+}

@@ -27,7 +27,7 @@ import { VISUAL_STAGE_VERSIONS } from './versions.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
 import { encodeVideoAtomically, rasterizePng, type VideoScene } from '../export/videoEncode.js';
-import { STREAMLINE_ATTRIBUTION } from '../catalog/streamline.js';
+import { attributionForSources } from '../catalog/streamline.js';
 import { buildWebVtt } from '../export/captions.js';
 import { resolveSourceEvidence, type SourceDoc } from '../plan/sourceDoc.js';
 import { budgetLedgerAccountingProblems, type PersistentBudgetLedger } from './budgetLedger.js';
@@ -543,9 +543,10 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     failures.push({ code: 'contact-sheet-png-failed', stage: 'encode', message: error instanceof Error ? error.message : String(error), hard: false });
   }
 
-  // CC BY 4.0 assets require attribution next to the video (catalog/normalize.ts LICENSE_ALLOWLIST note).
-  const usesStreamline = scenes.some((sc) => sc.laidOut.elements.some((e) => e.resolution?.source.startsWith('streamline:')));
-  const credits = usesStreamline ? STREAMLINE_ATTRIBUTION() : undefined;
+  // Every library that supplied an asset is credited next to the video (CC BY 4.0 and MIT notices).
+  const usedSources = scenes.flatMap((sc) => sc.laidOut.elements.flatMap((e) => (e.resolution?.source ? [e.resolution.source] : [])));
+  const creditLines = attributionForSources(usedSources);
+  const credits = creditLines.length ? creditLines.join('\n') : undefined;
     if (credits) await writeFile(path.join(outputDir, 'attribution.txt'), `${credits}\n`, 'utf8');
 
   evaluationBundle.failures = failures.map(toRunFailure);

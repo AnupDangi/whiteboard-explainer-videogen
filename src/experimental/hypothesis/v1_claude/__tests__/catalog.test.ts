@@ -39,12 +39,12 @@ test('catalog: seed descriptors do not route broad lesson topics to merely assoc
   }
 });
 
-test('ladder: exact name match resolves at rung 2 with score 1, preferring the house style (Streamline) over procedural doodles', () => {
+test('ladder: exact name match resolves at rung 2 with score 1, preferring the house family (sketchy) over procedural doodles', () => {
   const { resolution } = resolveObject('key', { size: { w: 150, h: 220 } });
   assert.equal(resolution.rung, 2);
   assert.equal(resolution.score, 1);
-  assert.equal(resolution.assetId, 'streamline-color:key');
-  assert.equal(resolution.license, 'CC-BY-4.0');
+  assert.equal(resolution.assetId, 'assetlab-sketchy-downshift:svg-key-sketchy-downshift-key-svg');
+  assert.equal(resolution.license, 'MIT');
 });
 
 test('ladder: an explicitly supplied catalog is the only pool searched', () => {
@@ -53,8 +53,8 @@ test('ladder: an explicitly supplied catalog is the only pool searched', () => {
 });
 
 test('ladder: a strong embedding candidate from the house catalog beats a procedural exact name', () => {
-  const { resolution } = resolveObject('robot', { size: { w: 150, h: 220 }, candidates: [{ id: 'streamline-plump-color:ai-edit-robot', name: 'ai edit robot', score: 0.7 }] });
-  assert.equal(resolution.assetId, 'streamline-plump-color:ai-edit-robot');
+  const { resolution } = resolveObject('android', { size: { w: 150, h: 220 }, candidates: [{ id: 'assetlab-sketchy-downshift:svg-robot-sketchy-downshift-robot-svg', name: 'robot', score: 0.7 }] });
+  assert.equal(resolution.assetId, 'assetlab-sketchy-downshift:svg-robot-sketchy-downshift-robot-svg');
   assert.equal(resolution.rung, 2);
 });
 

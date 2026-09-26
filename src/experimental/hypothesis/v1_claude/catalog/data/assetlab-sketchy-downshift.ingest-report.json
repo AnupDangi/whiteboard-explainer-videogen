@@ -1,0 +1,9 @@
+{
+  "libraryId": "assetlab-sketchy-downshift",
+  "version": "1.0.0",
+  "accepted": 462,
+  "rejected": [],
+  "limitations": [
+    "SVG style attributes are not parsed; use presentation attributes for fill, stroke, stroke-width, and fill-rule."
+  ]
+}

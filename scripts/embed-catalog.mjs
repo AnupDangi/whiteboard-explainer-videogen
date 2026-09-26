@@ -1,18 +1,13 @@
 #!/usr/bin/env node
 // Precompute embeddings for each enabled icon library (local MiniLM, zero API cost).
-// Keep this list aligned with catalog/registry.ts; the script runs before TypeScript is built.
 // Each output is a Float32 [entries x 384] matrix in catalog entry order.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pipeline } from '@huggingface/transformers';
 
-// Keep in sync with ENABLED_LIBRARIES in src/experimental/hypothesis/v1_claude/catalog/registry.ts.
-const ENABLED_LIBRARIES = [
-  { libraryId: 'streamline', file: 'streamline.json', embeddings: 'streamline.emb.bin' },
-  { libraryId: 'assetlab-mit', file: 'assetlab-mit.json', embeddings: 'assetlab-mit.emb.bin' },
-  { libraryId: 'assetlab-isc', file: 'assetlab-isc.json', embeddings: 'assetlab-isc.emb.bin' },
-];
 const dataDir = 'src/experimental/hypothesis/v1_claude/catalog/data';
+// Same registry file catalog/registry.ts reads, so the two can never drift.
+const { libraries: ENABLED_LIBRARIES } = JSON.parse(readFileSync(join(dataDir, 'enabled-libraries.json'), 'utf8'));
 const embed = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
 const descriptor = (e) => `${e.name}. ${e.tags.join(', ')}`;
 const dims = 384;

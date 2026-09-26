@@ -58,3 +58,20 @@ test('icons over the path budget are rejected', () => {
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.reason, /^too-many-paths/);
 });
+
+// Sketchy-family shape: CSS-var colours with literal fallbacks, a separate fill layer, an ink layer, and a coloured detail stroke.
+const sketchy = '<svg viewBox="0 0 96 96" fill="none"><g stroke="none"><path fill="var(--sk-c1, #E8538F)" d="M10 10h40v40H10z"/></g><g stroke="currentColor" stroke-width="5"><path d="M10 10h40v40H10z"/><path d="M20 30h20" stroke="var(--sk-c2, #FFFFFF)"/></g></svg>';
+
+test('sketchy icons: var() colours resolve, body fills keep their designed colour, detail strokes keep theirs', () => {
+  const result = ingestSvg(sketchy, meta('badge'));
+  assert.ok(result.ok, result.ok ? '' : result.reason);
+  if (!result.ok) return;
+  assert.deepEqual(result.entry.fills.map((fill) => [fill.role, fill.color]), [['main', '#e8538f']]);
+  assert.deepEqual(result.entry.strokes.map((stroke) => stroke.color), [undefined, '#ffffff']);
+});
+
+test('an icon whose only strokes are coloured details is still rejected: the reveal needs an ink outline', () => {
+  const detailOnly = '<svg viewBox="0 0 24 24"><path d="M0 0h10v10z" fill="#8fbffa"/><path d="M2 2h5" fill="none" stroke="#ffffff"/></svg>';
+  const result = ingestSvg(detailOnly, meta('detail'));
+  assert.equal(result.ok, false);
+});

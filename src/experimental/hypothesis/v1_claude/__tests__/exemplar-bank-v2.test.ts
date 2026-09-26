@@ -18,12 +18,13 @@ test('bank v4 contains icon, plot, and formula demonstrations', () => {
   for (const prim of ['object', 'plot', 'formula', 'meter', 'tokenStrip', 'operator']) assert.ok(prims.has(prim as never), prim);
 });
 
-test('every object exemplar concept is an exact catalog name and resolves at rung 2', () => {
-  const names = new Set(loadStreamlineCatalog().entries.flatMap((e) => e.names.map((n) => n.toLowerCase())));
+test('every object exemplar concept is an exact name in the catalog the v1 bank was authored against (Streamline) and resolves at rung 2 there', () => {
+  const streamline = loadStreamlineCatalog().entries;
+  const names = new Set(streamline.flatMap((e) => e.names.map((n) => n.toLowerCase())));
   for (const exemplar of SCENE_EXEMPLARS) for (const el of exemplar.sceneSpec.elements) {
     if (el.prim !== 'object') continue;
     assert.ok(names.has(el.concept.toLowerCase()), `${exemplar.id}: ${el.concept}`);
-    assert.equal(resolveObject(el.concept, { size: { w: 200, h: 260 } }).resolution.rung, 2, `${exemplar.id}: ${el.concept}`);
+    assert.equal(resolveObject(el.concept, { size: { w: 200, h: 260 } }, streamline).resolution.rung, 2, `${exemplar.id}: ${el.concept}`);
   }
 });
 

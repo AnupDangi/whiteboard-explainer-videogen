@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "claude-enabled-libraries/v1",
+  "note": "Retrieval order. Generated lessons use one icon family (board schema v2 design, 2026-09-26). Disabled catalogs stay on disk for rollback.",
+  "libraries": [
+    { "libraryId": "assetlab-sketchy-downshift", "file": "assetlab-sketchy-downshift.json", "embeddings": "assetlab-sketchy-downshift.emb.bin", "house": true }
+  ],
+  "disabled": [
+    { "libraryId": "streamline", "file": "streamline.json", "embeddings": "streamline.emb.bin", "house": true },
+    { "libraryId": "assetlab-mit", "file": "assetlab-mit.json", "embeddings": "assetlab-mit.emb.bin", "house": false },
+    { "libraryId": "assetlab-isc", "file": "assetlab-isc.json", "embeddings": "assetlab-isc.emb.bin", "house": false }
+  ]
+}

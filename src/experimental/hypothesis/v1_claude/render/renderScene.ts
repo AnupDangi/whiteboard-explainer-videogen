@@ -4,15 +4,15 @@ import { escapeXml, progress as sharedProgress, svgDocument } from '../../shared
 import { partGroupId } from './mathIds.js';
 import { measureTextWidth } from '../layout/measure.js';
 
-const strokeAttrs = (width: number = STYLE.stroke.width) =>
-  `fill="none" stroke="${STYLE.stroke.color}" stroke-width="${width}" stroke-linecap="${STYLE.stroke.cap}" stroke-linejoin="${STYLE.stroke.join}"`;
+const strokeAttrs = (width: number = STYLE.stroke.width, color: string = STYLE.stroke.color) =>
+  `fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="${STYLE.stroke.cap}" stroke-linejoin="${STYLE.stroke.join}"`;
 
 const strokeSvg = (path: StrokePath, dashProgress: number): string => {
   const len = Math.max(1e-6, path.length);
   const width = path.width ?? STYLE.stroke.width;
   const tf = path.transform ? ` transform="${path.transform}"` : '';
-  if (dashProgress >= 1) return `<path d="${path.d}" ${strokeAttrs(width)}${tf}/>`;
-  return `<path d="${path.d}" ${strokeAttrs(width)}${tf} stroke-dasharray="${len}" stroke-dashoffset="${len * (1 - dashProgress)}"/>`;
+  if (dashProgress >= 1) return `<path d="${path.d}" ${strokeAttrs(width, path.color)}${tf}/>`;
+  return `<path d="${path.d}" ${strokeAttrs(width, path.color)}${tf} stroke-dasharray="${len}" stroke-dashoffset="${len * (1 - dashProgress)}"/>`;
 };
 
 const fillSvg = (f: FillShape, opacity = 1): string =>
