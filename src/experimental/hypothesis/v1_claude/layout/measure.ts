@@ -1,3 +1,4 @@
+import { labelBlockHeight, labelLines } from '../catalog/ladder.js';
 import { Resvg } from '@resvg/resvg-js';
 import type { Element } from '../types.js';
 import { STYLE } from '../style.js';
@@ -107,7 +108,8 @@ export function measureElement(el: Element): IntrinsicSize {
       // Icon square + uppercase label underneath (catalog/ladder.ts OBJECT_LABEL_H).
       const objectLabel = el.label ?? el.concept;
       const icon = STYLE.element.objectSize[0];
-      return { w: Math.max(icon, measureTextWidth(objectLabel, label) + 24), h: icon + 56 };
+      const lines = labelLines(objectLabel);
+      return { w: Math.max(icon, ...lines.map((line) => measureTextWidth(line, label) + 24)), h: icon + labelBlockHeight(objectLabel) };
     }
     case 'text':
       return { w: measureTextWidth(el.text, STYLE.font.sizes[el.size]) + pad, h: LINE_H[el.size] };

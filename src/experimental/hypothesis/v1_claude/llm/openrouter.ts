@@ -67,7 +67,8 @@ function requiredUsageNumber(value: unknown, field: string): number {
   return parsed;
 }
 
-const HIDDEN_REASONING = ['qwen/', 'deepseek/', 'inclusionai/'];
+// Routes whose hidden reasoning counts against max_tokens; they get a bounded reasoning allowance (gemini-3.8-flash spent ~2.2k of 2.5k S6 tokens thinking and truncated its JSON, 2026-09-26).
+const HIDDEN_REASONING = ['qwen/', 'deepseek/', 'inclusionai/', 'google/'];
 
 /**
  * Split most of the remaining call budget across prompt and completion, with

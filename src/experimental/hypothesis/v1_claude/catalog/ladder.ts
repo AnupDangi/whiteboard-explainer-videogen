@@ -93,7 +93,7 @@ export function resolveObject(
 
   if (best) {
     const norm = normalizeCatalogEntry(best.entry);
-    const side = iconSide(opts.size);
+    const side = iconSide(opts.size, labelText);
     const icon = attachBadge(best.entry.render({ w: side, h: side }, opts.fill), { w: side, h: side });
     return {
       visual: withLabelBelow(icon, side, labelText, opts.size, opts.count),
@@ -112,7 +112,29 @@ export function resolveObject(
 /** Height reserved under an icon for its uppercase label (reference frames label every icon underneath). */
 export const OBJECT_LABEL_H = 56;
 
-export const iconSide = (size: { w: number; h: number }): number => Math.max(1, Math.min(size.w, size.h - OBJECT_LABEL_H));
+/** Extra height per wrapped label line (label font ~32 px at 1.15 leading). */
+export const OBJECT_LABEL_LINE_H = 37;
+
+/**
+ * Split a label into at most two balanced lines, as the reference frames do
+ * ("CARBON / DIOXIDE"). One word stays on one line. Narrow labels let the
+ * layout scale icons up instead of spreading one long line across the board.
+ */
+export function labelLines(label: string): string[] {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return [label.trim()];
+  let best = 1;
+  let bestDiff = Infinity;
+  for (let cut = 1; cut < words.length; cut++) {
+    const diff = Math.abs(words.slice(0, cut).join(' ').length - words.slice(cut).join(' ').length);
+    if (diff < bestDiff) { best = cut; bestDiff = diff; }
+  }
+  return [words.slice(0, best).join(' '), words.slice(best).join(' ')];
+}
+
+export const labelBlockHeight = (label: string): number => OBJECT_LABEL_H + (labelLines(label).length - 1) * OBJECT_LABEL_LINE_H;
+
+export const iconSide = (size: { w: number; h: number }, label = ''): number => Math.max(1, Math.min(size.w, size.h - labelBlockHeight(label)));
 
 const prefixTransform = (dx: number, existing?: string) => (dx === 0 ? existing : `translate(${dx},0)${existing ? ` ${existing}` : ''}`);
 
@@ -124,7 +146,7 @@ const prefixTransform = (dx: number, existing?: string) => (dx === 0 ? existing 
 export function withLabelBelow(icon: PrimitiveVisual, side: number, label: string, size: { w: number; h: number }, count?: number): PrimitiveVisual {
   const dx = (size.w - side) / 2;
   const texts: TextRun[] = icon.texts.map((t) => ({ ...t, x: t.x + dx }));
-  texts.push({ x: size.w / 2, y: side + OBJECT_LABEL_H - 14, text: label.toUpperCase(), size: STYLE.font.sizes.label, anchor: 'middle' });
+  labelLines(label).forEach((line, index) => texts.push({ x: size.w / 2, y: side + OBJECT_LABEL_H - 14 + index * OBJECT_LABEL_LINE_H, text: line.toUpperCase(), size: STYLE.font.sizes.label, anchor: 'middle' }));
   if (count && count > 1) texts.push({ x: dx - 8, y: side * 0.3, text: `×${count}`, size: STYLE.font.sizes.label, anchor: 'end' });
   return {
     paths: icon.paths.map((p) => ({ ...p, transform: prefixTransform(dx, p.transform) })),

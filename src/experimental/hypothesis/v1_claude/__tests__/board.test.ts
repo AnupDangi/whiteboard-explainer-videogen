@@ -158,3 +158,25 @@ test('with an icon catalog, any catalog icon is admissible (a metaphor), off-cat
   assert.ok(validateBoard(offCatalog, withCatalog).problems.some((problem) => problem.startsWith('nodes.2.icon')));
   assert.match(buildBoardPrompt(withCatalog).system, /Icon catalog \(4 hand-drawn icons, one visual family\):\nflour, water, dough, robot/);
 });
+
+test('large catalogs keep icon a plain string in the provider schema and check membership in code', () => {
+  const iconCatalog = Array.from({ length: 70 }, (_, i) => ({ id: `lib:icon${i}`, name: `icon${i}` }));
+  const big: PlannerSceneInput = { ...scene, iconCatalog };
+  const json = JSON.stringify(z.toJSONSchema(boardSchema(boardEnums(big))));
+  assert.ok(!json.includes('"icon69"'), 'a 70-name catalog is not sent as an enum');
+  const board = goodBoard();
+  board.nodes[0].icon = 'icon7';
+  board.nodes[1].icon = 'label';
+  board.nodes[3].icon = 'label';
+  assert.deepEqual(validateBoard(board, big).problems, []);
+  board.nodes[0].icon = 'rocket';
+  assert.match(validateBoard(board, big).problems.join(' | '), /icon "rocket" is not in the icon catalog/);
+});
+
+test('icon labels wrap onto at most two balanced lines, so nodes stay narrow and icons can grow', async () => {
+  const { labelLines, labelBlockHeight, OBJECT_LABEL_H, OBJECT_LABEL_LINE_H } = await import('../catalog/ladder.js');
+  assert.deepEqual(labelLines('Leaf'), ['Leaf']);
+  assert.deepEqual(labelLines('Carbon dioxide'), ['Carbon', 'dioxide']);
+  assert.deepEqual(labelLines('Self-critique and revision'), ['Self-critique', 'and revision']);
+  assert.equal(labelBlockHeight('Carbon dioxide'), OBJECT_LABEL_H + OBJECT_LABEL_LINE_H);
+});
