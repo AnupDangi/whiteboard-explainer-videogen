@@ -1999,3 +1999,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Bugs found (next fixes):** (1) sparse-gate message contradicts itself (`occupancy 0.53 with 1 elements is below the 0.08 floor` — 0.53 > 0.08; element-count clause misfires/message wrong); (2) S3 section-kind enum + evidence-span repair guidance; (3) repeated-box text (BACKWARD RAY TRACING ×3) + edge label clipped behind node icon.
 - **Remaining tasks:** above 3 fixes → re-run failures → continue 10/5/5 matrix → determinism/harness report.
 - **Next bounded task:** sparse-gate message/count fix + S3 kind/span guidance.
+
+## Entry — 2026-09-27, Batch 1 verified fixes (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** full-tree hunt (4 reviewers, 14 red) + hands-on verification; deepest roots first.
+- **Implemented:** prompt object doc→flat (stops zod-burn repair loss); stem strips trailing `s` only (compares/requires now match; executed proof); markers accept empty phrase → existing empty-phrase failure (no new codes); VSR literal token-subsequence (multi-word names hit); edge anchor guard + drop labels on <2-point edges. No topic keywords.
+- **Audit:** agent swapped py labels — corrected: alignment 28 OK, rag-engine 12 OK; removed stray `:memory:.ses` test artifact. Touched 101/101, full node 529/529, `git diff --check` clean.
+- **Next bounded task:** Batch 2 (timeline clamp, mention check, section ids, budget probe).

@@ -107,6 +107,20 @@ test('resolveMentions: empty-phrase marker is a distinct, recorded failure (not 
   assert.equal(failures[0].reason, 'empty-phrase');
 });
 
+test('parseMarkers: an empty-phrase marker parses (not left literal) so resolveMentions records empty-phrase', () => {
+  // Fail-pre: MARKER_RE required 1+ phrase chars, so [[bad|]] flowed literal to TTS.
+  const { plainText, mentions } = parseMarkers('Say [[bad|]] aloud.');
+  assert.equal(mentions.length, 1);
+  assert.equal(mentions[0].id, 'bad');
+  assert.equal(mentions[0].phrase, '');
+  assert.ok(!plainText.includes('[['), 'marker syntax must not leak into TTS text');
+  const script = scriptOf('Say [[bad|]] aloud.');
+  const audio = alignFixture(script, 4000);
+  const { failures } = resolveMentions(script, audio);
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].reason, 'empty-phrase');
+});
+
 test('alignFixture: total duration lands exactly on the requested target', () => {
   const script = scriptOf('Some narration text of a reasonable length for testing purposes.');
   const audio = alignFixture(script, 12345);

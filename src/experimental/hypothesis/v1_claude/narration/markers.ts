@@ -1,7 +1,7 @@
 import type { NarrationScene, RawMention } from '../types.js';
 
-/** `[[id|spoken phrase]]` — id is a plain token, phrase is anything but `]]` or `|`. */
-const MARKER_RE = /\[\[([a-zA-Z0-9_.-]+)\|([^\]|]+)\]\]/g;
+/** `[[id|spoken phrase]]` — id is a plain token, phrase is anything but `]]` or `|` (possibly empty; empties surface as an `empty-phrase` failure in resolveMentions, never as literal TTS text). */
+const MARKER_RE = /\[\[([a-zA-Z0-9_.-]+)\|([^\]|]*)\]\]/g;
 
 export interface ParsedMarkers {
   plainText: string;

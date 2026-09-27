@@ -82,6 +82,7 @@ export function routeEdges(edges: Edge[], boxes: Map<string, BBox>): RoutedEdge[
 
 /** Default label anchor for a routed edge: the midpoint segment's center, lifted above the line. Shared with the renderer so layout and render agree. */
 export function edgeLabelAnchor(points: Array<{ x: number; y: number }>): { x: number; y: number } {
+  if (points.length < 2) return { x: STYLE.canvas.w / 2, y: STYLE.canvas.h / 2 - 16 };
   const mid = points[Math.floor(points.length / 2) - (points.length % 2 === 0 ? 1 : 0)];
   const next = points[Math.min(points.length - 1, points.indexOf(mid) + 1)];
   return { x: (mid.x + next.x) / 2, y: (mid.y + next.y) / 2 - 16 };
@@ -114,7 +115,11 @@ export function fitEdgeLabels(edges: RoutedEdge[]): RoutedEdge[] {
   const size = STYLE.font.sizes.note;
   const maxWidth = STYLE.canvas.w - 2 * safe;
   return edges.map((edge) => {
-    if (!edge.label || edge.points.length < 2) return edge;
+    if (edge.points.length < 2) {
+      if (!edge.label) return edge;
+      return { ...edge, label: undefined, labelPos: undefined };
+    }
+    if (!edge.label) return edge;
     let label = edge.label;
     let width = measureTextWidth(label, size);
     if (width > maxWidth) {

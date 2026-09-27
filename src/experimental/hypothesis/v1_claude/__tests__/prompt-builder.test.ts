@@ -8,8 +8,10 @@ import { buildConceptGraph, buildTeachingPlan, type LessonRequest, type StageMod
 import { sourceDocFromText, resolveSourceEvidence } from '../plan/sourceDoc.js';
 import type { ConceptGraph, TeachingPlan } from '../plan/schemas.js';
 
-// Recorded in Task 3 Step 1 from the unmodified v12 prompt.
-const V12_ZERO_SHOT_SYSTEM_SHA256 = 'fde58f61f17098ba19ef000a68022fd5201fe08a6b4041f05f7d6dd91ac84dfa';
+// Recorded in Task 3 Step 1 from the unmodified v12 prompt; re-recorded
+// 2026-09-27 after the Batch 1 object-doc fix (flat {"prim":"object","concept"}
+// instead of the nested {"prim":"object","object":{"concept"}} shape).
+const V12_ZERO_SHOT_SYSTEM_SHA256 = '1bb3ca51a332354af3953faf22b40771679ccfb1d7f75a3126d72eb41e731c5b';
 
 test('buildPrompt joins sections deterministically with titles and per-section hashes', () => {
   const built = buildPrompt([{ id: 'a', title: 'Alpha', body: 'one' }, { id: 'b', body: 'two' }], 'intro');

@@ -67,6 +67,14 @@ test('resolveRepresentation climbs the ladder on generic cues only', () => {
   }
 });
 
+test('literal rung matches multi-word catalog names by consecutive token subsequence', () => {
+  // Fail-pre: tokens.has(name) only matched single-word names.
+  const hit = resolveRepresentation('the store front stands open', ['store front']);
+  assert.equal(hit.representation, 'literal');
+  const miss = resolveRepresentation('the store is near the front gate', ['store front']);
+  assert.notEqual(miss.representation, 'literal', 'non-consecutive words must not count as a literal match');
+});
+
 test('state and topology structures partition the full structure set', () => {
   assert.deepEqual(
     [...STATE_STRUCTURES, ...TOPOLOGY_STRUCTURES].sort(),

@@ -156,6 +156,27 @@ test('a centered edge label keeps the default anchor (no gratuitous moves)', () 
   assert.deepEqual(fitted.labelPos, edgeLabelAnchor(edge.points));
 });
 
+test('edgeLabelAnchor on empty/single-point edges returns a safe default instead of crashing', () => {
+  // Fail-pre: edgeLabelAnchor([]) produced NaN (mid undefined) and the
+  // renderer fell back to it for pointless edges.
+  for (const points of [[], [{ x: 100, y: 100 }]] as Array<Array<{ x: number; y: number }>>) {
+    const anchor = edgeLabelAnchor(points);
+    assert.ok(Number.isFinite(anchor.x) && Number.isFinite(anchor.y), 'anchor must be finite');
+    assert.ok(anchor.x >= SAFE && anchor.x <= W - SAFE, 'anchor stays in the safe rect');
+  }
+});
+
+test('fitEdgeLabels drops labels on edges with fewer than 2 points', () => {
+  // Fail-pre: fitEdgeLabels kept the label while the renderer drew nothing,
+  // leaving a label the renderer then anchored via the crashing fallback.
+  const [noPoints] = fitEdgeLabels([{ from: 'a', to: 'b', label: 'FEED', points: [] }]);
+  assert.equal(noPoints.label, undefined);
+  assert.equal(noPoints.labelPos, undefined);
+  const [onePoint] = fitEdgeLabels([{ from: 'a', to: 'b', label: 'FEED', points: [{ x: 100, y: 100 }] }]);
+  assert.equal(onePoint.label, undefined);
+  assert.equal(onePoint.labelPos, undefined);
+});
+
 test('laid-out edge labels land inside the safe area end to end', () => {
   const spec: SceneSpec = {
     schemaVersion: 'claude-scene-spec/v1',

@@ -183,14 +183,19 @@ export function resolveRepresentation(
   evidence?: string,
 ): VisualSemantics {
   const text = (claim ?? '').trim();
-  const tokens = new Set(tokenize(text));
+  const claimTokens = tokenize(text);
+  const tokens = new Set(claimTokens);
   const catalog = new Set(
     (availableCatalogNames ?? []).map((name) => name.trim().toLowerCase()).filter(Boolean),
   );
   const { structure, matched } = detectStructure(tokens);
 
   for (const name of catalog) {
-    if (tokens.has(name)) {
+    const nameWords = name.split(' ').filter(Boolean);
+    const literal = nameWords.length <= 1
+      ? tokens.has(name)
+      : claimTokens.some((_, i) => nameWords.every((w, j) => claimTokens[i + j] === w));
+    if (literal) {
       return { structure, representation: 'literal', rationale: `catalog names the pictured thing directly (${name})` };
     }
   }

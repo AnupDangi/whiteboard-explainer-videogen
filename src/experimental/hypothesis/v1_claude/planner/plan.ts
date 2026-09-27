@@ -127,7 +127,7 @@ const numberWords: Record<string, number> = {
  */
 export const GENERIC_RELATION_TYPES = new Set(['compares', 'requires', 'contains']);
 const genericWords = (value: string): string[] => value.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean);
-const genericStem = (word: string): string => word.replace(/(ies|es|s)$/u, '');
+const genericStem = (word: string): string => word.replace(/s$/u, '');
 export function genericRelationWordingSupported(type: string, quotes: string[]): boolean {
   const wanted = genericStem(type.toLowerCase());
   return quotes.some((quote) => genericWords(quote).some((word) => genericStem(word) === wanted));
