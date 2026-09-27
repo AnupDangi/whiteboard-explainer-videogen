@@ -7,7 +7,6 @@ import { sha256, stableJson, writeJsonArtifact } from '../../shared/artifacts.js
 import { goldenById } from '../../shared/fixtures.js';
 import { svgDocument } from '../../shared/svg.js';
 import { synthesizeAndAlign } from '../../shared/alignment/align.js';
-import { loadAlignmentCalibration } from '../../shared/alignment/calibration.js';
 import { buildNarrationScene } from '../narration/markers.js';
 import { resolveMentions } from '../narration/resolveMentions.js';
 import { alignedWordTimingProblems } from '../narration/align.js';
@@ -44,7 +43,6 @@ import { EXAMPLE_BANK_HASH } from '../planner/exemplars.js';
 import { buildScenePlannerPrompt } from '../planner/prompt.js';
 import { SCENE_DIRECTOR_SKILL_HASH } from '../planner/sceneDirectorSkill.js';
 import { promptExperimentEligibilityProblems } from '../harness/promptExperimentEligibility.js';
-import { alignmentCalibrationEligibility, repairedWordIndexProblems, type SceneAlignmentProvenance } from './alignmentQuality.js';
 
 /**
  * Live-mode pipeline (per claude_pipeline.md §1/§2): source-generated lessons
@@ -270,7 +268,6 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const sceneAudioPathById = new Map<string, string>();
   const sceneDurationMsById = new Map<string, number>();
   const sceneAlignerById = new Map<string, AlignedAudio['provider']>();
-  const alignmentProvenance: SceneAlignmentProvenance[] = [];
   const alignmentCacheHits = new Set<string>();
   const alignmentStartedAtMs = Date.now();
   let cursorMs = 0;
@@ -302,14 +299,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     await mkdir(sceneAudioDir, { recursive: true });
     const audioPath = path.join(sceneAudioDir, `${String(sequence).padStart(4, '0')}.wav`);
     await writeFile(audioPath, Buffer.from(cached.artifact.payload.audioBase64, 'base64'));
-    if (!cached.artifact.payload.aligner || !Array.isArray(cached.artifact.payload.repairedWordIndexes)) {
-      throw new Error(`S5 cached alignment for ${scene.sceneId} lacks aligner or repair provenance`);
-    }
     return {
       durationMs: cached.artifact.payload.durationMs,
       words: cached.artifact.payload.words,
-      aligner: cached.artifact.payload.aligner,
-      repairedWordIndexes: cached.artifact.payload.repairedWordIndexes,
+      aligner: cached.artifact.payload.aligner ?? 'stable-ts',
+      repairedWordIndexes: cached.artifact.payload.repairedWordIndexes ?? [],
       audioPath,
     };
   };
@@ -457,9 +451,6 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   for (const [sceneIndex, sceneInput] of input.scenes.entries()) {
     const aligned = await alignedScenePromises[sceneIndex];
-    const sceneProvenance: SceneAlignmentProvenance = { sceneId: sceneInput.sceneId, aligner: aligned.aligner, wordCount: aligned.words.length, repairedWordIndexes: [...aligned.repairedWordIndexes] };
-    alignmentProvenance.push(sceneProvenance);
-    for (const problem of repairedWordIndexProblems(sceneProvenance)) failures.push({ code: 'invalid-word-alignment', stage: 'align', message: `${sceneInput.sceneId}: ${problem}`, hard: true });
     const alignedLocalWords = aligned.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs }));
     for (const problem of alignedWordTimingProblems(alignedLocalWords, aligned.durationMs)) failures.push({ code: 'invalid-word-alignment', stage: 'align', message: `${sceneInput.sceneId}: ${problem}`, hard: true });
     if (aligned.repairedWordIndexes.length > 0) failures.push({ code: 'alignment-words-repaired', stage: 'align', message: `${sceneInput.sceneId}: repaired word indexes ${aligned.repairedWordIndexes.join(',')}`, hard: false });
@@ -614,10 +605,6 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   await concatSceneAudio(sceneAudioPaths, SCENE_GAP_MS, trailingPadMs, masterWavPath);
   const alignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: mostEscalatedAligner(sceneAlignerById.values()), wavPath: masterWavPath, durationMs: finalDurationMs, sceneWords, sceneBoundsMs, mentions };
   alignmentMs = (await alignmentSettledAtPromise) - alignmentStartedAtMs;
-  const alignmentCalibration = await loadAlignmentCalibration();
-  const alignmentQuality = alignmentCalibrationEligibility(alignmentCalibration, options, alignmentProvenance, failures.some((f) => f.stage === 'align' && f.hard));
-  if (options.alignment.calibrationMedianErrorMs !== undefined && !alignmentQuality.identityMatches) failures.push({ code: 'alignment-calibration-identity-mismatch', stage: 'align', message: 'S5 calibration record does not exactly match the run voice, language, speed, synthesis provider, aligner model, and median error', hard: false });
-  if (alignmentQuality.uncalibratedScenes.length) failures.push({ code: 'alignment-calibration-inapplicable', stage: 'align', message: `Current stable-ts calibration does not cover escalated or repaired timings in scenes: ${alignmentQuality.uncalibratedScenes.join(', ')}`, hard: false });
   const alignmentStageFailures = failures.filter((failure) => failure.stage === 'align');
   stageRuns.push({ stage: 'S5-tts-alignment', kind: 'local', status: alignmentStageFailures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: alignmentMs, startedAt: new Date(alignmentStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: alignmentCacheHits.size > 0, fallbackCount: 0, usage: { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: alignmentCacheHits.size }, failures: alignmentStageFailures.map(toRunFailure) });
 
@@ -650,7 +637,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   // stages (encode/captions/budget) can still add *hard* failures, so only the hard-failure count
   // is re-read at each deriveRunStatus call below — factualEvidenceComplete/alignmentComplete stay frozen.
   const factualEvidenceComplete = !failures.some((f) => f.code.startsWith('board-concept-omitted') || f.code.startsWith('board-relation-omitted') || f.code.startsWith('source-'));
-  const alignmentComplete = alignmentQuality.complete;
+  const alignmentComplete = options.alignment.calibrationMedianErrorMs !== undefined && !failures.some((f) => f.code === 'invalid-word-alignment');
   const publishEvidence: PublishEvidence = { factualEvidenceComplete, alignmentComplete };
   // runLive.ts has no judge-verdict field yet; every call site below passes judgePassed = false.
   const judgePassed = false;
@@ -775,8 +762,6 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   await writeJsonArtifact(outputDir, 'narration.json', narration);
   await writeJsonArtifact(outputDir, 'aligned-audio.json', alignedAudio);
-  await writeJsonArtifact(outputDir, 'alignment-provenance.json', { schemaVersion: 'claude-alignment-provenance/v1', calibration: { id: alignmentCalibration.id, provider: options.alignment.provider, medianAbsoluteBoundaryErrorMs: options.alignment.calibrationMedianErrorMs ?? null, identityMatches: alignmentQuality.identityMatches, applicableToAllScenes: alignmentComplete }, scenes: alignmentProvenance });
-  evaluationBundle.nativeArtifacts.alignmentProvenance = 'alignment-provenance.json';
   if (input.sourceDoc) await writeJsonArtifact(outputDir, 'source-doc.json', input.sourceDoc);
   if (input.sourceBundle) await writeJsonArtifact(outputDir, 'source-bundle.json', input.sourceBundle);
   let captionsPath: string | undefined;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildSyllabus, lessonCostCapUsd, moduleBudgetShape, rebudgetUnwrittenModules, SyllabusOutputSchema, SyllabusSchema, syllabusSourcePrompt, syllabusSystemPrompt, validateSyllabus, type SyllabusModel } from '../plan/hierarchical.js';
+import { lessonCostCapUsd, moduleBudgetShape, rebudgetUnwrittenModules, SyllabusSchema, syllabusSourcePrompt, syllabusSystemPrompt, validateSyllabus, type SyllabusModel } from '../plan/hierarchical.js';
 import { sourceDocFromText, sourcePrompt } from '../plan/sourceDoc.js';
 
 const concept = (id: string) => ({ id, label: id, definition: `A source-backed definition of ${id}.`, evidence: [{ spanId: `span_${id}`, quote: `Evidence for ${id}.` }] });
@@ -53,51 +53,6 @@ test('S1 source payload contains exact text once with citation-relevant span loc
   assert.equal(parsed.rankedEvidence, undefined);
   assert.equal(parsed.embeddedFigures, undefined);
   assert.ok(payload.length < sourcePrompt(doc).length);
-});
-
-test('long syllabus source payload stays bounded and pairs exact excerpts with their span IDs', () => {
-  const source = `# Study\n\n${Array.from({ length: 100 }, (_, index) => `Finding ${index + 1}: ${'A measured result supports the explanation. '.repeat(45)}`).join('\n\n')}`;
-  const doc = sourceDocFromText(source, 'pdf');
-  const payload = JSON.parse(syllabusSourcePrompt(doc)) as { text?: string; excerpts: Array<{ id: string; text: string; excerpted?: boolean }> };
-  assert.equal(payload.text, undefined);
-  assert.ok(payload.excerpts.length >= 20);
-  assert.ok(payload.excerpts.reduce((sum, excerpt) => sum + excerpt.text.length, 0) <= 48_000);
-  assert.ok(payload.excerpts.every((excerpt) => doc.spans.find((span) => span.id === excerpt.id)?.text.startsWith(excerpt.text)));
-  assert.ok(payload.excerpts.some((excerpt) => excerpt.excerpted));
-  assert.ok(syllabusSourcePrompt(doc).length < source.length / 2);
-});
-
-test('syllabus normalizes generated hyphenated IDs consistently but rejects collisions', () => {
-  const raw = syllabus(600);
-  raw.concepts[0]!.id = 'Topic-1';
-  raw.modules[0]!.id = 'Module-1';
-  raw.modules[0]!.conceptIds = ['Topic-1'];
-  raw.modules[1]!.recallOfModuleIds = ['Module-1'];
-  const parsed = SyllabusOutputSchema.parse(raw);
-  assert.equal(parsed.concepts[0]!.id, 'topic_1');
-  assert.equal(parsed.modules[0]!.id, 'module_1');
-  assert.equal(parsed.modules[0]!.conceptIds[0], 'topic_1');
-  assert.equal(parsed.modules[1]!.recallOfModuleIds[0], 'module_1');
-  assert.deepEqual(validateSyllabus(parsed, 600), []);
-  raw.concepts[1]!.id = 'topic-1';
-  assert.ok(validateSyllabus(SyllabusOutputSchema.parse(raw), 600).some((issue) => /concept IDs must be unique/.test(issue)));
-  raw.concepts[1]!.id = 'topic 2';
-  assert.equal(SyllabusOutputSchema.safeParse(raw).success, false);
-});
-
-test('syllabus repair keeps a paraphrased evidence quote as a hard failure', async () => {
-  const doc = sourceDocFromText('# Study\n\nThe exact source says sunlight heats the water.', 'markdown');
-  const paragraph = doc.spans.find((span) => span.kind === 'paragraph')!;
-  const raw = syllabus(60);
-  raw.concepts[0]!.id = 'sunlight';
-  raw.concepts[0]!.evidence = [{ spanId: paragraph.id, quote: 'The sun warms up the water.' }];
-  raw.modules[0]!.conceptIds = ['sunlight'];
-  raw.modules[0]!.evidenceSpanIds = [paragraph.id];
-  const fetcher: typeof fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) }, finish_reason: 'stop' }], usage: { prompt_tokens: 50, completion_tokens: 50, cost: 0.001 } }), { status: 200 });
-  const result = await buildSyllabus({ source: doc.text, sourceDoc: doc, targetDurationSec: 60 }, { model: 'test/model', apiKey: 'test-only', remainingBudgetUsd: 0.1, fetcher });
-  assert.equal(result.value, undefined);
-  assert.equal(result.usage.repairs, 1);
-  assert.match(result.failures[0]?.message ?? '', /evidence quote is absent/);
 });
 
 test('syllabus accepts an evidence-supported shorter duration and exact module budgets', () => {

@@ -37,16 +37,6 @@ test('paraphrase is never anchored', () => {
   assert.equal(anchorQuote(doc, spanWith('Pressure'), 'Heating the gas raises the pressure.'), undefined);
 });
 
-test('PDF line hyphenation anchors the unsplit word to exact source bytes', () => {
-  const pdf = sourceDocFromText('# Experiment\n\nHe envi-\nsioned a physicist inside an elevator.', 'pdf');
-  const span = pdf.spans.find((item) => item.kind === 'paragraph')!;
-  const hit = anchorQuote(pdf, span.id, 'He envisioned a physicist inside an elevator.');
-  assert.equal(hit?.match, 'normalized');
-  assert.equal(hit?.ref.quote, 'He envi-\nsioned a physicist inside an elevator');
-  assert.equal(pdf.text.slice(hit!.ref.startChar, hit!.ref.endChar), hit!.ref.quote);
-  assert.equal(anchorQuote(pdf, span.id, 'He pictured a scientist inside an elevator.'), undefined);
-});
-
 test('normalization map points back to original offsets', () => {
   const { normalized, map } = normalizeForAnchor('a’  b');
   assert.equal(normalized, "a' b");

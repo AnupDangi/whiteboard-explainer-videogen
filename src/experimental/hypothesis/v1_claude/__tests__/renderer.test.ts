@@ -24,7 +24,7 @@ const spec: SceneSpec = {
   template: 'chain',
   elements: [
     { id: 'a', anchor: 'mention:a', prim: 'box', text: 'A & B' },
-    { id: 'b', anchor: 'mention:b', prim: 'box', text: '<not a tag>' },
+    { id: 'b', anchor: 'mention:b', prim: 'box', text: '<tag>' },
   ],
   edges: [{ from: 'a', to: 'b', label: 'flows to' }],
 };
@@ -112,8 +112,8 @@ test('renderer: text content is XML-escaped, never emitted as raw markup', () =>
   const svg = renderSVG(laidOut, timeline, 11999);
   // Labels are uppercased for display (STYLE.font.uppercaseLabels), so check
   // case-insensitively for the escaped form rather than the exact source text.
-  assert.ok(!/<not a tag>/i.test(svg), 'raw "<not a tag>" text must be escaped, not passed through verbatim');
-  assert.ok(/&lt;not a tag&gt;/i.test(svg), 'expected the XML-escaped form of the text to be present');
+  assert.ok(!/<tag>/i.test(svg), 'raw "<tag>" text must be escaped, not passed through verbatim');
+  assert.ok(/&lt;tag&gt;/i.test(svg), 'expected the XML-escaped form of the text to be present');
   assert.ok(!/<script/i.test(svg));
 });
 

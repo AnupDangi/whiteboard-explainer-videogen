@@ -26,13 +26,6 @@ export function normalizeForAnchor(text: string): { normalized: string; map: num
   let lastWasSpace = false;
   for (let i = 0; i < text.length; i++) {
     const raw = text[i];
-    // PDF extraction may split one printed word at a line boundary. Keep the
-    // original offset map so the accepted citation remains the exact source
-    // substring, including its extraction hyphen and newline.
-    if (raw === '-' && /\p{L}/u.test(text[i - 1] ?? '')) {
-      const softBreak = /^-[ \t]*\r?\n[ \t]*(?=\p{L})/u.exec(text.slice(i));
-      if (softBreak) { i += softBreak[0].length - 1; continue; }
-    }
     if (raw === '…') {
       for (const c of '...') { normalized += c; map.push(i); }
       lastWasSpace = false;

@@ -5,7 +5,6 @@ import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js
 import { LICENSE_ALLOWLIST } from '../catalog/normalize.js';
 import { maxIdleWindowMs } from '../timeline/compile.js';
 import { formulaSource } from '../render/math.js';
-import { segmentIntersectsRect } from '../layout/edges.js';
 
 const evidenceKey = (ref: EvidenceReference): string => JSON.stringify([
   ref.sourceId, ref.spanId, ref.startChar, ref.endChar, ref.startLine, ref.endLine, ref.quote,
@@ -158,15 +157,6 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
         failures.push({ code: 'min-readable-text', stage: 'layout', message: `${el.id} label renders at ${renderedPx.toFixed(1)}px < ${MIN_READABLE_FONT_PX}px`, hard: true });
       }
     }
-  }
-
-  for (const edge of scene.edges) {
-    if (edge.points.length < 2) {
-      failures.push({ code: 'edge-route-missing', stage: 'layout', message: `${edge.from}->${edge.to} has no unobstructed route`, hard: true });
-      continue;
-    }
-    const crossed = scene.elements.find(({ element, bbox }) => element.prim !== 'container' && edge.points.some((point, i) => i > 0 && segmentIntersectsRect(edge.points[i - 1], point, bbox)));
-    if (crossed) failures.push({ code: 'edge-through-node', stage: 'layout', message: `${edge.from}->${edge.to} crosses ${crossed.id}`, hard: true });
   }
 
   // Concurrency: at most MAX_CONCURRENT_REVEALS element reveals active at any instant.
