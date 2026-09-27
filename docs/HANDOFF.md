@@ -1908,3 +1908,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** `GENERIC_RELATION_TYPES` + `edgeHasVerbLabel()` in `plan.ts`; generic gate rejects only *labelled* unstated generics; `compileBoard` omits label for unstated generic relations (specific/stated keep labels); repair message offers drop-the-label path. Schema/render/layout already optional-label safe, untouched. No topic keywords.
 - **Verification:** `typecheck:hypothesis` clean; touched 4 suites 61/61; full `test:hypothesis` 489/489 node + 24 + 12 py; `git diff --check` clean. Synthetic before/after: unstated `compares` → no label, passes; labelled generic still fails; dropped arrow still fails omitted-relation.
 - **Next bounded task:** regenerate same 60s one-shot for validation video, no mid edits.
+
+## Entry — 2026-09-27, regen-3 post-P2d: first draft, 0 hard (branch fix/chat-audit-rollup-20260927)
+
+- **Run:** same 60s benchmark → `output/2026-09-27T08-27-44-521Z-www-tomzahavy-com/` (`tampered=false`, exit 0 pipeline draft). Cost $0.0117, wall 120s, 4/4 scenes, hard=0, fallbacks=0. Duration 61.97s. Tracked tree clean.
+- **Compare:** baseline 4 hard → regen-1 6 hard → regen-2 15 hard (all gated honestly) → now draft. Verb-less agreement unlocked the deadlock; no numeric, no generic-verb, no missing-output failures.
+- **Contact-sheet read (honest):** top two scenes repeat the same sun icon + INDUCTION (visual repetition, weak differentiation); bottom-left tiny icon/small text; bottom-right keeps labelled REQUIRES + FEED clipped at edge. Draft, not parity — validator must judge muted test + claim coverage.
+- **Next bounded task:** validator reviews this video; P3 composition/reveal (dedup visuals, text floor, edge clipping) per verdict.
