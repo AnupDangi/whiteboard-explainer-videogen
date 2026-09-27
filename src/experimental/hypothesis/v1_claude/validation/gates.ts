@@ -1,4 +1,4 @@
-import type { LaidOutScene, StageFailure, Timeline } from '../types.js';
+import type { Edge, Element, LaidOutScene, StageFailure, Timeline } from '../types.js';
 import type { EvidenceReference, NeutralElement, NeutralTimelineEvent } from '../../shared/contracts.js';
 import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 
@@ -16,13 +16,20 @@ const evidenceKey = (ref: EvidenceReference): string => JSON.stringify([
  * source-required concepts/relations or the explicit roles required by its
  * selected structural template.
  */
-export function typedBoardAdequacyFailures(
-  scene: Pick<LaidOutScene, 'sceneId' | 'template' | 'elements' | 'edges' | 'boardIntent'>,
-): StageFailure[] {
+/** The parts of a scene the adequacy check reads; a compiled SceneSpec (before layout) satisfies it too. */
+export interface BoardAdequacyInput {
+  sceneId: string;
+  template: LaidOutScene['template'];
+  elements: ReadonlyArray<{ id: string; element: Element }>;
+  edges: readonly Edge[];
+  boardIntent?: LaidOutScene['boardIntent'];
+}
+
+export function typedBoardAdequacyFailures(scene: BoardAdequacyInput): StageFailure[] {
   const intent = scene.boardIntent;
   if (!intent) return [];
   const failures: StageFailure[] = [];
-  const elementsByConcept = new Map<string, LaidOutScene['elements']>();
+  const elementsByConcept = new Map<string, Array<BoardAdequacyInput['elements'][number]>>();
   for (const element of scene.elements) {
     for (const conceptId of element.element.conceptIds ?? []) {
       elementsByConcept.set(conceptId, [...(elementsByConcept.get(conceptId) ?? []), element]);
@@ -67,7 +74,8 @@ export function typedBoardAdequacyFailures(
     const element = scene.elements.find((candidate) => candidate.id === role.elementId);
     if (!element || !ids.has(role.elementId) || !(element.element.conceptIds?.length)) {
       failures.push({ code: 'board-role-detached', stage: 'planner', message: `${scene.sceneId}: typed board role ${role.role} is not attached to a visible concept node (${role.elementId})`, hard: true });
-    } else if (intent.layout === 'convergence') {
+    } else if (intent.layout === 'convergence' && scene.template === 'convergence') {
+      // Structured visuals (formula/plot/…) keep the model's layout in the intent but place nodes as callouts.
       const expectedSlot = role.role === 'process' ? 'operator' : role.role === 'output' ? 'output' : role.role === 'input' ? 'input' : undefined;
       if (expectedSlot && element.element.slot !== expectedSlot) {
         failures.push({ code: 'board-role-misplaced', stage: 'planner', message: `${scene.sceneId}: convergence ${role.role} role ${role.elementId} must occupy the ${expectedSlot} slot`, hard: true });

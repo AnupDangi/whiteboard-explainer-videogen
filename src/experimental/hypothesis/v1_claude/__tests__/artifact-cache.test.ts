@@ -278,3 +278,20 @@ test('persistent budget ledger records known DNS/connection preflight failures w
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('a payload the stage marks uncacheable is returned but never stored, so a warm rerun retries it', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'hyp-stage-cache-fail-'));
+  try {
+    const meta = { schemaVersion: 'test/v1', stageVersion: 's6-1', modelId: 'fixture-model' };
+    const cacheable = (payload: { ok: boolean }) => payload.ok;
+    let calls = 0;
+    const failed = await new ContentAddressedArtifactStore(root, 'warm').run('S6-scene-planner', { scene: 'x' }, meta, () => ({ ok: ++calls > 1 }), { cacheable });
+    assert.deepEqual([failed.cacheHit, failed.artifact.payload.ok], [false, false]);
+    const retried = await new ContentAddressedArtifactStore(root, 'warm').run('S6-scene-planner', { scene: 'x' }, meta, () => ({ ok: ++calls > 1 }), { cacheable });
+    assert.deepEqual([retried.cacheHit, retried.artifact.payload.ok, calls], [false, true, 2], 'the failed result was not replayed');
+    const replayed = await new ContentAddressedArtifactStore(root, 'warm').run('S6-scene-planner', { scene: 'x' }, meta, () => ({ ok: ++calls > 1 }), { cacheable });
+    assert.deepEqual([replayed.cacheHit, calls], [true, 2], 'the successful result is cached as before');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

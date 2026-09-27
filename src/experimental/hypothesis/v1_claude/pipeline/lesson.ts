@@ -73,7 +73,8 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
     const startedAtMs = Date.now();
     try {
       const cached = m.artifactStore
-        ? await m.artifactStore.run(stage, input, { schemaVersion, stageVersion, promptVersion, modelId: m.model }, produce)
+        // Only complete results are stored: a failed or rejected call is retried on the next warm run.
+        ? await m.artifactStore.run(stage, input, { schemaVersion, stageVersion, promptVersion, modelId: m.model }, produce, { cacheable: (result) => !result.failures.some((failure) => failure.hard) })
         : undefined;
       if (cached) stageArtifacts[stage] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
       const artifactResult = cached?.artifact.payload ?? await produce();

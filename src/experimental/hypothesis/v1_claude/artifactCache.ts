@@ -39,7 +39,13 @@ export class ContentAddressedArtifactStore {
     return sha256(stableJson({ inputHash: sha256(stableJson(input)), ...meta }));
   }
 
-  async run<T>(stage: string, input: unknown, meta: StageDefinition, produce: () => Promise<T> | T): Promise<CachedStage<T>> {
+  /**
+   * Return the cached artifact for (stage, input, meta) or produce and store it.
+   * `cacheable` decides whether a freshly produced payload is written: pass it for
+   * stages whose failures (timeouts, rejected model output) must be retried on the
+   * next warm run instead of being replayed from disk at $0.
+   */
+  async run<T>(stage: string, input: unknown, meta: StageDefinition, produce: () => Promise<T> | T, options: { cacheable?: (payload: T) => boolean } = {}): Promise<CachedStage<T>> {
     const stageVersion = `${stage}:${meta.stageVersion}`;
     const key = this.key(input, { ...meta, stageVersion });
     if (this.mode === 'cold') {
@@ -69,6 +75,7 @@ export class ContentAddressedArtifactStore {
       ...(meta.modelId ? { modelId: meta.modelId } : {}),
     });
     const artifact: VersionedStageArtifact<T> = { ...base, ...(meta.catalogVersion ? { catalogVersion: meta.catalogVersion } : {}) };
+    if (options.cacheable && !options.cacheable(payload)) return { artifact, key, cacheHit: false };
     await mkdir(dirname(artifactPath), { recursive: true });
     const temporary = `${artifactPath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');

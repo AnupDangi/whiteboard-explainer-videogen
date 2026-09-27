@@ -7,6 +7,8 @@ import { TAU_HIGH_EMB } from '../catalog/ladder.js';
 import { BOARD_EXAMPLES, BOARD_BANK_VERSION } from '../fewshots/boardBank.v1.js';
 import type { PlannerSceneInput } from './prompt.js';
 import { plannerProblems, type PlanSceneOptions, type PlanSceneResult, type PlannerCallUsage } from './plan.js';
+import { numericClaims, numericTokens, unsupportedNumericClaims } from '../validation/numericClaims.js';
+import { typedBoardAdequacyFailures } from '../validation/gates.js';
 
 /**
  * S6 board planner (claude-board/v2, design 2026-09-26).
@@ -24,6 +26,8 @@ import { plannerProblems, type PlanSceneOptions, type PlanSceneResult, type Plan
  */
 export const BOARD_SCHEMA_VERSION = 'claude-board/v2';
 export const BOARD_PROMPT_VERSION = `board-prompt-v11-full-catalog+${BOARD_BANK_VERSION}`;
+/** S6 cache stage version: bump whenever board validation or compilation changes, so cached results from older rules are never replayed. */
+export const BOARD_STAGE_VERSION = 'board-2-shared-numeric-title-adequacy';
 export const BOARD_LAYOUTS = ['flow', 'fan_out', 'convergence', 'list', 'compare', 'cycle', 'hub'] as const;
 export const BOARD_ROLES = ['input', 'process', 'output', 'item', 'attribute'] as const;
 export const LABEL_ONLY = 'label';
@@ -93,10 +97,6 @@ const TEMPLATE_FOR_LAYOUT: Record<BoardLayout, SceneSpec['template']> = {
 const words = (value: string): string[] => value.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean);
 const wordCount = (value: string): number => value.trim().split(/\s+/).filter(Boolean).length;
 const stem = (word: string): string => word.replace(/(ies|es|s)$/u, '');
-const numericTokens = (value: string): string[] => [...value.replace(/[−–—]/gu, '-').matchAll(/(?<![\p{L}\p{N}.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?(?:e[-+]?\d+)?/giu)].map((match) => {
-  const numeric = Number(match[0].replaceAll(',', ''));
-  return Number.isFinite(numeric) ? String(Number(numeric.toPrecision(12))) : match[0];
-});
 
 export function boardEnums(input: PlannerSceneInput): BoardEnums {
   const mentionIds = input.mentions.map((mention) => mention.id);
@@ -227,12 +227,15 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
       const near = Object.keys(enums.iconAssetIds).filter((name) => words(name).some((part) => words(node.icon).some((wanted) => stem(part) === stem(wanted)))).slice(0, 8);
       problems.push(`node ${node.id}: icon "${node.icon}" is not in the icon catalog; use an exact catalog name${near.length ? ` such as [${near.join(', ')}]` : ''} or "${LABEL_ONLY}"`);
     }
-    if (wordCount(node.label) > MAX_LABEL_WORDS) problems.push(`node ${node.id}: label "${node.label}" exceeds ${MAX_LABEL_WORDS} words`);
-    const allowed = allowedLabelWords(input, node);
-    // Short function words ("of", "for", "and") join source words; only content words must come from the source.
-    const extra = words(node.label).filter((word) => word.length > 3 && !allowed.has(stem(word)));
-    if (extra.length) problems.push(`node ${node.id}: label words [${extra.join(', ')}] do not come from its mention phrase or concept label; reuse their words`);
-    // Persistent concepts are labelled with their canonical term by code (compileBoard), so no rule is needed here.
+    // Persistent concepts are labelled with their canonical term by code (compileBoard); the model's
+    // label is discarded, so only labels that will actually be drawn are checked.
+    if (!canonicalTerm(input, node.concept)) {
+      if (wordCount(node.label) > MAX_LABEL_WORDS) problems.push(`node ${node.id}: label "${node.label}" exceeds ${MAX_LABEL_WORDS} words`);
+      const allowed = allowedLabelWords(input, node);
+      // Short function words ("of", "for", "and") join source words; only content words must come from the source.
+      const extra = words(node.label).filter((word) => word.length > 3 && !allowed.has(stem(word)));
+      if (extra.length) problems.push(`node ${node.id}: label words [${extra.join(', ')}] do not come from its mention phrase or concept label; reuse their words`);
+    }
   }
   if (input.previousElements?.length) {
     const currentSignature = board.nodes.map((node) => `${node.concept}\u0000${node.icon === LABEL_ONLY ? 'box' : 'object'}\u0000${node.label.toLocaleLowerCase()}`).sort();
@@ -243,7 +246,6 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
       problems.push('board repeats the immediately previous board’s same source concepts, labels, and visual forms; change the visual explanation or use a different scene concept');
     }
   }
-  if (wordCount(board.title) > MAX_TITLE_WORDS) problems.push(`title exceeds ${MAX_TITLE_WORDS} words`);
   if (board.layout === 'compare' && (board.nodes.length < 2 || board.nodes.length > 3)) problems.push('layout "compare" needs 2 or 3 nodes (left, right, optional verdict)');
   if (board.visual.kind === 'comparison' && board.layout !== 'compare') problems.push('comparison form requires compare layout');
   if (board.layout === 'compare' && board.visual.kind !== 'comparison') problems.push('compare layout requires comparison form');
@@ -310,16 +312,23 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
   return [...new Set(problems)];
 }
 
-/** Title: the S3 section heading when it fits; otherwise the model's title if its content words come from the scene. */
-function boardTitle(board: Board, input: PlannerSceneInput): { title: string; problem?: string } {
+/**
+ * Title: the S3 section heading when it fits and every number in it is stated
+ * by the evidence cited for the title; otherwise the model's own title, held
+ * to the same rules so any problem names a field the model can repair.
+ */
+function boardTitle(board: Board, input: PlannerSceneInput, titleEvidenceQuotes: readonly string[]): { title: string; problem?: string } {
   const heading = input.teachingContext?.displayText?.trim();
-  // A heading's numbers (e.g. "Step 2") are not source claims; the evidence gate would reject them and the model cannot repair a code-owned title.
-  const evidenceText = (input.teachingContext?.sourceEvidenceRefs ?? []).map((ref) => ref.quote).join(' ');
-  const unsupportedNumber = (heading?.match(/\d+/g) ?? []).some((digits) => !new RegExp(`(^|\\D)${digits}(\\D|$)`).test(evidenceText));
-  if (heading && !unsupportedNumber && wordCount(heading) <= MAX_TITLE_WORDS && heading.length <= 60) return { title: heading };
+  const fits = (value: string) => wordCount(value) <= MAX_TITLE_WORDS && value.length <= 60;
+  if (heading && fits(heading) && unsupportedNumericClaims([heading], titleEvidenceQuotes).length === 0) return { title: heading };
+  const problems: string[] = [];
+  if (!fits(board.title)) problems.push(`title must be at most ${MAX_TITLE_WORDS} words and 60 characters`);
+  const numbers = unsupportedNumericClaims([board.title], titleEvidenceQuotes);
+  if (numbers.length) problems.push(`title numbers [${numbers.join(', ')}] are not stated in the evidence for the concepts on this board; remove them from "title"`);
   const known = new Set([heading ?? '', input.plainText, ...(input.teachingContext?.concepts ?? []).map((concept) => concept.label)].flatMap(words).map(stem));
   const foreign = words(board.title).filter((word) => word.length >= 4 && !known.has(stem(word)));
-  return foreign.length ? { title: board.title, problem: `title words [${foreign.join(', ')}] do not appear in the section heading, narration, or concept labels` } : { title: board.title };
+  if (foreign.length) problems.push(`title words [${foreign.join(', ')}] do not appear in the section heading, narration, or concept labels`);
+  return problems.length ? { title: board.title, problem: problems.join('; ') } : { title: board.title };
 }
 
 function slotFor(layout: BoardLayout, node: BoardNode, index: number, nodes: BoardNode[]): string {
@@ -416,9 +425,10 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
     const evidenceRefs = relation.evidenceRefs.slice(0, 6);
     edges.push({ from: from.id, to: to.id, label: relation.type, evidenceRefs, factualRelation: { fromConceptId: relation.from, toConceptId: relation.to, type: relation.type as NonNullable<Edge['factualRelation']>['type'], evidenceRefs } });
   }
-  const { title, problem } = boardTitle(board, input);
   const titleConceptIds = [...new Set(board.nodes.map((node) => node.concept))].slice(0, 4);
   const titleEvidenceRefs = titleConceptIds.flatMap((conceptId) => conceptEvidence(conceptId).slice(0, 1)).slice(0, 6);
+  // The title is checked against exactly the evidence the final scene gate will cite for it.
+  const { title, problem } = boardTitle(board, input, titleEvidenceRefs.map((ref) => ref.quote));
   const spec: SceneSpec = {
     schemaVersion: 'claude-scene-spec/v1',
     sceneId: input.sceneId,
@@ -457,7 +467,10 @@ export function validateBoard(value: unknown, input: PlannerSceneInput): { board
   const compiled = compileBoard(board, input);
   const checked = safeParseSceneSpec(compiled.spec);
   if (!checked.success) return { board, problems: [...problems, ...compiled.problems, ...checked.error.issues.map((issue) => `compiled scene: ${issue.path.join('.')}: ${issue.message}`)] };
-  return { board, spec: checked.data, iconAssets: compiled.iconAssets, problems: [...problems, ...compiled.problems, ...plannerProblems(checked.data, input)] };
+  // Template role/slot requirements (e.g. convergence needs an output) are checked here too, so the
+  // model's single repair sees them instead of the board failing only after S6.
+  const adequacy = typedBoardAdequacyFailures({ ...checked.data, elements: checked.data.elements.map((element) => ({ id: element.id, element })) }).map((failure) => failure.message.replace(`${input.sceneId}: `, ''));
+  return { board, spec: checked.data, iconAssets: compiled.iconAssets, problems: [...new Set([...problems, ...compiled.problems, ...plannerProblems(checked.data, input), ...adequacy])] };
 }
 
 /**
@@ -503,8 +516,19 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
     for (const node of nodes) {
       node.role = node.concept === centre ? 'process' : fromCentre.has(node.concept) ? 'output' : feedsCentre.has(node.concept) ? 'input' : layout === 'fan_out' ? 'output' : 'input';
     }
+    // Convergence needs an output slot; a centre with no outgoing source relation is a hub, not a process.
+    if (layout === 'convergence' && fromCentre.size === 0) layout = 'hub';
+  } else if (nodes.length) {
+    // A process board needs one process-role node: the node with the most source relations (first on ties).
+    const degree = (node: BoardNode) => (outDegree.get(node.concept) ?? 0) + (inDegree.get(node.concept) ?? 0);
+    const busiest = nodes.reduce((best, node) => (degree(node) > degree(best) ? node : best), nodes[0]);
+    busiest.role = 'process';
   }
-  const title = (input.teachingContext?.displayText ?? input.plainText).split(/\s+/).slice(0, MAX_TITLE_WORDS).join(' ').slice(0, 60) || input.sceneId;
+  // A number in the title must be stated by the cited evidence (same rule as the scene gate), so fall
+  // back to a source concept label rather than reuse a heading that fails it.
+  const fitTitle = (value: string) => value.split(/\s+/).slice(0, MAX_TITLE_WORDS).join(' ').slice(0, 60).trim();
+  const candidates = [input.teachingContext?.displayText ?? '', ...nodes.map((node) => node.label), input.plainText].map(fitTitle).filter(Boolean);
+  const title = candidates.find((candidate) => numericClaims(candidate).length === 0) ?? input.sceneId;
   return { schemaVersion: BOARD_SCHEMA_VERSION, title, layout, nodes, visual: { kind: 'process' } };
 }
 

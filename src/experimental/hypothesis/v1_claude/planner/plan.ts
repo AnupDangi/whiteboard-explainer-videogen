@@ -4,6 +4,7 @@ import { structuredCall, type CallUsage, type StructuredCallAttemptRecord } from
 import { buildScenePlannerPrompt, type PlannerSceneInput } from './prompt.js';
 import { MAX_ELEMENTS_PER_SCENE, MAX_LABEL_WORDS, MAX_TITLE_WORDS } from '../style.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
+import { unsupportedNumericClaims } from '../validation/numericClaims.js';
 
 /**
  * S6 — Scene Planner (claude_pipeline.md §6/§9): strongest affordable model,
@@ -46,7 +47,8 @@ function renderedText(spec: SceneSpec): string[] {
   for (const element of spec.elements) {
     values.push(element.label ?? '');
     if ('text' in element && element.text) values.push(element.text);
-    if (element.prim === 'object') values.push(element.concept);
+    // The icon name is drawn only when the object has no label (layout/measure.ts, catalog/ladder.ts).
+    if (element.prim === 'object' && !element.label) values.push(element.concept);
     if (element.prim === 'container') values.push(...element.children);
     if (element.prim === 'tokenStrip') values.push(...element.tokens);
     if (element.prim === 'meter') values.push(...(element.labels ?? []));
@@ -64,7 +66,7 @@ function terminologyText(element: Element): string[] {
   const values = [element.label ?? ''];
   if ('text' in element && element.text) values.push(element.text);
   switch (element.prim) {
-    case 'object': values.push(element.concept); break;
+    case 'object': if (!element.label) values.push(element.concept); break;
     case 'tokenStrip': values.push(...element.tokens); break;
     case 'meter': values.push(...(element.labels ?? [])); break;
     case 'matrix': values.push(...element.rows.flat()); break;
@@ -108,30 +110,6 @@ function numericFacts(value: unknown, output: Set<string> = new Set()): Set<stri
   return output;
 }
 
-interface NumericClaim { value: number; unit?: string; text: string }
-const numberWords: Record<string, number> = {
-  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
-  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
-  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
-};
-
-function numericClaims(value: string): NumericClaim[] {
-  const normalized = value.replace(/[−–—]/gu, '-');
-  const claims: NumericClaim[] = [];
-  const suffixUnit = (offset: number): string | undefined => {
-    const suffix = normalized.slice(offset).match(/^\s*(%|percent(?:age)?s?|°[cf]|km\/h|m\/s|kpa|mpa|pa|bar|atm|kg|mg|g|km|cm|mm|m|min(?:ute)?s?|ms|s|hours?|days?)(?![\p{L}])/iu)?.[1]?.toLowerCase();
-    return suffix?.startsWith('percent') ? '%' : suffix;
-  };
-  const digitPattern = /(?<![\p{L}\p{N}])([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:e[+-]?\d+)?)/giu;
-  for (const match of normalized.matchAll(digitPattern)) {
-    const numeric = Number(match[1].replaceAll(',', ''));
-    if (Number.isFinite(numeric)) claims.push({ value: numeric, unit: suffixUnit(match.index + match[0].length), text: `${match[0]}${suffixUnit(match.index + match[0].length) ?? ''}`.trim() });
-  }
-  const wordPattern = /(?<![\p{L}\p{N}])(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?![\p{L}\p{N}])/giu;
-  for (const match of normalized.matchAll(wordPattern)) claims.push({ value: numberWords[match[1].toLowerCase()], unit: suffixUnit(match.index + match[0].length), text: `${match[0]}${suffixUnit(match.index + match[0].length) ?? ''}`.trim() });
-  return claims;
-}
-
 function sceneNumericValues(spec: SceneSpec): string[] {
   const values = [...renderedText(spec)];
   const add = (value: unknown) => { for (const number of numericFacts(value)) values.push(number); };
@@ -150,39 +128,19 @@ function sceneNumericValues(spec: SceneSpec): string[] {
   return values;
 }
 
-function numericClaimsSupported(values: string[], evidenceQuotes: string[]): string[] {
-  const evidenceClaims = evidenceQuotes.flatMap(numericClaims);
-  const unsupported = new Set<string>();
-  for (const value of values) {
-    for (const claim of numericClaims(value)) {
-      const supported = evidenceClaims.some((evidence) => {
-        if (evidence.unit === claim.unit) return Math.abs(evidence.value - claim.value) < 1e-9;
-        if ((evidence.unit === '%' && !claim.unit) || (claim.unit === '%' && !evidence.unit)) {
-          const percentClaim = evidence.unit === '%' ? evidence : claim;
-          const plainClaim = evidence.unit === '%' ? claim : evidence;
-          return Math.abs(percentClaim.value / 100 - plainClaim.value) < 1e-9;
-        }
-        return false;
-      });
-      if (!supported) unsupported.add(claim.text);
-    }
-  }
-  return [...unsupported];
-}
-
 function visualNumericProblems(spec: SceneSpec, input: PlannerSceneInput): string[] {
   if (!input.teachingContext?.requireEvidence) return [];
   const problems: string[] = [];
-  const titleValues = numericClaimsSupported([spec.title], spec.titleEvidenceRefs?.map((ref) => ref.quote) ?? []);
+  const titleValues = unsupportedNumericClaims([spec.title], spec.titleEvidenceRefs?.map((ref) => ref.quote) ?? []);
   if (spec.titleOrigin !== 'illustrative-example') for (const value of titleValues) problems.push(`scene title numeric value "${value}" is not supported by its cited evidence; remove it or cite an exact source span that contains it`);
   for (const element of spec.elements) {
     if (element.origin === 'illustrative-example') continue;
-    const unsupported = numericClaimsSupported(sceneNumericValues({ ...spec, title: '', elements: [element], edges: [] }), element.evidenceRefs?.map((ref) => ref.quote) ?? []);
+    const unsupported = unsupportedNumericClaims(sceneNumericValues({ ...spec, title: '', elements: [element], edges: [] }), element.evidenceRefs?.map((ref) => ref.quote) ?? []);
     for (const value of unsupported) problems.push(`element ${element.id} numeric value "${value}" is not supported by its cited evidence; remove it or cite an exact source span that contains it`);
   }
   for (const [index, edge] of spec.edges.entries()) {
     if (edge.origin === 'illustrative-example') continue;
-    const unsupported = numericClaimsSupported([edge.label ?? ''], edge.evidenceRefs?.map((ref) => ref.quote) ?? []);
+    const unsupported = unsupportedNumericClaims([edge.label ?? ''], edge.evidenceRefs?.map((ref) => ref.quote) ?? []);
     for (const value of unsupported) problems.push(`edge ${index} numeric value "${value}" is not supported by its cited evidence; remove it or cite an exact source span that contains it`);
   }
   return problems;

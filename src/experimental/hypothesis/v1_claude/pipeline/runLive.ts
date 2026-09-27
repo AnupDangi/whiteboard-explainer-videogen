@@ -18,7 +18,7 @@ import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
 import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
-import { BOARD_PROMPT_VERSION, BOARD_SCHEMA_VERSION, buildBoardPrompt, conceptForMention, planBoardScene, skipBoardAfterAlignmentFailure } from '../planner/board.js';
+import { BOARD_PROMPT_VERSION, BOARD_SCHEMA_VERSION, BOARD_STAGE_VERSION, buildBoardPrompt, conceptForMention, planBoardScene, skipBoardAfterAlignmentFailure } from '../planner/board.js';
 import { planScene, plannerProblems, shouldSkipPaidPlanning, skipPlanAfterAlignmentFailure, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
 import { buildPlannerSceneInput } from '../planner/sceneInput.js';
 import { safeParseSceneSpec } from '../schema.js';
@@ -407,11 +407,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (sceneInput.spec) planned = handAuthored(sceneInput.spec, plannerInput);
     else if (ctx.artifactStore) {
       const cached = await ctx.artifactStore.run<{ result: PlanSceneResult; promptAudit?: NonNullable<typeof promptAudit> }>('S6-scene-planner', { plannerInput, promptAudit, hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) }, {
-        schemaVersion: board ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', stageVersion: board ? 'board-1' : '4', promptVersion: board ? BOARD_PROMPT_VERSION : SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
+        schemaVersion: board ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', stageVersion: board ? BOARD_STAGE_VERSION : '4', promptVersion: board ? BOARD_PROMPT_VERSION : SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
       }, async () => ({
         result: plannerSkipped ? skip() : await plan(compiledPrompt),
         ...(promptAudit ? { promptAudit } : {}),
-      }));
+      }), { cacheable: ({ result }) => !result.fallback && !result.failures.some((failure) => failure.hard) });
       stageArtifacts[`S6-scene-planner:${sceneInput.sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
       planned = cached.artifact.payload.result;
       if (cached.cacheHit) {
