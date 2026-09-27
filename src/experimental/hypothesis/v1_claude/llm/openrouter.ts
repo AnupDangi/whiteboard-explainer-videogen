@@ -189,6 +189,69 @@ export class ProviderNotDispatchedError extends Error {
 }
 
 /**
+ * Cause codes that prove a call never reached a model endpoint: DNS and
+ * connection failures happen before an HTTP request can be sent, and the
+ * provider's no-endpoint/rate-limit rejections mean no endpoint ran. Shared
+ * by the transport retry (structuredCall) and the ledger preflight path
+ * (budgetLedger) so the two can never disagree about what is retryable.
+ */
+export const PREFLIGHT_CAUSE_CODES = new Set([
+  'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH',
+  'ECONNRESET', 'ETIMEDOUT', 'EPIPE',
+  'PROVIDER_NO_ENDPOINT', 'PROVIDER_RATE_LIMITED',
+]);
+
+/** First string `code` found walking the error `cause` chain (undici nests it). */
+export function transportCauseCode(error: unknown): string {
+  let cursor: unknown = error;
+  const seen = new Set<unknown>();
+  while (cursor && (typeof cursor === 'object' || typeof cursor === 'function') && !seen.has(cursor)) {
+    seen.add(cursor);
+    const record = cursor as { code?: unknown; cause?: unknown };
+    if (typeof record.code === 'string' && record.code) return record.code;
+    cursor = record.cause;
+  }
+  return '';
+}
+
+function errorChainText(error: unknown): string {
+  const parts: string[] = [];
+  let cursor: unknown = error;
+  const seen = new Set<unknown>();
+  while (cursor && (typeof cursor === 'object' || typeof cursor === 'function') && !seen.has(cursor)) {
+    seen.add(cursor);
+    const record = cursor as { name?: unknown; message?: unknown; cause?: unknown };
+    if (typeof record.name === 'string' && record.name) parts.push(record.name);
+    if (typeof record.message === 'string' && record.message) parts.push(record.message);
+    cursor = record.cause;
+  }
+  if (parts.length === 0) parts.push(String(error));
+  return parts.join(' | ');
+}
+
+// Undici surfaces network failures as `TypeError: fetch failed` (sometimes
+// with no cause code); the RAG sidecar surfaces its own provider throttling
+// as a plain `RateLimitError ... 429 ...` message with no cause at all.
+const NETWORK_FAILURE_MESSAGE = /fetch failed|failed to fetch|network request failed|load failed|socket hang up|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|ETIMEDOUT|EPIPE/i;
+const RATE_LIMIT_MESSAGE = /\b429\b|rate.?limit|too many requests/i;
+
+/**
+ * True when the failure happened before any model endpoint could run: a
+ * typed not-dispatched rejection, a DNS/connection network failure, or a
+ * throttling signal. Aborts and per-call timeouts are deliberately excluded:
+ * the request may have dispatched, so spend is uncertain and fail-closed
+ * handling must apply.
+ */
+export function isTransportError(error: unknown): boolean {
+  if (error instanceof ProviderNotDispatchedError) return true;
+  if (!error || (typeof error !== 'object' && typeof error !== 'function')) return false;
+  const text = errorChainText(error);
+  if (/\bAbortError\b|\bTimeoutError\b|operation was aborted|operation timed out/i.test(text)) return false;
+  if (PREFLIGHT_CAUSE_CODES.has(transportCauseCode(error))) return true;
+  return NETWORK_FAILURE_MESSAGE.test(text) || RATE_LIMIT_MESSAGE.test(text);
+}
+
+/**
  * Anthropic structured outputs accept a JSON-Schema subset: `anyOf` but not
  * `oneOf`, no numeric/string-length constraints, no complex array
  * constraints (tuples), and `additionalProperties: false` on every object.

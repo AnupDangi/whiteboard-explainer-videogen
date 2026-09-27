@@ -11,7 +11,21 @@ import type { ConceptGraph, TeachingPlan } from './schemas.js';
  * 10.5-28.5 s, mean 18.6 s (harness/reference/lamina/index.json).
  */
 export const WORDS_PER_SEC = 2.25;
-export const SCENE_SEC = { min: 14, max: 30 };
+// Hard pacing bounds from measurement: harness/reference/lamina/index.json
+// (n=33 scenes) runs 10.5-28.5 s, mean 18.6 s — the 10.5 s and 13.5 s scenes
+// sit below the old 14 s hard floor, so the hard minimum is 10 s. Scenes
+// below the 14-30 s ideal band still draw a warn (tight scene), never an
+// error, so short-but-measured pacing stays boardable.
+export const SCENE_SEC = { min: 10, max: 30 };
+/** Ideal band: scenes read best here; below it warns, outside hard bounds errors. */
+export const SCENE_IDEAL_SEC = { min: 14, max: 30 };
+/**
+ * Recap density limit shared with the plan-time split (plan/stages.ts):
+ * a recap above either count wants two boards. A dense recap that survives
+ * unsplit (halving would breach the hard floor) is a warn, never an error.
+ */
+export const RECAP_SPLIT_MAX_CONCEPTS = 3;
+export const RECAP_SPLIT_MAX_RELATIONS = 2;
 export const BUDGET_TOLERANCE = 0.05;
 /** One scene per ~18s of reference Simi pacing (harness/reference/lamina/index.json mean scene length). */
 export const sceneCountFor = (targetSec: number): number => Math.max(1, Math.round(targetSec / 18));
@@ -86,7 +100,19 @@ export function analyzeTeachingPlan(plan: TeachingPlan, graph: ConceptGraph): Pl
     add('error', 'budget', `section budgets sum to ${total}s, target is ${plan.targetDurationSec}s (±${BUDGET_TOLERANCE * 100}%)`);
   }
   for (const s of plan.sections) {
-    if (s.budgetSec < SCENE_SEC.min || s.budgetSec > SCENE_SEC.max) add('error', 'pacing', `section ${s.id} is ${s.budgetSec}s; scenes read best at ${SCENE_SEC.min}-${SCENE_SEC.max}s`);
+    if (s.budgetSec < SCENE_SEC.min || s.budgetSec > SCENE_SEC.max) add('error', 'pacing', `section ${s.id} is ${s.budgetSec}s; scenes must be ${SCENE_SEC.min}-${SCENE_SEC.max}s`);
+    else if (s.budgetSec < SCENE_IDEAL_SEC.min) add('warn', 'pacing', `section ${s.id} is ${s.budgetSec}s; scenes read best at ${SCENE_IDEAL_SEC.min}-${SCENE_IDEAL_SEC.max}s`);
+  }
+  // Dense recaps that survive unsplit (the split guard keeps a recap whole
+  // when halving would breach the hard floor) stay a warn, never an error:
+  // one crowded board beats two unboardable thin scenes.
+  for (const s of plan.sections) {
+    if (s.kind !== 'recap') continue;
+    const distinct = new Set(s.conceptIds).size;
+    const rels = s.contract?.requiredRelations.length ?? 0;
+    if (distinct > RECAP_SPLIT_MAX_CONCEPTS || rels > RECAP_SPLIT_MAX_RELATIONS) {
+      add('warn', 'recap-density', `section ${s.id} reviews ${distinct} concepts with ${rels} relations in ${s.budgetSec}s; halving would breach the ${SCENE_SEC.min}s hard floor so it stays whole`);
+    }
   }
 
   // Multi-step ideas get a scene per step; longer lessons end with a recap.

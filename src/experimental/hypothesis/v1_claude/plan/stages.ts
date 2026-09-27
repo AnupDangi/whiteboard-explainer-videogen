@@ -4,7 +4,8 @@ import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from 
 import { parseMarkers } from '../narration/markers.js';
 import { spokenForm } from '../narration/spokenForm.js';
 import { ConceptGraphSchema, RELATION_TYPES, SECTION_KINDS, SECTION_TITLE_MAX_WORDS, TEACHING_SKILLS, VISUAL_MECHANISMS, ScriptSchema, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
-import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan, sceneCountFor } from './analyze.js';
+import { RECAP_SPLIT_MAX_CONCEPTS, RECAP_SPLIT_MAX_RELATIONS, SCENE_IDEAL_SEC, SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan, sceneCountFor } from './analyze.js';
+export { RECAP_SPLIT_MAX_CONCEPTS, RECAP_SPLIT_MAX_RELATIONS } from './analyze.js';
 import type { StageRunRecord } from '../../shared/contracts.js';
 import { sourceDocFromText, sourcePrompt, type SourceDoc, type SourceBundle } from './sourceDoc.js';
 import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
@@ -169,7 +170,7 @@ Rules:
 - Before returning, verify section-by-section that conceptIds and requiredConceptIds are identical and nonempty, every ID occurs in the supplied graph, every required relation is included, and evidenceSpanIds exactly covers the listed concepts and relations. If a section is only an intro or recap, anchor it to the graph concepts it introduces or reviews; do not create an ungrounded scene.
 - Order by prerequisites: a concept is never taught before what it needs.
 - Math: build intuition before notation. For a multi-step idea, give each step its own "step" section (the learner sees one move at a time), then an "example" or "recap". A one-step idea fits in one "explain" section.
-- Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
+- Budgets: every section ${SCENE_IDEAL_SEC.min}-${SCENE_IDEAL_SEC.max} seconds (about 18 s is ideal; never below ${SCENE_SEC.min} s or above ${SCENE_SEC.max} s); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
 - If any concept has level "multi-step", at least 2 sections must have kind "step" (one per step of that idea).
 - Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.
 
@@ -204,7 +205,7 @@ Rules:
 - Before returning, verify section-by-section that conceptIds and requiredConceptIds are identical and nonempty, every ID occurs in the supplied graph, every required relation is included, and evidenceSpanIds exactly covers the listed concepts and relations. If a section is only an intro or recap, anchor it to the graph concepts it introduces or reviews; do not create an ungrounded scene.
 - Order by prerequisites: a concept is never taught before what it needs.
 - Math: build intuition before notation. For a multi-step idea, give each step its own "step" section (the learner sees one move at a time), then an "example" or "recap". A one-step idea fits in one "explain" section.
-- Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
+- Budgets: every section ${SCENE_IDEAL_SEC.min}-${SCENE_IDEAL_SEC.max} seconds (about 18 s is ideal; never below ${SCENE_SEC.min} s or above ${SCENE_SEC.max} s); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
 - If any concept has level "multi-step", at least 2 sections must have kind "step" (one per step of that idea).
 - Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.
 
@@ -286,11 +287,12 @@ export function teachingPlanTokenBudget(sceneCount: number, conceptCount: number
  * A recap-kind section above either density limit is unboardable: one scene
  * cannot draw that many claims at once (observed: a 4-concept recap with its
  * produces-family relations fails its single repair). Split it into two recap
- * halves instead. Domain-general: only counts and original order are used,
- * never lesson content.
+ * halves instead — but only when both halves clear the pacing hard floor
+ * (SCENE_SEC.min); a dense recap whose halves would fall below it stays whole
+ * (the analyser records it as a recap-density warn, not an error) so the
+ * split never trades one boardable scene for two pacing failures.
+ * Domain-general: only counts and original order are used, never lesson content.
  */
-export const RECAP_SPLIT_MAX_CONCEPTS = 3;
-export const RECAP_SPLIT_MAX_RELATIONS = 2;
 
 /** Split-section id: `{base}_a`/`{base}_b`, hash-truncated like scopedSectionId when the join overflows 40 chars. */
 function recapSplitId(base: string, half: 'a' | 'b'): string {
@@ -310,8 +312,10 @@ function recapSplitId(base: string, half: 'a' | 'b'): string {
  * and neither half lists an endpoint outside its concepts; evidence spans are
  * the original order filtered to each half's concepts and relations; concepts
  * shared by both halves are declared persistent with graph-backed terminology
- * so the teaching contract stays green. Non-recap sections pass through by
- * reference; when nothing splits, the input plan is returned unchanged.
+ * so the teaching contract stays green. A dense recap whose halved budgets
+ * would fall below the pacing hard floor (SCENE_SEC.min) stays whole instead.
+ * Non-recap sections pass through by reference; when nothing splits, the input
+ * plan is returned unchanged.
  */
 export function splitDenseRecapSections(plan: TeachingPlan, graph: ConceptGraph): TeachingPlan {
   const graphConcepts = new Map(graph.concepts.map((c) => [c.id, c]));
@@ -348,6 +352,14 @@ export function splitDenseRecapSections(plan: TeachingPlan, graph: ConceptGraph)
     }
     const budgetA = section.budgetSec / 2;
     const budgets = [budgetA, section.budgetSec - budgetA];
+    // Pacing guard: split only when both halves clear the hard floor. A dense
+    // recap that would halve into thin scenes stays whole (the analyser logs a
+    // recap-density warn, not an error) instead of trading one boardable scene
+    // for two pacing failures.
+    if (budgets[0]! < SCENE_SEC.min || budgets[1]! < SCENE_SEC.min) {
+      sections.push(section);
+      continue;
+    }
     const ids = [recapSplitId(section.id, 'a'), recapSplitId(section.id, 'b')];
     if (new Set([...sections.map((s) => s.id), ...ids]).size !== sections.length + 2) {
       sections.push(section);

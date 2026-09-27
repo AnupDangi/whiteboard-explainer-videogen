@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { chatStructured, maxPriceForCallBudget, ProviderNotDispatchedError } from './openrouter.js';
+import { chatStructured, isTransportError, maxPriceForCallBudget } from './openrouter.js';
 import type { StageFailure } from '../types.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 
@@ -264,8 +264,8 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
       try {
         return await call(userPrompt, attempt);
       } catch (error) {
-        if (!(error instanceof ProviderNotDispatchedError) || retry >= (opts.transportRetries ?? 2)) throw error;
-        failures.push({ code: `${opts.stage}-transport-retry`, stage: opts.stage, message: `${opts.subject} attempt ${attempt}: ${error.message}; transport retry ${retry + 1} (no completion was produced; this is not a repair)`, hard: false });
+        if (!isTransportError(error) || retry >= (opts.transportRetries ?? 2)) throw error;
+        failures.push({ code: `${opts.stage}-transport-retry`, stage: opts.stage, message: `${opts.subject} attempt ${attempt}: ${error instanceof Error ? error.message : String(error)}; transport retry ${retry + 1} (no completion was produced; this is not a repair)`, hard: false });
         await sleep((opts.transportRetryDelayMs ?? 5000) * (retry + 1));
       }
     }

@@ -107,6 +107,26 @@ test('dense recap (4 concepts) splits into two valid, boardable, evidence-preser
   assert.deepEqual(analysis.findings, [], JSON.stringify(analysis.findings));
 });
 
+test('dense recap whose halves would breach the hard floor stays whole with a warn, not an error', () => {
+  // Regression: an 18s dense recap halves to 9s/9s, below the 10s hard floor —
+  // the split must not trade one boardable scene for two pacing failures.
+  // (Observed live: 60s run recap halves at 9s failed the pacing gate.)
+  const graph = chainGraph();
+  const before = planWith(graph, [
+    section(graph, { id: 'open', kind: 'explain', conceptIds: ['c1'], budgetSec: 15, skill: 'definition' }),
+    section(graph, { id: 'rec', kind: 'recap', conceptIds: ['c1', 'c2', 'c3', 'c4'], budgetSec: 18, skill: 'recap' }),
+  ], ['c1']);
+  const after = splitDenseRecapSections(before, graph);
+  assert.equal(after, before);
+  assert.equal(after.sections.length, 2);
+  assert.equal(after.targetDurationSec, before.targetDurationSec);
+  // Kept whole: dense but only a warn — never a blocking error.
+  const analysis = analyzeTeachingPlan(after, graph);
+  assert.equal(analysis.ok, true, JSON.stringify(analysis.findings));
+  assert.ok(analysis.findings.some((f) => f.code === 'F-PED' && f.check === 'recap-density' && f.severity === 'warn'), JSON.stringify(analysis.findings));
+  assert.ok(!analysis.findings.some((f) => f.severity === 'error'), JSON.stringify(analysis.findings));
+});
+
 test('recap at the limit (3 concepts, 2 relations) is untouched', () => {
   const graph = chainGraph();
   const sections = [

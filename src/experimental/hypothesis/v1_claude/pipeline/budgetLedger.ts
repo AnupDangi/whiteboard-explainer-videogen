@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { isTransportError, transportCauseCode } from '../llm/openrouter.js';
 
 export interface BudgetLedgerSnapshot {
   schemaVersion: 'hypothesis-budget-ledger/v1';
@@ -74,13 +75,12 @@ export class PersistentBudgetLedger {
       try {
         result = await operation(allowedUsd);
       } catch (error) {
-        const cause = error && typeof error === 'object' && 'cause' in error ? (error as { cause?: unknown }).cause : undefined;
-        const causeCode = cause && typeof cause === 'object' && 'code' in cause ? String((cause as { code?: unknown }).code) : '';
+        const causeCode = transportCauseCode(error);
         // DNS lookup and connection refusal happen before an HTTP request can
         // reach the provider. OpenRouter's "no endpoints found" 404 and an
         // exhausted 429 mean no model endpoint ran. Keep a durable diagnostic
         // without reserving spend, and allow a later retry.
-        const definitelyNotDispatched = ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH', 'PROVIDER_NO_ENDPOINT', 'PROVIDER_RATE_LIMITED'].includes(causeCode);
+        const definitelyNotDispatched = isTransportError(error);
         if (definitelyNotDispatched) {
           const diagnostic = `${error instanceof Error ? error.message : String(error)} (${causeCode})`;
           const preflight: BudgetLedgerSnapshot = {

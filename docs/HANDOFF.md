@@ -1,5 +1,13 @@
 # HANDOFF — Claude hypothesis track
 
+## Entry — 2026-09-28, recap pacing guard and transport/preflight retry mapping
+
+- **Branch:** `fix/chat-audit-rollup-20260927`; the working changes are isolated to the hypothesis track.
+- **Recap pacing:** dense recaps split only when both resulting scenes meet the 10 s hard floor. The floor is 10 s, while 14–30 s remains the preferred band; shorter measured scenes warn instead of hard-failing. Dense recaps that cannot split stay intact with a density warning. The 10.5 s reference minimum, 9 s split regression, relation preservation, and ordinary split cases have regression coverage.
+- **Transport and budget ledger:** structured calls now retry recognized pre-dispatch transport failures (including generic `fetch failed`) separately from semantic repair. The persistent ledger records network and HTTP/RAG 429 failures as non-blocking preflight failures, preserving zero spend for those calls; aborts and timeouts remain uncertain and fail closed. S3 cache/prompt versions were bumped to invalidate plans created under the prior recap pacing rule.
+- **Verification:** `npm run typecheck:hypothesis` passed. `npm run test:hypothesis` passed: Node **553/553**, alignment Python **28/28**, RAG Python **12/12**. Focused planner/transport checks passed **28/28**. `git diff --check` passed.
+- **Live generation:** one 600 s cold one-shot run from the queued `https://www.tomzahavy.com/files/llms-cant-jump.pdf` source is the next validation and has not started yet. Record its status, hard failures, cost, actual duration, and artifact path below after completion; a produced video does not override pipeline hard failures or alignment status.
+
 ## 2026-09-27 — Simi parity recovery plan adopted
 - Plan: docs/superpowers/plans/2026-09-27-simi-parity-recovery.md (not plan-locked).
 - User approvals (chat, 2026-09-27): "Whatever you feel is best do it make sure first phase cleanup what is not required before that commit and move ahead.but complete and understand my end goal plan for that." / "Keep human gate, ship draft (Recommended)" / "LLM picks from full catalog (Recommended)".

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeTeachingPlan, WORDS_PER_SEC, SCENE_SEC, sceneCountFor } from '../plan/analyze.js';
+import { analyzeTeachingPlan, WORDS_PER_SEC, SCENE_SEC, SCENE_IDEAL_SEC, sceneCountFor } from '../plan/analyze.js';
 import { validateScript } from '../plan/stages.js';
 import { ConceptGraphSchema, ScriptSchema, TeachingPlanSchema, type ConceptGraph, type TeachingPlan } from '../plan/schemas.js';
 import { parseCandidates, extractJsonCandidates } from '../llm/structuredCall.js';
@@ -65,16 +65,42 @@ test('plan analyser: prerequisite cycles are rejected', () => {
 
 test('pacing constants come from measured Supertonic rate and Simi scene lengths', () => {
   assert.equal(WORDS_PER_SEC, 2.25); // measured 2.287 / 2.293 w/s, phase6-2026-09-27 bicycle+composting
-  assert.deepEqual(SCENE_SEC, { min: 14, max: 30 });
+  // Hard floor from harness/reference/lamina/index.json (n=33 scenes,
+  // 10.5-28.5 s, mean 18.6 s): the 10.5 s and 13.5 s scenes sit below the old
+  // 14 s hard floor, so hard min is 10 s while 14-30 s stays the warn/ideal band.
+  assert.deepEqual(SCENE_SEC, { min: 10, max: 30 });
+  assert.deepEqual(SCENE_IDEAL_SEC, { min: 14, max: 30 });
   assert.equal(sceneCountFor(60), 3);
   assert.equal(sceneCountFor(75), 4);
   assert.equal(sceneCountFor(300), 17);
 });
 
+test('plan analyser: a 10.5s scene (measured reference minimum) passes the hard floor with an ideal-band warn', () => {
+  // harness/reference/lamina/index.json minimum scene length is 10.5 s; the
+  // old 14 s hard floor blocked it as an error. It must now pass (ok) while
+  // still drawing a pacing warn for sitting below the 14-30 s ideal band.
+  const tinyGraph: ConceptGraph = {
+    concepts: [
+      { id: 'solo', label: 'Solo Idea', kind: 'entity', definition: 'One measured idea.', level: 'one-step', evidence: [{ sourceId: 'fixture-source', spanId: 'span_solo', startChar: 0, endChar: 20, startLine: 1, endLine: 1, quote: 'solo evidence quote' }] },
+    ],
+    relations: [],
+    prerequisites: [],
+  };
+  const measured: TeachingPlan = {
+    ...plan,
+    targetDurationSec: 10.5,
+    sections: [{ id: 'solo', title: 'Single Measured Scene', goal: 'Teach one idea at measured pace', kind: 'explain' as const, conceptIds: ['solo'], budgetSec: 10.5 }],
+  };
+  const a = analyzeTeachingPlan(measured, tinyGraph);
+  assert.equal(a.ok, true, JSON.stringify(a.findings));
+  assert.ok(a.findings.some((f) => f.code === 'F-PED' && f.check === 'pacing' && f.severity === 'warn'), JSON.stringify(a.findings));
+  assert.ok(!a.findings.some((f) => f.severity === 'error'), JSON.stringify(a.findings));
+});
+
 test('plan analyser: seven thin ~8.6s sections are a blocking F-PED pacing error', () => {
   // Built from the smallest existing plan fixture above, overriding only sections and budgetSec:
-  // 60s split across 7 sections (~8.57s each) is exactly the reference-violating shape the
-  // measured Simi pacing constants (SCENE_SEC.min = 14s) must now block.
+  // 60s split across 7 sections (~8.57s each) is below the measured 10s hard floor
+  // and must stay a blocking F-PED pacing error.
   const thin: TeachingPlan = {
     ...plan,
     sections: Array.from({ length: 7 }, (_, i) => ({
