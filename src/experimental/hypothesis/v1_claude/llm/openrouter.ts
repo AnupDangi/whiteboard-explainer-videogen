@@ -1,10 +1,8 @@
 /**
  * Experimental OpenRouter chat client for this track's structured calls.
  *
- * Mirrors the production `gateway/openrouter-provider.ts` request shape
- * (json_schema response format, usage.cost accounting, 429 retry-after), with
- * two differences the Claude-track model split needs, kept here so the
- * production gateway is not modified:
+ * Requests use a strict json_schema response format, read billed cost from
+ * `usage.cost`, honour 429 retry-after, and handle provider differences:
  *  - `reasoning.max_tokens` is only sent to hidden-reasoning "flash" models
  *    (qwen/deepseek), where it stops the reasoning trace from eating the
  *    whole completion budget. Anthropic endpoints reject that parameter
@@ -20,6 +18,7 @@
  *    reports that honestly.
  */
 import { withHostResourcePermit } from '../../shared/hostResourcePool.js';
+import { PIPELINE } from '../config.js';
 
 export interface ChatRequest {
   model: string;
@@ -268,7 +267,7 @@ async function sendChat(body: unknown, apiKey: string, fetcher: typeof fetch, op
   let requestSignal: AbortSignal | undefined;
   const signalForSend = () => {
     if (!requestSignal) {
-      const timeout = AbortSignal.timeout(opts.timeoutMs ?? 180_000);
+      const timeout = AbortSignal.timeout(opts.timeoutMs ?? PIPELINE.providerTimeoutMs);
       requestSignal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     }
     return requestSignal;

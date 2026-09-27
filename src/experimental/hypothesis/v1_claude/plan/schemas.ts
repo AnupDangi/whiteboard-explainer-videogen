@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SourceEvidenceRef } from './sourceDoc.js';
+import { MAX_TITLE_WORDS } from '../style.js';
 
 /**
  * S2 ConceptGraph and S3 TeachingPlan (claude_pipeline.md §3 /
@@ -59,7 +60,8 @@ export interface ConceptGraph {
 }
 
 export const SECTION_KINDS = ['intro', 'explain', 'step', 'example', 'recap'] as const;
-export const SECTION_TITLE_MAX_WORDS = 7;
+/** Section titles become scene titles, so they share the scene-title limit. */
+export const SECTION_TITLE_MAX_WORDS = MAX_TITLE_WORDS;
 
 export const TEACHING_SKILLS = ['definition', 'mechanism', 'comparison', 'process', 'derivation', 'application', 'recap'] as const;
 export const VISUAL_MECHANISMS = ['focus', 'chain', 'convergence', 'fan_out', 'weighted_blend', 'cycle', 'threshold', 'comparison', 'trajectory', 'equation', 'state_transition'] as const;

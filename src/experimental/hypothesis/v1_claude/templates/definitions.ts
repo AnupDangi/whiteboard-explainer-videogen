@@ -2,7 +2,8 @@ import type { BBox, TemplateId } from '../types.js';
 import { STYLE } from '../style.js';
 import type { Rect } from '../layout/geometry.js';
 import { circleLayout, columnLayout, resolveAxisOverlap, rowLayout } from '../layout/geometry.js';
-import { assignSlots, type SlotAssignment, type SlotPlanEntry } from './assign.js';
+import { assignSlots, type SlotAssignment } from './assign.js';
+import { templateSlots } from './catalog.js';
 
 export interface TemplateResult {
   boxes: Map<string, BBox>;
@@ -46,7 +47,7 @@ function gridLayout(rect: Rect, items: SlotAssignment[], gap: number): BBox[] {
 // 1. title_card — "WHY ATTENTION / The cat sat on the mat"
 // ---------------------------------------------------------------------------
 const titleCard: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'title', capacity: 1 }, { name: 'subtitle', capacity: 1 }, { name: 'strip', capacity: 'many' }];
+  const plan = templateSlots('title_card');
   const groups = assignSlots(elements, plan);
   const boxes = new Map<string, BBox>();
   for (const [id, b] of place(groups.get('title')!, rowLayout(band(rect, 0, 0.32), groups.get('title')!.map((a) => a.intrinsic), GAP))) boxes.set(id, b);
@@ -59,7 +60,7 @@ const titleCard: TemplateFn = (rect, elements) => {
 // 2. hub_spoke — robot -> arrows -> {math, bug, experts}
 // ---------------------------------------------------------------------------
 const hubSpoke: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'hub', capacity: 1 }, { name: 'spoke', capacity: 'many' }];
+  const plan = templateSlots('hub_spoke');
   const groups = assignSlots(elements, plan);
   const hub = groups.get('hub')!;
   const spokes = groups.get('spoke')!;
@@ -74,7 +75,7 @@ const hubSpoke: TemplateFn = (rect, elements) => {
 // 3. chain — ID verified -> reset password -> STOP
 // ---------------------------------------------------------------------------
 const chain: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'node', capacity: 'many' }];
+  const plan = templateSlots('chain');
   const groups = assignSlots(elements, plan);
   const nodes = groups.get('node')!;
   const totalWidth = (items: SlotAssignment[]) => items.reduce((sum, item) => sum + item.intrinsic.w, 0) + GAP * Math.max(0, items.length - 1);
@@ -104,7 +105,7 @@ const chain: TemplateFn = (rect, elements) => {
 // 4. convergence — keys + query -> x -> softmax -> meter
 // ---------------------------------------------------------------------------
 const convergence: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'input', capacity: 'many' }, { name: 'operator', capacity: 1 }, { name: 'output', capacity: 'many' }];
+  const plan = templateSlots('convergence');
   const groups = assignSlots(elements, plan);
   const inputs = groups.get('input')!;
   const operator = groups.get('operator')!;
@@ -125,7 +126,7 @@ const convergence: TemplateFn = (rect, elements) => {
 // 5. fan_out — CAT -> three arrows
 // ---------------------------------------------------------------------------
 const fanOut: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'source', capacity: 1 }, { name: 'target', capacity: 'many' }];
+  const plan = templateSlots('fan_out');
   const groups = assignSlots(elements, plan);
   const source = groups.get('source')!;
   const targets = groups.get('target')!;
@@ -144,7 +145,7 @@ const fanOut: TemplateFn = (rect, elements) => {
  * tries this only when the column layout cannot fit at native size.
  */
 const fanOutDense: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'source', capacity: 1 }, { name: 'target', capacity: 'many' }];
+  const plan = templateSlots('fan_out');
   const groups = assignSlots(elements, plan);
   const source = groups.get('source')!;
   const targets = groups.get('target')!;
@@ -159,7 +160,7 @@ const fanOutDense: TemplateFn = (rect, elements) => {
 // 6. list_icon — quickly / reliably / cheaply
 // ---------------------------------------------------------------------------
 const listIcon: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'item', capacity: 'many' }];
+  const plan = templateSlots('list_icon');
   const groups = assignSlots(elements, plan);
   const items = groups.get('item')!;
   const sizes = items.map((i) => i.intrinsic);
@@ -180,7 +181,7 @@ const listIcon: TemplateFn = (rect, elements) => {
 // 7. compare_2 — smartest model vs cheap system
 // ---------------------------------------------------------------------------
 const compare2: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'left', capacity: 1 }, { name: 'right', capacity: 1 }, { name: 'verdict', capacity: 1 }];
+  const plan = templateSlots('compare_2');
   const groups = assignSlots(elements, plan);
   const left = groups.get('left')!;
   const right = groups.get('right')!;
@@ -200,7 +201,7 @@ const compare2: TemplateFn = (rect, elements) => {
 // 8. threshold — task -> intelligence threshold bar
 // ---------------------------------------------------------------------------
 const threshold: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'subject', capacity: 1 }, { name: 'bar', capacity: 1 }, { name: 'marker', capacity: 1 }];
+  const plan = templateSlots('threshold');
   const groups = assignSlots(elements, plan);
   const subject = groups.get('subject')!;
   const bar = groups.get('bar')!;
@@ -224,12 +225,7 @@ const threshold: TemplateFn = (rect, elements) => {
 //    combiner in the middle, result on the right.
 // ---------------------------------------------------------------------------
 const weightedBlend: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [
-    { name: 'input', capacity: 'many' },
-    { name: 'weight', capacity: 'many' },
-    { name: 'combiner', capacity: 1 },
-    { name: 'result', capacity: 1 },
-  ];
+  const plan = templateSlots('weighted_blend');
   const groups = assignSlots(elements, plan);
   const inputs = groups.get('input')!;
   const weights = groups.get('weight')!;
@@ -260,7 +256,7 @@ const weightedBlend: TemplateFn = (rect, elements) => {
 // 10. layered_stack — network layers / OSI stack
 // ---------------------------------------------------------------------------
 const stackWithGap = (layerGap: number): TemplateFn => (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'layer', capacity: 'many' }];
+  const plan = templateSlots('layered_stack');
   const groups = assignSlots(elements, plan);
   const layers = groups.get('layer')!;
   const wideRect = { x: rect.x + rect.w * 0.1, y: rect.y, w: rect.w * 0.8, h: rect.h };
@@ -277,7 +273,7 @@ const layeredStackDense = stackWithGap(8);
 // 11. cycle — photosynthesis / immune loop
 // ---------------------------------------------------------------------------
 const cycle: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'node', capacity: 'many' }];
+  const plan = templateSlots('cycle');
   const groups = assignSlots(elements, plan);
   const nodes = groups.get('node')!;
   const { ring } = circleLayout(rect, nodes.map((n) => n.intrinsic));
@@ -291,7 +287,7 @@ const cycle: TemplateFn = (rect, elements) => {
 // ---------------------------------------------------------------------------
 const formulaFocus: TemplateFn = (rect, elements) => {
   // Up to 4 stacked formula lines (a derivation, one step per line), callouts underneath.
-  const plan: SlotPlanEntry[] = [{ name: 'formula', capacity: 4 }, { name: 'callout', capacity: 'many' }];
+  const plan = templateSlots('formula_focus');
   const groups = assignSlots(elements, plan);
   const formula = groups.get('formula')!;
   const callouts = groups.get('callout')!;
@@ -308,7 +304,7 @@ const formulaFocus: TemplateFn = (rect, elements) => {
 //     steps), with its formula and callouts beside it.
 // ---------------------------------------------------------------------------
 const plotFocus: TemplateFn = (rect, elements) => {
-  const plan: SlotPlanEntry[] = [{ name: 'plot', capacity: 1 }, { name: 'formula', capacity: 2 }, { name: 'callout', capacity: 'many' }];
+  const plan = templateSlots('plot_focus');
   const groups = assignSlots(elements, plan);
   const plot = groups.get('plot')!;
   const formula = groups.get('formula')!;

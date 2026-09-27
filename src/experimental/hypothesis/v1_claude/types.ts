@@ -1,3 +1,4 @@
+import type { TemplateId } from './templates/catalog.js';
 /**
  * Claude-track pipeline types (claude_pipeline.md).
  *
@@ -102,20 +103,7 @@ export type Glyph = '?' | '!' | '✓' | '✗' | '$' | 'Σ';
 
 export type OperatorSymbol = '×' | '+' | '−' | '÷' | 'Σ' | '∫' | '=' | '→' | 'softmax';
 
-export type TemplateId =
-  | 'title_card'
-  | 'hub_spoke'
-  | 'chain'
-  | 'convergence'
-  | 'fan_out'
-  | 'list_icon'
-  | 'compare_2'
-  | 'threshold'
-  | 'weighted_blend'
-  | 'layered_stack'
-  | 'cycle'
-  | 'formula_focus'
-  | 'plot_focus';
+export type { TemplateId };
 
 interface ElementBase {
   id: string;

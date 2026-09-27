@@ -18,8 +18,9 @@ import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
 import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
-import { BOARD_PROMPT_VERSION, BOARD_SCHEMA_VERSION, BOARD_STAGE_VERSION, buildBoardPrompt, conceptForMention, planBoardScene, skipBoardAfterAlignmentFailure } from '../planner/board.js';
-import { planScene, plannerProblems, shouldSkipPaidPlanning, skipPlanAfterAlignmentFailure, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
+import { conceptForMention } from '../planner/board.js';
+import { scenePlanner as scenePlannerById } from '../planner/registry.js';
+import { plannerProblems, shouldSkipPaidPlanning, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
 import { buildPlannerSceneInput } from '../planner/sceneInput.js';
 import { safeParseSceneSpec } from '../schema.js';
 import type { PlannerSceneInput, PlannerTeachingContext } from '../planner/prompt.js';
@@ -39,10 +40,10 @@ import type { LessonBible, SceneContract } from '../plan/schemas.js';
 import { CANDIDATE_FEASIBILITY_VERSION, compileScenePlanningContext, SCENE_PROMPT_VERSION, SCENE_SKILL_VERSION, type ExampleOrder } from '../planner/context.js';
 import { EXAMPLE_BANK_VERSION, EXAMPLE_RANK_VERSION, type PromptArm } from '../planner/exemplars.js';
 import { EXAMPLE_BANK_HASH } from '../planner/exemplars.js';
-import { buildScenePlannerPrompt } from '../planner/prompt.js';
 import { SCENE_DIRECTOR_SKILL_HASH } from '../planner/sceneDirectorSkill.js';
 import { promptExperimentEligibilityProblems } from '../harness/promptExperimentEligibility.js';
 import { sourceCommit } from './provenance.js';
+import { PIPELINE } from '../config.js';
 
 /**
  * Live-mode pipeline (per claude_pipeline.md §1/§2): source-generated lessons
@@ -53,7 +54,7 @@ import { sourceCommit } from './provenance.js';
  * offline renderer-fixture runner.
  */
 
-const SCENE_GAP_MS = 200; // mirrors narration/align.ts's fixture-mode convention
+const SCENE_GAP_MS = PIPELINE.sceneGapMs;
 
 /** Aligner pass order (least to most escalated); mirrors align.py's default -> fast_mode -> CTC -> bounded-repair sequence. */
 const ALIGNER_ESCALATION_ORDER: AlignedAudio['provider'][] = ['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair'];
@@ -195,14 +196,14 @@ export interface LiveRunContext {
   exampleOrder?: ExampleOrder;
   /** Diagnostic only: run paid S6 even when S5 has hard failures. The S5 failures remain, so the run stays failed. */
   planDespiteAlignmentFailure?: boolean;
-  /** S6 output contract. `board-v2` (default) is the enum-constrained board; `scene-spec-v1` is the legacy primitive schema kept for rollback. */
-  scenePlanner?: 'board-v2' | 'scene-spec-v1';
+  /** S6 planner id from planner/registry.ts (default `board-v2`, the enum-constrained board). */
+  scenePlanner?: string;
   /** CLI-level timing includes source intake and S1-S4 preparation. */
   executionTiming?: { startedAtMs: number; pipelineStartedAtMs: number };
 }
 
 /** A hand-authored spec goes through exactly the planner's validation (schema + mention ids + structure); no model call. */
-function handAuthored(spec: SceneSpec, input: PlannerSceneInput): Awaited<ReturnType<typeof planScene>> {
+function handAuthored(spec: SceneSpec, input: PlannerSceneInput): PlanSceneResult {
   const usage = { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0 };
   const parsed = safeParseSceneSpec(spec);
   const problems = parsed.success ? plannerProblems(parsed.data, input) : parsed.error.issues.map((i) => i.message);
@@ -217,7 +218,7 @@ const toRunFailure = (f: StageFailure): RunFailure => ({ code: f.code, stage: f.
 export async function runHypothesisLive(input: HypothesisLiveInput, options: HypothesisRunOptions, ctx: LiveRunContext): Promise<HypothesisLiveRunResult> {
   assertCommonRunOptions(options);
   if (options.mode !== 'live') throw new Error('runHypothesisLive requires options.mode === "live"');
-  const allowedCostUsd = input.runClass === 'generated-lesson' ? lessonCostCapUsd(input.plannedDurationSec ?? input.requestedDurationSec ?? 60) : EXPERIMENT.maxClipCostUsd;
+  const allowedCostUsd = input.runClass === 'generated-lesson' ? lessonCostCapUsd(input.plannedDurationSec ?? input.requestedDurationSec ?? 60) : PIPELINE.clipCostCapUsd;
   if (options.maxCostUsd > allowedCostUsd) throw new Error(`Run cost allowance $${options.maxCostUsd.toFixed(2)} exceeds the $${allowedCostUsd.toFixed(2)} cap for this lesson duration`);
   if (!options.outputDir) throw new Error('runHypothesisLive requires options.outputDir (real audio/video artifacts must land on disk)');
   const promptArm = ctx.promptArm ?? 'zero';
@@ -241,9 +242,10 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     failures.push({ code: 'source-document-missing', stage: 'provenance', message: 'generated lessons require the exact SourceDoc used by concept extraction', hard: true });
   }
 
+  const planner = scenePlannerById(ctx.scenePlanner);
   const activeCatalogVersion = catalogVersion();
   const inputHash = sha256(stableJson({ caseId: input.caseId, scenes: input.scenes, targetDurationMs: input.targetDurationMs, requestedDurationSec: input.requestedDurationSec, plannedDurationSec: input.plannedDurationSec, coverageReason: input.coverageReason, modules: input.modules, runClass: input.runClass, sourceDoc: input.sourceDoc, sourceBundle: input.sourceBundle }));
-  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: ctx.scenePlanner ?? 'board-v2', boardPromptVersion: BOARD_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
+  const runId = sha256(stableJson({ inputHash, options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: planner.id, boardPromptVersion: planner.promptVersion, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 }));
   const sceneEventsPath = path.join(outputDir, 'scene-events.jsonl');
   await writeFile(sceneEventsPath, '', 'utf8');
 
@@ -364,7 +366,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const remainingBudgetUsd = ctx.budgetLedger
       ? remainingRunBudgetUsd
       : Math.min(options.maxCostUsd / Math.max(1, input.scenes.length), remainingRunBudgetUsd);
-    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates: mentionCandidatesByScene.get(sceneInput.sceneId) ?? new Map(), previousElements: previousForPrompt, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
+    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates: mentionCandidatesByScene.get(sceneInput.sceneId) ?? new Map(), previousElements: previousForPrompt, ...(planner.wantsIconCatalog ? { iconCatalog } : {}) });
 
     if (input.runClass === 'generated-lesson') {
       const refs = sceneInput.teachingContext?.sourceEvidenceRefs ?? [];
@@ -390,15 +392,14 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       }
     }
 
-    let planned: Awaited<ReturnType<typeof planScene>>;
+    let planned: PlanSceneResult;
     const plannerStartedAtMs = Date.now();
     let plannerCacheHit = false;
     let plannerArtifactCostUsd: number | undefined;
     const plannerSkipped = shouldSkipPaidPlanning({ hasHandAuthoredSpec: Boolean(sceneInput.spec), hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) });
-    const board = (ctx.scenePlanner ?? 'board-v2') === 'board-v2';
-    const compiledPrompt = sceneInput.spec || plannerSkipped ? undefined : board ? buildBoardPrompt(plannerInput) : buildScenePlannerPrompt(plannerInput);
-    const skip = () => (board ? skipBoardAfterAlignmentFailure : skipPlanAfterAlignmentFailure)(plannerInput, hardAlignmentFailureCount);
-    const plan = (prompt: typeof compiledPrompt) => withHostResourcePermit('provider-s6', DEFAULT_SCENE_PLANNER_CONCURRENCY, () => (board ? planBoardScene : planScene)(plannerInput, { model: ctx.plannerModel, apiKey: ctx.openRouterApiKey, remainingBudgetUsd, budgetLedger: ctx.budgetLedger, ...(prompt ? { compiledPrompt: prompt } : {}) }));
+    const compiledPrompt = sceneInput.spec || plannerSkipped ? undefined : planner.buildPrompt(plannerInput);
+    const skip = () => planner.skipAfterAlignmentFailure(plannerInput, hardAlignmentFailureCount);
+    const plan = (prompt: typeof compiledPrompt) => withHostResourcePermit('provider-s6', DEFAULT_SCENE_PLANNER_CONCURRENCY, () => planner.plan(plannerInput, { model: ctx.plannerModel, apiKey: ctx.openRouterApiKey, remainingBudgetUsd, budgetLedger: ctx.budgetLedger, ...(prompt ? { compiledPrompt: prompt } : {}) }));
     const promptHash = compiledPrompt ? sha256(stableJson(compiledPrompt)) : undefined;
     const promptAudit = compiledPrompt ? {
       compiledPrompt,
@@ -410,7 +411,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (sceneInput.spec) planned = handAuthored(sceneInput.spec, plannerInput);
     else if (ctx.artifactStore) {
       const cached = await ctx.artifactStore.run<{ result: PlanSceneResult; promptAudit?: NonNullable<typeof promptAudit> }>('S6-scene-planner', { plannerInput, promptAudit, hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) }, {
-        schemaVersion: board ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', stageVersion: board ? BOARD_STAGE_VERSION : '4', promptVersion: board ? BOARD_PROMPT_VERSION : SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
+        schemaVersion: planner.schemaVersion, stageVersion: planner.stageVersion, promptVersion: planner.promptVersion, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
       }, async () => ({
         result: plannerSkipped ? skip() : await plan(compiledPrompt),
         ...(promptAudit ? { promptAudit } : {}),
@@ -428,8 +429,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   };
   // A board prompt does not read the previous board, so every board scene is planned concurrently;
   // results are accounted, resolved, and rendered in scene order below.
-  const boardMode = (ctx.scenePlanner ?? 'board-v2') === 'board-v2';
-  const plannedAhead = boardMode
+  const plannedAhead = planner.independentScenes
     ? input.scenes.map((sceneInput) => (input.runClass === 'generated-lesson' && sceneInput.spec ? Promise.resolve(undefined) : withScenePlannerSlot(() => planStep(sceneInput, undefined))))
     : undefined;
 
@@ -645,7 +645,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     caseId: input.caseId,
     runId,
     commit: sourceCommit(),
-    configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: ctx.scenePlanner ?? 'board-v2', boardPromptVersion: BOARD_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: (ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
+    configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: planner.id, boardPromptVersion: planner.promptVersion, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: planner.schemaVersion, visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
     nativeArtifacts: {},
     claims: narration.scenes.map((s) => s.plainText),
     claimEvidence: Object.fromEntries(input.scenes.map((scene) => {
@@ -884,8 +884,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       bankHash: EXAMPLE_BANK_HASH,
       rankVersion: EXAMPLE_RANK_VERSION,
       catalogVersion: activeCatalogVersion,
-      promptVersion: (ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? BOARD_PROMPT_VERSION : SCENE_PROMPT_VERSION,
-      scenePlanner: ctx.scenePlanner ?? 'board-v2',
+      promptVersion: planner.promptVersion,
+      scenePlanner: planner.id,
       plannerModel: ctx.plannerModel,
     },
     stages: {

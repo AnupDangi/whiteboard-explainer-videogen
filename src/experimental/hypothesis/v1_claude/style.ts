@@ -27,6 +27,8 @@ export const STYLE = {
     /** Scene heading: reference frames letter it at ~50% of frame width for a short title. */
     sceneTitle: 96,
   },
+  /** Top band reserved for the scene title (layout keeps it clear, the renderer sets the title baseline there). */
+  layout: { titleBandPx: 150 },
   element: { objectSize: [150, 220] as [number, number], boxMinW: 180, boxMinH: 120, gap: 64 },
   occupancy: { min: 0.45, max: 0.75 },
   roughness: 0,

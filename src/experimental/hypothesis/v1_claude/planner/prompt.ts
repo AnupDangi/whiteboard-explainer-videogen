@@ -1,4 +1,5 @@
 import type { TemplateId } from '../types.js';
+import { TEMPLATE_IDS, templateSlots, type TemplateSlot } from '../templates/catalog.js';
 import type { EvidenceReference } from '../../shared/contracts.js';
 import { MAX_ELEMENTS_PER_SCENE, MAX_LABEL_WORDS, MAX_TITLE_WORDS } from '../style.js';
 import type { ScenePlanningContext } from './context.js';
@@ -20,22 +21,8 @@ import { recipeSectionBody } from './recipes.js';
  * model, so a live run tests the hypothesis rather than an oracle.
  */
 
-// Slot table mirrors templates/definitions.ts (the solver is authoritative and degrades gracefully).
-export const TEMPLATE_SLOTS: Record<TemplateId, Array<{ name: string; capacity: number | 'many' }>> = {
-  title_card: [{ name: 'title', capacity: 1 }, { name: 'subtitle', capacity: 1 }, { name: 'strip', capacity: 'many' }],
-  hub_spoke: [{ name: 'hub', capacity: 1 }, { name: 'spoke', capacity: 'many' }],
-  chain: [{ name: 'node', capacity: 'many' }],
-  convergence: [{ name: 'input', capacity: 'many' }, { name: 'operator', capacity: 1 }, { name: 'output', capacity: 'many' }],
-  fan_out: [{ name: 'source', capacity: 1 }, { name: 'target', capacity: 'many' }],
-  list_icon: [{ name: 'item', capacity: 'many' }],
-  compare_2: [{ name: 'left', capacity: 1 }, { name: 'right', capacity: 1 }, { name: 'verdict', capacity: 1 }],
-  threshold: [{ name: 'subject', capacity: 1 }, { name: 'bar', capacity: 1 }, { name: 'marker', capacity: 1 }],
-  weighted_blend: [{ name: 'input', capacity: 'many' }, { name: 'weight', capacity: 'many' }, { name: 'combiner', capacity: 1 }, { name: 'result', capacity: 1 }],
-  layered_stack: [{ name: 'layer', capacity: 'many' }],
-  cycle: [{ name: 'node', capacity: 'many' }],
-  formula_focus: [{ name: 'formula', capacity: 4 }, { name: 'callout', capacity: 'many' }],
-  plot_focus: [{ name: 'plot', capacity: 1 }, { name: 'formula', capacity: 2 }, { name: 'callout', capacity: 'many' }],
-};
+/** Slot table for the prompt, derived from the template catalog the solver also uses. */
+export const TEMPLATE_SLOTS = Object.fromEntries(TEMPLATE_IDS.map((id) => [id, templateSlots(id)])) as Record<TemplateId, TemplateSlot[]>;
 
 export interface PlannerTeachingContext {
   displayText?: string;
@@ -68,7 +55,7 @@ export interface PlannerSceneInput {
 }
 
 const templateSlotLines = (): string =>
-  (Object.entries(TEMPLATE_SLOTS) as Array<[TemplateId, Array<{ name: string; capacity: number | 'many' }>]>)
+  (Object.entries(TEMPLATE_SLOTS) as Array<[TemplateId, TemplateSlot[]]>)
     .map(([tpl, slots]) => `- ${tpl}: ${slots.map((s) => `${s.name} (${s.capacity})`).join(', ')}`)
     .join('\n');
 

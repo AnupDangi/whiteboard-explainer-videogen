@@ -3,6 +3,7 @@ import { maxPriceForCallBudget, priceCeilingForModel, ProviderNotDispatchedError
 import { openRouterClient, type ModelClient } from './modelClient.js';
 import type { StageFailure } from '../types.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
+import { PIPELINE } from '../config.js';
 
 /**
  * One validated LLM call for every model stage in this track (S1b syllabus,
@@ -238,7 +239,7 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
         effort: opts.effort,
         // A live run once saw a call hang ~20 minutes; flash reasoning models can take 1-2 minutes on a full
         // teaching plan. The timeout starts when the request gets a provider slot, not while it queues.
-        timeoutMs: opts.timeoutMs ?? 180_000,
+        timeoutMs: opts.timeoutMs ?? PIPELINE.providerTimeoutMs,
         ...(opts.signal ? { signal: opts.signal } : {}),
       });
       return { ...response, requestPriceCeiling };

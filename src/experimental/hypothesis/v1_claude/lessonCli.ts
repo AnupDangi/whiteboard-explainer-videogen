@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { scenePlanner as scenePlannerById } from './planner/registry.js';
 import path from 'node:path';
 import type { HypothesisRunOptions, StageRunRecord } from '../shared/contracts.js';
 import { MATH_LESSONS } from './fixtures/mathLessons.js';
@@ -48,8 +49,7 @@ async function main(): Promise<void> {
   const exampleOrder = (arg('example-order') ?? 'ranked') as ExampleOrder;
   const planDespiteAlignmentFailure = hasFlag(args, 'plan-despite-alignment-failure');
   const diagnosticCaptionlessVideo = hasFlag(args, 'diagnostic-video-with-invalid-captions');
-  const scenePlanner = arg('scene-planner') ?? 'board-v2';
-  if (scenePlanner !== 'board-v2' && scenePlanner !== 'scene-spec-v1') throw new Error('--scene-planner must be board-v2 or scene-spec-v1');
+  const scenePlanner = scenePlannerById(arg('scene-planner')).id;
   const sharedStageCache = arg('stage-cache') ? path.resolve(arg('stage-cache')!) : undefined;
   if (!['zero', 'text', 'mechanism', 'diverse'].includes(promptArm)) throw new Error(`unknown E5 prompt arm: ${promptArm}`);
   if (!['ranked', 'reverse'].includes(exampleOrder)) throw new Error(`unknown E5 example order: ${exampleOrder}`);

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TEMPLATE_IDS } from './templates/catalog.js';
 import type { SceneSpec } from './types.js';
 import { MAX_ELEMENTS_PER_SCENE, MAX_LABEL_WORDS, MAX_TITLE_WORDS } from './style.js';
 import { RELATION_TYPES } from './plan/schemas.js';
@@ -197,21 +198,7 @@ const BoardIntentSchema = z.object({
   }).strict()).max(24),
 }).strict();
 
-const TemplateIdSchema = z.enum([
-  'title_card',
-  'hub_spoke',
-  'chain',
-  'convergence',
-  'fan_out',
-  'list_icon',
-  'compare_2',
-  'threshold',
-  'weighted_blend',
-  'layered_stack',
-  'cycle',
-  'formula_focus',
-  'plot_focus',
-]);
+const TemplateIdSchema = z.enum(TEMPLATE_IDS);
 
 export const SceneSpecSchema = z
   .object({

@@ -1,4 +1,5 @@
 import type { Edge, Element, LaidOutScene, StageFailure, Timeline } from '../types.js';
+import { TEMPLATE_SPECS } from '../templates/catalog.js';
 import type { EvidenceReference, NeutralElement, NeutralTimelineEvent } from '../../shared/contracts.js';
 import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 
@@ -89,19 +90,7 @@ export function typedBoardAdequacyFailures(scene: BoardAdequacyInput): StageFail
   // These templates preserve their structural slots through SceneSpec ->
   // layout. Validate both the retained semantic intent and the visible slots.
   const slots = new Set(scene.elements.filter((element) => (element.element.conceptIds?.length ?? 0) > 0).map((element) => element.element.slot));
-  const requiredSlots: Array<{ slot: string; explanation: string }> = scene.template === 'convergence'
-    ? [
-      { slot: 'input', explanation: 'at least one input' },
-      { slot: 'operator', explanation: 'a process/operator' },
-      { slot: 'output', explanation: 'at least one output' },
-    ]
-    : scene.template === 'fan_out'
-      ? [{ slot: 'source', explanation: 'a source' }, { slot: 'target', explanation: 'at least one target' }]
-      : scene.template === 'hub_spoke'
-        ? [{ slot: 'hub', explanation: 'a hub' }, { slot: 'spoke', explanation: 'at least one spoke' }]
-        : scene.template === 'compare_2'
-          ? [{ slot: 'left', explanation: 'a left alternative' }, { slot: 'right', explanation: 'a right alternative' }]
-          : [];
+  const requiredSlots = TEMPLATE_SPECS[scene.template].requiredSlots ?? [];
   const missingSlots = requiredSlots.filter(({ slot }) => !slots.has(slot));
   if (missingSlots.length) {
     failures.push({

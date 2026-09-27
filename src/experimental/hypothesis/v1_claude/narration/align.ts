@@ -1,4 +1,5 @@
 import type { AlignedAudio, AlignedWord, NarrationScript } from '../types.js';
+import { PIPELINE } from '../config.js';
 
 /** Unicode-aware word tokenizer, including curly apostrophes used in generated narration. */
 const WORD_RE = /[\p{L}\p{M}\p{N}]+(?:['’‘ʼ-][\p{L}\p{M}\p{N}]+)*/gu;
@@ -19,7 +20,7 @@ function baseDurationMs(word: string): number {
   return 220 + Math.max(0, len - 3) * 40;
 }
 
-const SCENE_GAP_MS = 200;
+const SCENE_GAP_MS = PIPELINE.sceneGapMs;
 
 /** Validate measured per-scene word clocks before they become planner anchors. */
 export function alignedWordTimingProblems(words: AlignedWord[], durationMs: number): string[] {

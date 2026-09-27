@@ -5,7 +5,7 @@ import type { SlotAssignment } from '../templates/assign.js';
 import { unionBBox, scaleAround, type Rect } from './geometry.js';
 import { routeEdges } from './edges.js';
 
-const TITLE_BAND_H = 150;
+const TITLE_BAND_H = STYLE.layout.titleBandPx;
 
 function workingRect(template: ResolvedScene['template']): Rect {
   const safe = STYLE.canvas.safe;

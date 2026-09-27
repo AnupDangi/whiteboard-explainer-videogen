@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const items = await loadSceneCalibrationItems(runDirs.map((dir) => path.resolve(dir)));
   if (!items.length) throw new Error('no calibration scenes found in the supplied run directories');
 
-  const report = await runSceneCalibration({ items, arms, repeats, model, apiKey: env.apiKey, budgetLedger });
+  const report = await runSceneCalibration({ items, arms, repeats, model, apiKey: env.apiKey, budgetLedger, ...(arg('scene-planner') ? { planner: arg('scene-planner') } : {}) });
   await mkdir('harness/reports', { recursive: true });
   const jsonPath = path.join('harness/reports', `${stamp}-scene-calibration.json`);
   const mdPath = path.join('harness/reports', `${stamp}-scene-calibration.md`);

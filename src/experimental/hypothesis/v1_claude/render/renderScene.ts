@@ -181,7 +181,8 @@ function renderEdge(edge: RoutedEdge, ev: TimelineEvent, timeMs: number, index: 
 
 /** Hand-lettered scene title, wiped in over the first `TITLE_WIPE_MS` of the scene. */
 export const TITLE_WIPE_MS = 700;
-export const TITLE_Y = 150;
+/** Baseline of the scene title; the solver keeps the same band clear. */
+export const TITLE_Y = STYLE.layout.titleBandPx;
 
 function renderTitle(scene: LaidOutScene, timeline: Timeline, timeMs: number): string {
   if (scene.template === 'title_card') return '';
