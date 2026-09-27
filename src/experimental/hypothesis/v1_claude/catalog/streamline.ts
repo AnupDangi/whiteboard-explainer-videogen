@@ -122,8 +122,6 @@ export function loadStreamlineCatalog(): { attribution: string; entries: Catalog
   return { attribution: streamline.attribution[0] ?? '', entries: streamline.entries };
 }
 
-export const STREAMLINE_ATTRIBUTION = (): string => loadStreamlineCatalog().attribution;
-
 /**
  * Attribution lines for every library that supplied an asset, keyed by the
  * resolution `source` prefix (`<libraryId>:`). Written next to each video.

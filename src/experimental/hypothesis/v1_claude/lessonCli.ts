@@ -19,6 +19,7 @@ import { sha256 } from '../shared/artifacts.js';
 import { LESSON_DURATIONS_SEC, lessonCostCapUsd } from './plan/hierarchical.js';
 import type { PromptArm } from './planner/exemplars.js';
 import type { ExampleOrder } from './planner/context.js';
+import { argValue, argValues, hasFlag } from './cli/args.js';
 
 /**
  * Full lesson CLI: source text -> S2 concepts -> S3 teaching plan -> plan
@@ -37,7 +38,7 @@ import type { ExampleOrder } from './planner/context.js';
  */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (k: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const env = await loadOpenRouterEnv();
   const plannerModel = arg('planner') ?? env.sceneModel;
   const contentModel = arg('content') ?? env.contentModel;
@@ -46,8 +47,8 @@ async function main(): Promise<void> {
   const cacheMode = (arg('cache') ?? 'warm') as 'cold' | 'warm' | 'replay';
   const promptArm = (arg('prompt-arm') ?? 'zero') as PromptArm;
   const exampleOrder = (arg('example-order') ?? 'ranked') as ExampleOrder;
-  const planDespiteAlignmentFailure = args.includes('--plan-despite-alignment-failure');
-  const diagnosticCaptionlessVideo = args.includes('--diagnostic-video-with-invalid-captions');
+  const planDespiteAlignmentFailure = hasFlag(args, 'plan-despite-alignment-failure');
+  const diagnosticCaptionlessVideo = hasFlag(args, 'diagnostic-video-with-invalid-captions');
   const scenePlanner = arg('scene-planner') ?? 'board-v2';
   if (scenePlanner !== 'board-v2' && scenePlanner !== 'scene-spec-v1') throw new Error('--scene-planner must be board-v2 or scene-spec-v1');
   const sharedStageCache = arg('stage-cache') ? path.resolve(arg('stage-cache')!) : undefined;
@@ -60,8 +61,8 @@ async function main(): Promise<void> {
   const sourceArtifacts = new Map<string, Array<{ key: string; contentHash: string; cacheHit: boolean }>>();
   const sourceStageRuns = new Map<string, StageRunRecord[]>();
   const lessonExecutionStartedAt = new Map<string, number>();
-  const sourcePaths = args.flatMap((value) => value.startsWith('--source=') ? [value.slice('--source='.length)] : []);
-  const sourceUrls = args.flatMap((value) => value.startsWith('--url=') ? [value.slice('--url='.length)] : []);
+  const sourcePaths = argValues(args, 'source');
+  const sourceUrls = argValues(args, 'url');
   if (sourcePaths.length || sourceUrls.length) {
     const requestedDurationSec = Number(arg('duration') ?? 60);
     if (!LESSON_DURATIONS_SEC.includes(requestedDurationSec as typeof LESSON_DURATIONS_SEC[number])) throw new Error(`--duration must be one of ${LESSON_DURATIONS_SEC.join(', ')} seconds`);

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { loadOpenRouterEnv } from '../planner/env.js';
 import { PLAN_PROMPT_VARIANTS, type PlanPromptVariant } from '../plan/stages.js';
 import { pickWinningVariant, runPlanCalibration, type CalibrationSourceSpec } from './planCalibration.js';
+import { argValue } from '../cli/args.js';
 
 /**
  * Measure S3 prompt variants against real cold OpenRouter calls on a small, fixed, non-golden
@@ -20,7 +21,7 @@ const HELD_OUT_SOURCES: CalibrationSourceSpec[] = [
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (k: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const env = await loadOpenRouterEnv();
   const model = arg('model') ?? env.contentModel;
   const repeats = Number(arg('repeats') ?? '3');

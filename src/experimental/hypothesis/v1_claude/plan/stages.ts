@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from '../llm/structuredCall.js';
 import { parseMarkers } from '../narration/markers.js';
 import { spokenForm } from '../narration/spokenForm.js';
-import { ConceptGraphSchema, RELATION_TYPES, SECTION_KINDS, SECTION_TITLE_MAX_WORDS, TEACHING_SKILLS, VISUAL_MECHANISMS, ScriptSchema, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
+import { ConceptGraphSchema, RELATION_TYPES, SECTION_KINDS, SECTION_TITLE_MAX_WORDS, TEACHING_SKILLS, VISUAL_MECHANISMS, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
 import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan, sceneCountFor } from './analyze.js';
 import type { StageRunRecord } from '../../shared/contracts.js';
 import { sourceDocFromText, sourcePrompt, type SourceDoc, type SourceBundle } from './sourceDoc.js';

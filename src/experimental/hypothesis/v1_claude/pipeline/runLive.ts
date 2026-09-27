@@ -4,7 +4,6 @@ import type { AlignedAudio, AlignedWord, LaidOutScene, NarrationScript, Resolved
 import { EXPERIMENT, assertCommonRunOptions, type EvaluationBundle, type GateRunRecord, type GoldenCase, type HypothesisRunOptions, type RunClass, type RunFailure, type RunStatus, type RunUsage, type StageRunRecord } from '../../shared/contracts.js';
 import { deriveRunStatus, deterministicGates, type PublishEvidence } from '../../shared/evaluation.js';
 import { sha256, stableJson, writeJsonArtifact } from '../../shared/artifacts.js';
-import { goldenById } from '../../shared/fixtures.js';
 import { svgDocument } from '../../shared/svg.js';
 import { synthesizeAndAlign } from '../../shared/alignment/align.js';
 import { buildNarrationScene } from '../narration/markers.js';
@@ -85,6 +84,8 @@ export interface HypothesisLiveInput {
   caseId: string;
   scenes: LiveSceneInput[];
   runClass?: RunClass;
+  /** Frozen golden target for benchmark/script runs (see pipeline/golden.ts); ignored for generated lessons. */
+  golden?: GoldenCase;
   sourceDoc?: SourceDoc;
   sourceBundle?: SourceBundle;
   requestedDurationSec?: number;
@@ -212,16 +213,6 @@ function handAuthored(spec: SceneSpec, input: PlannerSceneInput): Awaited<Return
 
 const toRunFailure = (f: StageFailure): RunFailure => ({ code: f.code, stage: f.stage, message: f.message, hard: f.hard });
 
-/** Golden targets belong to explicit benchmark/script paths, never to source-generated input IDs. */
-export function goldenForRun(input: Pick<HypothesisLiveInput, 'caseId' | 'runClass'>): GoldenCase | undefined {
-  if (input.runClass === 'generated-lesson') return undefined;
-  try {
-    return goldenById(input.caseId);
-  } catch {
-    return undefined;
-  }
-}
-
 export async function runHypothesisLive(input: HypothesisLiveInput, options: HypothesisRunOptions, ctx: LiveRunContext): Promise<HypothesisLiveRunResult> {
   assertCommonRunOptions(options);
   if (options.mode !== 'live') throw new Error('runHypothesisLive requires options.mode === "live"');
@@ -312,7 +303,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   // --- S6: Scene Planner (real OpenRouter call, <=1 repair, §9 fallback, cost-capped at options.maxCostUsd per clip) ---
   // A case ID/source filename must never select benchmark claims for a generated lesson.
-  const golden = goldenForRun(input);
+  const golden = input.runClass === 'generated-lesson' ? undefined : input.golden;
 
   const scenes: LiveScenePipelineResult[] = [];
   let firstPlayableSceneReadyAtMs: number | undefined;

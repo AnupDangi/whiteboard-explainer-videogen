@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { evaluateE5HumanVotes } from './e5HumanReview.js';
 import { auditE5Organizer } from './e5HumanReviewAudit.js';
+import { argValue } from '../cli/args.js';
 
 function parseInput(text: string): unknown {
   try { return JSON.parse(text) as unknown; }
@@ -11,7 +12,7 @@ function parseInput(text: string): unknown {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (name: string) => args.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const keyPath = arg('key');
   const organizerPath = arg('organizer');
   const votePaths = (arg('votes') ?? '').split(',').map((value) => value.trim()).filter(Boolean);

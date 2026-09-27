@@ -3,7 +3,6 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { availableParallelism } from 'node:os';
 import { Resvg } from '@resvg/resvg-js';
-import type { Timeline } from '../types.js';
 import { STYLE } from '../style.js';
 import { spawnFrameEncoder } from './ffmpeg.js';
 import { RasterPool } from './rasterPool.js';

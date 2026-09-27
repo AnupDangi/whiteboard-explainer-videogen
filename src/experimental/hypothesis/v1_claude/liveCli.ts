@@ -6,11 +6,13 @@ import { ATTENTION_SCENES } from './fixtures/attentionScenes.js';
 import { MATH_SCENES } from './fixtures/mathScenes.js';
 import { LIVE_NARRATION_SCRIPTS, teachingContextFor } from './fixtures/liveNarrationScripts.js';
 import { loadOpenRouterEnv } from './planner/env.js';
+import { goldenForRun } from './pipeline/golden.js';
 import { runHypothesisLive, type HypothesisLiveInput } from './pipeline/runLive.js';
 import { loadAlignmentCalibration } from '../shared/alignment/calibration.js';
 import { closeSpeechWorkers } from '../shared/alignment/align.js';
 import { PersistentBudgetLedger } from './pipeline/budgetLedger.js';
 import { ContentAddressedArtifactStore } from './artifactCache.js';
+import { argValue } from './cli/args.js';
 
 /**
  * Live-run CLI: real local TTS + real forced alignment + real Scene Planner
@@ -28,6 +30,11 @@ import { ContentAddressedArtifactStore } from './artifactCache.js';
 const CASES = ['transformer-attention', 'gradient-descent', 'photosynthesis', 'electromagnetic-induction'] as const;
 
 function buildInput(caseId: string): HypothesisLiveInput {
+  const input = buildScenes(caseId);
+  return { ...input, golden: goldenForRun(input) };
+}
+
+function buildScenes(caseId: string): HypothesisLiveInput {
   // Renderer-first proofs with real narrated audio: hand-authored scenes, no LLM call (claude_pipeline.md §17).
   if (caseId === 'fixtures-attention') return { caseId, scenes: ATTENTION_SCENES.map((s) => ({ sceneId: s.sceneId, raw: s.raw, spec: s.spec })) };
   if (caseId === 'fixtures-math') return { caseId, scenes: MATH_SCENES.map((s) => ({ sceneId: s.sceneId, raw: s.raw, spec: s.spec })), targetDurationMs: 10_000 };
@@ -44,9 +51,9 @@ function buildInput(caseId: string): HypothesisLiveInput {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const only = args.find((a) => a.startsWith('--case='))?.slice('--case='.length);
-  const outBase = args.find((a) => a.startsWith('--out='))?.slice('--out='.length) ?? '.data/hypothesis-runs/claude/live';
-  const cacheMode = (args.find((a) => a.startsWith('--cache='))?.slice('--cache='.length) ?? 'warm') as 'cold' | 'warm' | 'replay';
+  const only = argValue(args, 'case');
+  const outBase = argValue(args, 'out') ?? '.data/hypothesis-runs/claude/live';
+  const cacheMode = (argValue(args, 'cache') ?? 'warm') as 'cold' | 'warm' | 'replay';
   const cases = only ? [only] : [...CASES];
 
   const offline = cases.every((c) => c.startsWith('fixtures-'));
@@ -54,7 +61,7 @@ async function main(): Promise<void> {
   const env = offline ? { apiKey: '', directorModel: 'hand-authored', sceneModel: 'hand-authored', contentModel: 'hand-authored' } : await loadOpenRouterEnv();
   const calibration = await loadAlignmentCalibration();
   // --planner=<openrouter model id> runs experiment E5 (planner model A/B); default is the strong S6 model.
-  const plannerModel = args.find((a) => a.startsWith('--planner='))?.slice('--planner='.length) ?? env.sceneModel;
+  const plannerModel = argValue(args, 'planner') ?? env.sceneModel;
   const summary: Array<Record<string, unknown>> = [];
 
   for (const caseId of cases) {

@@ -100,12 +100,3 @@ export function resolveMentions(script: NarrationScript, audio: AlignedAudio): R
   return { mentions, failures };
 }
 
-/** Convenience: run resolution and return audio with `.mentions` populated, throwing on any hard failure. */
-export function attachResolvedMentions(script: NarrationScript, audio: AlignedAudio): AlignedAudio {
-  const { mentions, failures } = resolveMentions(script, audio);
-  if (failures.length > 0) {
-    const detail = failures.map((f) => `${f.sceneId}/${f.mentionId} (${f.reason}): "${f.phrase}"`).join('; ');
-    throw new Error(`Mention resolution failed for ${failures.length} mention(s): ${detail}`);
-  }
-  return { ...audio, mentions };
-}

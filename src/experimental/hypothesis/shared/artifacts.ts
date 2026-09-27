@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {mkdir,writeFile} from 'node:fs/promises';
 import {dirname,join} from 'node:path';
 import type {StageArtifact} from './contracts.js';
 
@@ -22,8 +22,6 @@ export async function writeJsonArtifact(root:string,name:string,value:unknown):P
   const path=join(root,name);await mkdir(dirname(path),{recursive:true});
   await writeFile(path,`${JSON.stringify(value,null,2)}\n`,'utf8');return path;
 }
-
-export async function readJsonArtifact<T>(path:string):Promise<T>{return JSON.parse(await readFile(path,'utf8')) as T;}
 
 export async function verifyArtifact<T>(artifact:StageArtifact<T>):Promise<void>{
   if(sha256(stableJson(artifact.payload))!==artifact.contentHash)throw new Error(`Artifact content hash mismatch for ${artifact.stageVersion}`);

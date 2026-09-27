@@ -3,7 +3,6 @@
  * (stable-ts, wav2vec2 CTC) must receive the same words; the CTC alphabet has
  * no digits, so digits are written out here once, before markers are parsed.
  */
-export const SPOKEN_FORM_VERSION = 'spoken-form-v1';
 
 const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
 const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];

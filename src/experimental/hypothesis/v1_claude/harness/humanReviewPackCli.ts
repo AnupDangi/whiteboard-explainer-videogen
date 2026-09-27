@@ -9,13 +9,14 @@ import { frameAt } from './judge.js';
 import { buildE1BlindPackage, type E1BlindInput, type E1SourceClass } from './humanReview.js';
 import { writeE1ParticipantPack } from './humanReviewPack.js';
 import { judgeRunEligibility, resolveLocalRunArtifact, sourceDocMatchesRecordedHash, type JudgeNarration } from './judgeEligibility.js';
+import { argValue } from '../cli/args.js';
 
 interface ReferenceScene { video: string; endS: number; sampleTimesS: number[] }
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../');
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (name: string) => args.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const runDir = arg('run');
   const topic = arg('topic')?.trim().toLowerCase();
   if (!runDir || !topic) throw new Error('Usage: humanReviewPackCli.js --run=<eligible-generated-run-dir> --topic=<declared-topic> [--out=<pack-root>] [--key-out=<sealed-key.json>]');

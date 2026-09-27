@@ -87,7 +87,7 @@ test('S11: raster workers and ffmpeg produce a decodable MP4 from the shared fra
     t.skip('system ffmpeg is unavailable');
     return;
   }
-  const { mkdtemp, readFile, stat, rm } = await import('node:fs/promises');
+  const { mkdtemp, stat, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const path = await import('node:path');
     const { encodeVideoAtomically } = await import('../export/videoEncode.js');

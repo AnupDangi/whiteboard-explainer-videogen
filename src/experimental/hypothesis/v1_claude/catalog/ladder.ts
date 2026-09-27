@@ -2,7 +2,7 @@ import type { Badge, PaletteToken, ResolutionRecord, PrimitiveVisual, TextRun } 
 import { STYLE } from '../style.js';
 import type { CatalogEntry } from './catalog.js';
 import { allCatalogEntries, type Candidate } from './semantic.js';
-import { LICENSE_ALLOWLIST, normalizeCatalogEntry } from './normalize.js';
+import { normalizeCatalogEntry } from './normalize.js';
 import { composeBadge } from './badges.js';
 import { styledTextBoxVisual } from '../render/primitives.js';
 import { isHouseSource } from './registry.js';
@@ -156,6 +156,3 @@ export function withLabelBelow(icon: PrimitiveVisual, side: number, label: strin
   };
 }
 
-export function assertLicenseAllowed(license: string): void {
-  if (!LICENSE_ALLOWLIST.includes(license)) throw new Error(`Asset license "${license}" is not in the allowlist`);
-}

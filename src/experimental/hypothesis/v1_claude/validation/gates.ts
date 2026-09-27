@@ -1,4 +1,4 @@
-import type { BoardIntent, LaidOutScene, StageFailure, Timeline } from '../types.js';
+import type { LaidOutScene, StageFailure, Timeline } from '../types.js';
 import type { EvidenceReference, NeutralElement, NeutralTimelineEvent } from '../../shared/contracts.js';
 import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 

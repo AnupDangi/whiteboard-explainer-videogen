@@ -364,7 +364,6 @@ function mathIssues(el: SceneSpec['elements'][number]): SceneSpecStructuralIssue
   return out;
 }
 
-export type SceneSpecInput = z.infer<typeof SceneSpecSchema>;
 
 /**
  * zod's static inference widens regex-validated strings (e.g. `anchor`) back

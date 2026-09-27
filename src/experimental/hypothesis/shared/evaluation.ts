@@ -1,4 +1,4 @@
-import {EXPERIMENT,type EvaluationBundle,type GoldenCase,type NeutralElement,type NeutralTimelineEvent,type RunFailure,type RunStatus} from './contracts.js';
+import {EXPERIMENT,type GoldenCase,type NeutralElement,type NeutralTimelineEvent,type RunFailure,type RunStatus} from './contracts.js';
 
 const intersects=(a:NeutralElement['bbox'],b:NeutralElement['bbox']):boolean=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
 
@@ -31,9 +31,3 @@ export function deriveRunStatus(hardFailures:number,judgePassed=false,evidence:P
   return evidence.factualEvidenceComplete&&evidence.alignmentComplete?'passed':'draft';
 }
 
-export function mechanismCoverage(golden:GoldenCase,bundle:Pick<EvaluationBundle,'claims'|'relations'>):Record<string,number|string>{
-  const claimHits=golden.requiredClaims.filter(claim=>bundle.claims.some(item=>item.toLocaleLowerCase().includes(claim.toLocaleLowerCase()))).length;
-  const relationHits=golden.requiredRelations.filter(expected=>bundle.relations.some(found=>found.from===expected.from&&found.to===expected.to&&found.type===expected.type)).length;
-  const claimCoverage=claimHits/Math.max(1,golden.requiredClaims.length),relationCoverage=relationHits/Math.max(1,golden.requiredRelations.length);
-  return {claimCoverage,relationCoverage,mechanismVsList:relationCoverage>=.75?'mechanism':relationCoverage>=.4?'mixed':'list'};
-}
