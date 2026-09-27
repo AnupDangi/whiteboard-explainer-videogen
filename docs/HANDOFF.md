@@ -2028,3 +2028,10 @@ hypothesis before layering on production-latency infrastructure.
   - 60s DeepSeek PDF with `RAG_ENGINE=on`: `output/2026-09-27T19-31-41-702Z-deepseek_v41_tech_report/` — FAILED, no video. RAG gate WORKED (233 items, 41 chunks verified) but `qwen/qwen3.8-flash` hit upstream 429 → ledger fail-closed blocked spend → syllabus failed. Provider limit, not our bug. RAG path mechanically proven end-to-end (index partial, verified chunks).
 - **Remaining:** recap relation/role repair, RAG retry after rate-limit window, yellows triage, 10/5/5 matrix, determinism/harness report.
 - **Next bounded task:** yellows triage (ladder order, cursor rewind, alignment gaps) + recap-scene fix.
+
+## Entry — 2026-09-27, additive repair preservation (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** recap repair fixed flagged defect by dropping unflagged relation + process role (died downstream). Class S.
+- **Implemented:** `boardRepairLossProblems(previous, candidate)` — relation drawn-set + process-role diffs with named messages; `validateBoard` optional preservation check; `planBoardScene` validates the single repair against the FULL board. Budget unchanged (one repair). No topic keywords.
+- **Verification:** typecheck clean; board 41/41 (3 new fail-pre/pass-post); full 542 node + 28 + 12 py; `git diff --check` clean.
+- **Next bounded task:** re-run interpretability 60s + yellows triage.

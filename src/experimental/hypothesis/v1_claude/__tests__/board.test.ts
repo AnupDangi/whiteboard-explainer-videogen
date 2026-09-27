@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { z } from 'zod';
 import type { PlannerSceneInput } from '../planner/prompt.js';
 import type { ScenePlanningContext } from '../planner/context.js';
-import { BOARD_SCHEMA_VERSION, boardEnums, boardProblems, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
+import { BOARD_SCHEMA_VERSION, boardEnums, boardProblems, boardRepairLossProblems, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
 import { safeParseSceneSpec } from '../schema.js';
 
 // Synthetic, topic-neutral scene: two inputs combine through a process into an output.
@@ -549,4 +549,31 @@ test('process and comparison visuals with convergence layout are not rejected by
     const problems = boardProblems(board, input, boardEnums(input));
     assert.ok(!problems.some((problem) => problem.includes('callout slots')), `visual ${visual.kind} must not hit the structured+convergence rule, got: ${problems.join(' | ')}`);
   }
+});
+
+test('repair that drops a previously-shown relation is rejected with a named message (recap repair loss)', () => {
+  const input = makeScene(WORDS);
+  const previous = goodBoard();
+  const dropped = goodBoard();
+  dropped.nodes = dropped.nodes.filter((node) => node.concept !== 'src_o');
+  const problems = validateBoard(dropped, input, previous).problems.join(' | ');
+  assert.match(problems, /repair dropped source relation src_p -\[produces\]-> src_o/, `expected a named relation-loss rejection, got: ${problems}`);
+});
+
+test('repair that loses the process-role node is rejected with a named message (recap role loss)', () => {
+  const input = makeScene(WORDS);
+  const previous = goodBoard();
+  const dropped = goodBoard();
+  dropped.nodes = dropped.nodes.map((node) => ({ ...node, role: 'item' as const }));
+  const problems = validateBoard(dropped, input, previous).problems.join(' | ');
+  assert.match(problems, /repair lost the process-role node/, `expected a named role-loss rejection, got: ${problems}`);
+});
+
+test('additive repair that keeps every shown relation and role passes preservation', () => {
+  const input = makeScene(WORDS);
+  const previous = goodBoard();
+  previous.nodes[1] = { ...previous.nodes[1], label: 'cold water tank' };
+  assert.ok(validateBoard(previous, input).problems.some((problem) => problem.includes('label words')), 'fixture previous board must carry the flagged label defect');
+  assert.deepEqual(boardRepairLossProblems(previous, goodBoard(), input), [], 'an additive fix must report no preservation loss');
+  assert.deepEqual(validateBoard(goodBoard(), input, previous).problems, [], 'an additive fix must validate clean');
 });

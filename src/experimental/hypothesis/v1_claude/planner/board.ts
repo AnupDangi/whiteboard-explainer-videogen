@@ -215,6 +215,35 @@ function allowedLabelWords(input: PlannerSceneInput, node: BoardNode): Set<strin
   return new Set([mention, concept, canonicalTerm(input, node.concept) ?? ''].flatMap(words).map(stem));
 }
 
+/**
+ * Additive-repair preservation: a repair that drops a previously-shown
+ * source relation or the previously-present process role is itself invalid.
+ * The single repair may only fix additively — it must keep every relation
+ * the previous board drew and every role it carried while fixing the
+ * flagged defect. Each message names what was lost so the rejection tells
+ * the model exactly what to add back. Domain-general: relation endpoints
+ * and types come only from the scene's own data, never topic wording.
+ */
+export function boardRepairLossProblems(previous: Board, candidate: Board, input: PlannerSceneInput): string[] {
+  const shown = (board: Board): Set<string> => new Set(board.nodes.map((node) => node.concept));
+  const before = shown(previous);
+  const after = shown(candidate);
+  // Mirrors compileBoard: an edge is drawn for every source-grounded relation
+  // between two shown concepts (self-loops are never drawn).
+  const drawn = (concepts: Set<string>, from: string, to: string): boolean =>
+    from !== to && concepts.has(from) && concepts.has(to);
+  const problems: string[] = [];
+  for (const relation of input.teachingContext?.relations ?? []) {
+    if (drawn(before, relation.from, relation.to) && !drawn(after, relation.from, relation.to)) {
+      problems.push(`repair dropped source relation ${relation.from} -[${relation.type}]-> ${relation.to} present in the previous board; add it back and keep every other fix`);
+    }
+  }
+  if (previous.nodes.some((node) => node.role === 'process') && !candidate.nodes.some((node) => node.role === 'process')) {
+    problems.push('repair lost the process-role node present in the previous board; keep at least one process-role node and keep every other fix');
+  }
+  return [...new Set(problems)];
+}
+
 /** Board-level checks the enum schema cannot express. Each message tells the model how to fix it. */
 export function boardProblems(board: Board, input: PlannerSceneInput, enums: BoardEnums): string[] {
   const problems: string[] = [];
@@ -547,12 +576,15 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
 }
 
 /** Full validation of one model board: enum shape, board rules, then the shared planner gate on the compiled scene. */
-export function validateBoard(value: unknown, input: PlannerSceneInput): { board?: Board; spec?: SceneSpec; iconAssets?: Record<string, string>; problems: string[] } {
+export function validateBoard(value: unknown, input: PlannerSceneInput, previous?: Board): { board?: Board; spec?: SceneSpec; iconAssets?: Record<string, string>; problems: string[] } {
   const enums = boardEnums(input);
   const parsed = boardSchema(enums).safeParse(value);
   if (!parsed.success) return { problems: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`) };
   const board = parsed.data as Board;
   const problems = boardProblems(board, input, enums);
+  // Repair validation scores the FULL board, not just the flagged defect: a
+  // repair that drops a previously-present relation or role is itself invalid.
+  if (previous) problems.push(...boardRepairLossProblems(previous, board, input));
   const compiled = compileBoard(board, input);
   const checked = safeParseSceneSpec(compiled.spec);
   if (!checked.success) return { board, problems: [...problems, ...compiled.problems, ...checked.error.issues.map((issue) => `compiled scene: ${issue.path.join('.')}: ${issue.message}`)] };
@@ -698,6 +730,11 @@ export async function planBoardScene(input: PlannerSceneInput, options: PlanScen
     return compiledFallback(input, [{ code: 'planner-input-empty', stage: 'planner', message: `${input.sceneId}: scene has no mentions or no source concepts to show`, hard: true }], zero, []);
   }
   const prompt = options.compiledPrompt ?? buildBoardPrompt(input);
+  // Additive-repair baseline: the first schema-valid but rule-invalid board
+  // becomes the preservation reference, so the single repair is validated
+  // against the FULL board (relations + roles kept) rather than only the
+  // flagged defect. No extra model call: structuredCall still repairs once.
+  let rejectedBaseline: Board | undefined;
   const result = await structuredCall({
     stage: 'planner',
     subject: input.sceneId,
@@ -713,7 +750,11 @@ export async function planBoardScene(input: PlannerSceneInput, options: PlanScen
     budgetLedger: options.budgetLedger,
     signal: options.signal,
     fetcher: options.fetcher,
-    validate: (value) => validateBoard(value, input).problems,
+    validate: (value) => {
+      const checked = validateBoard(value, input, rejectedBaseline);
+      if (checked.board && checked.problems.length > 0 && !rejectedBaseline) rejectedBaseline = checked.board;
+      return checked.problems;
+    },
   });
   const usage: PlannerCallUsage = { ...result.usage, fallbacks: 0 };
   if (result.value) {
