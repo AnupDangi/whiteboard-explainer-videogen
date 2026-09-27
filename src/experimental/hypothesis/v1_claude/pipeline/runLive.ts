@@ -222,6 +222,18 @@ export function goldenForRun(input: Pick<HypothesisLiveInput, 'caseId' | 'runCla
   }
 }
 
+/**
+ * Per-scene S6 planning budget from the total run cap. Prep (S1-S4) spend is
+ * subtracted exactly once via `prepProviderSpendUsd` (snapshotted before S6
+ * starts); in-run planner spend accumulates via `usedUsd`. Without a shared
+ * ledger each scene is additionally capped at an equal share of the remainder.
+ */
+export function plannerSceneBudgetUsd(args: { maxCostUsd: number; prepProviderSpendUsd: number; usedUsd: number; sceneCount: number; pooled: boolean }): number {
+  const unallocatedUsd = Math.max(0, args.maxCostUsd - args.prepProviderSpendUsd);
+  const afterUsedUsd = Math.max(0, args.maxCostUsd - args.prepProviderSpendUsd - args.usedUsd);
+  return args.pooled ? afterUsedUsd : Math.min(unallocatedUsd / Math.max(1, args.sceneCount), afterUsedUsd);
+}
+
 export async function runHypothesisLive(input: HypothesisLiveInput, options: HypothesisRunOptions, ctx: LiveRunContext): Promise<HypothesisLiveRunResult> {
   assertCommonRunOptions(options);
   if (options.mode !== 'live') throw new Error('runHypothesisLive requires options.mode === "live"');
@@ -363,15 +375,24 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     failures.push({ code: 'planner-ran-on-uncalibrated-alignment', stage: 'planner', message: `S6 ran by explicit diagnostic opt-in despite ${hardAlignmentFailureCount} hard S5 failure(s); this run cannot publish`, hard: false });
   }
 
+  // S1-S4 prep spend on entry: snapshotted once so per-scene planning budgets
+  // subtract it exactly once (stageRuns keeps growing as S6 scenes complete).
+  const prepProviderSpendUsd = stageRuns.filter((record) => record.kind !== 'local').reduce((sum, record) => sum + record.apiCostUsd, 0);
+
   type PlanStep = { failure: StageFailure } | { plannerInput: PlannerSceneInput; planned: PlanSceneResult; promptAudit?: Record<string, unknown>; plannerSkipped: boolean; plannerCacheHit: boolean; plannerArtifactCostUsd?: number; durationMs: number; startedAtMs: number; completedAtMs: number };
   const planStep = async (sceneInput: LiveSceneInput, previousForPrompt: PlannerSceneInput['previousElements']): Promise<PlanStep> => {
     const narrationScene = narration.scenes.find((s) => s.sceneId === sceneInput.sceneId)!;
-    const priorProviderSpend = stageRuns.filter((record) => record.kind !== 'local').reduce((sum, record) => sum + record.apiCostUsd, 0);
-    const unallocatedRunBudgetUsd = Math.max(0, options.maxCostUsd - priorProviderSpend);
-    const perSceneBudgetUsd = unallocatedRunBudgetUsd / Math.max(1, input.scenes.length);
-    const remainingBudgetUsd = ctx.budgetLedger
-      ? Math.max(0, options.maxCostUsd - priorProviderSpend - totalUsage.costUsd)
-      : Math.min(perSceneBudgetUsd, Math.max(0, options.maxCostUsd - priorProviderSpend - totalUsage.costUsd));
+    // options.maxCostUsd is the total run cap: prep (S1-S4) spend is
+    // subtracted exactly once via the snapshot below, and in-run S6 spend via
+    // totalUsage. Re-reading stageRuns here would count both prep and already-
+    // planned S6 scenes again on every scene.
+    const remainingBudgetUsd = plannerSceneBudgetUsd({
+      maxCostUsd: options.maxCostUsd,
+      prepProviderSpendUsd,
+      usedUsd: totalUsage.costUsd,
+      sceneCount: input.scenes.length,
+      pooled: Boolean(ctx.budgetLedger),
+    });
     const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates: mentionCandidatesByScene.get(sceneInput.sceneId) ?? new Map(), previousElements: previousForPrompt, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
 
     if (input.runClass === 'generated-lesson') {

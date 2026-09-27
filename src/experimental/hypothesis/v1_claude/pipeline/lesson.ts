@@ -45,6 +45,23 @@ export interface PreparedLesson {
   stageRuns: StageRunRecord[];
 }
 
+/** Assembled section ids must satisfy the same 40-char snake_case contract as generated ones. */
+export const SCOPED_SECTION_ID_MAX = 40;
+const SCOPED_SECTION_ID_PATTERN = /^[a-z0-9_]+$/;
+
+/**
+ * Module-scoped section id: the `moduleTag_sectionId` join, normalized to
+ * the id contract. Short joins pass through unchanged; long joins keep a
+ * readable prefix plus a hash of the full join, so assembled ids stay valid
+ * and distinct across modules.
+ */
+export function scopedSectionId(moduleTag: string, sectionId: string): string {
+  const raw = `${moduleTag}_${sectionId}`.replaceAll('-', '_');
+  if (raw.length <= SCOPED_SECTION_ID_MAX && SCOPED_SECTION_ID_PATTERN.test(raw)) return raw;
+  const hash = sha256(raw).slice(0, 8);
+  return `${raw.slice(0, SCOPED_SECTION_ID_MAX - 9)}_${hash}`;
+}
+
 export async function prepareLesson(req: LessonRequest, m: { model: string; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number }): Promise<PreparedLesson> {
   const sourceStartedAtMs = Date.now();
   const sourceDocs = !req.sourceDoc && req.sources?.length ? await Promise.all(req.sources.map(async (source) => {
@@ -171,9 +188,8 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
       const scriptRun = await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-script/v1', 'S4-module-script-v4-mentions-4-7', () => writeScript(moduleRequest, graph, modulePlan, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, scriptRun.result.usage); failures.push(...scriptRun.result.failures); rawResponses[`script:${moduleTag}`] = scriptRun.result.rawResponses;
       if (!scriptRun.result.value) return preparedResult({ syllabus, graph, plan: modulePlan, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
-      const sectionPrefix = `${moduleTag}_`;
-      const prefixedSections = modulePlan.sections.map((section) => ({ ...section, id: `${sectionPrefix}${section.id}` }));
-      const prefixedScenes = scriptRun.result.value.scenes.map((scene) => ({ ...scene, sectionId: `${sectionPrefix}${scene.sectionId}` }));
+      const prefixedSections = modulePlan.sections.map((section) => ({ ...section, id: scopedSectionId(moduleTag, section.id) }));
+      const prefixedScenes = scriptRun.result.value.scenes.map((scene) => ({ ...scene, sectionId: scopedSectionId(moduleTag, scene.sectionId) }));
       allSections.push(...prefixedSections);
       allScenes.push(...prefixedScenes);
       moduleGraphs.push(graph);

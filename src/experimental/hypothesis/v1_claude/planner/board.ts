@@ -223,6 +223,7 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
   for (const node of board.nodes) {
     if (seenIds.has(node.id)) problems.push(`node id ${node.id} is used twice; give every node a different id`);
     seenIds.add(node.id);
+    if (seenMentions.has(node.mention)) problems.push(`mention ${node.mention} is used twice; use each mention for at most one node`);
     seenMentions.add(node.mention);
     // One concept may appear as up to MAX_NODES_PER_CONCEPT instance nodes
     // (e.g. VALUE: SAT / MAT / THE); each instance needs its own mention and

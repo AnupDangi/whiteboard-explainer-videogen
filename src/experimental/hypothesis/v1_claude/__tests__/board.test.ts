@@ -108,7 +108,7 @@ test('compileBoard draws unstated generic relations as verb-less arrows but keep
   assert.deepEqual(validateBoard(goodBoard(), genericScene).problems, [], 'planner and adequacy gates agree on the verb-less board');
 });
 
-test('board rules reject invented content words and missing relation concepts; another mention\'s icon is a metaphor; a shared mention is allowed', () => {
+test('board rules reject invented content words, missing relation concepts, and shared mentions; another mention\'s icon is a metaphor', () => {
   const bad = goodBoard();
   bad.nodes[0].icon = 'dough';
   bad.nodes[1].label = 'cold water tank';
@@ -118,7 +118,7 @@ test('board rules reject invented content words and missing relation concepts; a
   const shared = goodBoard();
   shared.nodes[3].mention = 'm_p';
   shared.nodes[3].icon = 'label';
-  assert.deepEqual(validateBoard(shared, scene).problems, [], 'two nodes may appear on the same spoken mention');
+  assert.ok(validateBoard(shared, scene).problems.some((p) => p.includes('at most one node')), 'two nodes may not share one spoken mention');
   const functionWord = goodBoard();
   functionWord.nodes[3].label = 'dough for';
   assert.deepEqual(validateBoard(functionWord, scene).problems, [], 'short function words may join source words');

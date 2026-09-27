@@ -97,12 +97,15 @@ export function compileTimeline(scene: LaidOutScene, mentions: ResolvedMention[]
     const el = byId.get(bestId)!;
     const { track, phases } = revealPhases(el);
     const serverIdx = serverFree[0] <= serverFree[1] ? 0 : 1;
-    const actualT0 = Math.min(Math.max(bestT0, serverFree[serverIdx]), sceneEndMs);
+    // Clamp to sceneEndMs - 1 (not sceneEndMs): frame export renders at
+    // most at endMs - 1, so a reveal starting exactly at sceneEndMs would
+    // have zero duration and never appear in any exported frame.
+    const actualT0 = Math.min(Math.max(bestT0, serverFree[serverIdx]), Math.max(sceneStartMs, sceneEndMs - 1));
     const total = phaseTotal(phases);
     const room = sceneEndMs - actualT0;
     const k = total > room ? room / Math.max(1e-6, total) : 1;
     const fitted: RevealPhases = { strokeMs: phases.strokeMs * k, fillMs: phases.fillMs * k, textMs: phases.textMs * k };
-    const actualT1 = actualT0 + phaseTotal(fitted);
+    const actualT1 = Math.max(actualT0 + 1, actualT0 + phaseTotal(fitted));
     serverFree[serverIdx] = actualT1;
     scheduled.set(bestId, { t0: actualT0, t1: actualT1 });
     events.push({ elementId: bestId, track, t0: actualT0, t1: actualT1, phases: fitted });

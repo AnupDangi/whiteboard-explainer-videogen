@@ -145,7 +145,7 @@ async function main(): Promise<void> {
       render: { width: 1920, height: 1080, fps: 30 },
       maxRepairs: 1,
       cache: cacheMode,
-      maxCostUsd: Math.max(0.001, lessonCostCapUsd(prepared.plannedDurationSec ?? lesson.targetDurationSec) - (await budgetLedger.snapshot()).spentUsd),
+      maxCostUsd: lessonCostCapUsd(prepared.plannedDurationSec ?? lesson.targetDurationSec),
       ...(diagnosticCaptionlessVideo ? { diagnosticCaptionlessVideo: true } : {}),
     };
     try {

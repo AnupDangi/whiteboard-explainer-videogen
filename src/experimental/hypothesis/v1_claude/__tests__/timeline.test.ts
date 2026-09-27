@@ -133,6 +133,24 @@ test('timeline: a long final hold before closing emphasis receives generic activ
   assert.ok(timeline.events.every((e) => laidOut.elements.some((element) => element.id === e.elementId)), 'emphasis uses existing scene elements only');
 });
 
+test('timeline: an overfull scene clamps reveals to a nonzero window the exported frame shows', () => {
+  const laidOut = layoutScene(resolveScene(chainSpec));
+  const sceneEnd = 8000;
+  // Every mention lands on the final millisecond, so every reveal overruns:
+  // each must still occupy at least 1ms ending at sceneEndMs (frame export
+  // renders at most at endMs - 1, so a zero-duration reveal at sceneEndMs
+  // would never appear in any exported frame).
+  const mentions = [mention('a', sceneEnd, sceneEnd), mention('b', sceneEnd, sceneEnd), mention('c', sceneEnd, sceneEnd)];
+  const timeline = compileTimeline(laidOut, mentions, 0, sceneEnd);
+  const reveals = timeline.events.filter((e) => e.track === 'stroke' || e.track === 'wipe' || e.track === 'grow');
+  assert.ok(reveals.length > 0);
+  for (const ev of reveals) {
+    assert.ok(ev.t0 <= sceneEnd - 1, `${ev.elementId} starts at ${ev.t0}; no exported frame shows t >= ${sceneEnd}`);
+    assert.ok(ev.t1 - ev.t0 >= 1, `${ev.elementId} has zero duration`);
+    assert.ok(ev.t1 <= sceneEnd + 1e-6, `${ev.elementId} ends at ${ev.t1} > sceneEnd ${sceneEnd}`);
+  }
+});
+
 test('renderer: arbitrary seeking never throws and is a pure function of timeMs', () => {
   const laidOut = layoutScene(resolveScene(chainSpec));
   const mentions = [mention('a', 500, 600), mention('b', 1500, 1600), mention('c', 2500, 2600)];
