@@ -1960,3 +1960,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** `ragWorthwhile(sourceDoc, bundle)` structural gate (`RAG_MIN_WORDS=6000`); skip returns zero-cost unindexed outcome, no ledger spend, no spawn. `StageRunRecord` + outcome gain `skipped`; `lessonCli` maps disabled/skipped→skipped (no failure emitted). Inert-by-default untouched. Deviations: two-arg gate (bundle docs carry metadata only); gate lives at `lessonCli` call site (only RAG site). No topic keywords.
 - **Verification:** typecheck clean; touched 13/13; full 505 node + 24 + 12 py; `git diff --check` clean.
 - **Next bounded task:** T11 board metrics + Simi reference.
+
+## Entry — 2026-09-27, T11 board metrics (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** numeric parity target + ours-vs-reference deltas for the determinism report.
+- **Implemented:** `harness/boardMetrics.ts` collector (nodes/reveals/occupancy/text-px/edges/fallback/dedup/floor/outline-fill) + `--compare/--check` CLI (`metrics:boards`); frozen `harness/reference/lamina/metrics.v1.json` from existing index.json + OBSERVATIONS.md only (33 scenes, median 18.5s, coverage 0.5–0.7, reveal band 5–7). Deviations: no raster/ffmpeg/`measureFrame` (pixel similarity banned; videos not in repo). No topic keywords, no Lamina-internals claims.
+- **Verification:** typecheck clean; new 4/4; full 509 node + 24 + 12 py; CLI `--check` reference ok 33 scenes; `git diff --check` clean.
+- **Next bounded task:** T12/T13 code (batch + calibration writer, no live calls).

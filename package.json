@@ -34,7 +34,8 @@
     "judge:e5:human:pack:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/e5HumanReviewPackCli.js",
     "strip:scene": "node scripts/render-strip.mjs",
     "baseline:freeze": "node scripts/baselines.mjs --freeze",
-    "baseline:verify": "node scripts/baselines.mjs"
+    "baseline:verify": "node scripts/baselines.mjs",
+    "metrics:boards": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/boardMetricsCli.js"
   },
   "optionalDependencies": {
     "pg": "^8.23.0",
