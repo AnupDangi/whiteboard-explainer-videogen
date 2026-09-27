@@ -1922,3 +1922,13 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** cross-scene dedup (`avoidAssetIds` + `previousIcons`, same-concept repeats kept, deterministic next-best); `tiny-element` hard gate at 0.6 scale (fails loud, containers excluded); `fitEdgeLabels` clamp+shorten shared by layout+renderer (`labelPos`). Stage versions bumped. No topic keywords.
 - **Verification:** typecheck clean; new 8/8; full 497 node + 24 + 12 py; `git diff --check` clean.
 - **Next bounded task:** video matrix various sizes (60/300/600) one-shot, logged per run.
+
+## Entry — 2026-09-27, video matrix 60/300/600 post-P3 (branch fix/chat-audit-rollup-20260927)
+
+- **Runs (locked one-shot, no mid edits, all `tampered=false`, tracked tree clean):**
+  - 60s rainbow (`Explain how rainbows form`, local md): `output/2026-09-27T12-10-11-946Z-rainbow-formation/` — draft, 3/3, hard 0, $0.0084, 94s.
+  - 300s tides (`Explain ocean tides`, local md): `output/2026-09-27T12-11-53-537Z-ocean-tides/` — draft, 16/16, hard 0, $0.0322, 388s.
+  - 600s composting (`Explain composting`, local md): `output/2026-09-27T12-18-30-611Z-composting/` — FAILED, 16/16, hard 1 (`board-role-incomplete`: thermophilic_heat convergence missing output), $0.0301, 374s. Video = diagnostic preview.
+- **Compare:** P3 dedup/floor/clip live in all three (no tiny/clip failures fired). 600s failure is normal-planner-path convergence without output — P2a covered fallback only. Next: extend output rule to planned boards or force non-convergence layout when no output role.
+- **Remaining tasks (not done):** P4 audio-min, P5 models re-probe, P6 RAG venvs, T8-T13, P8 cleanup, full 10/5/5 volume matrix, determinism/harness report.
+- **Next bounded task:** P2e planned-path output rule, then re-run 600s composting.
