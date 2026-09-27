@@ -1989,3 +1989,13 @@ hypothesis before layering on production-latency infrastructure.
 - **Removed:** `.DS_Store`, `explain-canvas-lab/app.log`, root `files.zip` (zero refs), `calibration.v1.withdrawn.json` (zero code refs; loader reads v2 only); `videos_to_generate.md` dead HF URL line stripped (file kept). Plan doc S5 cell updated (history in git). Kept: DeepSeek PDF (test dep), node_modules/dist (needed/ignored), root `.gitignore` (not in git), both worktree `.gitignore` (already complete).
 - **Verification:** typecheck clean; publish-status 7/7; alignment py pass; `git diff --check` clean.
 - **Next bounded task:** full volume matrix + determinism/harness report (needs validator go + live spend).
+
+## Entry — 2026-09-27, matrix-2 (600s re-run + 2×60s) (branch fix/chat-audit-rollup-20260927)
+
+- **Runs (locked one-shot, no mid edits, all `tampered=false`):**
+  - 600s composting re-run: `output/2026-09-27T15-08-03-363Z-composting/` — FAILED, no video. New S3 error (not P2e's): `sections.9.kind` invalid option + `stabilize_into_finished_compost` omits evidence span. Single repair fixed neither. Class P/S.
+  - 60s mirror-images: `output/2026-09-27T15-09-45-654Z-mirror-images/` — draft, 4/4, 0 hard, $0.0101. Frame: eye icons + BACKWARD RAY TRACING box + VIRTUAL IMAGE; label repeated 3×, one edge label clipped behind icon.
+  - 60s bicycle: `output/2026-09-27T15-11-45-266Z-bicycle-balance/` — FAILED, 14 hard, video 55s diagnostic. Frame `STEERING CORRECTS THE LEAN` is clean (wheel/tire + labels); failures cluster on 1-element boards.
+- **Bugs found (next fixes):** (1) sparse-gate message contradicts itself (`occupancy 0.53 with 1 elements is below the 0.08 floor` — 0.53 > 0.08; element-count clause misfires/message wrong); (2) S3 section-kind enum + evidence-span repair guidance; (3) repeated-box text (BACKWARD RAY TRACING ×3) + edge label clipped behind node icon.
+- **Remaining tasks:** above 3 fixes → re-run failures → continue 10/5/5 matrix → determinism/harness report.
+- **Next bounded task:** sparse-gate message/count fix + S3 kind/span guidance.
