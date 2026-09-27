@@ -1946,3 +1946,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** instance rule + min rule + mention-aware repeat signature (`anchor` on previousElements, populated runLive S6); S4 4–7 mentions (`v4/v5-mentions-4-7`); board-bank v2-instances + abstract-lookup example; legacy fixtures fixed by adding markers (never relaxing rules). Deviations: `magnifying glass` for spec's `magnifier` (absent from catalog); prompt concept rule rewritten (spec gave validator text only); catalog-once test scoped to icon_catalog block.
 - **Verification:** typecheck clean; full 500 node + 24 + 12 py; `git diff --check` clean.
 - **Next bounded task:** T9 occupancy gate + board-too-sparse.
+
+## Entry — 2026-09-27, T9 occupancy + sparse gate (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** plan Task 9; boards must fill without sub-32px text; sparse boards fail loudly.
+- **Implemented:** growth toward 0.55 with text-floor skip; hard `board-too-sparse` (taxonomy S) with compare/structured exemptions. Deviation per ruling (recorded in `style.ts`): hardMin 0.08 not 0.30 — spec value fails healthy chain 0.23/list 0.21/threshold 0.10 (measured table in code); 0.45 Simi band stays warn-only. Fill test pins ≥hardMin + ≥0.25 regression.
+- **Verification:** typecheck clean; full 503 node + 24 + 12 py; `git diff --check` clean.
+- **Next bounded task:** T10 size-gated RAG + skipped status.

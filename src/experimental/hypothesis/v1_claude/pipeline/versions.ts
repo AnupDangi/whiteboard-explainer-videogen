@@ -1,7 +1,7 @@
 /** Bump a stage version whenever its deterministic algorithm or relevant style contract changes. */
 export const VISUAL_STAGE_VERSIONS = {
   resolve: 'resvg-text-metrics-bundled-kalam-9-cross-scene-dedup',
-  layout: 'template-layout-bundled-kalam-9-edge-label-safe',
+  layout: 'template-layout-bundled-kalam-9-edge-label-safe-occupancy-target-55',
   timeline: 'mention-timeline-2',
   render: 'svg-renderer-bundled-kalam-10-edge-label-safe',
 } as const;

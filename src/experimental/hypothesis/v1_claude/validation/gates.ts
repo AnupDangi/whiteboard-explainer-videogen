@@ -208,6 +208,24 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
     warnings.push({ code: 'element-count', stage: 'planner', message: `scene has ${scene.elements.length} elements (expected 2-9)`, hard: false });
   }
 
+  // board-too-sparse (hard): a non-structured, non-compare board that leaves
+  // the frame near-empty is a content defect, not a style choice — the T8
+  // planner minimum (3 nodes, except compare + structured visuals) only pays
+  // off if layout enforces a fill floor. Structured boards (formula / plot /
+  // matrix / number-line / worked-example, by element prim or board visual
+  // kind) and compare boards (by board layout or compare_2 template) carry
+  // meaning in few elements and are exempt. Detection is structural only:
+  // element count, union-bbox occupancy, prims, template, board intent —
+  // never lesson wording.
+  const STRUCTURAL_PRIMS: string[] = ['formula', 'plot', 'matrix', 'numberLine'];
+  const STRUCTURAL_VISUAL_KINDS: string[] = ['formula', 'plot', 'matrix', 'number-line', 'worked-example'];
+  const structured = scene.elements.some((el) => STRUCTURAL_PRIMS.includes(el.element.prim))
+    || (scene.boardIntent ? STRUCTURAL_VISUAL_KINDS.includes(scene.boardIntent.visualKind) : false);
+  const compare = (scene.boardIntent?.layout === 'compare') || scene.template === 'compare_2';
+  if (!structured && !compare && (scene.occupancy < STYLE.occupancy.hardMin || scene.elements.length < 2)) {
+    failures.push({ code: 'board-too-sparse', stage: 'layout', message: `occupancy ${scene.occupancy.toFixed(2)} with ${scene.elements.length} elements is below the ${STYLE.occupancy.hardMin} floor`, hard: true });
+  }
+
   // P1 taxonomy: pure labels attached at the boundary; hard/soft unchanged.
   return { failures: failures.map(withFailureClass), warnings: warnings.map(withFailureClass) };
 }

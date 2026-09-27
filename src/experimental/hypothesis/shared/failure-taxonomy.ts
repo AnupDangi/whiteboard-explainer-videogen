@@ -23,6 +23,12 @@ const lower = (code: string): string => code.toLocaleLowerCase();
 export function classifyFailureCode(code: string): FailureClass {
   const c = lower(code);
 
+  // board-too-sparse is checked before the syllabus/graph/parse exception:
+  // 'sparse' contains the substring 'parse', so the generic exception would
+  // mislabel it. It is the hard version of the F3 1-element element-count
+  // warning (planner supplied too few nodes) and shares the S label.
+  if (c.includes('too-sparse')) return 'S';
+
   // P exception wins over the S prefix rule: syllabus / graph / parse
   // problems are planner problems even when the code carries a planner- prefix.
   if (c.includes('syllabus') || c.includes('graph') || c.includes('parse')) return 'P';

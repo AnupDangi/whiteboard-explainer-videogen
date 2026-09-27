@@ -53,6 +53,7 @@ test('alignment/tts/mention-timing map to A', () => {
 
 test('element-count (llm_gap 1-element) maps to S', () => {
   assert.equal(classifyFailureCode('element-count'), 'S');
+  assert.equal(classifyFailureCode('board-too-sparse'), 'S', 'the hard sparse gate shares the F3 content-deficit label');
 });
 
 test('gates keep hard/soft unchanged and only add failureClass', () => {

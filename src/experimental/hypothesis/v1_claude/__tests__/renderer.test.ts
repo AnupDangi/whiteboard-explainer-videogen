@@ -8,6 +8,7 @@ import { resolveScene } from '../resolveScene.js';
 import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
+import { runClaudeGates } from '../validation/gates.js';
 import { renderPrimitive } from '../render/primitives.js';
 import { frameSvgAt } from '../export/videoEncode.js';
 import { measureElement, measureTextWidth } from '../layout/measure.js';
@@ -198,4 +199,68 @@ test('rendered boards never contain role badges or VS cues', () => {
   const timeline = compileTimelineFull(laidOut, mentions, 0, 12000);
   const svg = renderSVG(laidOut, timeline, timeline.sceneEndMs);
   assert.doesNotMatch(svg, />(INPUT|PROCESS|OUTPUT|VS)</);
+});
+
+// Task 9 sparse-gate fixtures: abstract single-concept boards, never lesson content.
+function makeSparseInput(ids: string[]): PlannerSceneInput {
+  const mkRef = (id: string, quote: string, start: number) => ({
+    sourceId: 'doc-sparse', spanId: `${id}-sparse`, startChar: start, endChar: start + quote.length, startLine: 1, endLine: 1, quote,
+  });
+  const first = mkRef('first', `${ids[0]} stands alone`, 0);
+  const concepts = ids.map((id) => ({ id, label: id, kind: 'entity', definition: `${id} definition`, evidenceRefs: [first] }));
+  return {
+    sceneId: 'scene-sparse',
+    raw: '',
+    plainText: ids.join(' versus '),
+    mentions: ids.map((id, index) => ({ id: `m${index}`, phrase: id })),
+    teachingContext: {
+      requireEvidence: true,
+      sourceId: first.sourceId,
+      displayText: ids.join(' '),
+      sourceEvidenceRefs: [first],
+      concepts,
+      relations: [],
+    },
+    planningContext: {
+      sceneContract: { requiredConceptIds: ids, requiredRelations: [] },
+      lessonBible: { persistentConceptIds: [], terminology: [] },
+    } as unknown as PlannerSceneInput['planningContext'],
+  };
+}
+
+test('near-empty boards are a hard failure', () => {
+  const ids = ['solo'];
+  const board: Board = {
+    schemaVersion: BOARD_SCHEMA_VERSION,
+    title: 'A single thing',
+    layout: 'flow',
+    visual: { kind: 'process' },
+    nodes: [{ id: 'n1', mention: 'm0', concept: ids[0]!, icon: 'label', label: ids[0]!, role: 'process' }],
+  };
+  const { spec } = compileBoard(board, makeSparseInput(ids));
+  assert.equal(spec.boardIntent?.visualKind, 'process');
+  const laid = layoutScene(resolveScene(spec));
+  const { failures } = runClaudeGates(laid, compileTimelineFull(laid, [], 0, 10_000));
+  assert.ok(failures.some((f) => f.code === 'board-too-sparse' && f.hard), JSON.stringify(failures.map((f) => f.code)));
+});
+
+test('compare and structured boards are exempt from the sparse gate', () => {
+  const ids = ['left_alpha', 'right_beta'];
+  const compare: Board = {
+    schemaVersion: BOARD_SCHEMA_VERSION,
+    title: 'Compare alternatives', layout: 'compare', visual: { kind: 'comparison' },
+    nodes: ids.map((id, index) => ({ id: `n${index + 1}`, mention: `m${index}`, concept: id, icon: 'label', label: id, role: 'item' })),
+  };
+  const compared = layoutScene(resolveScene(compileBoard(compare, makeSparseInput(ids)).spec));
+  const compareFailures = runClaudeGates(compared, compileTimelineFull(compared, [], 0, 10_000)).failures;
+  assert.ok(!compareFailures.some((f) => f.code === 'board-too-sparse'), JSON.stringify(compareFailures.map((f) => f.code)));
+
+  const structured: SceneSpec = {
+    schemaVersion: 'claude-scene-spec/v1', sceneId: 'sparse_structured', title: 'Sparse Structured', template: 'formula_focus',
+    elements: [{ id: 'f', anchor: 'sceneStart', prim: 'formula', latex: 'a=b' }],
+    edges: [],
+  };
+  const laidStructured = layoutScene(resolveScene(structured));
+  const structuredFailures = runClaudeGates(laidStructured, compileTimelineFull(laidStructured, [], 0, 10_000)).failures;
+  assert.ok(!structuredFailures.some((f) => f.code === 'board-too-sparse'), JSON.stringify(structuredFailures.map((f) => f.code)));
 });

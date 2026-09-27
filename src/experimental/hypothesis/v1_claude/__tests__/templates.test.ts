@@ -4,6 +4,9 @@ import type { BBox, SceneSpec, TemplateId } from '../types.js';
 import { STYLE } from '../style.js';
 import { resolveScene } from '../resolveScene.js';
 import { layoutScene } from '../layout/solver.js';
+import type { PlannerSceneInput } from '../planner/prompt.js';
+import type { Board } from '../planner/board.js';
+import { compileBoard, BOARD_SCHEMA_VERSION } from '../planner/board.js';
 
 function intersects(a: BBox, b: BBox): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -198,4 +201,66 @@ test('long chain wraps in order without shrinking readable text below the floor'
     for (const text of element.visual.texts) assert.ok(text.size * scaleY >= 32, `${element.id} text shrank to ${text.size * scaleY}px`);
   }
   assert.ok(new Set(boxes.map(({ y }) => Math.round(y))).size > 1, 'overflowing chain should wrap across rows');
+});
+
+// Neutral synthetic board input only: abstract ids, never lesson content.
+function makeFillInput(ids: string[]): PlannerSceneInput {
+  const mkRef = (id: string, quote: string, start: number) => ({
+    sourceId: 'doc-fill', spanId: `${id}-fill`, startChar: start, endChar: start + quote.length, startLine: 1, endLine: 1, quote,
+  });
+  const [a, b, c] = ids;
+  const first = mkRef('first', `${a} feeds ${b}`, 0);
+  const second = mkRef('second', `${b} produces ${c}`, 80);
+  const concepts = ids.map((id) => ({ id, label: id, kind: 'entity', definition: `${id} definition`, evidenceRefs: [first, second] }));
+  return {
+    sceneId: 'scene-fill',
+    raw: '',
+    plainText: `${a} and ${b} enter ${c}.`,
+    mentions: ids.map((id, index) => ({ id: `m${index}`, phrase: id })),
+    teachingContext: {
+      requireEvidence: true,
+      sourceId: first.sourceId,
+      displayText: `${b} and ${c}`,
+      sourceEvidenceRefs: [first, second],
+      concepts,
+      relations: [
+        { from: a, to: b, type: 'feeds', evidenceRefs: [first] },
+        { from: b, to: c, type: 'produces', evidenceRefs: [second] },
+      ],
+    },
+    planningContext: {
+      sceneContract: { requiredConceptIds: ids, requiredRelations: [{ from: a, to: b, type: 'feeds' }, { from: b, to: c, type: 'produces' }] },
+      lessonBible: { persistentConceptIds: [], terminology: [] },
+    } as unknown as PlannerSceneInput['planningContext'],
+  };
+}
+
+function makeFillBoard(ids: string[]): Board {
+  const roles = ['input', 'process', 'output'] as const;
+  return {
+    schemaVersion: BOARD_SCHEMA_VERSION,
+    title: 'A changing system',
+    layout: 'flow',
+    visual: { kind: 'process' },
+    nodes: ids.map((id, index) => ({ id: `n${index + 1}`, mention: `m${index}`, concept: id, icon: 'label', label: id, role: roles[index]! })),
+  };
+}
+
+test('a three-node board fills toward the occupancy target and keeps labels readable', () => {
+  // Geometry note (Task 9): single-row icon boards are width-bound — the
+  // union bbox already spans the working rect after growth, so occupancy caps
+  // near ~0.31 for three nodes (measured 0.3077), below the 0.45 Simi warn
+  // band. The solver still grows every box beyond intrinsic size toward
+  // STYLE.occupancy.target (0.55); the hard sparse floor sits at the
+  // measured-attainable value documented in style.ts, never the Simi band.
+  const ids = ['alpha', 'beta', 'gamma'];
+  const { spec, problems } = compileBoard(makeFillBoard(ids), makeFillInput(ids));
+  assert.deepEqual(problems, []);
+  const laid = layoutScene(resolveScene(spec));
+  assert.ok(laid.occupancy >= STYLE.occupancy.hardMin, `occupancy ${laid.occupancy} below hard floor ${STYLE.occupancy.hardMin}`);
+  assert.ok(laid.occupancy >= 0.25, `single-row 3-node fill regressed: occupancy ${laid.occupancy} (measured 0.31 at implementation)`);
+  for (const el of laid.elements) {
+    assert.ok(el.bbox.w >= el.intrinsicSize.w && el.bbox.h >= el.intrinsicSize.h, `${el.id} must grow, never shrink, when the board fits`);
+    for (const t of el.visual.texts) assert.ok(t.size * (el.bbox.h / el.intrinsicSize.h) >= 32 - 1e-6, `${el.id} text below readable floor`);
+  }
 });

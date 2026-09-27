@@ -1,5 +1,5 @@
 import type { BBox, LaidOutElement, LaidOutScene, ResolvedScene } from '../types.js';
-import { STYLE } from '../style.js';
+import { MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 import { DENSE_TEMPLATES, TEMPLATES, applyAxisOverlapFix, type TemplateFn } from '../templates/definitions.js';
 import type { SlotAssignment } from '../templates/assign.js';
 import { unionBBox, scaleAround, type Rect } from './geometry.js';
@@ -24,12 +24,15 @@ function containerPad(): number {
  * with content covering ~50-70% of the frame, whereas union-bbox scaling
  * alone only spreads small elements apart. Try uniform size factors from
  * largest to smallest and keep the first placement that stays inside the
- * working rect with no leaf overlaps. Factors below 1.0 shrink a scene whose
- * measured content does not fit (e.g. a long formula beside a plot) rather
- * than letting it run off the canvas; the readability gate (G6) still
- * catches anything shrunk below the minimum text size.
+ * working rect with no leaf overlaps. The single shrink factor (0.85) fits a
+ * scene whose measured content does not fit (e.g. a long formula beside a
+ * plot) rather than letting it run off the canvas; anything smaller is silent
+ * over-shrink and fails loudly at the solver fallback + readability gate (G6)
+ * instead. Growth factors that would set any text run below
+ * MIN_READABLE_FONT_PX are skipped up front when the scene contains labels
+ * (see placeWithGrowth) — this fixes the sub-32px composting labels.
  */
-const GROWTH_FACTORS = [1.6, 1.45, 1.3, 1.15, 1.0, 0.85, 0.72, 0.6];
+const GROWTH_FACTORS = [2.0, 1.8, 1.6, 1.45, 1.3, 1.15, 1.0, 0.85];
 
 function placementFits(boxes: Map<string, BBox>, rect: Rect, containerIds: Set<string>): boolean {
   const leaves = [...boxes.entries()].filter(([id]) => !containerIds.has(id)).map(([, b]) => b);
@@ -40,14 +43,18 @@ function placementFits(boxes: Map<string, BBox>, rect: Rect, containerIds: Set<s
 
 /**
  * Try the template at every growth factor >= 1 first, then its dense variant
- * (if any) at the same factors, and only then shrink below native size (each
- * shrink factor tries the template, then the dense variant). A factor below 1
- * scales text below its designed size (icon labels are drawn at the 32px
- * floor), so a dense variant that keeps native size wins.
+ * (if any) at the same factors, and only then the shrink factor (each
+ * shrink factor tries the template, then the dense variant). Growth scales
+ * text through the bbox/intrinsic ratio (see renderScene.ts), so any factor
+ * that would set the scene's smallest text run below MIN_READABLE_FONT_PX is
+ * skipped: a dense variant that keeps native size wins instead, and content
+ * that fits no readable factor falls through to the loud shrink-to-fit
+ * fallback (overlaps/readability are still reported by the gates, not hidden).
  */
-function placeWithGrowth(template: TemplateFn, dense: TemplateFn | undefined, rect: Rect, assignments: SlotAssignment[], containerIds: Set<string>): Map<string, BBox> {
-  const native = GROWTH_FACTORS.filter((g) => g >= 1);
-  const shrunk = GROWTH_FACTORS.filter((g) => g < 1);
+function placeWithGrowth(template: TemplateFn, dense: TemplateFn | undefined, rect: Rect, assignments: SlotAssignment[], containerIds: Set<string>, minTextPx: number): Map<string, BBox> {
+  const readable = (g: number): boolean => minTextPx * g >= MIN_READABLE_FONT_PX - 1e-9;
+  const native = GROWTH_FACTORS.filter((g) => g >= 1 && readable(g));
+  const shrunk = GROWTH_FACTORS.filter((g) => g < 1 && readable(g));
   const variants = dense ? [template, dense] : [template];
   const attempts: Array<[TemplateFn, number]> = [
     ...variants.flatMap((fn) => native.map((g) => [fn, g] as [TemplateFn, number])),
@@ -96,7 +103,8 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
   }));
 
   const template = TEMPLATES[scene.template];
-  let boxes = placeWithGrowth(template, DENSE_TEMPLATES[scene.template], rect, assignments, containerIds);
+  const minTextPx = Math.min(Infinity, ...scene.elements.flatMap((e) => e.visual.texts.map((t) => t.size)));
+  let boxes = placeWithGrowth(template, DENSE_TEMPLATES[scene.template], rect, assignments, containerIds, minTextPx);
 
   // Container hugging: a container's own box is the union of its children's
   // final boxes (padded), never an independently placed slot box.
@@ -127,9 +135,9 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
   if (!hasCarry && boxes.size > 0) {
     const content = unionBBox([...boxes.values()]);
     const occupancy = (content.w * content.h) / canvasArea;
-    const { min, max } = STYLE.occupancy;
+    const { min, target, max } = STYLE.occupancy;
     if (occupancy > 0 && (occupancy < min || occupancy > max)) {
-      const targetArea = occupancy < min ? min * canvasArea : max * canvasArea;
+      const targetArea = (occupancy < min ? target : max) * canvasArea;
       let scale = Math.sqrt(targetArea / (content.w * content.h));
       const pivot = { x: content.x + content.w / 2, y: content.y + content.h / 2 };
       // Clamp by actual available room from the PIVOT to each of the four

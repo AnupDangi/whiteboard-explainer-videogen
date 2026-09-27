@@ -28,7 +28,18 @@ export const STYLE = {
     sceneTitle: 96,
   },
   element: { objectSize: [150, 220] as [number, number], boxMinW: 180, boxMinH: 120, gap: 64 },
-  occupancy: { min: 0.45, max: 0.75 },
+  // Occupancy bands (Task 9 measurement, 2026-09-27, growth factors to 2.0):
+  // dense templates reach 0.41-0.54 (hub 0.41, convergence 0.49, fan_out
+  // 0.48-0.50, stack 0.53-0.54, cycle 0.54, plot_focus 0.51); width-bound
+  // single-row boards cap lower (chain 3-node 0.31, 4-node 0.23, list 0.21,
+  // title_card 0.25); the sparsest healthy template (threshold) measures
+  // 0.098. The 0.45 Simi band therefore stays a warning; the hard sparse
+  // floor sits below the sparsest healthy template, so the gate catches
+  // degenerate near-empty boards (plus the <2 element count clause) without
+  // hard-failing healthy geometry-capped layouts. Do NOT raise hardMin to
+  // the Simi band without a layout redesign that provably lifts every
+  // template above it.
+  occupancy: { min: 0.45, target: 0.55, max: 0.75, hardMin: 0.08 },
   roughness: 0,
   motion: { strokeSpeedPxPerSec: 900, fillFadeMs: 250, textWipeCharMs: 35, arrowMs: 400, leadMs: 150, maxIdleMs: 2500 },
 } as const;
