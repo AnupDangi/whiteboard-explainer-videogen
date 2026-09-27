@@ -1,24 +1,77 @@
 import type { BBox, Edge, RoutedEdge } from '../types.js';
 import { boundaryPoint, rectCenter } from './geometry.js';
+import { STYLE } from '../style.js';
 
-function segmentsIntersect(a1: { x: number; y: number }, a2: { x: number; y: number }, b1: { x: number; y: number }, b2: { x: number; y: number }): boolean {
-  const d = (p: typeof a1, q: typeof a1, r: typeof a1) => (r.x - p.x) * (q.y - p.y) - (r.y - p.y) * (q.x - p.x);
-  const d1 = d(b1, b2, a1);
-  const d2 = d(b1, b2, a2);
-  const d3 = d(a1, a2, b1);
-  const d4 = d(a1, a2, b2);
-  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+type Point = { x: number; y: number };
+
+/** Tests the open interior, so an arrow may touch a node boundary but cannot
+ * cross or lie entirely inside its label box. */
+export function segmentIntersectsRect(p1: Point, p2: Point, r: BBox): boolean {
+  const epsilon = 0.001;
+  let lo = 0;
+  let hi = 1;
+  for (const axis of ['x', 'y'] as const) {
+    const min = r[axis] + epsilon;
+    const max = r[axis] + (axis === 'x' ? r.w : r.h) - epsilon;
+    if (min >= max) return false;
+    const delta = p2[axis] - p1[axis];
+    if (Math.abs(delta) < 1e-9) {
+      if (p1[axis] <= min || p1[axis] >= max) return false;
+      continue;
+    }
+    const a = (min - p1[axis]) / delta;
+    const b = (max - p1[axis]) / delta;
+    lo = Math.max(lo, Math.min(a, b));
+    hi = Math.min(hi, Math.max(a, b));
+    if (lo >= hi) return false;
+  }
+  return lo < hi && hi > 0 && lo < 1;
 }
 
-function segmentIntersectsRect(p1: { x: number; y: number }, p2: { x: number; y: number }, r: BBox): boolean {
-  const corners = [
-    { x: r.x, y: r.y },
-    { x: r.x + r.w, y: r.y },
-    { x: r.x + r.w, y: r.y + r.h },
-    { x: r.x, y: r.y + r.h },
-  ];
-  for (let i = 0; i < 4; i++) if (segmentsIntersect(p1, p2, corners[i], corners[(i + 1) % 4])) return true;
-  return false;
+/** Find the shortest clear polyline through corners outside node boxes. This
+ * path is used only after the straight and single-bend routes are blocked. */
+function routedDetour(start: Point, end: Point, obstacles: BBox[]): Point[] | undefined {
+  const safe = STYLE.canvas.safe;
+  const withinCanvas = ({ x, y }: Point) => x >= safe && y >= safe && x <= STYLE.canvas.w - safe && y <= STYLE.canvas.h - safe;
+  for (const clearance of [24, 8, 1]) {
+    const candidates: Point[] = [start, end];
+    for (const r of obstacles) {
+      for (const x of [r.x - clearance, r.x + r.w + clearance]) {
+        for (const y of [r.y - clearance, r.y + r.h + clearance]) {
+          const point = { x, y };
+          if (withinCanvas(point) && !obstacles.some((box) => point.x > box.x && point.x < box.x + box.w && point.y > box.y && point.y < box.y + box.h)) candidates.push(point);
+        }
+      }
+    }
+    const n = candidates.length;
+    const distance = Array<number>(n).fill(Infinity);
+    const parent = Array<number>(n).fill(-1);
+    const visited = Array<boolean>(n).fill(false);
+    distance[0] = 0;
+    for (let step = 0; step < n; step++) {
+      let current = -1;
+      for (let i = 0; i < n; i++) if (!visited[i] && (current < 0 || distance[i] < distance[current])) current = i;
+      if (current < 0 || !Number.isFinite(distance[current])) break;
+      if (current === 1) {
+        const path: Point[] = [];
+        for (let i = current; i >= 0; i = parent[i]) path.push(candidates[i]);
+        return path.reverse();
+      }
+      visited[current] = true;
+      for (let next = 0; next < n; next++) {
+        if (next === current || visited[next]) continue;
+        const a = candidates[current];
+        const b = candidates[next];
+        if (obstacles.some((r) => segmentIntersectsRect(a, b, r))) continue;
+        const candidateDistance = distance[current] + Math.hypot(b.x - a.x, b.y - a.y);
+        if (candidateDistance < distance[next]) {
+          distance[next] = candidateDistance;
+          parent[next] = current;
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 /** Arrows stop short of both boxes (reference frames leave a visible gap between arrow and node). */
@@ -43,8 +96,9 @@ function inset(points: Array<{ x: number; y: number }>): Array<{ x: number; y: n
  * line is used unless it would cross a third element's bbox, in which case a
  * deterministic Manhattan-style single bend is inserted.
  */
-export function routeEdges(edges: Edge[], boxes: Map<string, BBox>): RoutedEdge[] {
-  const others = (fromId: string, toId: string) => [...boxes.entries()].filter(([id]) => id !== fromId && id !== toId).map(([, b]) => b);
+export function routeEdges(edges: Edge[], boxes: Map<string, BBox>, containerIds: ReadonlySet<string> = new Set()): RoutedEdge[] {
+  const others = (fromId: string, toId: string) => [...boxes.entries()].filter(([id]) => id !== fromId && id !== toId && !containerIds.has(id)).map(([, b]) => b);
+  const leafBoxes = [...boxes.entries()].filter(([id]) => !containerIds.has(id)).map(([, b]) => b);
 
   return edges.map((edge) => {
     const from = boxes.get(edge.from);
@@ -68,12 +122,13 @@ export function routeEdges(edges: Edge[], boxes: Map<string, BBox>): RoutedEdge[
       const clear = !obstacles.some((r) => segmentIntersectsRect(p1, bend, r) || segmentIntersectsRect(bend, p2, r));
       if (clear) return { ...edge, points: inset([p1, bend, p2]) };
     }
-    // Both bends blocked (e.g. callouts stacked in a column with an arrow skipping the middle ones):
-    // detour around the side of everything between them rather than cutting through other nodes' labels.
-    const between = [from, to, ...obstacles.filter((r) => r.y < Math.max(from.y + from.h, to.y + to.h) && r.y + r.h > Math.min(from.y, to.y))];
-    const right = Math.max(...between.map((r) => r.x + r.w)) + 36;
-    const a = { x: from.x + from.w, y: fromC.y };
-    const b = { x: to.x + to.w, y: toC.y };
-    return { ...edge, points: inset([a, { x: right, y: a.y }, { x: right, y: b.y }, b]) };
+    // Both bends blocked (for example, one fan-out target behind another):
+    // route through clear waypoints around boxes rather than across their labels.
+    const detour = routedDetour(straightStart, straightEnd, leafBoxes);
+    if (detour) return { ...edge, points: inset(detour) };
+
+    // A missing path is explicit and hard-gated by runClaudeGates. Drawing an
+    // arrow through a label would misstate the board's structure.
+    return { ...edge, points: [] };
   });
 }

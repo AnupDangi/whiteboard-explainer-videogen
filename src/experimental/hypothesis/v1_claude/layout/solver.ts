@@ -30,17 +30,55 @@ function containerPad(): number {
  */
 const GROWTH_FACTORS = [1.6, 1.45, 1.3, 1.15, 1.0, 0.85, 0.72, 0.6];
 
-function placeWithGrowth(template: TemplateFn, rect: Rect, assignments: SlotAssignment[], containerIds: Set<string>): Map<string, BBox> {
+/** A dense fan-out cannot place every target in one vertical column at readable
+ * size. Keep its source in the template's source slot and try target grids in
+ * the target region. Nothing is scaled to fit a cell: a candidate either fits
+ * at its current growth factor or the next candidate is tried. */
+function fanOutTargetGrid(template: TemplateFn, rect: Rect, grown: SlotAssignment[], columns: number): Map<string, BBox> | undefined {
+  const targets = grown.filter((item) => item.slot === 'target');
+  if (targets.length < 3 || columns > targets.length) return undefined;
+  const rows = Math.ceil(targets.length / columns);
+  const gap = STYLE.element.gap;
+  const targetRegion: Rect = { x: rect.x + rect.w * 0.42, y: rect.y, w: rect.w * 0.58, h: rect.h };
+  const cellW = (targetRegion.w - gap * (columns - 1)) / columns;
+  const cellH = (targetRegion.h - gap * (rows - 1)) / rows;
+  if (cellW <= 0 || cellH <= 0 || targets.some(({ intrinsic }) => intrinsic.w > cellW || intrinsic.h > cellH)) return undefined;
+
+  const boxes = new Map(template(rect, grown).boxes);
+  targets.forEach((target, index) => {
+    const row = Math.floor(index / columns);
+    const col = index % columns;
+    boxes.set(target.elementId, {
+      x: targetRegion.x + col * (cellW + gap) + (cellW - target.intrinsic.w) / 2,
+      y: targetRegion.y + row * (cellH + gap) + (cellH - target.intrinsic.h) / 2,
+      w: target.intrinsic.w,
+      h: target.intrinsic.h,
+    });
+  });
+  return boxes;
+}
+
+function placementFits(boxes: Map<string, BBox>, rect: Rect, containerIds: Set<string>): boolean {
+  const leaves = [...boxes.entries()].filter(([id]) => !containerIds.has(id)).map(([, b]) => b);
+  const inside = leaves.every((b) => b.x >= rect.x - 0.5 && b.y >= rect.y - 0.5 && b.x + b.w <= rect.x + rect.w + 0.5 && b.y + b.h <= rect.y + rect.h + 0.5);
+  const overlapping = leaves.some((a, i) => leaves.some((b, j) => j > i && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
+  return inside && !overlapping;
+}
+
+function placeWithGrowth(templateId: ResolvedScene['template'], template: TemplateFn, rect: Rect, assignments: SlotAssignment[], containerIds: Set<string>): Map<string, BBox> {
   let fallback: Map<string, BBox> | undefined;
   for (const g of GROWTH_FACTORS) {
     const grown = assignments.map((a) => ({ ...a, intrinsic: { w: a.intrinsic.w * g, h: a.intrinsic.h * g } }));
     const { boxes: raw, axis } = template(rect, grown);
     const boxes = applyAxisOverlapFix(raw, axis, STYLE.element.gap);
     fallback = boxes;
-    const leaves = [...boxes.entries()].filter(([id]) => !containerIds.has(id)).map(([, b]) => b);
-    const inside = leaves.every((b) => b.x >= rect.x - 0.5 && b.y >= rect.y - 0.5 && b.x + b.w <= rect.x + rect.w + 0.5 && b.y + b.h <= rect.y + rect.h + 0.5);
-    const overlapping = leaves.some((a, i) => leaves.some((b, j) => j > i && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
-    if (inside && !overlapping) return boxes;
+    if (placementFits(boxes, rect, containerIds)) return boxes;
+    if (templateId === 'fan_out') {
+      for (let columns = 2; columns <= Math.min(4, grown.filter((a) => a.slot === 'target').length); columns++) {
+        const grid = fanOutTargetGrid(template, rect, grown, columns);
+        if (grid && placementFits(grid, rect, containerIds)) return grid;
+      }
+    }
   }
   // Nothing fit: shrink the smallest-factor placement uniformly into the working rect so it can never
   // leave the safe area (overlaps/readability are still reported by the gates, not hidden).
@@ -77,7 +115,7 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
   }));
 
   const template = TEMPLATES[scene.template];
-  let boxes = placeWithGrowth(template, rect, assignments, containerIds);
+  let boxes = placeWithGrowth(scene.template, template, rect, assignments, containerIds);
 
   // Container hugging: a container's own box is the union of its children's
   // final boxes (padded), never an independently placed slot box.
@@ -145,7 +183,7 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
     bbox: boxes.get(e.element.id) ?? { x: rect.x, y: rect.y, w: e.intrinsicSize.w, h: e.intrinsicSize.h },
   }));
 
-  const edges = routeEdges(scene.edges, boxes);
+  const edges = routeEdges(scene.edges, boxes, containerIds);
 
   return { sceneId: scene.sceneId, title: scene.title, template: scene.template, elements, edges, occupancy, carryOver: scene.carryOver, focus: scene.focus, ...(scene.boardIntent ? { boardIntent: scene.boardIntent } : {}) };
 }

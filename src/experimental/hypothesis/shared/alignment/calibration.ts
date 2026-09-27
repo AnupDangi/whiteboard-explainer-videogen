@@ -7,6 +7,11 @@ export interface AlignmentCalibration {
   id: string;
   voiceEngine: string;
   voiceProvider: string;
+  /** Exact synthesis request used in the calibration clips; required for measured records. */
+  voiceId?: string | null;
+  language?: string;
+  speed?: number;
+  synthesisProvider?: 'auto';
   aligner: string;
   alignerModel: string;
   boundarySamples: number;
@@ -40,6 +45,9 @@ export async function loadAlignmentCalibration(projectRoot = process.cwd()): Pro
     && value.medianAbsoluteBoundaryErrorMs === null && value.meanAbsoluteBoundaryErrorMs === null
     && value.minimumAbsoluteBoundaryErrorMs === null && value.maximumAbsoluteBoundaryErrorMs === null;
   const measuredValid = value.status === 'measured'
+    && (value.voiceId === null || typeof value.voiceId === 'string')
+    && typeof value.language === 'string' && value.language.length > 0
+    && value.speed === 1 && value.synthesisProvider === 'auto'
     && Number(value.boundarySamples) > 0 && Number(value.independentClips) > 0
     && validMeasurement(value.medianAbsoluteBoundaryErrorMs)
     && validMeasurement(value.meanAbsoluteBoundaryErrorMs)

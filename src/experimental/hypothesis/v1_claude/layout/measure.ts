@@ -19,6 +19,11 @@ const TEXT_MARGIN = 32;
 const MAX_TEXT_CODEPOINTS = 512;
 export const LINE_H: Record<'title' | 'body' | 'note', number> = { title: 76, body: 52, note: 38 };
 
+/** A box label wraps to two lines only once its single-line rendered width (plus
+ * padding) would exceed this; short multi-word labels ("OPTION A") stay one line. */
+export const BOX_MAX_ONE_LINE_W = 420;
+const BOX_TEXT_PAD = 40;
+
 const displayText = (text: string, uppercase: boolean): string =>
   (uppercase ? text.toUpperCase() : text).replace(/\s+/g, ' ').trim();
 
@@ -44,17 +49,29 @@ export function measureTextWidth(text: string, fontSize: number, uppercase: bool
     textWidthCache.set(key, 0);
     return 0;
   }
-  // Round-bodied glyphs (e.g. "3", "6", "8") legitimately overshoot their pen
-  // origin by a small optical amount; scale the clipping tolerance with font
-  // size so a single short glyph (as box-label wrapping now measures on its
-  // own line) isn't mistaken for real viewport clipping.
-  const overshoot = Math.max(1, fontSize * 0.05);
-  if (bounds.x < TEXT_MARGIN - overshoot || bounds.x + bounds.width > width - TEXT_MARGIN + overshoot || bounds.y < 0 || bounds.y + bounds.height > height) {
+  // Kalam's round glyphs can extend slightly left of the text origin without
+  // leaving the measurement viewport. A wrapped final digit (for example,
+  // "ELECTROMAGNETISM 3") must not abort scene resolution for that overshoot.
+  const opticalOvershoot = Math.max(1, fontSize * 0.05);
+  if (bounds.x < TEXT_MARGIN - opticalOvershoot || bounds.x + bounds.width > width - TEXT_MARGIN + opticalOvershoot || bounds.y < 0 || bounds.y + bounds.height > height) {
     throw new Error(`text measurement viewport clipped a ${codepoints}-codepoint label`);
   }
   const measured = Math.ceil(bounds.width);
   textWidthCache.set(key, measured);
   return measured;
+}
+
+/**
+ * Decide a box's rendered line(s): one line unless its single-line width
+ * (text + BOX_TEXT_PAD) would exceed BOX_MAX_ONE_LINE_W, in which case it
+ * wraps onto at most two balanced lines (catalog/ladder.ts's `labelLines`,
+ * the same "CARBON / DIOXIDE" split used for icon labels). Exported so
+ * `render/primitives.ts` makes the identical decision measure.ts sized for.
+ */
+export function boxLabelLines(text: string, fontSize: number): string[] {
+  if (!text) return [];
+  const oneLineW = measureTextWidth(text, fontSize) + BOX_TEXT_PAD;
+  return oneLineW > BOX_MAX_ONE_LINE_W ? labelLines(text) : [text];
 }
 
 export interface IntrinsicSize {
@@ -69,10 +86,10 @@ export function measureElement(el: Element): IntrinsicSize {
   const note = STYLE.font.sizes.note;
   switch (el.prim) {
     case 'box': {
-      // Box text wraps onto at most two balanced lines (catalog/ladder.ts's labelLines,
-      // the same "CARBON / DIOXIDE" split used for icon labels); the box grows by one
-      // line height only when it actually wraps, and never shrinks font below `body`.
-      const lines = labelLines(el.text ?? el.glyph ?? el.label ?? '');
+      // Wraps only when a single line would exceed BOX_MAX_ONE_LINE_W (boxLabelLines);
+      // the box grows by one line height only when it actually wraps, and never
+      // shrinks font below `body`.
+      const lines = boxLabelLines(el.text ?? el.glyph ?? el.label ?? '', body);
       const lineWidths = lines.map((line) => measureTextWidth(line, body));
       const w = Math.max(STYLE.element.boxMinW, Math.max(0, ...lineWidths) + pad);
       const h = STYLE.element.boxMinH + (lines.length > 1 ? LINE_H.body : 0);

@@ -167,6 +167,9 @@ async function main(): Promise<void> {
   const temporarySummaryPath = `${summaryPath}.tmp`;
   await writeFile(temporarySummaryPath, `${JSON.stringify(summary, null, 2)}\n`, { flag: 'wx' });
   await rename(temporarySummaryPath, summaryPath);
+  // Keep the summary for diagnosis, but let callers distinguish a failed
+  // source-to-video run from a successfully produced draft.
+  if (summary.some((entry) => entry.status === 'failed')) process.exitCode = 1;
 }
 
 main().catch((err) => {

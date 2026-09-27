@@ -1,10 +1,9 @@
 import type { Element, PrimitiveVisual, TextRun } from '../types.js';
 import { STYLE, paletteFill } from '../style.js';
 import { formulaSource, formulaTex, typesetTex } from './math.js';
-import { measureTextWidth, LINE_H } from '../layout/measure.js';
+import { measureTextWidth, LINE_H, boxLabelLines } from '../layout/measure.js';
 import { numberLineVisual, plotVisual, shapeVisual } from './plot.js';
 import { ellipsePath, polylinePath, roundedRectPath, smoothCurvePath } from './pathmath.js';
-import { labelLines } from '../catalog/ladder.js';
 
 const upper = (s: string) => (STYLE.font.uppercaseLabels ? s.toUpperCase() : s);
 const text = (x: number, y: number, s: string, size: number, anchor: TextRun['anchor'] = 'middle'): TextRun => ({ x, y, text: s, size, anchor });
@@ -23,9 +22,10 @@ export function renderPrimitive(el: Element, size: { w: number; h: number }): Pr
     case 'box': {
       const rect = roundedRectPath(0, 0, w, h, 18);
       const label = el.text ?? el.glyph ?? el.label ?? '';
-      // Wrap onto at most two balanced lines (same helper as icon labels), centered
-      // symmetrically around the single-line baseline so an unwrapped box is unchanged.
-      const lines = labelLines(label);
+      // Same wrap decision as layout/measure.ts's boxLabelLines (only once a single
+      // line exceeds BOX_MAX_ONE_LINE_W), centered symmetrically around the
+      // single-line baseline so an unwrapped box's markup is unchanged.
+      const lines = boxLabelLines(label, STYLE.font.sizes.body);
       const centerY = h / 2 + STYLE.font.sizes.body * 0.35;
       const texts = label
         ? lines.map((line, i) => text(w / 2, centerY + (i - (lines.length - 1) / 2) * LINE_H.body, upper(line), STYLE.font.sizes.body))

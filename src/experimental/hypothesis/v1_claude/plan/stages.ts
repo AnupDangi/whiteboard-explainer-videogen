@@ -278,7 +278,69 @@ export function teachingPlanTokenBudget(sceneCount: number, conceptCount: number
   if (![sceneCount, conceptCount, relationCount].every(Number.isFinite) || sceneCount < 1 || conceptCount < 0 || relationCount < 0) {
     throw new Error('teaching plan token budget inputs must be finite and non-negative (with at least one scene)');
   }
-  return Math.min(10_000, 1_500 + Math.ceil(sceneCount) * 500 + Math.ceil(conceptCount) * 150 + Math.ceil(relationCount) * 100);
+  return Math.min(12_000, 2_000 + Math.ceil(sceneCount) * 800 + Math.ceil(conceptCount) * 160 + Math.ceil(relationCount) * 120);
+}
+
+/**
+ * Persistence is metadata determined entirely by repeated section IDs and
+ * canonical graph labels. Complete only missing entries; do not alter the
+ * scene plan, remove model entries, or mask conflicting terminology. The full
+ * teaching contract still checks the normalized result and fails on unknown
+ * IDs, duplicates, wrong labels, missing relations, or missing evidence.
+ */
+export function completeRecurringBible(plan: TeachingPlan, graph: ConceptGraph): TeachingPlan {
+  if (!plan.lessonBible) return plan;
+  const counts = new Map<string, number>();
+  for (const section of plan.sections) for (const conceptId of new Set(section.conceptIds)) counts.set(conceptId, (counts.get(conceptId) ?? 0) + 1);
+  const recurring = [...counts].filter(([, count]) => count > 1).map(([id]) => id);
+  const byId = new Map(graph.concepts.map((concept) => [concept.id, concept]));
+  const persistentConceptIds = [...plan.lessonBible.persistentConceptIds];
+  const terminology = [...plan.lessonBible.terminology];
+  for (const conceptId of recurring) {
+    const concept = byId.get(conceptId);
+    if (!concept) continue;
+    if (!persistentConceptIds.includes(conceptId)) persistentConceptIds.push(conceptId);
+    if (!terminology.some((entry) => entry.conceptId === conceptId)) terminology.push({ conceptId, label: concept.label });
+  }
+  return { ...plan, lessonBible: { ...plan.lessonBible, persistentConceptIds, terminology } };
+}
+
+/**
+ * A SceneContract's relation and evidence lists are copies of S2 graph data,
+ * not new lesson claims. Complete omitted copies only. Keep every model item
+ * (including unsupported or duplicate ones) so the contract validator can
+ * still reject inventions, unrelated evidence, and malformed sections.
+ */
+export function completeSceneContractReferences(plan: TeachingPlan, graph: ConceptGraph): TeachingPlan {
+  const concepts = new Map(graph.concepts.map((concept) => [concept.id, concept]));
+  const relationKey = (item: { from: string; to: string; type: string }) => `${item.from}|${item.type}|${item.to}`;
+  return {
+    ...plan,
+    sections: plan.sections.map((section) => {
+      const contract = section.contract;
+      if (!contract) return section;
+      const ids = new Set(contract.requiredConceptIds);
+      const relations = [...contract.requiredRelations];
+      const listed = new Set(relations.map(relationKey));
+      for (const relation of graph.relations) {
+        if (!ids.has(relation.from) || !ids.has(relation.to) || listed.has(relationKey(relation))) continue;
+        relations.push({ from: relation.from, to: relation.to, type: relation.type });
+        listed.add(relationKey(relation));
+      }
+      const evidenceSpanIds = [...contract.evidenceSpanIds];
+      const included = new Set(evidenceSpanIds);
+      const addEvidence = (spanId: string) => {
+        if (!included.has(spanId)) { evidenceSpanIds.push(spanId); included.add(spanId); }
+      };
+      for (const id of ids) for (const evidence of concepts.get(id)?.evidence ?? []) addEvidence(evidence.spanId);
+      for (const relation of graph.relations) {
+        if (ids.has(relation.from) && ids.has(relation.to) && listed.has(relationKey(relation))) {
+          for (const evidence of relation.evidence) addEvidence(evidence.spanId);
+        }
+      }
+      return { ...section, contract: { ...contract, requiredRelations: relations, evidenceSpanIds } };
+    }),
+  };
 }
 
 export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph, m: StageModel, variant: PlanPromptVariant = DEFAULT_PLAN_PROMPT_VARIANT): Promise<StructuredCallResult<TeachingPlan>> {
@@ -288,13 +350,16 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
   // Every section includes a full contract, so output size tracks scenes as well
   // as graph size. Scale from both, with a bounded 10k completion ceiling.
   const maxTeachingPlanTokens = teachingPlanTokenBudget(scenes, graph.concepts.length, graph.relations.length);
+  const outputSchema = z.preprocess((raw) => {
+    const parsed = TeachingPlanSchema.safeParse(raw);
+    return parsed.success ? completeSceneContractReferences(completeRecurringBible(parsed.data, graph), graph) : raw;
+  }, TeachingPlanSchema);
   const result = await structuredCall({
     stage: 'plan', subject: 'teaching plan', model: m.model, apiKey: m.apiKey, system, user,
-    schema: TeachingPlanSchema, schemaName: 'teaching_plan', maxTokens: maxTeachingPlanTokens, remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
-    // The deterministic analyser's blocking checks run INSIDE validation, against the model's raw
-    // output. Nothing here mutates the plan before it is checked: a missing SceneContract or an
-    // unsupported relation must surface as a real problem and consume the one repair call, never
-    // get silently fixed and reported as clean.
+    schema: outputSchema, schemaName: 'teaching_plan', maxTokens: maxTeachingPlanTokens, remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
+    // The deterministic analyser's blocking checks run INSIDE validation.
+    // Only code-owned recurring-bible metadata may be completed first; a
+    // missing SceneContract or unsupported relation still consumes repair.
     validate: (p) => {
       const problems: string[] = [];
       if (p.targetDurationSec !== req.targetDurationSec) problems.push(`targetDurationSec must be ${req.targetDurationSec}`);
