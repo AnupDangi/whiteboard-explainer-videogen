@@ -2050,3 +2050,9 @@ hypothesis before layering on production-latency infrastructure.
 - **Verification:** new `__tests__/recap-split.test.ts` 6/6 (fail-pre: missing export; pass-post). Typecheck clean; touched 6/6; full node 548/548 (was 542, +6 new) + alignment 28 + rag-engine 12 py; `git diff --check` clean. NOT committed.
 - **Limitation:** halves below 14 s trip the pacing gate honestly (even split maximizes the minimum half); fully-interconnected recaps (e.g. triangle) split validly but one half may retain all relations — chains/stars (the observed shape) split into boardable halves.
 - **Next bounded task:** interpretability 60s re-run to confirm recap boards + yellows triage.
+
+## Entry — 2026-09-27, interpretability draft post-split (branch fix/chat-audit-rollup-20260927)
+
+- **Run:** same 60s interpretability → `output/2026-09-27T20-07-05-199Z-interpretability-features/` (`tampered=false`). **Draft, 3/3 scenes, 0 hard, 0 fallbacks**, 58s, $0.0096. Tracked tree clean.
+- **Compare:** 19 → 11 → 0 hard across three runs. Recap split resolved the dense-recap binding constraint. Frame @20s caught mid title-wipe (empty board, expected mid-reveal).
+- **Next bounded task:** yellows triage, then continue matrix (bicycle re-run, RAG retry, more topics).
