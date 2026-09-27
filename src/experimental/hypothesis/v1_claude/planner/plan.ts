@@ -189,7 +189,7 @@ function visualNumericProblems(spec: SceneSpec, input: PlannerSceneInput): strin
   if (!input.teachingContext?.requireEvidence) return [];
   const problems: string[] = [];
   const titleValues = numericClaimsSupported([spec.title], spec.titleEvidenceRefs?.map((ref) => ref.quote) ?? []);
-  if (spec.titleOrigin !== 'illustrative-example') for (const value of titleValues) problems.push(`scene title numeric value "${value}" is not supported by its cited evidence; remove it or cite an exact source span that contains it`);
+  if (spec.titleOrigin !== 'illustrative-example') for (const value of titleValues) problems.push(`scene title numeric value "${value}" is not supported by its cited evidence; remove it or cite an exact source span that contains it; any replacement title words must come from the section heading, narration, or concept labels`);
   for (const element of spec.elements) {
     if (element.origin === 'illustrative-example') continue;
     const unsupported = numericClaimsSupported(sceneNumericValues({ ...spec, title: '', elements: [element], edges: [] }), element.evidenceRefs?.map((ref) => ref.quote) ?? []);
@@ -302,7 +302,7 @@ export function plannerProblems(spec: SceneSpec, input: PlannerSceneInput): stri
       if (edge.origin !== 'illustrative-example' && edge.factualRelation && GENERIC_RELATION_TYPES.has(edge.factualRelation.type.toLowerCase())) {
         const quotes = [...(edge.evidenceRefs ?? []), ...(edge.factualRelation.evidenceRefs ?? [])].map((ref) => ref.quote);
         if (!genericRelationWordingSupported(edge.factualRelation.type, quotes)) {
-          problems.push(`edge ${edge.from}->${edge.to} uses generic relation "${edge.factualRelation.type}" without source wording; cite a source span that states it or use a specific source-stated relation`);
+          problems.push(`edge ${edge.from}->${edge.to} uses generic relation "${edge.factualRelation.type}" without source wording; replace it with a specific relation stated in a cited source span, and keep every other field unchanged`);
         }
       }
     }

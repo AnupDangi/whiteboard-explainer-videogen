@@ -1886,3 +1886,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Compare vs baseline (cf6c328: 4 scenes, 4 hard, F1+F2):** now 3 scenes (model re-segmented: inference_modes, grounding_recap + 1 pass), 6 hard, 2 fallbacks. P2a generic-edge gate fires as designed (`compares`×2, `requires`×1 without source wording) — previously silent, now visible. Numeric `Three` persists in fallback path (fallback title still code-owned from displayText). Repair attempt introduced `title words [differ]` disconnect + `process form needs process-role node`.
 - **Classification (P1 taxonomy):** all S. Validator verdict: CHANGE planner layer again (fallback title must go through repaired title; repair prompt must forbid generic verbs or map to source-stated relations), DO NOT BUILD new subsystems.
 - **Next bounded task:** P2c fallback-title ownership + repair-verb guidance, then regenerate same benchmark.
+
+## Entry — 2026-09-27, P2c fallback title + repair guidance (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** regen showed fallback reintroducing numeric `Three` + repair drifting (`[differ]`, lost process role). Class S, same layer.
+- **Implemented:** shared `headingNumberUnsupported` + `stripNumericTokens` (digits + zero–twenty, domain-general); `fallbackTitle()` routes fallback through it (empty → concept labels → sceneId). Repair/gate messages now instruct: specific source-stated relation, grounded replacement words, keep process role, minimal edit. Gate logic unchanged (strict).
+- **Verification:** `typecheck:hypothesis` clean; board+planner 46/46 (3 new fail-pre/pass-post); full `test:hypothesis` 486/486 node (24+12 py per suite); `git diff --check` clean. Real regen input: fallback title `Three Inference Modes`→`Inference Modes`, numeric problems 3→0.
+- **Next bounded task:** regenerate same 60s benchmark and compare.

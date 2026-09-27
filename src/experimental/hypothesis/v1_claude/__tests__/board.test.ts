@@ -415,3 +415,34 @@ test('duplicate catalog names: a retrieval hint for the non-kept id still record
   assert.deepEqual(result.problems, []);
   assert.equal(result.spec!.elements.find((e) => e.id === 'n3')!.iconBasis, 'retrieval');
 });
+
+test('fallback title routes through the same unsupported-number rule, never reintroducing a gate-rejected numeric (regen F1)', () => {
+  const numbered: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: 'Three mixing steps' } };
+  const board = fallbackBoard(numbered);
+  assert.doesNotMatch(board.title, /\bthree\b/i, `fallback title must not carry the unsupported number word: "${board.title}"`);
+  const problems = validateBoard(board, numbered).problems.join(' | ');
+  assert.doesNotMatch(problems, /numeric value/, 'fallback must not reintroduce a numeric violation the gate will reject');
+  assert.equal(compileBoard(board, numbered).spec.title, board.title);
+  // A digit heading is repaired the same way.
+  const digit: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: '3 mixing steps' } };
+  assert.doesNotMatch(validateBoard(fallbackBoard(digit), digit).problems.join(' | '), /numeric value/);
+});
+
+test('validator messages instruct a minimal repair: grounded title words and a kept process role (regen repair drift)', () => {
+  // Numbered heading so the model title (not the code-owned heading) is the checked field — the regen repair shape.
+  const numbered: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: 'Three mixing steps' } };
+  const drift: Board = {
+    ...goodBoard(),
+    title: 'Mixing differs',
+    layout: 'list',
+    visual: { kind: 'process' },
+    nodes: goodBoard().nodes.map((node) => ({ ...node, role: 'item' as const })),
+  };
+  const problems = validateBoard(drift, numbered).problems;
+  const titleProblem = problems.find((problem) => problem.includes('title words'));
+  assert.ok(titleProblem, `expected a title-grounding problem, got: ${problems.join(' | ')}`);
+  assert.match(titleProblem, /replace them with words from those sources/);
+  const roleProblem = problems.find((problem) => problem.includes('process-role node'));
+  assert.ok(roleProblem, `expected a process-role problem, got: ${problems.join(' | ')}`);
+  assert.match(roleProblem, /keep at least one process-role node/);
+});

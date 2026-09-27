@@ -200,6 +200,39 @@ test('planner: generic relation labels must be stated by their cited source span
   assert.ok(!plannerProblems(specific, genericInput).some((problem) => problem.includes('generic relation')), 'specific mechanism verbs are unaffected');
 });
 
+test('planner: generic-relation and title-numeric rejections instruct a source-stated, otherwise-minimal repair', () => {
+  const ref = { sourceId: 'src_test', spanId: 'span_generic', startChar: 0, endChar: 20, startLine: 1, endLine: 1, quote: 'heat raises pressure' };
+  const genericInput: PlannerSceneInput = {
+    ...input,
+    teachingContext: {
+      requireEvidence: true, sourceEvidenceRefs: [ref],
+      concepts: [
+        { id: 'heat', label: 'Heat', kind: 'quantity', definition: 'Thermal energy.', evidenceRefs: [ref] },
+        { id: 'pressure', label: 'Pressure', kind: 'quantity', definition: 'Force per area.', evidenceRefs: [ref] },
+      ],
+      relations: [{ from: 'heat', to: 'pressure', type: 'compares', evidenceRefs: [ref] }],
+    },
+  };
+  const spec: SceneSpec = {
+    schemaVersion: 'claude-scene-spec/v1', sceneId: genericInput.sceneId, title: 'Heat Raises Pressure', titleConceptIds: ['heat', 'pressure'], titleEvidenceRefs: [ref],
+    template: 'chain',
+    elements: [
+      { id: 'heat', anchor: 'sceneStart', prim: 'box', text: 'HEAT', conceptIds: ['heat'], evidenceRefs: [ref] },
+      { id: 'pressure', anchor: 'sceneStart', prim: 'box', text: 'PRESSURE', conceptIds: ['pressure'], evidenceRefs: [ref] },
+    ],
+    edges: [{ from: 'heat', to: 'pressure', evidenceRefs: [ref], factualRelation: { fromConceptId: 'heat', toConceptId: 'pressure', type: 'compares', evidenceRefs: [ref] } }],
+  };
+  const genericProblem = plannerProblems(spec, genericInput).find((problem) => problem.includes('generic relation "compares"'));
+  assert.ok(genericProblem, 'unstated generic relation is still strictly rejected');
+  assert.match(genericProblem, /specific relation stated in a cited source span/);
+  assert.match(genericProblem, /every other field unchanged/);
+  const numeric = structuredClone(spec);
+  numeric.title = 'Three Heat Facts';
+  const numericProblem = plannerProblems(numeric, genericInput).find((problem) => problem.includes('scene title numeric value'));
+  assert.ok(numericProblem, 'unsupported title number is still strictly rejected');
+  assert.match(numericProblem, /replacement title words must come from the section heading, narration, or concept labels/);
+});
+
 test('planner: the §9 fallback is a valid list_icon scene built only from the scene\'s own mentions', () => {
   const spec = fallbackScene(input);
   assert.ok(safeParseSceneSpec(spec).success);
