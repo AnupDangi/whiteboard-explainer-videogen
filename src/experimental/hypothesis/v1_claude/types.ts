@@ -195,6 +195,8 @@ export interface Edge {
   to: string;
   label?: string;
   style?: 'solid' | 'dashed';
+  /** 'none' draws no arrowhead (symmetric relations such as comparison). Default: one head at `to`. */
+  head?: 'forward' | 'none';
   anchor?: Anchor;
   evidenceRefs?: EvidenceReference[];
   origin?: 'illustrative-example' | 'fixture';
@@ -358,6 +360,10 @@ export interface LaidOutElement {
 export interface RoutedEdge extends Edge {
   /** Straight or single-bend polyline points, from boundary to boundary (never centers). */
   points: Array<{ x: number; y: number }>;
+  /** Where the edge label is drawn, chosen by layout to stay clear of nodes. */
+  labelBox?: BBox;
+  /** No clear position existed; the label overlaps a node (reported by the gates). */
+  labelOverlapsNode?: boolean;
 }
 
 export interface LaidOutScene {

@@ -9,6 +9,7 @@ import type { PlannerSceneInput } from './prompt.js';
 import { plannerProblems, type PlanSceneOptions, type PlanSceneResult, type PlannerCallUsage } from './plan.js';
 import { numericClaims, numericTokens, unsupportedNumericClaims } from '../validation/numericClaims.js';
 import { typedBoardAdequacyFailures } from '../validation/gates.js';
+import { RELATION_ARROWS, type RelationType } from '../config.js';
 
 /**
  * S6 board planner (claude-board/v2, design 2026-09-26).
@@ -423,7 +424,8 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
     const to = nodeFor(relation.to);
     if (!from || !to || from.id === to.id) continue;
     const evidenceRefs = relation.evidenceRefs.slice(0, 6);
-    edges.push({ from: from.id, to: to.id, label: relation.type, evidenceRefs, factualRelation: { fromConceptId: relation.from, toConceptId: relation.to, type: relation.type as NonNullable<Edge['factualRelation']>['type'], evidenceRefs } });
+    const arrow = RELATION_ARROWS[relation.type as RelationType];
+    edges.push({ from: from.id, to: to.id, label: arrow.verb, ...(arrow.directed ? {} : { head: 'none' as const }), evidenceRefs, factualRelation: { fromConceptId: relation.from, toConceptId: relation.to, type: relation.type as NonNullable<Edge['factualRelation']>['type'], evidenceRefs } });
   }
   const titleConceptIds = [...new Set(board.nodes.map((node) => node.concept))].slice(0, 4);
   const titleEvidenceRefs = titleConceptIds.flatMap((conceptId) => conceptEvidence(conceptId).slice(0, 1)).slice(0, 6);

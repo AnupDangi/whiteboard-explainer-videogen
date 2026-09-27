@@ -49,18 +49,21 @@ test('calls with a reserved worst case run concurrently and settle their billed 
   const root = await mkdtemp(path.join(tmpdir(), 'hyp-ledger-reserve-'));
   try {
     const ledger = new PersistentBudgetLedger(path.join(root, 'budget.json'), 0.1);
-    let active = 0;
-    let maxActive = 0;
+    // A barrier, not a sleep: each call waits (up to 5 s) until both are inside
+    // the provider. If the ledger held its lock during a call, the second could
+    // not start and the first would time out, so the check does not depend on load.
+    let started = 0;
+    let bothInside!: () => void;
+    const barrier = new Promise<void>((resolve) => { bothInside = resolve; });
+    const overlapped: boolean[] = [];
     const work = async () => {
-      active++;
-      maxActive = Math.max(maxActive, active);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      active--;
+      if (++started === 2) bothInside();
+      overlapped.push(await Promise.race([barrier.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000))]));
       return { value: 'ok', costUsd: 0.002 };
     };
     const results = await Promise.all([ledger.call(0.1, work, { reserveUsd: 0.02 }), ledger.call(0.1, work, { reserveUsd: 0.02 })]);
     assert.ok(results.every((result) => result.allowed));
-    assert.equal(maxActive, 2, 'the lock is not held while the provider works');
+    assert.deepEqual(overlapped, [true, true], 'the lock is not held while the provider works');
     const snapshot = await ledger.snapshot();
     assert.equal(snapshot.calls, 2);
     assert.ok(Math.abs(snapshot.spentUsd - 0.004) < 1e-12);

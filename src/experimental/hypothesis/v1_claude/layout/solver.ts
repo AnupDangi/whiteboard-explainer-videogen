@@ -126,9 +126,9 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
   if (!hasCarry && boxes.size > 0) {
     const content = unionBBox([...boxes.values()]);
     const occupancy = (content.w * content.h) / canvasArea;
-    const { min, max } = STYLE.occupancy;
-    if (occupancy > 0 && (occupancy < min || occupancy > max)) {
-      const targetArea = occupancy < min ? min * canvasArea : max * canvasArea;
+    const { target, max } = STYLE.occupancy;
+    if (occupancy > 0 && (occupancy < target || occupancy > max)) {
+      const targetArea = occupancy < target ? target * canvasArea : max * canvasArea;
       let scale = Math.sqrt(targetArea / (content.w * content.h));
       const pivot = { x: content.x + content.w / 2, y: content.y + content.h / 2 };
       // Clamp by actual available room from the PIVOT to each of the four

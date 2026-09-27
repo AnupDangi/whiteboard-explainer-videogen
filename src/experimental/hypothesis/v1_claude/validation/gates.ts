@@ -4,7 +4,7 @@ import type { EvidenceReference, NeutralElement, NeutralTimelineEvent } from '..
 import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 
 import { LICENSE_ALLOWLIST } from '../catalog/normalize.js';
-import { maxIdleWindowMs } from '../timeline/compile.js';
+import { maxIdleWindowMs, nominalRevealMs } from '../timeline/compile.js';
 import { formulaSource } from '../render/math.js';
 
 const evidenceKey = (ref: EvidenceReference): string => JSON.stringify([
@@ -131,6 +131,45 @@ export function toNeutralEvents(scene: LaidOutScene, timeline: Timeline, timeOri
  * generically across both tracks; this adds the Claude-specific readability,
  * concurrency, and resolution-completeness checks.
  */
+const isFactual = (element: Element): boolean => Boolean(element.conceptIds?.length || element.evidenceRefs?.length);
+const isPrimaryReveal = (track: string): boolean => track !== 'hold' && track !== 'emphasis' && track !== 'edge' && track !== 'term';
+
+/**
+ * Source-backed content that never becomes visible: an element or relation
+ * arrow with no reveal, or one squeezed to zero duration at the scene end.
+ */
+export function timelineVisibilityFailures(scene: LaidOutScene, timeline: Timeline): StageFailure[] {
+  const failures: StageFailure[] = [];
+  const endMs = timeline.sceneEndMs;
+  const visible = (t0: number, t1: number) => t1 - t0 >= 1 && t0 < endMs - 1;
+  for (const el of scene.elements) {
+    if (!isFactual(el.element) || scene.carryOver?.includes(el.id)) continue;
+    const reveal = timeline.events.find((event) => event.elementId === el.id && isPrimaryReveal(event.track));
+    if (!reveal || !visible(reveal.t0, reveal.t1)) failures.push({ code: 'reveal-invisible', stage: 'timeline', message: `${scene.sceneId}: source-backed element ${el.id} is never visibly drawn before the scene ends`, hard: true });
+  }
+  scene.edges.forEach((edge, edgeIndex) => {
+    if (!edge.factualRelation) return;
+    const event = timeline.events.find((candidate) => candidate.track === 'edge' && candidate.edgeIndex === edgeIndex);
+    if (!event || !visible(event.t0, event.t1)) failures.push({ code: 'reveal-invisible', stage: 'timeline', message: `${scene.sceneId}: source relation ${edge.from} -> ${edge.to} (${edge.factualRelation.type}) is never visibly drawn`, hard: true });
+  });
+  return failures;
+}
+
+/** Reveals shortened below their nominal drawing time to fit the scene audio. */
+function compressedReveals(scene: LaidOutScene, timeline: Timeline): { count: number; slowest: number } {
+  const byId = new Map(scene.elements.map((element) => [element.id, element]));
+  let count = 0;
+  let slowest = 1;
+  for (const event of timeline.events) {
+    const el = event.phases ? byId.get(event.elementId) : undefined;
+    if (!el) continue;
+    const nominal = nominalRevealMs(el);
+    const actual = event.t1 - event.t0;
+    if (nominal > 0 && actual < nominal - 1) { count += 1; slowest = Math.min(slowest, actual / nominal); }
+  }
+  return { count, slowest };
+}
+
 export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failures: StageFailure[]; warnings: StageFailure[] } {
   const failures: StageFailure[] = [];
   const warnings: StageFailure[] = [];
@@ -170,15 +209,27 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
     }
   }
 
-  // G5 occupancy band at scene end (Warn per hypothesis/v1_claude/03 §2).
-  if (scene.occupancy < STYLE.occupancy.min || scene.occupancy > STYLE.occupancy.max) {
+  // G5 occupancy at scene end: outside the band is a warning; a board that
+  // leaves most of the frame empty is a hard failure (a draft, not a lesson).
+  if (scene.occupancy < STYLE.occupancy.sparse && scene.elements.length > 0) {
+    failures.push({ code: 'board-too-sparse', stage: 'layout', message: `board covers ${Math.round(scene.occupancy * 100)}% of the frame (< ${Math.round(STYLE.occupancy.sparse * 100)}%); it needs more or larger nodes`, hard: true });
+  } else if (scene.occupancy < STYLE.occupancy.min || scene.occupancy > STYLE.occupancy.max) {
     warnings.push({ code: 'occupancy', stage: 'layout', message: `occupancy ${scene.occupancy.toFixed(2)} outside [${STYLE.occupancy.min}, ${STYLE.occupancy.max}]`, hard: false });
   }
-  // G9 idle: no window longer than maxIdleMs without a reveal/edge/emphasis (Warn).
+  // G9 idle: the longest stretch, including the end of the scene, with no new
+  // content drawn. Emphasis rings are filler and are reported, not counted.
   const idle = maxIdleWindowMs(timeline);
   if (idle > STYLE.motion.maxIdleMs) {
-    warnings.push({ code: 'idle', stage: 'timeline', message: `${Math.round(idle)}ms idle window exceeds ${STYLE.motion.maxIdleMs}ms`, hard: false });
+    const filled = idle - maxIdleWindowMs(timeline, { countEmphasis: true });
+    warnings.push({ code: 'idle', stage: 'timeline', message: `${Math.round(idle)}ms without new content exceeds ${STYLE.motion.maxIdleMs}ms${filled > 0 ? ` (emphasis rings fill ${Math.round(filled)}ms of it)` : ''}`, hard: false });
   }
+  failures.push(...timelineVisibilityFailures(scene, timeline));
+  const compressed = compressedReveals(scene, timeline);
+  if (compressed.count) {
+    warnings.push({ code: 'timeline-compressed', stage: 'timeline', message: `${compressed.count} reveal(s) were sped up to fit the narration (fastest at ${Math.round(compressed.slowest * 100)}% of normal drawing time)`, hard: false });
+  }
+  const crowdedLabels = scene.edges.filter((edge) => edge.labelOverlapsNode).map((edge) => `${edge.from}->${edge.to}`);
+  if (crowdedLabels.length) warnings.push({ code: 'edge-label-overlap', stage: 'layout', message: `no clear place for arrow label(s) ${crowdedLabels.join(', ')}; they overlap a node`, hard: false });
   // Formula error: a TeX expression MathJax could not typeset is a hard failure (hypothesis plan "formula error").
   for (const el of scene.elements) {
     if (el.element.prim === 'formula' && !(el.visual.embeds?.length)) {

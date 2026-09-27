@@ -129,7 +129,8 @@ test('timeline: a long final hold before closing emphasis receives generic activ
   const timeline = compileTimelineFull(laidOut, mentions, 0, endMs);
   const idleEmphasis = timeline.events.filter((e) => e.track === 'emphasis' && e.t0 < endMs - 400);
   assert.ok(idleEmphasis.length > 0, 'the final long hold should receive a quiet emphasis on an existing element');
-  assert.ok(maxIdleWindowMs(timeline) <= STYLE.motion.maxIdleMs, `largest quiet window is ${maxIdleWindowMs(timeline)}ms`);
+  assert.ok(maxIdleWindowMs(timeline, { countEmphasis: true }) <= STYLE.motion.maxIdleMs, `largest quiet window is ${maxIdleWindowMs(timeline, { countEmphasis: true })}ms`);
+  assert.ok(maxIdleWindowMs(timeline) > STYLE.motion.maxIdleMs, 'rings are filler: without them the trailing hold still counts as idle');
   assert.ok(timeline.events.every((e) => laidOut.elements.some((element) => element.id === e.elementId)), 'emphasis uses existing scene elements only');
 });
 

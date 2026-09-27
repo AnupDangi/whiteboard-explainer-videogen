@@ -175,6 +175,7 @@ const EdgeSchema = z
     to: z.string().min(1),
     label: noRawMarkup().max(40).optional(),
     style: z.enum(['solid', 'dashed']).optional(),
+    head: z.enum(['forward', 'none']).optional(),
     anchor: AnchorSchema.optional(),
     evidenceRefs,
     origin,

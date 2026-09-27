@@ -1,4 +1,5 @@
 import { EXPERIMENT } from '../shared/contracts.js';
+import type { RELATION_TYPES } from './plan/schemas.js';
 
 /**
  * Pipeline settings that are not visual style (visual tokens live in
@@ -31,3 +32,21 @@ export const PIPELINE = {
    */
   ragMinSourceChars: 40_000,
 } as const;
+
+/**
+ * How each source relation type reads on an arrow. The verb is code-owned
+ * grammar for the relation enum, never lesson content; `directed: false`
+ * draws the arrow without a one-way head (a comparison or an opposition
+ * has no direction).
+ */
+export type RelationType = (typeof RELATION_TYPES)[number];
+export const RELATION_ARROWS: Record<RelationType, { verb: string; directed: boolean }> = {
+  causes: { verb: 'causes', directed: true },
+  feeds: { verb: 'feeds into', directed: true },
+  contains: { verb: 'contains', directed: true },
+  compares: { verb: 'compared with', directed: false },
+  transforms: { verb: 'becomes', directed: true },
+  requires: { verb: 'needs', directed: true },
+  produces: { verb: 'produces', directed: true },
+  opposes: { verb: 'opposes', directed: false },
+};

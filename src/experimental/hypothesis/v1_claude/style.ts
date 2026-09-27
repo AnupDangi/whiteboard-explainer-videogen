@@ -30,7 +30,12 @@ export const STYLE = {
   /** Top band reserved for the scene title (layout keeps it clear, the renderer sets the title baseline there). */
   layout: { titleBandPx: 150 },
   element: { objectSize: [150, 220] as [number, number], boxMinW: 180, boxMinH: 120, gap: 64 },
-  occupancy: { min: 0.45, max: 0.75 },
+  /**
+   * Share of the frame the board's bounding box covers at scene end. Layout
+   * scales a board toward `target`; outside [min, max] is a warning, below
+   * `sparse` a hard `board-too-sparse` failure.
+   */
+  occupancy: { sparse: 0.3, min: 0.45, target: 0.55, max: 0.75 },
   roughness: 0,
   motion: { strokeSpeedPxPerSec: 900, fillFadeMs: 250, textWipeCharMs: 35, arrowMs: 400, leadMs: 150, maxIdleMs: 2500 },
 } as const;

@@ -163,16 +163,24 @@ function renderEdge(edge: RoutedEdge, ev: TimelineEvent, timeMs: number, index: 
     const a = edge.points[edge.points.length - 2];
     const b = edge.points[edge.points.length - 1];
     const ang = Math.atan2(b.y - a.y, b.x - a.x);
-    for (const side of [-1, 1]) {
+    // A symmetric relation (comparison, opposition) has no direction, so no head.
+    for (const side of edge.head === 'none' ? [] : [-1, 1]) {
       const hx = b.x - ARROW_HEAD * Math.cos(ang + side * 0.5);
       const hy = b.y - ARROW_HEAD * Math.sin(ang + side * 0.5);
       parts.push(strokeSvg({ d: `M ${b.x} ${b.y} L ${hx} ${hy}`, length: ARROW_HEAD }, headP));
     }
     if (edge.label) {
-      const mid = edge.points[Math.floor(edge.points.length / 2) - (edge.points.length % 2 === 0 ? 1 : 0)];
-      const next = edge.points[Math.min(edge.points.length - 1, edge.points.indexOf(mid) + 1)];
-      const lx = (mid.x + next.x) / 2;
-      const ly = (mid.y + next.y) / 2 - 16;
+      let lx: number;
+      let ly: number;
+      if (edge.labelBox) {
+        lx = edge.labelBox.x + edge.labelBox.w / 2;
+        ly = edge.labelBox.y + edge.labelBox.h / 2 + STYLE.font.sizes.note * 0.35;
+      } else {
+        const mid = edge.points[Math.floor(edge.points.length / 2) - (edge.points.length % 2 === 0 ? 1 : 0)];
+        const next = edge.points[Math.min(edge.points.length - 1, edge.points.indexOf(mid) + 1)];
+        lx = (mid.x + next.x) / 2;
+        ly = (mid.y + next.y) / 2 - 16;
+      }
       parts.push(`<g opacity="${headP}">${textSvg({ x: lx, y: ly, text: edge.label.toUpperCase(), size: STYLE.font.sizes.note, anchor: 'middle' })}</g>`);
     }
   }

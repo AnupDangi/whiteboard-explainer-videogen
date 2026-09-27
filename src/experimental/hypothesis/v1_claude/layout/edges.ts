@@ -1,5 +1,7 @@
 import type { BBox, Edge, RoutedEdge } from '../types.js';
 import { boundaryPoint, rectCenter } from './geometry.js';
+import { measureTextWidth } from './measure.js';
+import { STYLE } from '../style.js';
 
 function segmentsIntersect(a1: { x: number; y: number }, a2: { x: number; y: number }, b1: { x: number; y: number }, b2: { x: number; y: number }): boolean {
   const d = (p: typeof a1, q: typeof a1, r: typeof a1) => (r.x - p.x) * (q.y - p.y) - (r.y - p.y) * (q.x - p.x);
@@ -44,6 +46,54 @@ function inset(points: Array<{ x: number; y: number }>): Array<{ x: number; y: n
  * deterministic Manhattan-style single bend is inserted.
  */
 export function routeEdges(edges: Edge[], boxes: Map<string, BBox>): RoutedEdge[] {
+  return placeEdgeLabels(routeEdgePaths(edges, boxes), boxes);
+}
+
+const LABEL_GAP = 16;
+const overlaps = (a: BBox, b: BBox) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Give each labelled edge a label box beside one of its segments that does
+ * not cover a node or an earlier label: middle segment first, above then
+ * below (or left then right of a vertical segment). When no position is
+ * clear the first candidate is kept and `labelOverlapsNode` is set, so the
+ * gate reports it instead of the label silently covering a node.
+ */
+function placeEdgeLabels(edges: RoutedEdge[], boxes: Map<string, BBox>): RoutedEdge[] {
+  const taken: BBox[] = [...boxes.values()];
+  return edges.map((edge) => {
+    if (!edge.label || edge.points.length < 2) return edge;
+    const size = STYLE.font.sizes.note;
+    const w = measureTextWidth(edge.label, size) + 8;
+    const h = size * 1.2;
+    const segments = edge.points.slice(1).map((end, i) => ({ start: edge.points[i]!, end }));
+    const middle = Math.floor((segments.length - 1) / 2);
+    const order = [middle, ...segments.map((_, i) => i).filter((i) => i !== middle)];
+    const candidates: BBox[] = [];
+    for (const index of order) {
+      const { start, end } = segments[index]!;
+      const cx = (start.x + end.x) / 2;
+      const cy = (start.y + end.y) / 2;
+      const vertical = Math.abs(end.y - start.y) > Math.abs(end.x - start.x);
+      const offsets = vertical ? [[-(w / 2 + LABEL_GAP), 0], [w / 2 + LABEL_GAP, 0]] : [[0, -(h / 2 + LABEL_GAP)], [0, h / 2 + LABEL_GAP]];
+      for (const [dx, dy] of offsets) candidates.push({ x: cx + dx! - w / 2, y: cy + dy! - h / 2, w, h });
+    }
+    // A gap narrower than the label: put it above, then below, both end nodes.
+    const ends = [boxes.get(edge.from), boxes.get(edge.to)].filter((box): box is BBox => Boolean(box));
+    if (ends.length) {
+      const { start, end } = segments[middle]!;
+      const cx = (start.x + end.x) / 2;
+      candidates.push({ x: cx - w / 2, y: Math.min(...ends.map((box) => box.y)) - LABEL_GAP - h, w, h });
+      candidates.push({ x: cx - w / 2, y: Math.max(...ends.map((box) => box.y + box.h)) + LABEL_GAP, w, h });
+    }
+    const clear = candidates.find((box) => !taken.some((other) => overlaps(box, other)));
+    const labelBox = clear ?? candidates[0]!;
+    taken.push(labelBox);
+    return { ...edge, labelBox, ...(clear ? {} : { labelOverlapsNode: true }) };
+  });
+}
+
+function routeEdgePaths(edges: Edge[], boxes: Map<string, BBox>): RoutedEdge[] {
   const others = (fromId: string, toId: string) => [...boxes.entries()].filter(([id]) => id !== fromId && id !== toId).map(([, b]) => b);
 
   return edges.map((edge) => {
