@@ -23,6 +23,29 @@ function deepIndexEnabled(env:NodeJS.ProcessEnv=process.env):boolean{
 
 interface DeepIndexResult {ok:boolean;items?:number;docId?:string;error?:string}
 interface DeepQueryResult {ok:boolean;answer?:string;error?:string}
+
+/** Verbatim retrieved chunk texts from a retrieval-only query payload.
+ *  Walks only known envelope keys (mirrors plan/ragSidecar
+ *  mapRagChunksToEvidence), so wrapper envelopes never silently yield an
+ *  empty answer. Domain-general: no content vocabulary. */
+export function extractDeepQueryChunks(data: unknown): string[] {
+  let cursor: unknown = data;
+  for (let depth = 0; depth < 5 && cursor && typeof cursor === 'object'; depth += 1) {
+    const record = cursor as Record<string, unknown>;
+    if (Array.isArray(record.chunks)) {
+      const out: string[] = [];
+      for (const raw of record.chunks) {
+        if (!raw || typeof raw !== 'object') continue;
+        const chunk = raw as Record<string, unknown>;
+        const text = typeof chunk.content === 'string' ? chunk.content : typeof chunk.text === 'string' ? chunk.text : '';
+        if (text.trim()) out.push(text);
+      }
+      return out;
+    }
+    cursor = ['data', 'result', 'raw_data', 'rawData'].map((key) => record[key]).find((value) => value && typeof value === 'object');
+  }
+  return [];
+}
 interface DeepIndexGatewayContext {
   /** Optional durable budget boundary. The Python sidecar does not expose token
    *  usage, so its reservation is settled at the configured estimate and marked
@@ -101,5 +124,9 @@ export async function queryDeep(input:{workingDir:string;question:string;mode?:s
     ?await input.gateway.ragGateway.execute({jobId:input.gateway.jobId,taskId:`${input.gateway.jobId}:query`,operation:'query',estimatedCostUsd:estimate,budgetLimitUsd:input.gateway.budgetLimitUsd,execute:async()=>guarded()})
     :await execute();
   if(!result||result.ok!==true)return result?{ok:false,error:String(result.error)}:null;
-  return {ok:true,answer:String(result.answer??'')};
+  // The query sidecar returns retrieval data ({data} with chunks), never an
+  // answer string. Map chunk texts (like plan/ragSidecar does) instead of
+  // reading a field the service never sends, which always yielded ''.
+  if(typeof result.answer === 'string' && result.answer.trim())return {ok:true,answer:String(result.answer)};
+  return {ok:true,answer:extractDeepQueryChunks(result.data ?? result).join('\n\n')};
 }

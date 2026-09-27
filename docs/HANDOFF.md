@@ -2013,3 +2013,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** timeline clamp endMs-1 + t1-t0≥1; duplicate-mention board problem; `scopedSectionId()` (passthrough/31+8hex, plan+script alike); budget single-count (`plannerSceneBudgetUsd`, prep snapshot once). No topic keywords.
 - **Audit:** my full run 533/533 + 28 + 12, exit 0 (frame-cache flake absent); `git diff --check` clean.
 - **Next bounded task:** Batch 3 (structured/convergence, deep-indexer mapping, reliability budget).
+
+## Entry — 2026-09-27, Batch 3 gate+bridge (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** verified roots batch 3; impossible combo, empty answers, ignored budget.
+- **Implemented:** structured+convergence rejected repairably in `boardProblems` (gate untouched, strict); `queryDeep` maps `{data}` chunks (real `answer` kept if present); reliability forwards CLI `--budget`. No topic keywords.
+- **Audit:** my full run 539/539 + 28 + 12, exit 0; `git diff --check` clean. Limitation: queryDeep e2e (sidecar spawn) untested — mapping unit only.
+- **Next bounded task:** re-run matrix (600s compost + bicycle) + yellows triage.

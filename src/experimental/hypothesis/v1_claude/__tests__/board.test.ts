@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { z } from 'zod';
 import type { PlannerSceneInput } from '../planner/prompt.js';
 import type { ScenePlanningContext } from '../planner/context.js';
-import { BOARD_SCHEMA_VERSION, boardEnums, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
+import { BOARD_SCHEMA_VERSION, boardEnums, boardProblems, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
 import { safeParseSceneSpec } from '../schema.js';
 
 // Synthetic, topic-neutral scene: two inputs combine through a process into an output.
@@ -228,9 +228,11 @@ test('source-backed plot and number-line values accept decimal and scientific no
       concepts: scene.teachingContext!.concepts!.map((concept) => ({ ...concept, evidenceRefs: [...concept.evidenceRefs!, numericRef] })),
     },
   };
-  const plot: Board = { ...goodBoard(), visual: { kind: 'plot', fn: 'linear', params: [1000, 0.5], domain: [-2, 1] } };
+  // Structured visuals pair with a non-convergence layout: convergence
+  // forces callout slots at compile time and can never satisfy the gate.
+  const plot: Board = { ...goodBoard(), layout: 'list', visual: { kind: 'plot', fn: 'linear', params: [1000, 0.5], domain: [-2, 1] } };
   assert.deepEqual(validateBoard(plot, numericScene).problems, []);
-  const line: Board = { ...goodBoard(), visual: { kind: 'number-line', min: -2, max: 1000, ticks: 6, points: [{ x: 0.5 }], interval: [-2, 1] } };
+  const line: Board = { ...goodBoard(), layout: 'list', visual: { kind: 'number-line', min: -2, max: 1000, ticks: 6, points: [{ x: 0.5 }], interval: [-2, 1] } };
   assert.deepEqual(validateBoard(line, numericScene).problems, []);
 });
 
@@ -240,7 +242,8 @@ test('board rejects an exact consecutive visual repeat', () => {
 });
 
 test('worked examples are arithmetically checked and visibly marked illustrative', () => {
-  const example: Board = { ...goodBoard(), visual: { kind: 'worked-example', steps: [{ operands: [6, 7], operator: '×', result: 42 }] } };
+  // Worked examples pair with a non-convergence layout for the same reason.
+  const example: Board = { ...goodBoard(), layout: 'list', visual: { kind: 'worked-example', steps: [{ operands: [6, 7], operator: '×', result: 42 }] } };
   const compiled = compileBoard(example, scene);
   assert.deepEqual(validateBoard(example, scene).problems, []);
   assert.ok(compiled.spec.elements.some((element) => element.prim === 'text' && element.text === 'Illustrative example' && element.origin === 'illustrative-example'));
@@ -524,4 +527,26 @@ test('validator messages instruct a minimal repair: grounded title words and a k
   const roleProblem = problems.find((problem) => problem.includes('process-role node'));
   assert.ok(roleProblem, `expected a process-role problem, got: ${problems.join(' | ')}`);
   assert.match(roleProblem, /keep at least one process-role node/);
+});
+
+test('structured visual with convergence layout is rejected as repairable, never passing silently (audit Batch 3)', () => {
+  const input = makeScene(WORDS);
+  const board: Board = { ...goodBoard(), visual: { kind: 'formula', latex: 'mixing' } };
+  const problems = boardProblems(board, input, boardEnums(input));
+  const combo = problems.find((problem) => problem.includes('convergence') && problem.includes('callout'));
+  assert.ok(combo, `expected a repairable convergence+structured problem, got: ${problems.join(' | ')}`);
+  assert.match(combo!, /process or comparison visual|change the layout/);
+  // The compiled shape proves the rejection is load-bearing: every concept node lands in callout.
+  const compiled = compileBoard(board, input);
+  const nodeSlots = compiled.spec.elements.filter((element) => element.id !== 'visual' && (element.conceptIds?.length ?? 0) > 0).map((element) => element.slot);
+  assert.ok(nodeSlots.length > 0 && nodeSlots.every((slot) => slot === 'callout'));
+});
+
+test('process and comparison visuals with convergence layout are not rejected by the structured+convergence rule (audit Batch 3)', () => {
+  const input = makeScene(WORDS);
+  for (const visual of [{ kind: 'process' }, { kind: 'comparison' }] as Board['visual'][] ) {
+    const board: Board = { ...goodBoard(), layout: visual.kind === 'comparison' ? 'compare' : 'convergence', visual };
+    const problems = boardProblems(board, input, boardEnums(input));
+    assert.ok(!problems.some((problem) => problem.includes('callout slots')), `visual ${visual.kind} must not hit the structured+convergence rule, got: ${problems.join(' | ')}`);
+  }
 });

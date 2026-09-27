@@ -264,6 +264,12 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
   // Abstract scenes still fill the board: instances, metaphors, and label boxes
   // count, so only compare (2-3 nodes) and structured visuals are exempt.
   const structured = ['formula', 'plot', 'matrix', 'number-line', 'worked-example'].includes(board.visual.kind);
+  // Structured visuals force every node into the callout slot at compile
+  // time, so a convergence layout (which the gate requires in
+  // input/operator/output slots) can never satisfy the board-role gate.
+  // Reject the combination here with a repairable message instead of
+  // emitting a board that is guaranteed to hard-fail downstream.
+  if (board.layout === 'convergence' && structured) problems.push(`convergence layout needs input, operator, and output slots but ${board.visual.kind} visual places every node in callout slots; use a process or comparison visual with convergence, or change the layout and keep every other field unchanged`);
   if (!structured && board.layout !== 'compare' && board.nodes.length < MIN_BOARD_NODES) problems.push(`board has ${board.nodes.length} nodes; show at least ${MIN_BOARD_NODES} nodes — add the concrete things the narration names (icons, metaphors, or instances of a concept)`);
   const shown = new Set(board.nodes.map((node) => node.concept));
   for (const relation of input.teachingContext?.relations ?? []) {

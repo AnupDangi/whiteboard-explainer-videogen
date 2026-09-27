@@ -109,3 +109,11 @@ test('legacy scenes without retained board intent remain backward compatible', (
   delete scene.boardIntent;
   assert.deepEqual(typedBoardAdequacyFailures(scene), []);
 });
+
+test('structured-compiled convergence shape (every role in callout) can never pass the gate silently (audit Batch 3)', () => {
+  const scene = makeScene({ slots: ['callout', 'callout', 'callout'] });
+  const failures = typedBoardAdequacyFailures(scene);
+  const misplaced = failures.filter((failure) => failure.code === 'board-role-misplaced');
+  assert.equal(misplaced.length, 3, `all three convergence roles must hard-fail outside input/operator/output, got: ${JSON.stringify(failures)}`);
+  assert.ok(misplaced.every((failure) => failure.hard));
+});

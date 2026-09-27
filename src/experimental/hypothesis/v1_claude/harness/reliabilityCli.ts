@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   const ledgerPath = path.join('.data', 'reliability', stamp, 'budget-ledger.json');
   await mkdir(path.dirname(ledgerPath), { recursive: true });
   const budgetLedger = new PersistentBudgetLedger(ledgerPath, budgetUsd);
-  const report = await runReliability({ sources, durationsSec, repeats, model, apiKey: env.apiKey, budgetLedger });
+  const report = await runReliability({ sources, durationsSec, repeats, model, apiKey: env.apiKey, budgetUsd, budgetLedger });
 
   const outputDir = 'harness/reports';
   await mkdir(outputDir, { recursive: true });

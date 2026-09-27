@@ -51,6 +51,7 @@ export async function runReliability(opts: {
   repeats: number;
   model: string;
   apiKey: string;
+  budgetUsd: number;
   budgetLedger: PersistentBudgetLedger;
   fetcher?: typeof fetch;
 }): Promise<ReliabilityReport> {
@@ -62,7 +63,7 @@ export async function runReliability(opts: {
         const started = Date.now();
         const prepared = await prepareLesson(
           { source: sourceDoc.text, sourceDoc, sourceFormat: sourceDoc.format, targetDurationSec: durationSec },
-          { model: opts.model, apiKey: opts.apiKey, budgetUsd: 0.1, budgetLedger: opts.budgetLedger, fetcher: opts.fetcher },
+          { model: opts.model, apiKey: opts.apiKey, budgetUsd: opts.budgetUsd, budgetLedger: opts.budgetLedger, fetcher: opts.fetcher },
         );
         const hard = prepared.failures.filter((failure) => failure.hard);
         const reached: ReliabilityAttempt['reached'] = !prepared.graph
