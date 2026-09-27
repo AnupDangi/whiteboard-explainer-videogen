@@ -379,6 +379,17 @@ function boardTitle(board: Board, input: PlannerSceneInput): { title: string; pr
   return foreign.length ? { title: board.title, problem: `title words [${foreign.join(', ')}] do not appear in the section heading, narration, or concept labels; replace them with words from those sources and keep every other field unchanged` } : { title: board.title };
 }
 
+/**
+ * P2a/P2e shared rule (domain-general, no topic wording): a convergence
+ * board without an output role can never satisfy the board-role gate
+ * (input + operator + output). Refuse the convergence layout rather than
+ * emit a board that is guaranteed to fail the gate.
+ */
+export function resolveBoardLayout(layout: BoardLayout, nodes: Pick<BoardNode, 'role'>[]): BoardLayout {
+  if (layout === 'convergence' && !nodes.some((node) => node.role === 'output')) return 'list';
+  return layout;
+}
+
 function slotFor(layout: BoardLayout, node: BoardNode, index: number, nodes: BoardNode[]): string {
   const firstProcess = nodes.findIndex((item) => item.role === 'process');
   const centre = firstProcess >= 0 ? firstProcess : 0;
@@ -445,11 +456,15 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
   const conceptEvidence = (conceptId: string) => (concepts.find((concept) => concept.id === conceptId)?.evidenceRefs ?? []).filter(inScene).slice(0, 6);
   const iconAssets: Record<string, string> = {};
   const isStructuredVisual = !['process', 'comparison'].includes(board.visual.kind);
+  // P2e: the normal planner path runs through the same output rule as the
+  // P2a fallback, so a model-planned convergence without an output role
+  // compiles to the downgraded layout instead of dying at the gate.
+  const effectiveLayout = resolveBoardLayout(board.layout, board.nodes);
   const elements: Element[] = board.nodes.map((node, index) => {
     const evidenceRefs = conceptEvidence(node.concept);
     const base = {
       id: node.id,
-      slot: isStructuredVisual ? 'callout' : slotFor(board.layout, node, index, board.nodes),
+      slot: isStructuredVisual ? 'callout' : slotFor(effectiveLayout, node, index, board.nodes),
       anchor: `mention:${node.mention}` as const,
       conceptIds: [node.concept],
       ...(evidenceRefs.length ? { evidenceRefs } : {}),
@@ -486,14 +501,14 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
     schemaVersion: 'claude-scene-spec/v1',
     sceneId: input.sceneId,
     title,
-    template: board.visual.kind === 'plot' ? 'plot_focus' : isStructuredVisual ? 'formula_focus' : TEMPLATE_FOR_LAYOUT[board.layout],
+    template: board.visual.kind === 'plot' ? 'plot_focus' : isStructuredVisual ? 'formula_focus' : TEMPLATE_FOR_LAYOUT[effectiveLayout],
     elements,
     edges,
     ...(titleConceptIds.length ? { titleConceptIds } : {}),
     ...(titleEvidenceRefs.length ? { titleEvidenceRefs } : {}),
     boardIntent: {
       schemaVersion: 'typed-board-intent/v1',
-      layout: board.layout,
+      layout: effectiveLayout,
       visualKind: board.visual.kind,
       roles: board.nodes.map((node) => ({ elementId: node.id, role: node.role })),
       // These requirements come only from the current validated S3 contract.
@@ -575,10 +590,8 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
       node.role = node.concept === centre ? 'process' : fromCentre.has(node.concept) ? 'output' : feedsCentre.has(node.concept) ? 'input' : layout === 'fan_out' ? 'output' : 'input';
     }
   }
-  // A convergence board without an output slot can never satisfy the
-  // board-role gate (input + operator + output); the fallback must refuse the
-  // convergence layout rather than emit a board that is guaranteed to fail.
-  if (layout === 'convergence' && !nodes.some((node) => node.role === 'output')) layout = 'list';
+  // P2a (now shared via resolveBoardLayout): refuse convergence without output.
+  layout = resolveBoardLayout(layout, nodes);
   const title = fallbackTitle(input);
   // A compare board must carry the comparison form; every other fallback layout keeps the process form.
   return { schemaVersion: BOARD_SCHEMA_VERSION, title, layout, nodes, visual: layout === 'compare' ? { kind: 'comparison' } : { kind: 'process' } };
@@ -604,7 +617,7 @@ export function buildBoardPrompt(input: PlannerSceneInput): { system: string; us
 - concept: the source concept that node shows. Use exactly one node per source concept, even when several mentions refer to that concept; choose the most informative single mention. Show every concept named in "must show".
 - icon: choose from the icon catalog. Prefer an icon that literally depicts the thing (a leaf for "leaf"); otherwise use the standard visual metaphor a teacher would sketch on a whiteboard (a key for a lookup, a treasure chest for stored value, a magnifier for searching, scales for comparing, a gear for a process, people for reviewers). iconSuggestions per mention are retrieval hints, not limits. Never pick an icon that suggests a different meaning. Use "${LABEL_ONLY}" only when no icon or clear metaphor fits — "${LABEL_ONLY}" nodes are drawn as coloured boxes, and boards made only of boxes teach poorly.
 - label: 1-2 words is best (whiteboard labels are short, like "LEAF" or "CARBON DIOXIDE"); never more than ${MAX_LABEL_WORDS}. Take the words from the mention phrase or concept label. (A concept with a canonicalTerm is labelled with it automatically.)
-- role: input, process, output, item, or attribute; it decides where the node sits in the layout. A board with visual.kind "process" must include at least one node whose role is "process" (including a one-node board). When repairing a rejected board, keep at least one process-role node for the process form and reuse title words from the section heading, narration, or concept labels.
+- role: input, process, output, item, or attribute; it decides where the node sits in the layout. A board with visual.kind "process" must include at least one node whose role is "process" (including a one-node board). A convergence layout needs at least one output-role node; without one the board compiles as a list. When repairing a rejected board, keep at least one process-role node for the process form and reuse title words from the section heading, narration, or concept labels.
 - visual.kind: choose process for a mechanism, comparison for two alternatives (layout must be compare), worked-example for one arithmetic example, or formula/plot/matrix/number-line when the cited scene data supports that visual. Never invent source values.
 - worked-example: use a simple illustrative arithmetic example only; its computed result must be exact, and code will visibly mark it "Illustrative example".
 - formula, plot, matrix, and number-line values are checked against the cited concept evidence. Use only values and labels present in those source quotes.

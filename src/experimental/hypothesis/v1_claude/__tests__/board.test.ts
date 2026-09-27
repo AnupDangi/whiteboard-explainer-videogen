@@ -404,6 +404,33 @@ test('fallback with converging inputs but no output refuses the convergence layo
   assert.equal(compileBoard(board, noOutput).spec.template, 'list_icon');
 });
 
+test('P2e: planned convergence without an output role downgrades to list (same rule as fallback)', async () => {
+  const { resolveBoardLayout } = await import('../planner/board.js');
+  const { typedBoardAdequacyFailures } = await import('../validation/gates.js');
+  const planned = goodBoard();
+  planned.layout = 'convergence';
+  planned.nodes = planned.nodes.map((node) => (node.role === 'output' ? { ...node, role: 'input' as const } : node));
+  assert.equal(resolveBoardLayout('convergence', planned.nodes), 'list');
+  assert.equal(resolveBoardLayout('convergence', goodBoard().nodes), 'convergence');
+  const compiled = compileBoard(planned, scene);
+  assert.equal(compiled.spec.template, 'list_icon');
+  assert.equal(compiled.spec.boardIntent?.layout, 'list');
+  const laidOut = {
+    sceneId: compiled.spec.sceneId,
+    template: compiled.spec.template,
+    elements: compiled.spec.elements.map((element, index) => ({
+      id: element.id, element, visual: { paths: [], fills: [], texts: [] },
+      intrinsicSize: { w: 20, h: 20 }, strokeLength: 0, bbox: { x: index * 30, y: 0, w: 20, h: 20 },
+    })),
+    edges: compiled.spec.edges.map((edge) => ({ ...edge, points: [] })),
+    occupancy: 0.5, carryOver: [], focus: [], boardIntent: compiled.spec.boardIntent,
+  };
+  assert.deepEqual(typedBoardAdequacyFailures(laidOut as never), [], 'downgraded planned board must not hit board-role-incomplete');
+  const withOutput = validateBoard(goodBoard(), scene);
+  assert.deepEqual(withOutput.problems, []);
+  assert.equal(withOutput.spec?.template, 'convergence');
+});
+
 test('label-only nodes compile to deterministic pastel boxes, not bare text', () => {
   const r1 = compileBoard(goodBoard(), scene);
   const n3 = r1.spec.elements.find((e) => e.id === 'n3')!;

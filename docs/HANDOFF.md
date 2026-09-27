@@ -1932,3 +1932,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Compare:** P3 dedup/floor/clip live in all three (no tiny/clip failures fired). 600s failure is normal-planner-path convergence without output — P2a covered fallback only. Next: extend output rule to planned boards or force non-convergence layout when no output role.
 - **Remaining tasks (not done):** P4 audio-min, P5 models re-probe, P6 RAG venvs, T8-T13, P8 cleanup, full 10/5/5 volume matrix, determinism/harness report.
 - **Next bounded task:** P2e planned-path output rule, then re-run 600s composting.
+
+## Entry — 2026-09-27, P2e planned output rule (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** 600s composting 1 hard on the normal planner path (P2a covered fallback only). Class S.
+- **Implemented:** `resolveBoardLayout()` in `board.ts` — planned convergence w/o output compiles to `list`/`list_icon` (same helper reused by fallback; P2a logic deduped). Prompt role rule +1 sentence. Missing output never renders silently. No topic keywords.
+- **Verification:** typecheck clean; full 498 node + 24 + 12 py; `git diff --check` clean. Fixture before/after: convergence→gate-fail vs list→adequacy clean; with-output convergence unchanged.
+- **Next bounded task:** T8 instance nodes + 3-node minimum (no videos in this pass).
