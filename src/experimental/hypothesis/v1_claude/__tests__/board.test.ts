@@ -87,6 +87,21 @@ test('board rejects duplicate source-concept nodes even when node ids differ', (
   assert.match(validateBoard(duplicate, scene).problems.join(' | '), /duplicate concept src_a/);
 });
 
+// Two unrelated vocabularies through the same rules (topic-swap).
+for (const words of [WORDS, { a: 'coal', b: 'petrol', p: 'burning', o: 'heat' }]) {
+  test(`a concept may appear as distinct concrete examples, and each example gets the relation arrow (${words.a})`, () => {
+    // One source concept (src_a) that the narration names through two different mentions.
+    const base = makeScene(words);
+    const input: PlannerSceneInput = { ...base, teachingContext: { ...base.teachingContext!, concepts: base.teachingContext!.concepts!.filter((concept) => concept.id !== 'src_b'), relations: base.teachingContext!.relations!.filter((relation) => relation.from !== 'src_b') } };
+    const board: Board = { ...goodBoard(words), nodes: goodBoard(words).nodes.map((node) => (node.id === 'n2' ? { ...node, concept: 'src_a', icon: 'label' } : node)) };
+    const checked = validateBoard(board, input);
+    assert.deepEqual(checked.problems, []);
+    assert.deepEqual(checked.spec!.edges.map((edge) => [edge.from, edge.to, edge.label]), [['n1', 'n3', 'feeds into'], ['n2', 'n3', undefined], ['n3', 'n4', 'produces']]);
+    const sameExample = { ...board, nodes: board.nodes.map((node) => (node.id === 'n2' ? { ...node, mention: 'm_a', label: words.a } : node)) };
+    assert.match(validateBoard(sameExample, input).problems.join(' | '), /duplicate concept src_a/);
+  });
+}
+
 test('typed visual forms compile into the existing deterministic SceneSpec primitives', () => {
   const cases: Array<[Board['visual'], string, string]> = [
     [{ kind: 'formula', latex: '\\text{flour}' }, 'formula_focus', 'formula'],
@@ -203,7 +218,7 @@ test('rainbow arc prompt handles many mentions for one source concept and retain
   };
   const prompt = buildBoardPrompt(rainbowScene);
   assert.match(prompt.user, /"mustShow": \[\s*"colored_arc"\s*\]/);
-  assert.match(prompt.system, /exactly one node per source concept, even when several mentions refer to that concept/);
+  assert.match(prompt.system, /Normally one node per concept\. When the narration names different concrete examples of one concept/);
   assert.match(prompt.system, /visual\.kind "process" must include at least one node whose role is "process"/);
 });
 

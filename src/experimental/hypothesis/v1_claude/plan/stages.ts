@@ -381,7 +381,8 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
 // S4 — Script with [[id|phrase]] mention markers
 // ---------------------------------------------------------------------------
 
-export const MENTIONS_PER_SCENE = { min: 3, max: 8 };
+/** Drawable mentions per scene: at least 4 so a board can reach its node minimum, at most 7 (MAX_BOARD_NODES). */
+export const MENTIONS_PER_SCENE = { min: 4, max: 7 };
 /** Audio is the master clock, so length only needs to be roughly right; the tolerance keeps scenes from being thin. */
 const WORD_TOLERANCE = 0.4;
 
