@@ -75,7 +75,7 @@ test('a valid board compiles to a gated SceneSpec with data-derived evidence, ar
   assert.equal(spec.template, 'convergence');
   assert.equal(spec.title, 'mixing Makes dough');
   assert.deepEqual(spec.elements.map((element) => [element.id, element.prim, element.slot, element.anchor]), [
-    ['n1', 'object', 'input', 'mention:m_a'], ['n2', 'object', 'input', 'mention:m_b'], ['n3', 'text', 'operator', 'mention:m_p'], ['n4', 'object', 'output', 'mention:m_o'],
+    ['n1', 'object', 'input', 'mention:m_a'], ['n2', 'object', 'input', 'mention:m_b'], ['n3', 'box', 'operator', 'mention:m_p'], ['n4', 'object', 'output', 'mention:m_o'],
   ]);
   assert.deepEqual(spec.edges.map((edge) => [edge.from, edge.to, edge.factualRelation?.type]), [['n1', 'n3', 'feeds'], ['n2', 'n3', 'feeds'], ['n3', 'n4', 'produces']]);
   assert.deepEqual(checked.iconAssets, { n1: 'lib:flour', n2: 'lib:water', n4: 'lib:dough' });
@@ -107,7 +107,7 @@ test('persistent concepts are labelled with their canonical term by code, and un
   const checked = validateBoard({ ...renamed, nodes: renamed.nodes.map((node) => (node.id === 'n3' ? { ...node, label: 'mixing' } : node)) }, scene);
   assert.deepEqual(checked.problems, []);
   const persistent = checked.spec!.elements.find((element) => element.id === 'n3')!;
-  assert.equal(persistent.prim === 'text' ? persistent.text : persistent.label, 'mixing');
+  assert.equal(persistent.prim === 'box' ? persistent.text : persistent.label, 'mixing');
   const unknown = { ...goodBoard(), nodes: [{ ...goodBoard().nodes[0], icon: 'rocket' }] };
   assert.ok(validateBoard(unknown, scene).problems.some((problem) => problem.startsWith('nodes.0.icon')));
 });
@@ -184,7 +184,7 @@ test('source-backed plot and number-line values accept decimal and scientific no
 });
 
 test('board rejects an exact consecutive visual repeat', () => {
-  const previousElements = goodBoard().nodes.map((node) => ({ id: node.id, prim: node.icon === 'label' ? 'text' : 'object', label: node.label, conceptIds: [node.concept] }));
+  const previousElements = goodBoard().nodes.map((node) => ({ id: node.id, prim: node.icon === 'label' ? 'box' : 'object', label: node.label, conceptIds: [node.concept] }));
   assert.match(validateBoard(goodBoard(), { ...scene, previousElements }).problems.join(' | '), /repeats the immediately previous board/);
 });
 
@@ -342,4 +342,43 @@ test('a heading with an unsupported number falls back to the checked model title
   const checked = validateBoard(board, numbered);
   assert.equal(checked.spec?.title, 'Mixing makes dough');
   assert.deepEqual(checked.problems, []);
+});
+
+test('label-only nodes compile to deterministic pastel boxes, not bare text', () => {
+  const r1 = compileBoard(goodBoard(), scene);
+  const n3 = r1.spec.elements.find((e) => e.id === 'n3')!;
+  assert.equal(n3.prim, 'box');
+  assert.equal((n3 as { text?: string }).text, 'mixing');
+  assert.equal(n3.fill, 'blue'); // process role
+  const r2 = compileBoard(goodBoard(), scene);
+  assert.deepEqual(r1.spec, r2.spec);
+});
+
+test('topic swap keeps box colours data-derived', () => {
+  const other = makeScene({ a: 'sand', b: 'lime', p: 'heating', o: 'glass' }, 'alt');
+  const spec = compileBoard(goodBoard({ a: 'sand', b: 'lime', p: 'heating', o: 'glass' }, 'alt'), other).spec;
+  assert.equal(spec.elements.find((e) => e.id === 'n3')!.prim, 'box');
+});
+
+test('a catalog icon literally named "label" is never offered as a pickable icon; choosing "label" still yields a box', () => {
+  const catalog = [{ id: 'lib:label', name: 'label' }, { id: 'lib:flour', name: 'flour' }, { id: 'lib:water', name: 'water' }, { id: 'lib:dough', name: 'dough' }];
+  const input = { ...scene, iconCatalog: catalog } as PlannerSceneInput;
+  const enums = boardEnums(input);
+  assert.ok(!enums.icons.includes('label'), 'the LABEL_ONLY sentinel must never appear as a pickable catalog icon');
+  assert.ok(!('label' in enums.iconAssetIds));
+  const compiled = compileBoard(goodBoard(), input); // n3 already uses icon:'label'
+  assert.equal(compiled.spec.elements.find((e) => e.id === 'n3')!.prim, 'box');
+});
+
+test('duplicate catalog names: a retrieval hint for the non-kept id still records iconBasis "retrieval"', () => {
+  const catalog = [{ id: 'lib:brain1', name: 'brain' }, { id: 'lib:brain2', name: 'brain' }, { id: 'lib:flour', name: 'flour' }, { id: 'lib:water', name: 'water' }, { id: 'lib:dough', name: 'dough' }];
+  const input = { ...scene, iconCatalog: catalog, candidates: { ...scene.candidates, m_p: [{ id: 'lib:brain2', name: 'brain', score: 0.9 }] } } as PlannerSceneInput;
+  const enums = boardEnums(input);
+  assert.equal(enums.iconAssetIds.brain, 'lib:brain1', 'dedup keeps the first-seen id for a repeated catalog name');
+  assert.deepEqual(enums.candidatesByMention.m_p, ['brain'], 'a retrieval hint naming the dropped duplicate id must still count by name');
+  const board = goodBoard();
+  board.nodes[2] = { ...board.nodes[2], icon: 'brain' };
+  const result = validateBoard(board, input);
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.spec!.elements.find((e) => e.id === 'n3')!.iconBasis, 'retrieval');
 });

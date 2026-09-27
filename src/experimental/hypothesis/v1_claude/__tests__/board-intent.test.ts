@@ -8,7 +8,6 @@ import { resolveScene } from '../resolveScene.js';
 import { layoutScene } from '../layout/solver.js';
 import { renderSceneBody } from '../render/renderScene.js';
 import type { Timeline } from '../types.js';
-import { STYLE } from '../style.js';
 
 function makeInput(ids: string[], value: number): PlannerSceneInput {
   const [sourceA, sourceB, process, result] = ids;
@@ -93,23 +92,23 @@ test('topic and numeric value changes preserve the typed intent contract without
   assert.ok(!JSON.stringify(second).includes('14'));
 });
 
-test('deterministic rendering emits generic process roles and source relation labels from board intent', () => {
-  const ids = ['input_a', 'input_b', 'operation', 'output'];
+test('board intent roles are retained for gates but never rendered as visual badges', () => {
+  // Concept ids are chosen so none literally contains "input"/"process"/"output":
+  // this must fail only on a rendered role badge, never on a node's own visible label.
+  const ids = ['grain', 'liquid', 'change', 'mixture'];
   const { spec } = compileBoard(makeProcessBoard(ids), makeInput(ids, 6));
   const scene = layoutScene(resolveScene(spec));
+  // Roles still live in boardIntent, so board-role-* gates (validation/gates.ts) keep working.
+  assert.deepEqual(scene.boardIntent?.roles.map((role) => role.role), ['input', 'input', 'process', 'output']);
   const events: Timeline['events'] = scene.elements.map((element) => ({ elementId: element.id, track: 'wipe', t0: 0, t1: 1000 }));
   scene.edges.forEach((edge, edgeIndex) => events.push({ elementId: edge.from, track: 'edge', edgeIndex, t0: 0, t1: 1000 }));
   const timeline: Timeline = { sceneId: scene.sceneId, events, sceneStartMs: 0, sceneEndMs: 1000 };
   const svg = renderSceneBody(scene, timeline, 1000);
-  for (const role of ['INPUT', 'PROCESS', 'OUTPUT']) assert.ok(svg.includes(`>${role}</text>`), role);
+  for (const role of ['INPUT', 'PROCESS', 'OUTPUT']) assert.ok(!svg.includes(`>${role}</text>`), `${role} badge must not be rendered (Simi never shows role chips)`);
   for (const relation of ['FEEDS', 'PRODUCES']) assert.ok(svg.includes(`>${relation}</text>`), relation);
-  const processNode = scene.elements.find((element) => element.id === 'n3')!;
-  const roleBadgeY = processNode.bbox.y - STYLE.font.sizes.note - 24;
-  assert.ok(roleBadgeY + STYLE.font.sizes.note + 16 < processNode.bbox.y, 'process role badge must sit clear of the node content box');
-  assert.ok(svg.includes(`y="${roleBadgeY}"`), 'renderer should place the role badge above its node');
 });
 
-test('comparison intent gets a generic visual divider cue without source-specific copy', () => {
+test('comparison intent no longer draws a "VS" divider cue', () => {
   const ids = ['left_fact', 'right_fact'];
   const refs = ids.map((id, index) => ({ sourceId: 'compare-doc', spanId: `span-${id}`, startChar: index * 20, endChar: index * 20 + id.length, startLine: 1, endLine: 1, quote: id }));
   const input: PlannerSceneInput = {
@@ -129,8 +128,9 @@ test('comparison intent gets a generic visual divider cue without source-specifi
     nodes: ids.map((id, index) => ({ id: `n${index + 1}`, mention: `m${index}`, concept: id, icon: 'label', label: id, role: 'item' })),
   };
   const { spec } = compileBoard(board, input);
+  assert.equal(spec.boardIntent?.visualKind, 'comparison');
   const scene = layoutScene(resolveScene(spec));
   const timeline: Timeline = { sceneId: scene.sceneId, events: [], sceneStartMs: 0, sceneEndMs: 1000 };
   const svg = renderSceneBody(scene, timeline, 650);
-  assert.ok(svg.includes('>VS</text>'));
+  assert.ok(!svg.includes('>VS</text>'), 'reference frames never draw a "VS" divider cue');
 });

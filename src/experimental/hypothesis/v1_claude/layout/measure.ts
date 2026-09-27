@@ -17,7 +17,7 @@ import { formulaSource, formulaTex, typesetTex } from '../render/math.js';
 const textWidthCache = new Map<string, number>();
 const TEXT_MARGIN = 32;
 const MAX_TEXT_CODEPOINTS = 512;
-const LINE_H: Record<'title' | 'body' | 'note', number> = { title: 76, body: 52, note: 38 };
+export const LINE_H: Record<'title' | 'body' | 'note', number> = { title: 76, body: 52, note: 38 };
 
 const displayText = (text: string, uppercase: boolean): string =>
   (uppercase ? text.toUpperCase() : text).replace(/\s+/g, ' ').trim();
@@ -44,7 +44,12 @@ export function measureTextWidth(text: string, fontSize: number, uppercase: bool
     textWidthCache.set(key, 0);
     return 0;
   }
-  if (bounds.x < TEXT_MARGIN - 1 || bounds.x + bounds.width > width - TEXT_MARGIN + 1 || bounds.y < 0 || bounds.y + bounds.height > height) {
+  // Round-bodied glyphs (e.g. "3", "6", "8") legitimately overshoot their pen
+  // origin by a small optical amount; scale the clipping tolerance with font
+  // size so a single short glyph (as box-label wrapping now measures on its
+  // own line) isn't mistaken for real viewport clipping.
+  const overshoot = Math.max(1, fontSize * 0.05);
+  if (bounds.x < TEXT_MARGIN - overshoot || bounds.x + bounds.width > width - TEXT_MARGIN + overshoot || bounds.y < 0 || bounds.y + bounds.height > height) {
     throw new Error(`text measurement viewport clipped a ${codepoints}-codepoint label`);
   }
   const measured = Math.ceil(bounds.width);
@@ -64,8 +69,14 @@ export function measureElement(el: Element): IntrinsicSize {
   const note = STYLE.font.sizes.note;
   switch (el.prim) {
     case 'box': {
-      const w = Math.max(STYLE.element.boxMinW, measureTextWidth(el.text ?? el.glyph ?? el.label ?? '', body) + pad);
-      return { w, h: STYLE.element.boxMinH };
+      // Box text wraps onto at most two balanced lines (catalog/ladder.ts's labelLines,
+      // the same "CARBON / DIOXIDE" split used for icon labels); the box grows by one
+      // line height only when it actually wraps, and never shrinks font below `body`.
+      const lines = labelLines(el.text ?? el.glyph ?? el.label ?? '');
+      const lineWidths = lines.map((line) => measureTextWidth(line, body));
+      const w = Math.max(STYLE.element.boxMinW, Math.max(0, ...lineWidths) + pad);
+      const h = STYLE.element.boxMinH + (lines.length > 1 ? LINE_H.body : 0);
+      return { w, h };
     }
     case 'pill':
       return { w: Math.max(140, measureTextWidth(el.text, body) + pad), h: 84 };

@@ -13,6 +13,9 @@ import { frameSvgAt } from '../export/videoEncode.js';
 import { measureElement, measureTextWidth } from '../layout/measure.js';
 import { KALAM_BOLD_FILE, KALAM_FONT_SHA256, RESVG_FONT_OPTIONS } from '../render/fonts.js';
 import { Resvg } from '@resvg/resvg-js';
+import type { PlannerSceneInput } from '../planner/prompt.js';
+import type { Board } from '../planner/board.js';
+import { compileBoard, BOARD_SCHEMA_VERSION } from '../planner/board.js';
 
 const spec: SceneSpec = {
   schemaVersion: 'claude-scene-spec/v1',
@@ -21,7 +24,7 @@ const spec: SceneSpec = {
   template: 'chain',
   elements: [
     { id: 'a', anchor: 'mention:a', prim: 'box', text: 'A & B' },
-    { id: 'b', anchor: 'mention:b', prim: 'box', text: '<not a tag>' },
+    { id: 'b', anchor: 'mention:b', prim: 'box', text: '<tag>' },
   ],
   edges: [{ from: 'a', to: 'b', label: 'flows to' }],
 };
@@ -109,8 +112,8 @@ test('renderer: text content is XML-escaped, never emitted as raw markup', () =>
   const svg = renderSVG(laidOut, timeline, 11999);
   // Labels are uppercased for display (STYLE.font.uppercaseLabels), so check
   // case-insensitively for the escaped form rather than the exact source text.
-  assert.ok(!/<not a tag>/i.test(svg), 'raw "<not a tag>" text must be escaped, not passed through verbatim');
-  assert.ok(/&lt;not a tag&gt;/i.test(svg), 'expected the XML-escaped form of the text to be present');
+  assert.ok(!/<tag>/i.test(svg), 'raw "<tag>" text must be escaped, not passed through verbatim');
+  assert.ok(/&lt;tag&gt;/i.test(svg), 'expected the XML-escaped form of the text to be present');
   assert.ok(!/<script/i.test(svg));
 });
 
@@ -139,4 +142,60 @@ test('renderer: invalid TeX falls back to visible literal source instead of an e
   const v = renderPrimitive({ id: 'f', anchor: 'sceneStart', prim: 'formula', latex: '\\frac{a' }, { w: 300, h: 120 });
   assert.equal(v.embeds, undefined);
   assert.equal(v.texts[0].text, '\\frac{a');
+});
+
+// S6 process-board fixture (mirrors board-intent.test.ts's makeInput/makeProcessBoard),
+// built here so this file can render a real board through the full S6->S10 pipeline.
+function makeProcessBoardInput(ids: string[]): PlannerSceneInput {
+  const [sourceA, sourceB, process, result] = ids;
+  const mkRef = (id: string, quote: string, start: number) => ({
+    sourceId: `doc-${ids[0]}`, spanId: `${id}-${ids[0]}`, startChar: start, endChar: start + quote.length, startLine: 1, endLine: 1, quote,
+  });
+  const first = mkRef('first', `${sourceA} feeds ${process}`, 0);
+  const second = mkRef('second', `${process} produces ${result}`, 80);
+  const concepts = [sourceA, sourceB, process, result].map((id) => ({
+    id, label: id, kind: 'entity', definition: `${id} definition`, evidenceRefs: [first, second],
+  }));
+  return {
+    sceneId: `scene-${ids[0]}`,
+    raw: '',
+    plainText: `${sourceA} and ${sourceB} enter ${process}, then ${result}.`,
+    mentions: ids.map((id, index) => ({ id: `m${index}`, phrase: id })),
+    teachingContext: {
+      requireEvidence: true,
+      sourceId: first.sourceId,
+      displayText: `${process} and ${result}`,
+      sourceEvidenceRefs: [first, second],
+      concepts,
+      relations: [
+        { from: sourceA, to: process, type: 'feeds', evidenceRefs: [first] },
+        { from: process, to: result, type: 'produces', evidenceRefs: [second] },
+      ],
+    },
+    planningContext: {
+      sceneContract: { requiredConceptIds: [sourceA, process, result], requiredRelations: [{ from: sourceA, to: process, type: 'feeds' }, { from: process, to: result, type: 'produces' }] },
+      lessonBible: { persistentConceptIds: [], terminology: [] },
+    } as unknown as PlannerSceneInput['planningContext'],
+  };
+}
+
+function makeProcessBoard(ids: string[]): Board {
+  return {
+    schemaVersion: BOARD_SCHEMA_VERSION,
+    title: 'A changing system',
+    layout: 'flow',
+    visual: { kind: 'process' },
+    nodes: ids.map((id, index) => ({ id: `n${index + 1}`, mention: `m${index}`, concept: id, icon: 'label', label: id, role: (['input', 'input', 'process', 'output'] as const)[index]! })),
+  };
+}
+
+test('rendered boards never contain role badges or VS cues', () => {
+  const ids = ['grain', 'liquid', 'change', 'mixture'];
+  const input = makeProcessBoardInput(ids);
+  const { spec } = compileBoard(makeProcessBoard(ids), input);
+  const laidOut = layoutScene(resolveScene(spec));
+  const mentions = ids.map((_, index) => mention(`m${index}`, index * 1000, index * 1000 + 200));
+  const timeline = compileTimelineFull(laidOut, mentions, 0, 12000);
+  const svg = renderSVG(laidOut, timeline, timeline.sceneEndMs);
+  assert.doesNotMatch(svg, />(INPUT|PROCESS|OUTPUT|VS)</);
 });

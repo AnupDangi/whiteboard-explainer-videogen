@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Edge, Element, SceneSpec, StageFailure } from '../types.js';
+import type { Edge, Element, PaletteToken, SceneSpec, StageFailure } from '../types.js';
 import { safeParseSceneSpec } from '../schema.js';
 import { structuredCall } from '../llm/structuredCall.js';
 import { MAX_LABEL_WORDS, MAX_TITLE_WORDS } from '../style.js';
@@ -104,7 +104,9 @@ export function boardEnums(input: PlannerSceneInput): BoardEnums {
   const iconAssetIds: Record<string, string> = {};
   // The enabled catalog is one hand-drawn family; the planner may pick any of it,
   // including a teacher's metaphor (Simi draws a key for "key", a chest for "value").
-  for (const icon of input.iconCatalog ?? []) if (!(icon.name in iconAssetIds)) iconAssetIds[icon.name] = icon.id;
+  // A catalog entry literally named "label" would collide with the LABEL_ONLY
+  // sentinel, so it is never offered as a pickable icon (choosing "label" always yields a box).
+  for (const icon of input.iconCatalog ?? []) if (icon.name !== LABEL_ONLY && !(icon.name in iconAssetIds)) iconAssetIds[icon.name] = icon.id;
   const candidatesByMention: Record<string, string[]> = {};
   for (const mention of input.mentions) {
     candidatesByMention[mention.id] = [];
@@ -113,7 +115,11 @@ export function boardEnums(input: PlannerSceneInput): BoardEnums {
         if (input.iconCatalog || Object.keys(iconAssetIds).length >= MAX_CANDIDATES_PER_SCENE) continue;
         iconAssetIds[candidate.name] = candidate.id!;
       }
-      if (iconAssetIds[candidate.name] === candidate.id && !candidatesByMention[mention.id].includes(candidate.name)) candidatesByMention[mention.id].push(candidate.name);
+      // With a catalog, dedup keeps only one id per name; a retrieval hint that named
+      // the dropped duplicate id should still count by NAME, so the audit records
+      // 'retrieval' rather than falsely downgrading a correct pick to 'metaphor'.
+      const matchesKeptIcon = input.iconCatalog ? candidate.name in iconAssetIds : iconAssetIds[candidate.name] === candidate.id;
+      if (matchesKeptIcon && !candidatesByMention[mention.id].includes(candidate.name)) candidatesByMention[mention.id].push(candidate.name);
     }
   }
   return { mentionIds, conceptIds, icons: Object.keys(iconAssetIds), iconAssetIds, candidatesByMention, fullCatalog: Boolean(input.iconCatalog) };
@@ -182,6 +188,15 @@ export function boardSchema(enums: BoardEnums) {
   }).strict();
 }
 
+const BOX_FILLS = ['yellow', 'green', 'orange', 'purple', 'red'] as const;
+const fnv1a = (s: string): number => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h;
+};
+/** Deterministic pastel fill for a label-only board node (data-derived, never a keyword lookup): process nodes are blue; every other role's colour comes only from the source concept id. */
+export const boxFillFor = (conceptId: string, role: BoardRole): PaletteToken => (role === 'process' ? 'blue' : BOX_FILLS[fnv1a(conceptId) % BOX_FILLS.length]);
+
 function canonicalTerm(input: PlannerSceneInput, conceptId: string): string | undefined {
   const bible = input.planningContext?.lessonBible;
   if (!bible?.persistentConceptIds.includes(conceptId)) return undefined;
@@ -220,9 +235,9 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
     // Persistent concepts are labelled with their canonical term by code (compileBoard), so no rule is needed here.
   }
   if (input.previousElements?.length) {
-    const currentSignature = board.nodes.map((node) => `${node.concept}\u0000${node.icon === LABEL_ONLY ? 'text' : 'object'}\u0000${node.label.toLocaleLowerCase()}`).sort();
+    const currentSignature = board.nodes.map((node) => `${node.concept}\u0000${node.icon === LABEL_ONLY ? 'box' : 'object'}\u0000${node.label.toLocaleLowerCase()}`).sort();
     const previousSignature = input.previousElements
-      .filter((element) => element.conceptIds?.length === 1 && (element.prim === 'text' || element.prim === 'object'))
+      .filter((element) => element.conceptIds?.length === 1 && (element.prim === 'box' || element.prim === 'object'))
       .map((element) => `${element.conceptIds![0]}\u0000${element.prim}\u0000${(element.label ?? '').toLocaleLowerCase()}`).sort();
     if (currentSignature.length === previousSignature.length && currentSignature.every((item, index) => item === previousSignature[index])) {
       problems.push('board repeats the immediately previous board’s same source concepts, labels, and visual forms; change the visual explanation or use a different scene concept');
@@ -384,7 +399,8 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
     };
     // A persistent concept always shows its canonical LessonBible term (data, not model wording).
     const label = canonicalTerm(input, node.concept) ?? node.label;
-    if (node.icon === LABEL_ONLY) return { ...base, prim: 'text' as const, text: label, size: 'body' as const };
+    // Label-only nodes draw as pastel boxes (Simi's "SOFTMAX", "NEW CAT VECTOR"), never bare text.
+    if (node.icon === LABEL_ONLY) return { ...base, prim: 'box' as const, text: label, fill: boxFillFor(node.concept, node.role) };
     iconAssets[node.id] = enums.iconAssetIds[node.icon];
     // Audit: a retrieval hint for this mention, or a teacher's metaphor chosen from the catalog.
     const iconBasis = (enums.candidatesByMention[node.mention] ?? []).includes(node.icon) ? 'retrieval' as const : 'metaphor' as const;
