@@ -75,6 +75,31 @@ export interface NativeSourceLocationRange {
   documentStartLine?: number;
 }
 
+/**
+ * The source as exact span texts, each printed under its span ID, with no
+ * character offsets. A model cites evidence by copying words from the text
+ * shown under the ID it cites, so quote-to-span mistakes cannot come from
+ * mismatched offsets (a joined module excerpt keeps full-document offsets).
+ * Spans are rendered in the given order until `maxChars`; a span cut by
+ * `perSpanChars` or the total is marked `excerpted`, and `omittedSpans`
+ * counts spans that did not fit.
+ */
+export function spanExcerptPrompt(doc: SourceDoc, options: { spans?: readonly SourceSpan[]; maxChars?: number; perSpanChars?: number; minChars?: number } = {}): string {
+  const spans = options.spans ?? doc.spans;
+  const minChars = options.minChars ?? 1;
+  let remaining = options.maxChars ?? Number.POSITIVE_INFINITY;
+  const excerpts: Array<Record<string, unknown>> = [];
+  let omittedSpans = 0;
+  for (const span of spans) {
+    if (remaining < minChars) { omittedSpans++; continue; }
+    const text = span.text.slice(0, Math.min(options.perSpanChars ?? Number.POSITIVE_INFINITY, remaining));
+    if (text.trim().length < minChars) { omittedSpans++; continue; }
+    excerpts.push({ id: span.id, kind: span.kind, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}), ...(span.sourceTitle ? { sourceTitle: span.sourceTitle } : {}), text, ...(text.length < span.text.length ? { excerpted: true } : {}) });
+    remaining -= text.length;
+  }
+  return JSON.stringify({ schemaVersion: doc.schemaVersion, sourceId: doc.sourceId, format: doc.format, ...(doc.title ? { title: doc.title } : {}), ...(doc.sourceUrl ? { sourceUrl: doc.sourceUrl } : {}), excerpts, ...(omittedSpans ? { omittedSpans } : {}) });
+}
+
 /** Keep the exact source once in model prompts, with a compact structural/location index. */
 export function sourcePrompt(doc: SourceDoc): string {
   const index = doc.spans.map(({ id, kind, startChar, endChar, startLine, endLine, sourceLocation, citationSourceId, sourceTitle }) => ({ id, kind, startChar, endChar, startLine, endLine, ...(sourceLocation ? { sourceLocation } : {}), ...(citationSourceId ? { citationSourceId } : {}), ...(sourceTitle ? { sourceTitle } : {}) }));

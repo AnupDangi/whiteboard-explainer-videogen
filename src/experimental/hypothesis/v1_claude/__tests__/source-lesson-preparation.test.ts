@@ -94,8 +94,10 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     assert.equal(warmSceneRun?.artifactApiCostUsd, 0.001, 'cached scene records distinguish current spend from original artifact spend');
     assert.equal(warmSceneRun?.durationMs, 0);
 
+    // Contracts are derived from the graph (plan/contracts.ts deriveTeachingPlan), so a relation is lost
+    // when no section teaches both of its endpoints; that must still fail S3 after its one repair.
     const relationOmittingPlan = structuredClone(plan);
-    relationOmittingPlan.sections[0]!.contract!.requiredRelations = [];
+    relationOmittingPlan.sections[0]!.conceptIds = ['leaf'];
     payloads.teaching_plan = relationOmittingPlan;
     received.length = 0;
     const rejected = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
@@ -111,7 +113,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
   }
 });
 
-test('S3 rejects a model plan that omits a SceneContract, after exactly one repair', async () => {
+test('S3 rejects a model plan that omits its teaching decisions (skill and visual mechanism), after exactly one repair', async () => {
   const sourceDoc = sourceDocFromText('# Light and leaves\n\nThe leaf uses light to build sugar.', 'text');
   const sourceSpan = sourceDoc.spans.find((span) => span.kind === 'paragraph')!;
   const evidence = [{ spanId: sourceSpan.id, quote: 'The leaf uses light to build sugar.' }];
@@ -150,14 +152,14 @@ test('S3 rejects a model plan that omits a SceneContract, after exactly one repa
     });
     assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan'], 'S3 gets exactly one repair but never proceeds to S4');
     assert.equal(rejected.script, undefined);
-    assert.ok(rejected.failures.some((failure) => failure.hard && /lacks a SceneContract/.test(failure.message)));
+    assert.ok(rejected.failures.some((failure) => failure.hard && /teachingSkill/.test(failure.message) && /candidateMechanisms/.test(failure.message)));
     assert.equal(rejected.stageRuns.find((stage) => stage.stage === 'S3-teaching-plan')?.status, 'failed');
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test('S3 rejects a model plan that invents an unsupported relation, after exactly one repair', async () => {
+test('S3 never trusts a relation the model writes: contract relations are derived from the graph', async () => {
   const sourceDoc = sourceDocFromText('# Light and leaves\n\nThe leaf uses light to build sugar.', 'text');
   const sourceSpan = sourceDoc.spans.find((span) => span.kind === 'paragraph')!;
   const evidence = [{ spanId: sourceSpan.id, quote: 'The leaf uses light to build sugar.' }];
@@ -177,7 +179,7 @@ test('S3 rejects a model plan that invents an unsupported relation, after exactl
       id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 15,
       contract: {
         // "contains" is a valid RELATION_TYPES enum value, but the graph only declares "produces"
-        // between leaf and sugar: this relation is not grounded in the graph and must be rejected.
+        // between leaf and sugar: the invented relation must never reach the SceneContract.
         learningDelta: 'Explain how leaves build sugar', targetDurationSec: 15, requiredConceptIds: ['leaf', 'sugar'],
         requiredRelations: [{ from: 'leaf', to: 'sugar', type: 'contains' }], evidenceSpanIds: [sourceSpan.id],
         teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
@@ -185,7 +187,8 @@ test('S3 rejects a model plan that invents an unsupported relation, after exactl
     }],
     recap: { keyPoints: ['Leaves use light to build sugar'] },
   };
-  const payloads: Record<string, unknown> = { concept_graph: graph, teaching_plan: planUnsupportedRelation };
+  const script = { text: 'When [[leaf|a leaf]] receives [[light|light energy]], it uses that energy to build [[sugar|sugar]]. This process makes food the plant can store and use.' };
+  const payloads: Record<string, unknown> = { concept_graph: graph, teaching_plan: planUnsupportedRelation, scene_narration: script };
   const received: string[] = [];
   const fakeProvider: typeof fetch = async (_input, init) => {
     const request = JSON.parse(String(init?.body)) as { response_format?: { json_schema?: { name?: string } } };
@@ -199,14 +202,14 @@ test('S3 rejects a model plan that invents an unsupported relation, after exactl
   };
   const root = await mkdtemp(join(tmpdir(), 'hyp-source-prep-unsupported-relation-'));
   try {
-    const rejected = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
+    const prepared = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(root, 'cold'), fetcher: fakeProvider,
     });
-    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan'], 'S3 gets exactly one repair but never proceeds to S4');
-    assert.equal(rejected.script, undefined);
-    assert.ok(rejected.failures.some((failure) => failure.hard && /has unsupported relation leaf\|contains\|sugar/.test(failure.message)));
-    assert.equal(rejected.stageRuns.find((stage) => stage.stage === 'S3-teaching-plan')?.status, 'failed');
+    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'scene_narration']);
+    assert.deepEqual(prepared.failures, []);
+    assert.deepEqual(prepared.plan?.sections[0]?.contract?.requiredRelations, [{ from: 'leaf', to: 'sugar', type: 'produces' }]);
+    assert.deepEqual(prepared.plan?.sections[0]?.contract?.evidenceSpanIds, [sourceSpan.id]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { anchorQuote } from './evidenceAnchor.js';
 import type { SourceDoc, SourceEvidenceRef } from './sourceDoc.js';
+import { spanExcerptPrompt } from './sourceDoc.js';
 import type { LessonRequest, StageModel } from './stages.js';
 import { structuredCall, type StructuredCallResult } from '../llm/structuredCall.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
@@ -101,16 +102,7 @@ export function syllabusSourcePrompt(doc: SourceDoc): string {
     for (const span of substantive.slice(-3)) add(span);
     for (let i = 0; i < Math.min(36, substantive.length); i++) add(substantive[Math.floor(i * substantive.length / Math.min(36, substantive.length))]);
     for (const span of substantive) add(span);
-    let remaining = textBudget;
-    const excerpts: Array<Record<string, unknown>> = [];
-    for (const span of candidates) {
-      if (remaining < 80) break;
-      const text = span.text.slice(0, Math.min(excerptLimit, remaining));
-      if (text.trim().length < 80) continue;
-      excerpts.push({ id: span.id, kind: span.kind, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}), text, ...(text.length < span.text.length ? { excerpted: true } : {}) });
-      remaining -= text.length;
-    }
-    return JSON.stringify({ schemaVersion: doc.schemaVersion, sourceId: doc.sourceId, format: doc.format, ...(doc.title ? { title: doc.title } : {}), ...(doc.sourceUrl ? { sourceUrl: doc.sourceUrl } : {}), excerpts });
+    return spanExcerptPrompt(doc, { spans: candidates, maxChars: textBudget, perSpanChars: excerptLimit, minChars: 80 });
   }
   const spanIndex = doc.spans.map(({ id, kind, startChar, endChar, startLine, endLine, citationSourceId, sourceTitle, sourceLocation }) => ({
     id, kind, startChar, endChar, startLine, endLine,
