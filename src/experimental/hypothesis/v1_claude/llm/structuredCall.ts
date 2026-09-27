@@ -206,6 +206,7 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
         requestBudgetUsd,
         Buffer.byteLength(`${opts.system}\n${userPrompt}`, 'utf8'),
         opts.maxTokens ?? 4000,
+        opts.model,
       );
       const response = await chatStructured(opts.apiKey, {
         model: opts.model,

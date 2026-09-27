@@ -1974,3 +1974,11 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** `harness/validationBatch{,Cli}.ts` (`validate:batch`, requires `--confirm-live` + clean tree, shells to one-shot per combo, writes batch-report + SUMMARY, exit 3 if tampered); `word_boundary_review.py score --write-calibration` (writes measured v2 only from 2-vote agreement + key-hash verify, aligner from recorded lowest-median); loader accepts recorded aligner family. No topic keywords.
 - **Verification:** typecheck clean; 515 node + alignment py (6 new TS + 4 new py); refusal paths verified; `git diff --check` clean. Batch never executed.
 - **Next bounded task:** P4/P5-code/P6/P8 (audio-min, model caps, RAG venvs, cleanup).
+
+## Entry — 2026-09-27, P4/P5-code + P6 venvs (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** remaining tasks checkout; no videos in this pass.
+- **Implemented (hypothesis_claude):** P4 soft warnings `timeline-compressed`/`timeline-idle-filled` (hard:false, taxonomy T, via gate warnings push); P5 env caps (`HYPOTHESIS_MAX_PRICE_MULTIPLIER`, `HYPOTHESIS_MAX_PRICE_OVERRIDE_JSON`, `OPENROUTER_ALLOW_TIER_ROWS`, `HYPOTHESIS_LESSON_COST_CAP_MULTIPLIER`, all default-identical, documented `.env.example`). No live calls.
+- **P6 (explain-canvas-lab, env only):** `rag-engine/.venv` (raganything 1.4.1 + lightrag-hku 1.4.16) + `parse-engine/.venv` (docling 2.130.0); sidecar `check` ok:true/llm:true/embeddings:false (EMBEDDINGS_API_KEY missing, OPENROUTER key present); `RAG_ENGINE` still unset (inert preserved). Venvs gitignored, uncommitted. Index/query test not run (needs spend).
+- **Verification:** typecheck clean; full 524 node + 28 + 12 py; `git diff --check` clean.
+- **Next bounded task:** P8 reviewer cleanup (safe deletes only).

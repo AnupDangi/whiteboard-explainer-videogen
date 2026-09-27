@@ -4,7 +4,7 @@ import { withFailureClass } from '../../shared/failure-taxonomy.js';
 import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 
 import { LICENSE_ALLOWLIST } from '../catalog/normalize.js';
-import { maxIdleWindowMs } from '../timeline/compile.js';
+import { maxIdleWindowMs, revealPhases } from '../timeline/compile.js';
 import { formulaSource } from '../render/math.js';
 
 const evidenceKey = (ref: EvidenceReference): string => JSON.stringify([
@@ -196,6 +196,38 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
   const idle = maxIdleWindowMs(timeline);
   if (idle > STYLE.motion.maxIdleMs) {
     warnings.push({ code: 'idle', stage: 'timeline', message: `${Math.round(idle)}ms idle window exceeds ${STYLE.motion.maxIdleMs}ms`, hard: false });
+  }
+  // P4 audio-min: proportional compression (k < 1, timeline/compile.ts) and
+  // idle-gap emphasis fills (compileTimelineFull) fit reveals to the audio
+  // clock. Both are legitimate, but they were silent — a cramped draw had no
+  // failure signal. Soft warnings only (never hard): they already flow into
+  // the evaluation bundle via gateResult.warnings in both pipelines.
+  const compressed: Array<{ id: string; k: number }> = [];
+  for (const ev of timeline.events) {
+    if (ev.track !== 'stroke' && ev.track !== 'wipe' && ev.track !== 'grow') continue;
+    if (!ev.phases) continue;
+    const el = scene.elements.find((candidate) => candidate.id === ev.elementId);
+    if (!el) continue;
+    const nominal = revealPhases(el).phases;
+    const nominalTotal = nominal.strokeMs + nominal.fillMs + nominal.textMs;
+    const actualTotal = ev.phases.strokeMs + ev.phases.fillMs + ev.phases.textMs;
+    if (nominalTotal > 0 && nominalTotal - actualTotal > 0.5) {
+      compressed.push({ id: ev.elementId, k: actualTotal / nominalTotal });
+    }
+  }
+  if (compressed.length) {
+    const minK = Math.min(...compressed.map((c) => c.k));
+    warnings.push({ code: 'timeline-compressed', stage: 'timeline', message: `${scene.sceneId}: ${compressed.length} reveal(s) compressed to fit audio bounds (min k=${minK.toFixed(2)}): ${compressed.map((c) => c.id).join(', ')}`, hard: false });
+  }
+  // Idle-gap fills are `emphasis` events other than the closing focus
+  // emphasis (focus id, last 400 ms of the scene). Those carry intent;
+  // anything else is the compiler papering over a quiet window.
+  const focusCloseT0 = Math.max(timeline.sceneStartMs, timeline.sceneEndMs - 400);
+  const idleFilled = timeline.events.filter((ev) =>
+    ev.track === 'emphasis'
+    && !(ev.t0 === focusCloseT0 && ev.t1 === timeline.sceneEndMs && (scene.focus ?? []).includes(ev.elementId)));
+  if (idleFilled.length) {
+    warnings.push({ code: 'timeline-idle-filled', stage: 'timeline', message: `${scene.sceneId}: ${idleFilled.length} idle-gap emphasis ring(s) fill quiet window(s) > ${STYLE.motion.maxIdleMs}ms on: ${[...new Set(idleFilled.map((e) => e.elementId))].join(', ')}`, hard: false });
   }
   // Formula error: a TeX expression MathJax could not typeset is a hard failure (hypothesis plan "formula error").
   for (const el of scene.elements) {

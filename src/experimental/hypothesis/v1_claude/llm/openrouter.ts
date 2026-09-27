@@ -82,18 +82,91 @@ const PROVIDER_CONCURRENCY = Number.isInteger(configuredProviderConcurrency) && 
  * conservative text-token upper bound for byte-pair tokenizers; the fixed
  * framing margin covers chat wrapper tokens. OpenRouter enforces these
  * per-million-token price ceilings before routing a request.
+ *
+ * P5 bakeoff escape hatches (env-configurable, defaults unchanged — unset or
+ * invalid reads behave exactly as before):
+ * - HYPOTHESIS_MAX_PRICE_MULTIPLIER scales both ceilings (default 1). >1
+ *   unblocks models whose cheapest opted-in endpoint sits above our tight
+ *   lesson-derived ceiling (observed: google/gemini-3.8-flash 404 "No
+ *   endpoints found that satisfy the max price", 2026-09-26).
+ * - HYPOTHESIS_MAX_PRICE_OVERRIDE_JSON is a longest-prefix-matched per-model
+ *   raise-only floor, e.g. {"google/gemini-3.8-flash":{"prompt":2,
+ *   "completion":8}}. It can only raise a ceiling, never lower one.
  */
-export function maxPriceForCallBudget(remainingUsd: number, promptUtf8Bytes: number, maxTokens: number): { prompt: number; completion: number } | undefined {
+export function maxPriceMultiplier(): number {
+  const raw = Number(process.env.HYPOTHESIS_MAX_PRICE_MULTIPLIER);
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+export function modelMaxPriceFloor(model: string): { prompt: number; completion: number } | undefined {
+  const raw = process.env.HYPOTHESIS_MAX_PRICE_OVERRIDE_JSON;
+  if (!raw || !raw.trim()) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    let best: { prompt: number; completion: number } | undefined;
+    let bestLen = -1;
+    for (const [prefix, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!model.startsWith(prefix) || prefix.length <= bestLen) continue;
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const rec = value as Record<string, unknown>;
+      const prompt = Number(rec.prompt);
+      const completion = Number(rec.completion);
+      if (Number.isFinite(prompt) && prompt >= 0 && Number.isFinite(completion) && completion >= 0) {
+        best = { prompt, completion };
+        bestLen = prefix.length;
+      }
+    }
+    return best;
+  } catch {
+    return undefined; // malformed JSON fails closed: no override, exactly like today
+  }
+}
+
+export function maxPriceForCallBudget(remainingUsd: number, promptUtf8Bytes: number, maxTokens: number, model?: string): { prompt: number; completion: number } | undefined {
   if (!Number.isFinite(remainingUsd) || remainingUsd <= 0 || !Number.isFinite(promptUtf8Bytes) || promptUtf8Bytes < 0 || !Number.isFinite(maxTokens) || maxTokens <= 0) return undefined;
   const tokenBudgetUsd = remainingUsd * 0.9;
   const promptTokenUpperBound = promptUtf8Bytes + 2048;
   const promptBudgetUsd = tokenBudgetUsd * 0.5;
   const completionBudgetUsd = tokenBudgetUsd * 0.5;
   const floorUsdPerMillion = (usd: number, tokens: number) => Math.floor((usd * 1_000_000 / tokens) * 1_000_000) / 1_000_000;
-  return {
-    prompt: floorUsdPerMillion(promptBudgetUsd, promptTokenUpperBound),
-    completion: floorUsdPerMillion(completionBudgetUsd, maxTokens),
-  };
+  let prompt = floorUsdPerMillion(promptBudgetUsd, promptTokenUpperBound);
+  let completion = floorUsdPerMillion(completionBudgetUsd, maxTokens);
+  const multiplier = maxPriceMultiplier();
+  if (multiplier !== 1) {
+    const scale = (v: number) => Math.floor(v * multiplier * 1_000_000) / 1_000_000;
+    prompt = scale(prompt);
+    completion = scale(completion);
+  }
+  if (model) {
+    const floor = modelMaxPriceFloor(model);
+    if (floor) {
+      prompt = Math.max(prompt, floor.prompt);
+      completion = Math.max(completion, floor.completion);
+    }
+  }
+  return { prompt, completion };
+}
+
+/**
+ * Tier-row opt-in for OpenRouter routing (P5). The routing funnel excludes
+ * tier endpoint rows unless the request opts in ("Excluded tier endpoint
+ * rows the request did not opt into", gemini bakeoff 2026-09-26); opt-in is
+ * via the top-level `service_tier` parameter, `:nitro`/`:floor` variants, or
+ * tier endpoint slugs (openrouter.ai/docs/guides/features/service-tiers).
+ * OPENROUTER_ALLOW_TIER_ROWS unset/0/false = nothing sent (today).
+ * 1/true = "priority" (tier endpoints tried first, falls back to standard —
+ * admission only, never a restriction). An explicit flex|priority|fast value
+ * requests that tier directly. Anything else fails closed to unset.
+ */
+const SERVICE_TIERS = new Set(['flex', 'priority', 'fast']);
+
+export function openrouterServiceTier(): 'flex' | 'priority' | 'fast' | undefined {
+  const raw = (process.env.OPENROUTER_ALLOW_TIER_ROWS ?? '').trim().toLowerCase();
+  if (!raw || raw === '0' || raw === 'false' || raw === 'no' || raw === 'off') return undefined;
+  if (SERVICE_TIERS.has(raw)) return raw as 'flex' | 'priority' | 'fast';
+  if (raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on') return 'priority';
+  return undefined;
 }
 
 const DROP_FOR_ANTHROPIC = new Set(['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'minItems', 'maxItems', 'uniqueItems', 'format']);
@@ -196,8 +269,10 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
   const strict = !STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix));
   const limits = strict ? [] : schemaLimitLines(req.schema);
   const system = limits.length ? `${req.system}\n\nField limits (validated; a response that breaks one is rejected):\n${limits.map((line) => `- ${line}`).join('\n')}` : req.system;
+  const serviceTier = openrouterServiceTier();
   const body = {
     model: req.model,
+    ...(serviceTier ? { service_tier: serviceTier } : {}),
     ...(anthropic ? {} : { temperature: req.temperature }),
     max_tokens: req.maxTokens,
     ...(reasoningModel ? { reasoning: { max_tokens: Math.min(1200, Math.max(200, Math.round(req.maxTokens / 4))) } } : {}),
@@ -267,8 +342,10 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
 /** One vision call (VLM judge): prompt + images, JSON requested by prompt; returns raw text + usage. */
 export async function chatVision(apiKey: string, req: { model: string; prompt: string; imagesPng: Buffer[]; maxTokens: number; signal?: AbortSignal }, fetcher: typeof fetch = fetch): Promise<Omit<ChatResult, 'schemaConstrained' | 'temperatureApplied'>> {
   const reasoningModel = HIDDEN_REASONING.some((p) => req.model.startsWith(p));
+  const serviceTier = openrouterServiceTier();
   const body = {
     model: req.model,
+    ...(serviceTier ? { service_tier: serviceTier } : {}),
     max_tokens: req.maxTokens,
     ...(req.model.startsWith('anthropic/') ? {} : { temperature: 0 }),
     ...(reasoningModel ? { reasoning: { max_tokens: Math.min(800, Math.round(req.maxTokens / 3)) } } : {}),

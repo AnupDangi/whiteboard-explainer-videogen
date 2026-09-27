@@ -10,9 +10,19 @@ export const LESSON_DURATIONS_SEC = [60, 300, 600, 1800] as const;
 export type LessonDurationSec = typeof LESSON_DURATIONS_SEC[number];
 export const LESSON_COST_CAP_USD: Record<LessonDurationSec, number> = { 60: 0.1, 300: 0.5, 600: 0.7, 1800: 1 };
 export const SYLLABUS_CONCEPT_LABEL_MAX_WORDS = 4;
+/**
+ * P5: scales the lesson cost caps without changing defaults (unset, empty,
+ * or non-positive reads = 1, i.e. today's caps exactly). Lets a bakeoff
+ * raise the ceiling for a pricey model without touching code.
+ */
+export function lessonCostCapMultiplier(): number {
+  const raw = Number(process.env.HYPOTHESIS_LESSON_COST_CAP_MULTIPLIER);
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
 export function lessonCostCapUsd(durationSec: number): number {
-  if (durationSec in LESSON_COST_CAP_USD) return LESSON_COST_CAP_USD[durationSec as LessonDurationSec];
-  return Math.min(1, Math.max(0.1, durationSec / 60 * 0.1));
+  const multiplier = lessonCostCapMultiplier();
+  if (durationSec in LESSON_COST_CAP_USD) return LESSON_COST_CAP_USD[durationSec as LessonDurationSec] * multiplier;
+  return Math.min(1, Math.max(0.1, durationSec / 60 * 0.1)) * multiplier;
 }
 const id = z.string().min(1).max(40).regex(/^[a-z0-9_]+$/);
 const EvidenceQuote = z.object({ spanId: id, quote: z.string().min(1).max(600) }).strict();
