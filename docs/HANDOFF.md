@@ -2056,3 +2056,13 @@ hypothesis before layering on production-latency infrastructure.
 - **Run:** same 60s interpretability → `output/2026-09-27T20-07-05-199Z-interpretability-features/` (`tampered=false`). **Draft, 3/3 scenes, 0 hard, 0 fallbacks**, 58s, $0.0096. Tracked tree clean.
 - **Compare:** 19 → 11 → 0 hard across three runs. Recap split resolved the dense-recap binding constraint. Frame @20s caught mid title-wipe (empty board, expected mid-reveal).
 - **Next bounded task:** yellows triage, then continue matrix (bicycle re-run, RAG retry, more topics).
+
+## Entry — 2026-09-27, matrix-4 new domains + split regression (branch fix/chat-audit-rollup-20260927)
+
+- **Runs (locked one-shot, no mid edits, all `tampered=false`):**
+  - 60s Muse agent (new source): `output/2026-09-27T20-22-19-701Z-muse-coding-agent/` — draft, 4/4, 0 hard, $0.0095. Frame: 3 identical speech bubbles AGENT WORKFLOW — repetition weakness, no failure.
+  - 60s + 300s dinosaurs (Wikipedia URL): both FAILED, no video. Same signature: recap split halves 9s/12.5s < 14s pacing floor (`causal_chain_recap_a/b`).
+  - 600s tides: FAILED, no video. Same signature: split halves 10s < 14s (`connect_tide_patterns_a/b`).
+- **Regression found:** recap-split trades board-failures for pacing-failures whenever the recap budget < 28s (three runs, all post-split code). Proposed guard (needs validator): split only when both halves ≥ 14s; else keep whole recap. Not implemented yet.
+- **Remaining:** above guard decision → re-runs → yellows → 10/5/5 → reports.
+- **Next bounded task:** validator decides split guard; then bicycle re-run.
