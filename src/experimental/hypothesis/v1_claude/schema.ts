@@ -58,6 +58,7 @@ const elementBase = {
   conceptIds: z.array(z.string().min(1)).min(1).max(4).optional(),
   evidenceRefs,
   origin,
+  iconBasis: z.enum(['retrieval', 'metaphor']).optional(),
 };
 
 // Every branch is `.strict()`: a model that tries to emit x/y/w/h/coordinates,

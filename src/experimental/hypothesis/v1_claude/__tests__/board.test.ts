@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { z } from 'zod';
 import type { PlannerSceneInput } from '../planner/prompt.js';
 import type { ScenePlanningContext } from '../planner/context.js';
-import { BOARD_SCHEMA_VERSION, boardEnums, boardSchema, buildBoardPrompt, compileBoard, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
+import { BOARD_SCHEMA_VERSION, boardEnums, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
 
 // Synthetic, topic-neutral scene: two inputs combine through a process into an output.
 function makeScene(words: { a: string; b: string; p: string; o: string }, prefix = 'src'): PlannerSceneInput {
@@ -57,7 +57,7 @@ const goodBoard = (w = WORDS, prefix = 'src'): Board => ({
   ],
 });
 
-test('board enums come only from the scene: mentions, concepts, and above-threshold candidates', () => {
+test('board enums come only from the scene: mentions, concepts, and candidates above the hint floor', () => {
   const enums = boardEnums(scene);
   assert.deepEqual(enums.mentionIds, ['m_a', 'm_b', 'm_p', 'm_o']);
   assert.deepEqual(enums.conceptIds, ['src_a', 'src_b', 'src_p', 'src_o']);
@@ -65,7 +65,7 @@ test('board enums come only from the scene: mentions, concepts, and above-thresh
   assert.deepEqual(enums.candidatesByMention, { m_a: ['flour'], m_b: ['water'], m_p: [], m_o: ['dough'] });
   const json = JSON.stringify(z.toJSONSchema(boardSchema(enums)));
   for (const value of ['m_a', 'src_p', 'dough', 'label', 'convergence']) assert.ok(json.includes(`"${value}"`), value);
-  assert.ok(!json.includes('"weak"'), 'below-threshold candidates never reach the schema');
+  assert.ok(!json.includes('"weak"'), 'candidates below the hint floor never reach the schema');
 });
 
 test('a valid board compiles to a gated SceneSpec with data-derived evidence, arrows, and title', () => {
@@ -81,12 +81,12 @@ test('a valid board compiles to a gated SceneSpec with data-derived evidence, ar
   assert.deepEqual(checked.iconAssets, { n1: 'lib:flour', n2: 'lib:water', n4: 'lib:dough' });
 });
 
-test('board rules reject off-candidate icons, invented content words, and missing relation concepts; a shared mention is allowed', () => {
+test('board rules reject invented content words and missing relation concepts; another mention\'s icon is a metaphor; a shared mention is allowed', () => {
   const bad = goodBoard();
   bad.nodes[0].icon = 'dough';
   bad.nodes[1].label = 'cold water tank';
   const problems = validateBoard(bad, scene).problems.join(' | ');
-  assert.match(problems, /icon "dough" is not a candidate for mention m_a/);
+  assert.doesNotMatch(problems, /icon "dough"/, 'an in-vocabulary icon off this mention\'s hints is admissible');
   assert.match(problems, /label words \[cold, tank\]/);
   const shared = goodBoard();
   shared.nodes[3].mention = 'm_p';
@@ -258,7 +258,7 @@ test('rainbow arc prompt handles many mentions for one source concept and retain
 });
 
 test('planBoardScene repairs once on a rule violation and returns the compiled scene with icon pins', async () => {
-  const replies = [{ ...goodBoard(), nodes: goodBoard().nodes.map((node, i) => (i === 0 ? { ...node, icon: 'water' } : node)) }, goodBoard()];
+  const replies = [{ ...goodBoard(), nodes: goodBoard().nodes.map((node, i) => (i === 0 ? { ...node, label: 'cold flour tank' } : node)) }, goodBoard()];
   let calls = 0;
   const fetcher: typeof fetch = async () => new Response(JSON.stringify({
     choices: [{ message: { content: JSON.stringify(replies[calls++]) }, finish_reason: 'stop' }],
@@ -272,41 +272,60 @@ test('planBoardScene repairs once on a rule violation and returns the compiled s
   assert.equal(result.iconAssets?.n1, 'lib:flour');
 });
 
-test('with an icon catalog, only mention-specific retrieved icons are admissible', () => {
-  const withCatalog: PlannerSceneInput = { ...scene, iconCatalog: [{ id: 'lib:flour', name: 'flour' }, { id: 'lib:water', name: 'water' }, { id: 'lib:dough', name: 'dough' }, { id: 'lib:robot', name: 'robot' }] };
-  const enums = boardEnums(withCatalog);
-  assert.deepEqual(enums.icons, ['flour', 'water', 'dough']);
-  const valid = goodBoard();
-  const checked = validateBoard(valid, withCatalog);
-  assert.deepEqual(checked.problems, []);
-  assert.equal(checked.iconAssets?.n1, 'lib:flour');
-  const unrelated = goodBoard();
-  unrelated.nodes[0].icon = 'water';
-  assert.match(validateBoard(unrelated, withCatalog).problems.join(' | '), /icon "water" is not a candidate for mention m_a/);
-  const catalogOnly = goodBoard();
-  catalogOnly.nodes[2].icon = 'robot';
-  assert.match(validateBoard(catalogOnly, withCatalog).problems.join(' | '), /nodes\.2\.icon: Invalid option/);
-  const offCatalog = goodBoard();
-  offCatalog.nodes[2].icon = 'rocket';
-  assert.ok(validateBoard(offCatalog, withCatalog).problems.some((problem) => problem.startsWith('nodes.2.icon')));
-  assert.match(buildBoardPrompt(withCatalog).system, /choose only an exact name from that mention's iconSuggestions/);
-  assert.doesNotMatch(buildBoardPrompt(withCatalog).system, /robot/);
+test('with an icon catalog, any catalog icon is admissible and its basis is recorded', () => {
+  const catalog = [{ id: 'lib:flour', name: 'flour' }, { id: 'lib:key', name: 'key' }, { id: 'lib:water', name: 'water' }, { id: 'lib:dough', name: 'dough' }];
+  const input = { ...scene, iconCatalog: catalog } as PlannerSceneInput;
+  const enums = boardEnums(input);
+  assert.ok(enums.icons.includes('key'));
+  const board = goodBoard();
+  board.nodes[2] = { ...board.nodes[2], icon: 'key' }; // metaphor for "mixing"
+  const result = validateBoard(board, input);
+  assert.deepEqual(result.problems, []);
+  const byId = Object.fromEntries(result.spec!.elements.map((e) => [e.id, e]));
+  assert.equal(byId.n1.iconBasis, 'retrieval');
+  assert.equal(byId.n3.iconBasis, 'metaphor');
 });
 
-test('large catalogs do not widen the per-scene admissible icon set', () => {
+test('icons outside the catalog are still rejected with near-name hints', () => {
+  const input = { ...scene, iconCatalog: [{ id: 'lib:flour', name: 'flour' }] } as PlannerSceneInput;
+  const board = goodBoard();
+  board.nodes[0] = { ...board.nodes[0], icon: 'unicorn' };
+  const result = validateBoard(board, input);
+  assert.ok(result.problems.some((p) => p.includes('not in the icon catalog')));
+});
+
+test('prompt lists the catalog once and permits teacher metaphors', () => {
+  const input = { ...scene, iconCatalog: [{ id: 'lib:key', name: 'key' }, { id: 'lib:flour', name: 'flour' }] } as PlannerSceneInput;
+  const { system, user } = buildBoardPrompt(input);
+  assert.match(system, /visual metaphor a teacher would sketch/);
+  assert.doesNotMatch(system, /Never invent a metaphor/);
+  assert.match(user, /"key"/);
+  assert.equal(`${system}\n${user}`.split('"key"').length - 1, 1, 'catalog names appear once across both prompts');
+});
+
+test('a large catalog is admissible in full, checked in code rather than a provider enum', () => {
   const iconCatalog = Array.from({ length: 70 }, (_, i) => ({ id: `lib:icon${i}`, name: `icon${i}` }));
   const big: PlannerSceneInput = { ...scene, iconCatalog };
   const enums = boardEnums(big);
+  assert.equal(enums.icons.length, 70);
   const json = JSON.stringify(z.toJSONSchema(boardSchema(enums)));
-  assert.ok(!json.includes('"icon69"'), 'catalog entries without mention-specific retrieval evidence are excluded');
-  assert.deepEqual(enums.icons, []);
+  assert.ok(!json.includes('"icon69"'), 'the provider schema carries no oversized icon enum');
   const board = goodBoard();
-  board.nodes[0].icon = 'label';
-  board.nodes[1].icon = 'label';
-  board.nodes[3].icon = 'label';
-  assert.deepEqual(validateBoard(board, big).problems, []);
+  for (const index of [0, 1, 3]) board.nodes[index].icon = 'label';
   board.nodes[0].icon = 'icon7';
-  assert.ok(validateBoard(board, big).problems.length > 0, 'catalog membership alone does not make an icon admissible');
+  const checked = validateBoard(board, big);
+  assert.deepEqual(checked.problems, []);
+  assert.equal(checked.iconAssets?.n1, 'lib:icon7');
+  assert.equal(checked.spec!.elements.find((element) => element.id === 'n1')!.iconBasis, 'metaphor');
+  board.nodes[0].icon = 'icon99';
+  assert.match(validateBoard(board, big).problems.join(' | '), /icon "icon99" is not in the icon catalog/);
+});
+
+test('conceptForMention matches a mention to its scene concept by id, then by shared label words', () => {
+  assert.equal(conceptForMention(scene, { id: 'src_b', phrase: 'anything' })?.id, 'src_b');
+  assert.equal(conceptForMention(scene, { id: 'm_x', phrase: 'the doughs rest' })?.label, 'dough');
+  assert.equal(conceptForMention(scene, { id: 'm_y', phrase: 'unrelated words' }), undefined);
+  assert.equal(conceptForMention({ teachingContext: undefined }, { id: 'm_a', phrase: 'flour' }), undefined);
 });
 
 test('icon labels wrap onto at most two balanced lines, so nodes stay narrow and icons can grow', async () => {

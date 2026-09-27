@@ -19,7 +19,7 @@ import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
 import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
-import { BOARD_PROMPT_VERSION, BOARD_SCHEMA_VERSION, buildBoardPrompt, planBoardScene, skipBoardAfterAlignmentFailure } from '../planner/board.js';
+import { BOARD_PROMPT_VERSION, BOARD_SCHEMA_VERSION, buildBoardPrompt, conceptForMention, planBoardScene, skipBoardAfterAlignmentFailure } from '../planner/board.js';
 import { planScene, plannerProblems, shouldSkipPaidPlanning, skipPlanAfterAlignmentFailure, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
 import { buildPlannerSceneInput } from '../planner/sceneInput.js';
 import { safeParseSceneSpec } from '../schema.js';
@@ -334,11 +334,23 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   let iconPins: Map<string, IconPin> = new Map();
   const totalUsage: RunUsage = { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: alignmentCacheHits.size };
 
-  // Retrieval before planning (01 §3.3 item 3): top-k house-style icons per mention phrase.
+  // Retrieval before planning (01 §3.3 item 3): top-k house-style icons per mention.
+  // Each query is "phrase. concept label" when the scene has a matching source
+  // concept, so hints reflect what the mention teaches; results are keyed back
+  // per scene by phrase for buildPlannerSceneInput.
   const scenePlanningStartedAtMs = Date.now();
   const mentionCandidatesStartedAtMs = Date.now();
-  const mentionCandidates = await rankConcepts(narration.scenes.flatMap((s) => s.mentions.map((m) => m.phrase)), 5, queryEmbeddingCache);
-  // The board planner may pick any enabled-catalog icon (one entry per name, lowest id wins); retrieval hits stay as suggestions.
+  const retrievalQueries = narration.scenes.map((scene, sceneIndex) => scene.mentions.map((mention) => {
+    const concept = conceptForMention({ teachingContext: input.scenes[sceneIndex]?.teachingContext }, mention);
+    return concept && concept.label.trim().toLowerCase() !== mention.phrase.trim().toLowerCase() ? `${mention.phrase}. ${concept.label}` : mention.phrase;
+  }));
+  const rankedQueries = await rankConcepts(retrievalQueries.flat(), 5, queryEmbeddingCache);
+  const mentionCandidatesByScene = new Map(narration.scenes.map((scene, sceneIndex) => [scene.sceneId, new Map(scene.mentions.map((mention, mentionIndex) => [
+    mention.phrase.trim().toLowerCase(),
+    rankedQueries.get(retrievalQueries[sceneIndex][mentionIndex].trim().toLowerCase()) ?? [],
+  ]))]));
+  // Board-v2 gets the whole enabled catalog (one entry per name, lowest id wins): the model may pick any icon,
+  // literal or a teacher's metaphor; retrieval hits are hints and decide each icon's recorded iconBasis.
   const iconCatalog = [...new Map([...loadCatalogLibraries().entries].sort((a, b) => a.id.localeCompare(b.id)).reverse().map((entry) => [entry.names[0], { id: entry.id, name: entry.names[0] }])).values()].sort((a, b) => a.name.localeCompare(b.name));
   recordLocalStage('S7-resolve', mentionCandidatesStartedAtMs, false);
   // S6 semantic planning does not consume word timestamps. Calibration and S1-S4
@@ -358,7 +370,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const remainingBudgetUsd = ctx.budgetLedger
       ? Math.max(0, options.maxCostUsd - priorProviderSpend - totalUsage.costUsd)
       : Math.min(perSceneBudgetUsd, Math.max(0, options.maxCostUsd - priorProviderSpend - totalUsage.costUsd));
-    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates, previousElements: previousForPrompt, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
+    const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates: mentionCandidatesByScene.get(sceneInput.sceneId) ?? new Map(), previousElements: previousForPrompt, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
 
     if (input.runClass === 'generated-lesson') {
       const refs = sceneInput.teachingContext?.sourceEvidenceRefs ?? [];

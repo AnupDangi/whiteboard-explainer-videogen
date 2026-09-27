@@ -127,6 +127,8 @@ interface ElementBase {
   conceptIds?: string[];
   evidenceRefs?: EvidenceReference[];
   origin?: 'illustrative-example' | 'fixture';
+  /** Audit only: whether a board icon was a retrieval hint for its mention or a teacher metaphor from the catalog. */
+  iconBasis?: 'retrieval' | 'metaphor';
 }
 
 export type ElementBody =
