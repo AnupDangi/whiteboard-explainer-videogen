@@ -147,7 +147,7 @@ test('persistent budget ledger carries spend across calls and prevents concurren
     assert.equal(snapshot.calls, 1);
     assert.equal(snapshot.spentUsd, 0.006);
     const blocked = await ledger.call(0.01, async () => ({ value: 'must-not-run', costUsd: 0 }));
-    assert.deepEqual(blocked, { allowed: false, spentUsd: 0.006 });
+    assert.deepEqual(blocked, { allowed: false, spentUsd: 0.006, reason: 'exhausted' });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -166,7 +166,7 @@ test('persistent budget ledger passes the true shared remaining allowance into e
     assert.equal(observedAllowance, 0.003, 'later-stage price caps must account for spend already recorded by earlier stages');
     assert.deepEqual(lastCall, { allowed: true, value: 'S6', costUsd: 0.003 });
     const denied = await ledger.call(0.009, async () => ({ value: 'must-not-run', costUsd: 0 }));
-    assert.deepEqual(denied, { allowed: false, spentUsd: 0.01 });
+    assert.deepEqual(denied, { allowed: false, spentUsd: 0.01, reason: 'exhausted' });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

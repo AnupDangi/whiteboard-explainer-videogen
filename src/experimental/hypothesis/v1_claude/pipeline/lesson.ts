@@ -45,7 +45,11 @@ export interface PreparedLesson {
   stageRuns: StageRunRecord[];
 }
 
-export async function prepareLesson(req: LessonRequest, m: { model: string; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number }): Promise<PreparedLesson> {
+/** Content stages whose model can be chosen independently (OPENROUTER_<STAGE>_MODEL). */
+export type ContentStage = 'syllabus' | 'concepts' | 'plan' | 'script';
+const CONTENT_STAGE_FOR: Array<[prefix: string, stage: ContentStage]> = [['S1-syllabus', 'syllabus'], ['S2-concepts', 'concepts'], ['S3-teaching-plan', 'plan'], ['S4-narration-script', 'script']];
+
+export async function prepareLesson(req: LessonRequest, m: { model: string; stageModels?: Partial<Record<ContentStage, string>>; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number }): Promise<PreparedLesson> {
   const sourceStartedAtMs = Date.now();
   const sourceDocs = !req.sourceDoc && req.sources?.length ? await Promise.all(req.sources.map(async (source) => {
     if (source.kind === 'document') return loadSourceDoc(source.path);
@@ -69,12 +73,14 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
   if (sourceBundle) stageRuns.push({ stage: 'S1-evidence-retrieval', kind: 'local', status: sourceBundle.evidenceHits.length ? 'completed' : 'failed', durationMs: sourceBundle.retrievalCost.elapsedMs, apiCostUsd: sourceBundle.retrievalCost.apiCostUsd, costEstimated: sourceBundle.retrievalCost.estimated || undefined, cacheHit: false, fallbackCount: 0, failures: sourceBundle.evidenceHits.length ? [] : [{ code: 'no-source-evidence-hit', stage: 'S1-evidence-retrieval', message: 'No source spans matched the lesson instruction; source coverage must be checked before planning.', hard: true }] });
   if (sourceBundle && sourceBundle.evidenceHits.length === 0) failures.push({ code: 'no-source-evidence-hit', stage: 'source', message: 'No source spans matched the lesson instruction; source coverage must be checked before planning.', hard: true });
   const budget = () => Math.max(0, effectiveBudgetUsd - usage.costUsd);
+  const modelFor = (stage: ContentStage): string => m.stageModels?.[stage] ?? m.model;
+  const modelForStage = (stageName: string): string => modelFor(CONTENT_STAGE_FOR.find(([prefix]) => stageName.startsWith(prefix))?.[1] ?? 'concepts');
   const runCached = async <T extends { usage: CallUsage; failures: StageFailure[] }>(stage: string, input: unknown, schemaVersion: string, stageVersion: string, produce: () => Promise<T>, promptVersion = `${stage}-prompt-v1`) => {
     const startedAtMs = Date.now();
     try {
       const cached = m.artifactStore
         // Only complete results are stored: a failed or rejected call is retried on the next warm run.
-        ? await m.artifactStore.run(stage, input, { schemaVersion, stageVersion, promptVersion, modelId: m.model }, produce, { cacheable: (result) => !result.failures.some((failure) => failure.hard) })
+        ? await m.artifactStore.run(stage, input, { schemaVersion, stageVersion, promptVersion, modelId: modelForStage(stage) }, produce, { cacheable: (result) => !result.failures.some((failure) => failure.hard) })
         : undefined;
       if (cached) stageArtifacts[stage] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
       const artifactResult = cached?.artifact.payload ?? await produce();
@@ -85,7 +91,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
         ? artifactResult.sceneStageRuns as StageRunRecord[]
         : undefined;
       stageRuns.push({
-        stage, kind: 'provider', status: artifactResult.failures.some((failure) => failure.hard) ? 'failed' : 'completed',
+        stage, kind: 'provider', modelId: modelForStage(stage), status: artifactResult.failures.some((failure) => failure.hard) ? 'failed' : 'completed',
         durationMs: Date.now() - startedAtMs, startedAt: new Date(startedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: measuredUsage.costUsd,
         ...(nestedSceneRuns ? { accountingRole: 'aggregate' as const } : {}),
         ...(isCacheHit ? { artifactApiCostUsd: artifactResult.usage.costUsd } : {}),
@@ -120,7 +126,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
 
   if ([60, 300, 600, 1800].includes(groundedRequest.targetDurationSec)) {
     const requestedDurationSec = groundedRequest.targetDurationSec;
-    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v3', 'hierarchical-syllabus-v4-bounded-span-excerpts-id-normalization', () => buildSyllabus(groundedRequest, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v3', 'hierarchical-syllabus-v4-bounded-span-excerpts-id-normalization', () => buildSyllabus(groundedRequest, { model: modelFor('syllabus'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
     const syllabusResult = syllabusRun.result;
     addUsage(usage, syllabusResult.usage); failures.push(...syllabusResult.failures); rawResponses.syllabus = syllabusResult.rawResponses;
     if (!syllabusResult.value) return preparedResult({ requestedDurationSec });
@@ -152,7 +158,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
       const moduleLabels = remainingModules.map((candidate, index) => `${index + 1}. ${candidate.title}: ${candidate.goal} (${candidate.budgetSec}s)`).join('\n');
       const moduleRequest: LessonRequest = { ...groundedRequest, source: scopedSource.text, sourceDoc: scopedSource, sourceBundle: undefined, targetDurationSec: effectiveModule.budgetSec, instruction: `Course objective: ${syllabus.learningObjective}\nFull course modules:\n${moduleLabels}\n\nCurrent module ${moduleIndex + 1}: ${module.title}. ${module.goal}\nEffective time budget: ${effectiveModule.budgetSec} seconds. Write narration with enough explanation to teach this module inside that budget; do not repeat or pad.\nUse only this module's assigned concepts; preserve global IDs and labels.`, conceptScope: scopedConcepts.map(({ id, label, definition }) => ({ id, label, definition })) };
       const moduleTag = `${String(moduleIndex + 1).padStart(2, '0')}-${module.id}`;
-      const graphRun = await runCached(`S2-concepts:${moduleTag}`, { request: moduleRequest, syllabusConcepts: scopedConcepts }, 'claude-concept-graph/v1', 'S2-module-concept-graph-v2-relational-components', () => buildConceptGraph(moduleRequest, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const graphRun = await runCached(`S2-concepts:${moduleTag}`, { request: moduleRequest, syllabusConcepts: scopedConcepts }, 'claude-concept-graph/v1', 'S2-module-concept-graph-v2-relational-components', () => buildConceptGraph(moduleRequest, { model: modelFor('concepts'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, graphRun.result.usage); failures.push(...graphRun.result.failures); rawResponses[`concepts:${moduleTag}`] = graphRun.result.rawResponses;
       if (!graphRun.result.value) return preparedResult({ syllabus, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const rawGraph = graphRun.result.value;
@@ -160,7 +166,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
         const syllabusConcept = allConcepts.get(concept.id);
         return syllabusConcept ? { ...concept, label: syllabusConcept.label, definition: syllabusConcept.definition, evidence: syllabusConcept.evidence } : concept;
       }) };
-      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v4', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`, () => buildTeachingPlan(moduleRequest, graph, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v4', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`, () => buildTeachingPlan(moduleRequest, graph, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, planRun.result.usage); failures.push(...planRun.result.failures); rawResponses[`plan:${moduleTag}`] = planRun.result.rawResponses;
       if (!planRun.result.value) return preparedResult({ syllabus, graph, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const modulePlan = planRun.result.value;
@@ -169,7 +175,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
       for (const finding of contractFindings) failures.push({ code: finding.code, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: true });
       for (const finding of analysis.findings) failures.push({ code: `${finding.code}:${finding.check}`, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: finding.severity === 'error' });
       if (!analysis.ok || contractFindings.length) return preparedResult({ syllabus, graph, plan: modulePlan, analysis, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
-      const scriptRun = await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-script/v1', 'S4-module-script-v3-pacing', () => writeScript(moduleRequest, graph, modulePlan, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const scriptRun = await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-script/v1', 'S4-module-script-v3-pacing', () => writeScript(moduleRequest, graph, modulePlan, { model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, scriptRun.result.usage); failures.push(...scriptRun.result.failures); rawResponses[`script:${moduleTag}`] = scriptRun.result.rawResponses;
       if (!scriptRun.result.value) return preparedResult({ syllabus, graph, plan: modulePlan, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const sectionPrefix = `${moduleTag}_`;
@@ -248,12 +254,12 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
     return preparedResult({ syllabus, modules: completedModules, graph: globalGraph, plan, script: { scenes: allScenes }, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
   }
 
-  const gRun = await runCached('S2-concepts', groundedRequest, 'claude-concept-graph/v1', 'S2-concept-graph-v5-relational-components', () => buildConceptGraph(groundedRequest, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+  const gRun = await runCached('S2-concepts', groundedRequest, 'claude-concept-graph/v1', 'S2-concept-graph-v5-relational-components', () => buildConceptGraph(groundedRequest, { model: modelFor('concepts'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
   const g = gRun.result;
   addUsage(usage, g.usage); failures.push(...g.failures); rawResponses.concepts = g.rawResponses;
   if (!g.value) return preparedResult({});
 
-  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v4', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`, () => buildTeachingPlan(groundedRequest, g.value!, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`);
+  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v4', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`, () => buildTeachingPlan(groundedRequest, g.value!, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`);
   const p = pRun.result;
   addUsage(usage, p.usage); failures.push(...p.failures); rawResponses.plan = p.rawResponses;
   if (!p.value) return preparedResult({ graph: g.value });
@@ -270,7 +276,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
   }
   if (!analysis.ok || contractFindings.length) return preparedResult({ graph: g.value, plan: p.value, analysis });
 
-  const sRun = await runCached('S4-narration-script', { request: groundedRequest, graph: g.value, plan: p.value }, 'claude-script/v1', 'S4-script-v4-pacing', () => writeScript(groundedRequest, g.value!, p.value!, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+  const sRun = await runCached('S4-narration-script', { request: groundedRequest, graph: g.value, plan: p.value }, 'claude-script/v1', 'S4-script-v4-pacing', () => writeScript(groundedRequest, g.value!, p.value!, { model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
   const s = sRun.result;
   addUsage(usage, s.usage); failures.push(...s.failures); rawResponses.script = s.rawResponses;
   return preparedResult({ graph: g.value, plan: p.value, analysis, script: s.value });

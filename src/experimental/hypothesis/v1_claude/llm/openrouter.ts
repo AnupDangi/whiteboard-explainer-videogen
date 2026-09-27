@@ -34,6 +34,8 @@ export interface ChatRequest {
   /** Anthropic thinking effort (OpenRouter `reasoning.effort`); adaptive thinking otherwise spends ~3k tokens per scene. */
   effort?: 'low' | 'medium' | 'high';
   signal?: AbortSignal;
+  /** Per-request timeout. It starts when the request gets a provider slot, not while it queues. */
+  timeoutMs?: number;
 }
 
 export interface ChatResult {
@@ -76,17 +78,82 @@ const PROVIDER_CONCURRENCY = Number.isInteger(configuredProviderConcurrency) && 
   ? Math.min(32, configuredProviderConcurrency)
   : 2;
 
+let baseUrl = 'https://openrouter.ai/api/v1';
+
+/** Point every call at a different OpenRouter-compatible endpoint (OPENROUTER_BASE_URL). */
+export function setOpenRouterBaseUrl(url: string): void {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') throw new Error('OPENROUTER_BASE_URL must use https (or a localhost test server)');
+  baseUrl = url.replace(/\/+$/, '');
+}
+
+export const openRouterBaseUrl = (): string => baseUrl;
+
+/** Published per-token prices for one model (USD per token). */
+export interface ModelPricing { promptUsdPerToken: number; completionUsdPerToken: number }
+
+const pricingCache = new Map<string, Promise<Map<string, ModelPricing>>>();
+
 /**
- * Split most of the remaining call budget across prompt and completion, with
- * headroom for provider framing/request charges. UTF-8 byte length is a
- * conservative text-token upper bound for byte-pair tokenizers; the fixed
- * framing margin covers chat wrapper tokens. OpenRouter enforces these
- * per-million-token price ceilings before routing a request.
+ * Per-token prices from `GET {base}/models`, fetched once per endpoint per
+ * process. Returns undefined for an unknown model or when the listing cannot
+ * be read; callers then fall back to a budget-split price ceiling.
+ */
+export async function fetchModelPricing(model: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<ModelPricing | undefined> {
+  const url = `${baseUrl}/models`;
+  let listing = pricingCache.get(url);
+  if (!listing) {
+    listing = (async () => {
+      const prices = new Map<string, ModelPricing>();
+      try {
+        const response = await fetcher(url, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(30_000) });
+        if (!response.ok) return prices;
+        const data = (await response.json()) as { data?: Array<{ id?: unknown; pricing?: { prompt?: unknown; completion?: unknown } }> };
+        for (const entry of Array.isArray(data.data) ? data.data : []) {
+          const prompt = Number(entry.pricing?.prompt);
+          const completion = Number(entry.pricing?.completion);
+          if (typeof entry.id === 'string' && Number.isFinite(prompt) && prompt >= 0 && Number.isFinite(completion) && completion >= 0) prices.set(entry.id, { promptUsdPerToken: prompt, completionUsdPerToken: completion });
+        }
+      } catch {
+        // An unreadable listing only disables price-aware routing; the budget-split ceiling still applies.
+      }
+      return prices;
+    })();
+    pricingCache.set(url, listing);
+  }
+  return (await listing).get(model);
+}
+
+/**
+ * Conservative prompt-token estimate from UTF-8 bytes: English and JSON run at
+ * about 3-4.5 bytes per token, so bytes/2 plus chat framing stays above the
+ * real count for ordinary text without excluding models by a 3-5x margin the
+ * way one-token-per-byte did (the 2026-09-26 Gemini "no endpoints within max
+ * price" 404s). The durable ledger still records actual billed spend.
+ */
+export const promptTokenEstimate = (promptUtf8Bytes: number): number => Math.ceil(promptUtf8Bytes / 2) + 1024;
+
+/** Worst-case USD for one call at a model's own prices, if it uses every completion token. */
+export function worstCaseCallUsd(pricing: ModelPricing, promptUtf8Bytes: number, maxTokens: number): number {
+  return promptTokenEstimate(promptUtf8Bytes) * pricing.promptUsdPerToken + maxTokens * pricing.completionUsdPerToken;
+}
+
+/** max_price for a model with known prices: its own price plus 25% headroom, so routing may not pick a pricier endpoint. */
+export function priceCeilingForModel(pricing: ModelPricing): { prompt: number; completion: number } {
+  const perMillion = (usdPerToken: number) => Math.ceil(usdPerToken * 1.25 * 1e12) / 1e6;
+  return { prompt: perMillion(pricing.promptUsdPerToken), completion: perMillion(pricing.completionUsdPerToken) };
+}
+
+/**
+ * Fallback when a model's prices are unknown: split most of the remaining call budget across prompt and completion, with
+ * headroom for provider framing/request charges (see promptTokenEstimate).
+ * OpenRouter enforces these per-million-token price ceilings before routing a
+ * request.
  */
 export function maxPriceForCallBudget(remainingUsd: number, promptUtf8Bytes: number, maxTokens: number): { prompt: number; completion: number } | undefined {
   if (!Number.isFinite(remainingUsd) || remainingUsd <= 0 || !Number.isFinite(promptUtf8Bytes) || promptUtf8Bytes < 0 || !Number.isFinite(maxTokens) || maxTokens <= 0) return undefined;
   const tokenBudgetUsd = remainingUsd * 0.9;
-  const promptTokenUpperBound = promptUtf8Bytes + 2048;
+  const promptTokenUpperBound = promptTokenEstimate(promptUtf8Bytes);
   const promptBudgetUsd = tokenBudgetUsd * 0.5;
   const completionBudgetUsd = tokenBudgetUsd * 0.5;
   const floorUsdPerMillion = (usd: number, tokens: number) => Math.floor((usd * 1_000_000 / tokens) * 1_000_000) / 1_000_000;
@@ -99,16 +166,21 @@ export function maxPriceForCallBudget(remainingUsd: number, promptUtf8Bytes: num
 const DROP_FOR_ANTHROPIC = new Set(['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'minItems', 'maxItems', 'uniqueItems', 'format']);
 
 /**
- * OpenRouter answered before any model endpoint ran: no endpoint satisfied the
- * request (routing or `max_price` filter), or throttling persisted after the
- * built-in 429 waits. No completion and no usage exist, so the budget ledger
- * records it as a preflight failure instead of an uncertain charge.
+ * No model endpoint ran, so no completion and no charge exist and the budget
+ * ledger records a preflight failure instead of an uncertain charge:
+ * - PROVIDER_NO_ENDPOINT: no endpoint satisfied routing or `max_price` (retryable);
+ * - PROVIDER_RATE_LIMITED: throttling persisted after the built-in 429 waits (retryable);
+ * - PROVIDER_REJECTED: a 4xx the request itself caused (auth, credit, bad parameters, unknown model);
+ * - PROVIDER_NOT_SENT: the caller aborted while the request was still queued.
  */
+export type NotDispatchedCode = 'PROVIDER_NO_ENDPOINT' | 'PROVIDER_RATE_LIMITED' | 'PROVIDER_REJECTED' | 'PROVIDER_NOT_SENT';
+export const RETRYABLE_NOT_DISPATCHED: readonly NotDispatchedCode[] = ['PROVIDER_NO_ENDPOINT', 'PROVIDER_RATE_LIMITED'];
+
 export class ProviderNotDispatchedError extends Error {
   readonly status: number;
-  readonly code: 'PROVIDER_NO_ENDPOINT' | 'PROVIDER_RATE_LIMITED';
-  constructor(status: number, code: 'PROVIDER_NO_ENDPOINT' | 'PROVIDER_RATE_LIMITED', detail: string) {
-    super(`OpenRouter HTTP ${status}${detail ? ` — ${detail.slice(0, 400)}` : ''}`, { cause: { code } });
+  readonly code: NotDispatchedCode;
+  constructor(status: number, code: NotDispatchedCode, detail: string) {
+    super(`OpenRouter ${status ? `HTTP ${status}` : 'request not sent'}${detail ? ` — ${detail.slice(0, 400)}` : ''}`, { cause: { code } });
     this.name = 'ProviderNotDispatchedError';
     this.status = status;
     this.code = code;
@@ -186,6 +258,52 @@ export function schemaLimitLines(node: unknown, path = ''): string[] {
   return [...new Set(lines)];
 }
 
+/**
+ * POST to `{base}/chat/completions` under the host provider permit, retrying a
+ * 429 up to twice. The timeout starts when the request first holds a permit
+ * (queue time is not charged to it) and also covers reading the body, because
+ * the returned response keeps the same abort signal.
+ */
+async function sendChat(body: unknown, apiKey: string, fetcher: typeof fetch, opts: { signal?: AbortSignal; timeoutMs?: number; metadata?: boolean }): Promise<Response> {
+  let requestSignal: AbortSignal | undefined;
+  const signalForSend = () => {
+    if (!requestSignal) {
+      const timeout = AbortSignal.timeout(opts.timeoutMs ?? 180_000);
+      requestSignal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+    }
+    return requestSignal;
+  };
+  const headers: Record<string, string> = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...(opts.metadata ? { 'X-OpenRouter-Metadata': 'enabled' } : {}) };
+  let sent = false;
+  let response!: Response;
+  try {
+    for (let throttle = 0; ; throttle++) {
+      response = await withHostResourcePermit('provider', PROVIDER_CONCURRENCY, () => {
+        sent = true;
+        return fetcher(`${baseUrl}/chat/completions`, { method: 'POST', signal: signalForSend(), headers, body: JSON.stringify(body) });
+      }, { signal: opts.signal });
+      if (response.status !== 429 || throttle >= 2) break;
+      const seconds = Number(response.headers.get('retry-after')) || [15, 30][throttle] || 30;
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, seconds * 1000);
+        opts.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(opts.signal?.reason ?? new Error('Aborted')); }, { once: true });
+      });
+    }
+  } catch (error) {
+    if (!sent) throw new ProviderNotDispatchedError(0, 'PROVIDER_NOT_SENT', error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    if (response.status === 404 && /no endpoints found/i.test(text)) throw new ProviderNotDispatchedError(404, 'PROVIDER_NO_ENDPOINT', text);
+    if (response.status === 429) throw new ProviderNotDispatchedError(429, 'PROVIDER_RATE_LIMITED', text);
+    // Any other 4xx except a request timeout is caused by the request itself; no model ran.
+    if (response.status >= 400 && response.status < 500 && response.status !== 408) throw new ProviderNotDispatchedError(response.status, 'PROVIDER_REJECTED', text);
+    throw new Error(`OpenRouter HTTP ${response.status}${text ? ` — ${text.slice(0, 400)}` : ''}`);
+  }
+  return response;
+}
+
 export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: typeof fetch = fetch): Promise<ChatResult> {
   const reasoningModel = HIDDEN_REASONING.some((p) => req.model.startsWith(p));
   const anthropic = req.model.startsWith('anthropic/');
@@ -196,13 +314,17 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
   const strict = !STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix));
   const limits = strict ? [] : schemaLimitLines(req.schema);
   const system = limits.length ? `${req.system}\n\nField limits (validated; a response that breaks one is rejected):\n${limits.map((line) => `- ${line}`).join('\n')}` : req.system;
+  const reasoning = {
+    ...(reasoningModel ? { max_tokens: Math.min(1200, Math.max(200, Math.round(req.maxTokens / 4))) } : {}),
+    ...((anthropic || !strict) && req.effort ? { effort: req.effort } : {}),
+  };
   const body = {
     model: req.model,
     ...(anthropic ? {} : { temperature: req.temperature }),
     max_tokens: req.maxTokens,
-    ...(reasoningModel ? { reasoning: { max_tokens: Math.min(1200, Math.max(200, Math.round(req.maxTokens / 4))) } } : {}),
-    // Effort is honoured by Anthropic and OpenAI reasoning routes; without it gpt-6-luna S6 calls ranged 9-70 s (2026-09-26).
-    ...((anthropic || !strict) && req.effort ? { reasoning: { effort: req.effort } } : {}),
+    // Hidden-reasoning routes get a bounded thinking allowance; effort is honoured by Anthropic and OpenAI
+    // reasoning routes (without it gpt-6-luna S6 calls ranged 9-70 s, 2026-09-26). One object, never overwritten.
+    ...(Object.keys(reasoning).length ? { reasoning } : {}),
     ...(constrained ? { response_format: { type: 'json_schema', json_schema: { name: req.schemaName, strict, schema: anthropicSchema ?? req.schema } } } : {}),
     ...(req.maxPriceUsdPerMillionTokens || reasoningModel || !constrained ? {
       provider: {
@@ -218,23 +340,7 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
     ],
     usage: { include: true },
   };
-  const init: RequestInit = { method: 'POST', signal: req.signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-OpenRouter-Metadata': 'enabled' }, body: JSON.stringify(body) };
-  let response!: Response;
-  for (let throttle = 0; ; throttle++) {
-    response = await withHostResourcePermit('provider', PROVIDER_CONCURRENCY, () => fetcher('https://openrouter.ai/api/v1/chat/completions', init), { signal: req.signal });
-    if (response.status !== 429 || throttle >= 2) break;
-    const seconds = Number(response.headers.get('retry-after')) || [15, 30][throttle] || 30;
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, seconds * 1000);
-      req.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(req.signal?.reason ?? new Error('Aborted')); }, { once: true });
-    });
-  }
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    if (response.status === 404 && /no endpoints found/i.test(text)) throw new ProviderNotDispatchedError(404, 'PROVIDER_NO_ENDPOINT', text);
-    if (response.status === 429) throw new ProviderNotDispatchedError(429, 'PROVIDER_RATE_LIMITED', text);
-    throw new Error(`OpenRouter HTTP ${response.status}${text ? ` — ${text.slice(0, 400)}` : ''}`);
-  }
+  const response = await sendChat(body, apiKey, fetcher, { signal: req.signal, timeoutMs: req.timeoutMs, metadata: true });
   const data = (await response.json()) as {
     id?: unknown;
     model?: unknown;
@@ -275,13 +381,13 @@ export async function chatVision(apiKey: string, req: { model: string; prompt: s
     messages: [{ role: 'user', content: [{ type: 'text', text: req.prompt }, ...req.imagesPng.map((png) => ({ type: 'image_url', image_url: { url: `data:image/png;base64,${png.toString('base64')}` } }))] }],
     usage: { include: true },
   };
-  const response = await withHostResourcePermit('provider', PROVIDER_CONCURRENCY, () => fetcher('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', signal: req.signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), { signal: req.signal });
-  if (!response.ok) throw new Error(`OpenRouter HTTP ${response.status} — ${(await response.text().catch(() => '')).slice(0, 300)}`);
+  const response = await sendChat(body, apiKey, fetcher, { signal: req.signal });
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: string }>; usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number } };
   const raw = data.choices?.[0]?.message?.content;
   return {
     content: typeof raw === 'string' ? raw : '',
     finishReason: data.choices?.[0]?.finish_reason ?? 'stop',
-    usage: { promptTokens: Number(data.usage?.prompt_tokens) || 0, completionTokens: Number(data.usage?.completion_tokens) || 0, cachedTokens: 0, costUsd: Number(data.usage?.cost) || 0 },
+    // Same fail-closed rule as chatStructured: a missing cost is an error, never $0.
+    usage: { promptTokens: requiredUsageNumber(data.usage?.prompt_tokens, 'prompt_tokens'), completionTokens: requiredUsageNumber(data.usage?.completion_tokens, 'completion_tokens'), cachedTokens: 0, costUsd: requiredUsageNumber(data.usage?.cost, 'cost') },
   };
 }

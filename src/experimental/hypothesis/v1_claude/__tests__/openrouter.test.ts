@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chatStructured, maxPriceForCallBudget, schemaLimitLines } from '../llm/openrouter.js';
+import { chatStructured, maxPriceForCallBudget, promptTokenEstimate, schemaLimitLines } from '../llm/openrouter.js';
 
 test('call budget derives per-token provider ceilings with framing headroom', () => {
   const budget = 0.02;
   const promptBytes = 1200;
   const maxTokens = 1000;
   const ceilings = maxPriceForCallBudget(budget, promptBytes, maxTokens)!;
-  const promptUpperBound = promptBytes + 2048;
+  const promptUpperBound = promptTokenEstimate(promptBytes);
   const promptSpendUpperBound = promptUpperBound * ceilings.prompt / 1_000_000;
   const completionSpendUpperBound = maxTokens * ceilings.completion / 1_000_000;
   assert.ok(promptSpendUpperBound + completionSpendUpperBound <= budget * 0.9);

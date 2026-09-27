@@ -16,6 +16,8 @@ import { renderSVG } from '../render/renderScene.js';
 import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
 import { VISUAL_STAGE_VERSIONS } from './versions.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
+import { sourceCommit } from './provenance.js';
+import { catalogVersion } from '../catalog/registry.js';
 
 export interface HandAuthoredSceneInput {
   sceneId: string;
@@ -117,7 +119,7 @@ export async function runHypothesis(input: HypothesisInput, options: HypothesisR
     }
     if (structuralIssues.some((i) => i.code !== 'unresolved-object-candidate')) continue;
 
-    const resolvedStage = await runStage(`S7-resolve:${sceneInput.sceneId}`, { scene: parsed.data, catalog: 'streamline-house-catalog' }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: 'streamline-v1' }, () => resolveScene(parsed.data));
+    const resolvedStage = await runStage(`S7-resolve:${sceneInput.sceneId}`, { scene: parsed.data }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: catalogVersion() }, () => resolveScene(parsed.data));
     const resolved = resolvedStage.artifact.payload;
     const previousLayout = previousBoxes ? Object.fromEntries(previousBoxes) : undefined;
     const layoutStage = await runStage(`S8-layout:${sceneInput.sceneId}`, { resolvedHash: resolvedStage.artifact.contentHash, previousLayout, fontSha256: KALAM_FONT_SHA256 }, { schemaVersion: 'claude-laid-out-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.layout }, () => layoutScene(resolved, { previous: previousBoxes }));
@@ -170,7 +172,7 @@ export async function runHypothesis(input: HypothesisInput, options: HypothesisR
     status: deriveRunStatus(failures.filter((f) => f.hard).length),
     caseId: input.caseId,
     runId,
-    commit: 'uncommitted-worktree',
+    commit: sourceCommit(),
     configHash: sha256(stableJson({ runConfig, rendererSchema: 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
     nativeArtifacts: {},
     claims: narration.scenes.map((s) => s.plainText),

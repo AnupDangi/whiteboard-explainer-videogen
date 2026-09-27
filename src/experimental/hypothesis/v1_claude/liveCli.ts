@@ -58,7 +58,7 @@ async function main(): Promise<void> {
 
   const offline = cases.every((c) => c.startsWith('fixtures-'));
   // Hand-authored fixture runs make no OpenRouter call, so they do not need credentials.
-  const env = offline ? { apiKey: '', directorModel: 'hand-authored', sceneModel: 'hand-authored', contentModel: 'hand-authored' } : await loadOpenRouterEnv();
+  const env = offline ? { apiKey: '', sceneModel: 'hand-authored', contentModel: 'hand-authored', stageModels: {} } : await loadOpenRouterEnv();
   const calibration = await loadAlignmentCalibration();
   // --planner=<openrouter model id> runs experiment E5 (planner model A/B); default is the strong S6 model.
   const plannerModel = argValue(args, 'planner') ?? env.sceneModel;

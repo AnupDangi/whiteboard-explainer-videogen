@@ -82,6 +82,8 @@ export interface StageRunRecord {
   costEstimated?:boolean;
   /** False when source intake happened before this run and its original wall time is unavailable. */
   timingKnown?:boolean;
+  /** Model that produced this stage's output (provider stages). */
+  modelId?:string;
   cacheHit:boolean;
   fallbackCount:number;
   usage?:RunUsage;

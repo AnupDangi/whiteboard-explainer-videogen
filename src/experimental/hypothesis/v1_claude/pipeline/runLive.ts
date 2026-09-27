@@ -42,6 +42,7 @@ import { EXAMPLE_BANK_HASH } from '../planner/exemplars.js';
 import { buildScenePlannerPrompt } from '../planner/prompt.js';
 import { SCENE_DIRECTOR_SKILL_HASH } from '../planner/sceneDirectorSkill.js';
 import { promptExperimentEligibilityProblems } from '../harness/promptExperimentEligibility.js';
+import { sourceCommit } from './provenance.js';
 
 /**
  * Live-mode pipeline (per claude_pipeline.md §1/§2): source-generated lessons
@@ -355,12 +356,14 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   type PlanStep = { failure: StageFailure } | { plannerInput: PlannerSceneInput; planned: PlanSceneResult; promptAudit?: Record<string, unknown>; plannerSkipped: boolean; plannerCacheHit: boolean; plannerArtifactCostUsd?: number; durationMs: number; startedAtMs: number; completedAtMs: number };
   const planStep = async (sceneInput: LiveSceneInput, previousForPrompt: PlannerSceneInput['previousElements']): Promise<PlanStep> => {
     const narrationScene = narration.scenes.find((s) => s.sceneId === sceneInput.sceneId)!;
-    const priorProviderSpend = stageRuns.filter((record) => record.kind !== 'local').reduce((sum, record) => sum + record.apiCostUsd, 0);
-    const unallocatedRunBudgetUsd = Math.max(0, options.maxCostUsd - priorProviderSpend);
-    const perSceneBudgetUsd = unallocatedRunBudgetUsd / Math.max(1, input.scenes.length);
+    // options.maxCostUsd is this run's allowance and is already net of lesson-preparation spend
+    // (lessonCli subtracts the ledger's spend), so only S6 spend made inside this run comes off it.
+    // With a durable ledger the ledger enforces the absolute cap across concurrent scenes; without one,
+    // each scene gets an equal share so parallel planners cannot jointly overspend.
+    const remainingRunBudgetUsd = Math.max(0, options.maxCostUsd - totalUsage.costUsd);
     const remainingBudgetUsd = ctx.budgetLedger
-      ? Math.max(0, options.maxCostUsd - priorProviderSpend - totalUsage.costUsd)
-      : Math.min(perSceneBudgetUsd, Math.max(0, options.maxCostUsd - priorProviderSpend - totalUsage.costUsd));
+      ? remainingRunBudgetUsd
+      : Math.min(options.maxCostUsd / Math.max(1, input.scenes.length), remainingRunBudgetUsd);
     const plannerInput: PlannerSceneInput = buildPlannerSceneInput({ sceneId: sceneInput.sceneId, narrationScene, teachingContext: sceneInput.teachingContext, mentionCandidates: mentionCandidatesByScene.get(sceneInput.sceneId) ?? new Map(), previousElements: previousForPrompt, ...((ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? { iconCatalog } : {}) });
 
     if (input.runClass === 'generated-lesson') {
@@ -641,7 +644,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     status: derivePublishStatus(),
     caseId: input.caseId,
     runId,
-    commit: 'uncommitted-worktree',
+    commit: sourceCommit(),
     configHash: sha256(stableJson({ options, plannerModel: ctx.plannerModel, promptArm, exampleOrder, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure), activeCatalogVersion, scenePromptVersion: SCENE_PROMPT_VERSION, scenePlanner: ctx.scenePlanner ?? 'board-v2', boardPromptVersion: BOARD_PROMPT_VERSION, skillVersion: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, candidateFeasibilityVersion: CANDIDATE_FEASIBILITY_VERSION, exemplarBankVersion: EXAMPLE_BANK_VERSION, exemplarBankHash: EXAMPLE_BANK_HASH, exemplarRankVersion: EXAMPLE_RANK_VERSION, plannerSchema: (ctx.scenePlanner ?? 'board-v2') === 'board-v2' ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', visualStageVersions: VISUAL_STAGE_VERSIONS, fontSha256: KALAM_FONT_SHA256 })),
     nativeArtifacts: {},
     claims: narration.scenes.map((s) => s.plainText),

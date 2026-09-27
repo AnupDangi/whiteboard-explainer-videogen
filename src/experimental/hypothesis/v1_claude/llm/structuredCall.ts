@@ -1,16 +1,26 @@
 import { z } from 'zod';
-import { chatStructured, maxPriceForCallBudget, ProviderNotDispatchedError } from './openrouter.js';
+import { maxPriceForCallBudget, priceCeilingForModel, ProviderNotDispatchedError, RETRYABLE_NOT_DISPATCHED, worstCaseCallUsd, type ModelPricing } from './openrouter.js';
+import { openRouterClient, type ModelClient } from './modelClient.js';
 import type { StageFailure } from '../types.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 
 /**
- * One validated LLM call for every model stage in this track (S2 concepts,
- * S3 teaching plan, S4 script, S6 Scene Planner): real OpenRouter call with a
- * JSON schema generated from the stage's zod schema, temperature 0, EXACTLY
- * ONE repair attempt that feeds the validator's error back, real token/cost
- * accounting, a per-call timeout, and a per-clip budget check. A second
- * failure is returned as a hard StageFailure — never converted into a
- * fabricated success (AGENTS.md #7).
+ * One validated LLM call for every model stage in this track (S1b syllabus,
+ * S2 concepts, S3 teaching plan, S4 script, S6 Scene Planner): a ModelClient
+ * call (OpenRouter by default) with a JSON schema generated from the stage's
+ * zod schema, temperature 0, EXACTLY ONE repair attempt that feeds the
+ * validator's error back, real token/cost accounting, a per-call timeout, and
+ * a budget check. A second failure is returned as a hard StageFailure — never
+ * converted into a fabricated success (AGENTS.md #7).
+ *
+ * Budget: when the model's published prices are known, the worst-case cost
+ * of the call is checked against the remaining budget before sending (a model
+ * that cannot fit fails as `model-too-expensive-for-budget`) and reserved in
+ * the shared ledger; `max_price` pins routing to that model's own price.
+ * Otherwise a budget-split price ceiling applies.
+ *
+ * Truncation: a response cut off at `maxTokens` (finish_reason "length") is
+ * reported with its own code, and the repair gets a larger token allowance.
  */
 export interface CallUsage {
   calls: number;
@@ -52,6 +62,10 @@ export interface StructuredCallOptions<T> {
   budgetLedger?: PersistentBudgetLedger;
   /** Optional transport injection for deterministic request-contract tests. */
   fetcher?: typeof fetch;
+  /** Model provider; defaults to OpenRouter with `apiKey` and `fetcher`. */
+  client?: ModelClient;
+  /** Known per-token prices; otherwise asked from the client. */
+  modelPricing?: ModelPricing;
   timeoutMs?: number;
   signal?: AbortSignal;
   /** Retries after a ProviderNotDispatchedError. These are transport retries, never the semantic repair. Default 2. */
@@ -74,6 +88,9 @@ export interface StructuredCallAttemptRecord {
   model: string;
   content: string;
   requestPriceCeiling?: { prompt: number; completion: number };
+  /** Provider finish reason ("stop", "length" = cut off at maxTokens, ...). */
+  finishReason?: string;
+  maxTokens?: number;
   routing?: { generationId?: string; selectedModel?: string; selectedProvider?: string; strategy?: string; attempt?: number };
   usage: { promptTokens: number; completionTokens: number; cachedTokens: number; costUsd: number };
 }
@@ -173,9 +190,9 @@ export function parseCandidates<T>(content: string, schema: z.ZodType<T>, valida
   return { ok: false, error: lastError };
 }
 
-export const buildRepairPrompt = (originalUserPrompt: string, invalidOutput: string, validatorError: string): string => `${originalUserPrompt}
+export const buildRepairPrompt = (originalUserPrompt: string, invalidOutput: string, validatorError: string, truncated = false): string => `${originalUserPrompt}
 
-Your previous response was NOT valid and was rejected by the validator. This is your one allowed repair attempt — produce a corrected JSON object that fixes every issue below. Do not repeat the same mistake.
+Your previous response was NOT valid and was rejected by the validator. This is your one allowed repair attempt — produce a corrected JSON object that fixes every issue below. Do not repeat the same mistake.${truncated ? '\nYour previous response was cut off at the output token limit before the JSON was complete. Write the complete object more concisely: shorter strings, no commentary.' : ''}
 
 Your previous (INVALID) response:
 ${invalidOutput}
@@ -191,43 +208,50 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
   const failures: StageFailure[] = [];
   const rawResponses: StructuredCallResult<T>['rawResponses'] = [];
 
-  const call = async (userPrompt: string, attempt: number): Promise<string | null> => {
+  const client = opts.client ?? openRouterClient(opts.apiKey, opts.fetcher);
+  const pricing = opts.modelPricing ?? await client.pricing?.(opts.model).catch(() => undefined);
+
+  const call = async (userPrompt: string, attempt: number, maxTokens: number): Promise<{ content: string; finishReason: string } | null> => {
     if (usage.costUsd >= opts.remainingBudgetUsd) {
       failures.push({ code: 'cost-ceiling', stage: opts.stage, message: `${opts.subject}: skipped call #${attempt} — remaining clip budget ($${opts.remainingBudgetUsd.toFixed(4)}) exhausted`, hard: true });
       return null;
     }
-    // A live run once saw an OpenRouter call hang ~20 minutes; a timeout turns that into a fast, visible failure.
-    // Flash reasoning models can take 1-2 minutes on a full teaching plan (observed live); 180 s still turns a hang into a visible failure.
-    const timeoutSignal = AbortSignal.timeout(opts.timeoutMs ?? 180_000);
-    const signal = opts.signal ? AbortSignal.any([opts.signal, timeoutSignal]) : timeoutSignal;
+    const promptBytes = Buffer.byteLength(`${opts.system}\n${userPrompt}`, 'utf8');
     const stageRemainingUsd = Math.max(0, opts.remainingBudgetUsd - usage.costUsd);
+    const worstCaseUsd = pricing ? worstCaseCallUsd(pricing, promptBytes, maxTokens) : undefined;
+    if (worstCaseUsd !== undefined && worstCaseUsd > stageRemainingUsd) {
+      failures.push({ code: 'model-too-expensive-for-budget', stage: opts.stage, message: `${opts.subject}: call #${attempt} to ${opts.model} could cost up to $${worstCaseUsd.toFixed(4)} (${maxTokens} output tokens) but only $${stageRemainingUsd.toFixed(4)} remains; choose a cheaper model or raise the budget`, hard: true });
+      return null;
+    }
     const invoke = async (requestBudgetUsd: number) => {
-      const requestPriceCeiling = maxPriceForCallBudget(
-        requestBudgetUsd,
-        Buffer.byteLength(`${opts.system}\n${userPrompt}`, 'utf8'),
-        opts.maxTokens ?? 4000,
-      );
-      const response = await chatStructured(opts.apiKey, {
+      // Known prices pin routing to this model's own price; unknown prices fall back to a budget split.
+      const requestPriceCeiling = pricing ? priceCeilingForModel(pricing) : maxPriceForCallBudget(requestBudgetUsd, promptBytes, maxTokens);
+      const response = await client.chat({
         model: opts.model,
         system: opts.system,
         user: userPrompt,
         schema: jsonSchema,
         schemaName: opts.schemaName,
-        maxTokens: opts.maxTokens ?? 4000,
+        maxTokens,
         temperature: opts.temperature ?? 0,
         maxPriceUsdPerMillionTokens: requestPriceCeiling,
         effort: opts.effort,
-        signal,
-      }, opts.fetcher);
+        // A live run once saw a call hang ~20 minutes; flash reasoning models can take 1-2 minutes on a full
+        // teaching plan. The timeout starts when the request gets a provider slot, not while it queues.
+        timeoutMs: opts.timeoutMs ?? 180_000,
+        ...(opts.signal ? { signal: opts.signal } : {}),
+      });
       return { ...response, requestPriceCeiling };
     };
     const result = opts.budgetLedger
       ? await opts.budgetLedger.call(stageRemainingUsd, async (allowedUsd) => {
           const response = await invoke(allowedUsd);
           return { value: response, costUsd: response.usage.costUsd };
-        }).then((entry) => {
+        }, { ...(worstCaseUsd !== undefined ? { reserveUsd: worstCaseUsd } : {}) }).then((entry) => {
           if (!entry.allowed) {
-            failures.push({ code: 'cost-ceiling', stage: opts.stage, message: `${opts.subject}: persistent budget ledger exhausted ($${entry.spentUsd.toFixed(4)} of $${opts.budgetLedger!.budgetUsd.toFixed(4)})`, hard: true });
+            failures.push(entry.reason === 'reservation-exceeds-budget'
+              ? { code: 'model-too-expensive-for-budget', stage: opts.stage, message: `${opts.subject}: call #${attempt} could cost up to $${worstCaseUsd!.toFixed(4)}, more than the persistent budget ledger has left (spent $${entry.spentUsd.toFixed(4)} of $${opts.budgetLedger!.budgetUsd.toFixed(4)})`, hard: true }
+              : { code: 'cost-ceiling', stage: opts.stage, message: `${opts.subject}: persistent budget ledger exhausted ($${entry.spentUsd.toFixed(4)} of $${opts.budgetLedger!.budgetUsd.toFixed(4)})`, hard: true });
             return null;
           }
           return entry.value;
@@ -250,20 +274,23 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
       attempt,
       model: opts.model,
       content: result.content,
+      finishReason: result.finishReason,
+      maxTokens,
       ...(result.requestPriceCeiling ? { requestPriceCeiling: result.requestPriceCeiling } : {}),
       ...(result.routing ? { routing: result.routing } : {}),
       usage: { ...result.usage },
     });
-    return result.content;
+    return { content: result.content, finishReason: result.finishReason };
   };
 
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const callWithTransportRetry = async (userPrompt: string, attempt: number): Promise<string | null> => {
+  const callWithTransportRetry = async (userPrompt: string, attempt: number, maxTokens: number): Promise<{ content: string; finishReason: string } | null> => {
     for (let retry = 0; ; retry++) {
       try {
-        return await call(userPrompt, attempt);
+        return await call(userPrompt, attempt, maxTokens);
       } catch (error) {
-        if (!(error instanceof ProviderNotDispatchedError) || retry >= (opts.transportRetries ?? 2)) throw error;
+        // Only route/throttle rejections can succeed on an identical retry; a rejected request (auth, credit, bad parameters) cannot.
+        if (!(error instanceof ProviderNotDispatchedError) || !RETRYABLE_NOT_DISPATCHED.includes(error.code) || retry >= (opts.transportRetries ?? 2)) throw error;
         failures.push({ code: `${opts.stage}-transport-retry`, stage: opts.stage, message: `${opts.subject} attempt ${attempt}: ${error.message}; transport retry ${retry + 1} (no completion was produced; this is not a repair)`, hard: false });
         await sleep((opts.transportRetryDelayMs ?? 5000) * (retry + 1));
       }
@@ -278,33 +305,40 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
   };
   const validatorThrew = (error: unknown) => failures.push({ code: `${opts.stage}-validator-threw`, stage: opts.stage, message: `${opts.subject}: validation code threw (a pipeline bug, not a model failure): ${error instanceof Error ? error.message : String(error)}`, hard: true });
 
-  let first: string | null;
+  const maxTokens = opts.maxTokens ?? 4000;
+  let first: { content: string; finishReason: string } | null;
   try {
-    first = await callWithTransportRetry(opts.user, 1);
+    first = await callWithTransportRetry(opts.user, 1, maxTokens);
   } catch (error) {
     failures.push({ code: `${opts.stage}-call-failed`, stage: opts.stage, message: `${opts.subject} attempt 1: ${error instanceof Error ? error.message : String(error)}`, hard: true });
     return { usage, failures, rawResponses };
   }
   if (first === null) return { usage, failures, rawResponses };
-  const parsed = parseSafely(first);
+  const parsed = parseSafely(first.content);
   if ('threw' in parsed) { validatorThrew(parsed.threw); return { usage, failures, rawResponses }; }
   if (parsed.ok) return { value: parsed.value, usage, failures, rawResponses };
 
+  // Output cut off at the token limit: report it as such and give the repair more room.
+  const firstTruncated = first.finishReason === 'length';
+  const firstError = firstTruncated ? `response was cut off at the ${maxTokens}-token output limit (${parsed.error})` : parsed.error;
+  if (firstTruncated) failures.push({ code: `${opts.stage}-truncated`, stage: opts.stage, message: `${opts.subject} attempt 1: ${firstError}`, hard: false });
+  const repairMaxTokens = firstTruncated ? Math.ceil(maxTokens * 1.5) : maxTokens;
   usage.repairs += 1;
-  let second: string | null;
+  let second: { content: string; finishReason: string } | null;
   try {
-    second = await callWithTransportRetry(buildRepairPrompt(opts.user, first, parsed.error), 2);
+    second = await callWithTransportRetry(buildRepairPrompt(opts.user, first.content, firstError, firstTruncated), 2, repairMaxTokens);
   } catch (error) {
-    failures.push({ code: `${opts.stage}-repair-call-failed`, stage: opts.stage, message: `${opts.subject}: invalid (${parsed.error}); repair call failed: ${error instanceof Error ? error.message : String(error)}`, hard: true });
+    failures.push({ code: `${opts.stage}-repair-call-failed`, stage: opts.stage, message: `${opts.subject}: invalid (${firstError}); repair call failed: ${error instanceof Error ? error.message : String(error)}`, hard: true });
     return { usage, failures, rawResponses };
   }
   if (second === null) {
-    failures.push({ code: `${opts.stage}-invalid`, stage: opts.stage, message: `${opts.subject}: invalid (${parsed.error}); repair skipped (budget)`, hard: true });
+    failures.push({ code: `${opts.stage}-invalid`, stage: opts.stage, message: `${opts.subject}: invalid (${firstError}); repair skipped (budget)`, hard: true });
     return { usage, failures, rawResponses };
   }
-  const repaired = parseSafely(second);
+  const repaired = parseSafely(second.content);
   if ('threw' in repaired) { validatorThrew(repaired.threw); return { usage, failures, rawResponses }; }
   if (repaired.ok) return { value: repaired.value, usage, failures, rawResponses };
-  failures.push({ code: `${opts.stage}-repair-failed`, stage: opts.stage, message: `${opts.subject}: still invalid after one repair — initial: ${parsed.error} | after repair: ${repaired.error}`, hard: true });
+  const secondError = second.finishReason === 'length' ? `response was cut off at the ${repairMaxTokens}-token output limit (${repaired.error})` : repaired.error;
+  failures.push({ code: second.finishReason === 'length' ? `${opts.stage}-truncated-after-repair` : `${opts.stage}-repair-failed`, stage: opts.stage, message: `${opts.subject}: still invalid after one repair — initial: ${firstError} | after repair: ${secondError}`, hard: true });
   return { usage, failures, rawResponses };
 }
