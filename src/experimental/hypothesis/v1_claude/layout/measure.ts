@@ -57,22 +57,37 @@ export function measureTextWidth(text: string, fontSize: number, uppercase: bool
   return measured;
 }
 
+/** A box label stays on one line unless its padded single-line width would exceed this. */
+export const BOX_MAX_ONE_LINE_W = 420;
+const BOX_TEXT_PAD = 40;
+
+/**
+ * The single wrap decision shared by layout sizing and rendering: one line
+ * when it fits BOX_MAX_ONE_LINE_W, otherwise at most two balanced lines
+ * (catalog/ladder.ts's labelLines, the same split used for icon labels).
+ * Short labels ("RED CELL") no longer grow a second line, which kept dense
+ * boards from fitting at readable size.
+ */
+export function boxLabelLines(text: string, fontSize: number): string[] {
+  if (!text.trim()) return [];
+  return measureTextWidth(text, fontSize) + BOX_TEXT_PAD > BOX_MAX_ONE_LINE_W ? labelLines(text) : [text];
+}
+
 export interface IntrinsicSize {
   w: number;
   h: number;
 }
 
 export function measureElement(el: Element): IntrinsicSize {
-  const pad = 40;
+  const pad = BOX_TEXT_PAD;
   const body = STYLE.font.sizes.body;
   const label = STYLE.font.sizes.label;
   const note = STYLE.font.sizes.note;
   switch (el.prim) {
     case 'box': {
-      // Box text wraps onto at most two balanced lines (catalog/ladder.ts's labelLines,
-      // the same "CARBON / DIOXIDE" split used for icon labels); the box grows by one
+      // Wraps only when one line is too wide (boxLabelLines); the box grows by one
       // line height only when it actually wraps, and never shrinks font below `body`.
-      const lines = labelLines(el.text ?? el.glyph ?? el.label ?? '');
+      const lines = boxLabelLines(el.text ?? el.glyph ?? el.label ?? '', body);
       const lineWidths = lines.map((line) => measureTextWidth(line, body));
       const w = Math.max(STYLE.element.boxMinW, Math.max(0, ...lineWidths) + pad);
       const h = STYLE.element.boxMinH + (lines.length > 1 ? LINE_H.body : 0);

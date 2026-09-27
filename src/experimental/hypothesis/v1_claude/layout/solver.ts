@@ -1,6 +1,6 @@
 import type { BBox, LaidOutElement, LaidOutScene, ResolvedScene } from '../types.js';
 import { STYLE } from '../style.js';
-import { TEMPLATES, applyAxisOverlapFix, type TemplateFn } from '../templates/definitions.js';
+import { DENSE_TEMPLATES, TEMPLATES, applyAxisOverlapFix, type TemplateFn } from '../templates/definitions.js';
 import type { SlotAssignment } from '../templates/assign.js';
 import { unionBBox, scaleAround, type Rect } from './geometry.js';
 import { routeEdges } from './edges.js';
@@ -30,17 +30,35 @@ function containerPad(): number {
  */
 const GROWTH_FACTORS = [1.6, 1.45, 1.3, 1.15, 1.0, 0.85, 0.72, 0.6];
 
-function placeWithGrowth(template: TemplateFn, rect: Rect, assignments: SlotAssignment[], containerIds: Set<string>): Map<string, BBox> {
+function placementFits(boxes: Map<string, BBox>, rect: Rect, containerIds: Set<string>): boolean {
+  const leaves = [...boxes.entries()].filter(([id]) => !containerIds.has(id)).map(([, b]) => b);
+  const inside = leaves.every((b) => b.x >= rect.x - 0.5 && b.y >= rect.y - 0.5 && b.x + b.w <= rect.x + rect.w + 0.5 && b.y + b.h <= rect.y + rect.h + 0.5);
+  const overlapping = leaves.some((a, i) => leaves.some((b, j) => j > i && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
+  return inside && !overlapping;
+}
+
+/**
+ * Try the template at every growth factor >= 1 first, then its dense variant
+ * (if any) at the same factors, and only then shrink below native size (each
+ * shrink factor tries the template, then the dense variant). A factor below 1
+ * scales text below its designed size (icon labels are drawn at the 32px
+ * floor), so a dense variant that keeps native size wins.
+ */
+function placeWithGrowth(template: TemplateFn, dense: TemplateFn | undefined, rect: Rect, assignments: SlotAssignment[], containerIds: Set<string>): Map<string, BBox> {
+  const native = GROWTH_FACTORS.filter((g) => g >= 1);
+  const shrunk = GROWTH_FACTORS.filter((g) => g < 1);
+  const variants = dense ? [template, dense] : [template];
+  const attempts: Array<[TemplateFn, number]> = [
+    ...variants.flatMap((fn) => native.map((g) => [fn, g] as [TemplateFn, number])),
+    ...shrunk.flatMap((g) => variants.map((fn) => [fn, g] as [TemplateFn, number])),
+  ];
   let fallback: Map<string, BBox> | undefined;
-  for (const g of GROWTH_FACTORS) {
+  for (const [fn, g] of attempts) {
     const grown = assignments.map((a) => ({ ...a, intrinsic: { w: a.intrinsic.w * g, h: a.intrinsic.h * g } }));
-    const { boxes: raw, axis } = template(rect, grown);
+    const { boxes: raw, axis } = fn(rect, grown);
     const boxes = applyAxisOverlapFix(raw, axis, STYLE.element.gap);
-    fallback = boxes;
-    const leaves = [...boxes.entries()].filter(([id]) => !containerIds.has(id)).map(([, b]) => b);
-    const inside = leaves.every((b) => b.x >= rect.x - 0.5 && b.y >= rect.y - 0.5 && b.x + b.w <= rect.x + rect.w + 0.5 && b.y + b.h <= rect.y + rect.h + 0.5);
-    const overlapping = leaves.some((a, i) => leaves.some((b, j) => j > i && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
-    if (inside && !overlapping) return boxes;
+    if (fn === template) fallback = boxes;
+    if (placementFits(boxes, rect, containerIds)) return boxes;
   }
   // Nothing fit: shrink the smallest-factor placement uniformly into the working rect so it can never
   // leave the safe area (overlaps/readability are still reported by the gates, not hidden).
@@ -77,7 +95,7 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
   }));
 
   const template = TEMPLATES[scene.template];
-  let boxes = placeWithGrowth(template, rect, assignments, containerIds);
+  let boxes = placeWithGrowth(template, DENSE_TEMPLATES[scene.template], rect, assignments, containerIds);
 
   // Container hugging: a container's own box is the union of its children's
   // final boxes (padded), never an independently placed slot box.

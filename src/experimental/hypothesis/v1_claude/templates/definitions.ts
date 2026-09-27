@@ -137,6 +137,24 @@ const fanOut: TemplateFn = (rect, elements) => {
   return { boxes, axis: 'y' };
 };
 
+/**
+ * Dense fan_out: the source sits at the centre and targets are spaced on an
+ * elliptical ring, so every straight source->target arrow is a separate ray
+ * and no target column has to be shrunk below readable text size. The solver
+ * tries this only when the column layout cannot fit at native size.
+ */
+const fanOutDense: TemplateFn = (rect, elements) => {
+  const plan: SlotPlanEntry[] = [{ name: 'source', capacity: 1 }, { name: 'target', capacity: 'many' }];
+  const groups = assignSlots(elements, plan);
+  const source = groups.get('source')!;
+  const targets = groups.get('target')!;
+  const { center, ring } = circleLayout(rect, targets.map((t) => t.intrinsic), { center: source[0]?.intrinsic });
+  const boxes = new Map<string, BBox>();
+  if (source[0] && center) boxes.set(source[0].elementId, center);
+  targets.forEach((t, i) => boxes.set(t.elementId, ring[i]));
+  return { boxes, axis: 'none' };
+};
+
 // ---------------------------------------------------------------------------
 // 6. list_icon — quickly / reliably / cheaply
 // ---------------------------------------------------------------------------
@@ -241,15 +259,19 @@ const weightedBlend: TemplateFn = (rect, elements) => {
 // ---------------------------------------------------------------------------
 // 10. layered_stack — network layers / OSI stack
 // ---------------------------------------------------------------------------
-const layeredStack: TemplateFn = (rect, elements) => {
+const stackWithGap = (layerGap: number): TemplateFn => (rect, elements) => {
   const plan: SlotPlanEntry[] = [{ name: 'layer', capacity: 'many' }];
   const groups = assignSlots(elements, plan);
   const layers = groups.get('layer')!;
   const wideRect = { x: rect.x + rect.w * 0.1, y: rect.y, w: rect.w * 0.8, h: rect.h };
   const sizes = layers.map((l) => ({ w: wideRect.w, h: l.intrinsic.h }));
-  const boxes = new Map<string, BBox>(place(layers, columnLayout(wideRect, sizes, GAP / 2)));
-  return { boxes, axis: 'y' };
+  const boxes = new Map<string, BBox>(place(layers, columnLayout(wideRect, sizes, layerGap)));
+  // columnLayout never overlaps; the solver's axis pass would re-space layers at the full GAP.
+  return { boxes, axis: 'none' };
 };
+const layeredStack = stackWithGap(GAP / 2);
+/** Dense stack: layers nearly touch, like a stacked-plates diagram. */
+const layeredStackDense = stackWithGap(8);
 
 // ---------------------------------------------------------------------------
 // 11. cycle — photosynthesis / immune loop
@@ -317,6 +339,16 @@ export const TEMPLATES: Record<TemplateId, TemplateFn> = {
   cycle,
   formula_focus: formulaFocus,
   plot_focus: plotFocus,
+};
+
+/**
+ * Alternate geometry for boards whose default template only fits by shrinking
+ * (growth factor < 1, which drops text below the readability floor). Same
+ * slots and semantics; only placement differs.
+ */
+export const DENSE_TEMPLATES: Partial<Record<TemplateId, TemplateFn>> = {
+  fan_out: fanOutDense,
+  layered_stack: layeredStackDense,
 };
 
 export function applyAxisOverlapFix(boxes: Map<string, BBox>, axis: 'x' | 'y' | 'none', gap: number): Map<string, BBox> {
