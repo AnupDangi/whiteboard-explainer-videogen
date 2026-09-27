@@ -17,7 +17,7 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
     contract: { learningDelta: `Explain how ${concept.label} starts this process.`, targetDurationSec: 20, requiredConceptIds: [concept.id], requiredRelations: [], evidenceSpanIds: [span.id], teachingSkill: 'definition', candidateMechanisms: ['focus'] },
   }));
   const plan = { targetDurationSec: 60, intro: { sourceTitle: 'Water cycle', sections: ['Heating', 'Evaporation', 'Cloud formation'] }, lessonBible: { audience: 'general learner', terminology: concepts.map((concept) => ({ conceptId: concept.id, label: concept.label })), persistentConceptIds: [] }, sections, recap: { keyPoints: ['Sunlight starts the cycle.'] } };
-  const script = { text: 'First consider [[sunlight|the sunlight]]. It adds energy to the water, which helps the next stage begin. This connects [[evaporation|evaporation]] with [[clouds|clouds]], completing one useful part of the water cycle and showing how these changes fit together.' };
+  const script = { text: 'First consider [[sunlight|the sunlight]]. It adds energy to [[water|the water]], which helps the next stage begin. This connects [[evaporation|evaporation]] with [[clouds|clouds]], completing one useful part of the water cycle and showing how these changes fit together.' };
   const syllabus = {
     requestedDurationSec: 60, plannedDurationSec: 60, coverageReason: 'The source supports this one-minute overview.', learningObjective: 'Explain the first steps of the water cycle.', audienceAssumptions: ['Basic science vocabulary.'],
     concepts: concepts.map(({ id, label, definition, evidence }) => ({ id, label, definition, evidence })), prerequisites: [],

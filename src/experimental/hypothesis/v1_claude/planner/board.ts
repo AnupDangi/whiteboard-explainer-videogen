@@ -29,6 +29,10 @@ export const BOARD_LAYOUTS = ['flow', 'fan_out', 'convergence', 'list', 'compare
 export const BOARD_ROLES = ['input', 'process', 'output', 'item', 'attribute'] as const;
 export const LABEL_ONLY = 'label';
 export const MAX_BOARD_NODES = 7;
+/** One concept may appear as up to this many nodes when the narration names distinct instances (Task 8). */
+export const MAX_NODES_PER_CONCEPT = 3;
+/** A non-structured, non-compare board needs at least this many nodes (Task 8). */
+export const MIN_BOARD_NODES = 3;
 export const MAX_CANDIDATES_PER_MENTION = 5;
 export const MAX_CANDIDATES_PER_SCENE = 40;
 /** Retrieval hints shown per mention need at least this MiniLM score; they guide the icon choice but do not limit it. */
@@ -216,14 +220,17 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
   const problems: string[] = [];
   const seenIds = new Set<string>();
   const seenMentions = new Set<string>();
-  const conceptsByNode = new Map<string, string>();
   for (const node of board.nodes) {
     if (seenIds.has(node.id)) problems.push(`node id ${node.id} is used twice; give every node a different id`);
     seenIds.add(node.id);
     seenMentions.add(node.mention);
-    const priorNode = conceptsByNode.get(node.concept);
-    if (priorNode) problems.push(`nodes ${priorNode} and ${node.id} duplicate concept ${node.concept}; use one node per source concept`);
-    else conceptsByNode.set(node.concept, node.id);
+    // One concept may appear as up to MAX_NODES_PER_CONCEPT instance nodes
+    // (e.g. VALUE: SAT / MAT / THE); each instance needs its own mention and
+    // its own label. Relations attach to the first node of each concept.
+    const sameConcept = board.nodes.filter((other) => other.concept === node.concept);
+    if (sameConcept.length > MAX_NODES_PER_CONCEPT && sameConcept[MAX_NODES_PER_CONCEPT] === node) problems.push(`concept ${node.concept} has ${sameConcept.length} nodes; at most ${MAX_NODES_PER_CONCEPT} instances`);
+    const twin = sameConcept.find((other) => other !== node && (other.mention === node.mention || other.label.toLowerCase() === node.label.toLowerCase()));
+    if (twin && board.nodes.indexOf(twin) < board.nodes.indexOf(node)) problems.push(`nodes ${twin.id} and ${node.id} show concept ${node.concept} twice; instances need a distinct mention and a distinct label`);
     if (node.icon !== LABEL_ONLY && !(node.icon in enums.iconAssetIds)) {
       const near = Object.keys(enums.iconAssetIds).filter((name) => words(name).some((part) => words(node.icon).some((wanted) => stem(part) === stem(wanted)))).slice(0, 8);
       problems.push(`node ${node.id}: icon "${node.icon}" is not in the icon catalog; use an exact catalog name${near.length ? ` such as [${near.join(', ')}]` : ''} or "${LABEL_ONLY}"`);
@@ -236,10 +243,13 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
     // Persistent concepts are labelled with their canonical term by code (compileBoard), so no rule is needed here.
   }
   if (input.previousElements?.length) {
-    const currentSignature = board.nodes.map((node) => `${node.concept}\u0000${node.icon === LABEL_ONLY ? 'box' : 'object'}\u0000${node.label.toLocaleLowerCase()}`).sort();
+    // The signature carries the mention, so two instances of one concept (same
+    // concept, different mentions/labels) never collide with each other here.
+    const mentionOf = (anchor: string | undefined): string => anchor?.startsWith('mention:') ? anchor.slice('mention:'.length) : '';
+    const currentSignature = board.nodes.map((node) => `${node.concept}${node.mention}\u0000${node.icon === LABEL_ONLY ? 'box' : 'object'}\u0000${node.label.toLocaleLowerCase()}`).sort();
     const previousSignature = input.previousElements
       .filter((element) => element.conceptIds?.length === 1 && (element.prim === 'box' || element.prim === 'object'))
-      .map((element) => `${element.conceptIds![0]}\u0000${element.prim}\u0000${(element.label ?? '').toLocaleLowerCase()}`).sort();
+      .map((element) => `${element.conceptIds![0]}${mentionOf(element.anchor)}\u0000${element.prim}\u0000${(element.label ?? '').toLocaleLowerCase()}`).sort();
     if (currentSignature.length === previousSignature.length && currentSignature.every((item, index) => item === previousSignature[index])) {
       problems.push('board repeats the immediately previous board’s same source concepts, labels, and visual forms; change the visual explanation or use a different scene concept');
     }
@@ -250,6 +260,10 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
   if (board.layout === 'compare' && board.visual.kind !== 'comparison') problems.push('compare layout requires comparison form');
   if (board.visual.kind === 'process' && !board.nodes.some((node) => node.role === 'process')) problems.push('process form needs at least one process-role node; when repairing another issue, keep at least one process-role node instead of changing every role');
   if ((board.layout === 'hub' || board.layout === 'fan_out' || board.layout === 'convergence') && board.nodes.length < 3) problems.push(`layout "${board.layout}" needs at least 3 nodes`);
+  // Abstract scenes still fill the board: instances, metaphors, and label boxes
+  // count, so only compare (2-3 nodes) and structured visuals are exempt.
+  const structured = ['formula', 'plot', 'matrix', 'number-line', 'worked-example'].includes(board.visual.kind);
+  if (!structured && board.layout !== 'compare' && board.nodes.length < MIN_BOARD_NODES) problems.push(`board has ${board.nodes.length} nodes; show at least ${MIN_BOARD_NODES} nodes — add the concrete things the narration names (icons, metaphors, or instances of a concept)`);
   const shown = new Set(board.nodes.map((node) => node.concept));
   for (const relation of input.teachingContext?.relations ?? []) {
     const missing = [relation.from, relation.to].filter((concept) => !shown.has(concept));
@@ -614,7 +628,8 @@ export function buildBoardPrompt(input: PlannerSceneInput): { system: string; us
     `Layouts:\n${LAYOUT_GUIDE}`,
     `Rules:
 - Every mention and concept must come from the lists in <scene>; every icon from <icon_catalog> (or "${LABEL_ONLY}"). Use each mention for at most one node.
-- concept: the source concept that node shows. Use exactly one node per source concept, even when several mentions refer to that concept; choose the most informative single mention. Show every concept named in "must show".
+- concept: the source concept that node shows. One concept may appear as up to 3 nodes when the narration names distinct instances of it (each instance needs its own mention and its own label, e.g. VALUE: SAT / MAT / THE). Show every concept named in "must show".
+- boards: show at least 3 nodes, except compare (2-3 nodes) and formula/plot/matrix/number-line/worked-example visuals. When the narration names few concepts, reach 3 with instances of a repeated concept, a teacher's visual metaphor, or a labelled box — never a title-only board.
 - icon: choose from the icon catalog. Prefer an icon that literally depicts the thing (a leaf for "leaf"); otherwise use the standard visual metaphor a teacher would sketch on a whiteboard (a key for a lookup, a treasure chest for stored value, a magnifier for searching, scales for comparing, a gear for a process, people for reviewers). iconSuggestions per mention are retrieval hints, not limits. Never pick an icon that suggests a different meaning. Use "${LABEL_ONLY}" only when no icon or clear metaphor fits — "${LABEL_ONLY}" nodes are drawn as coloured boxes, and boards made only of boxes teach poorly.
 - label: 1-2 words is best (whiteboard labels are short, like "LEAF" or "CARBON DIOXIDE"); never more than ${MAX_LABEL_WORDS}. Take the words from the mention phrase or concept label. (A concept with a canonicalTerm is labelled with it automatically.)
 - role: input, process, output, item, or attribute; it decides where the node sits in the layout. A board with visual.kind "process" must include at least one node whose role is "process" (including a one-node board). A convergence layout needs at least one output-role node; without one the board compiles as a list. When repairing a rejected board, keep at least one process-role node for the process form and reuse title words from the section heading, narration, or concept labels.

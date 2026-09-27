@@ -1939,3 +1939,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** `resolveBoardLayout()` in `board.ts` — planned convergence w/o output compiles to `list`/`list_icon` (same helper reused by fallback; P2a logic deduped). Prompt role rule +1 sentence. Missing output never renders silently. No topic keywords.
 - **Verification:** typecheck clean; full 498 node + 24 + 12 py; `git diff --check` clean. Fixture before/after: convergence→gate-fail vs list→adequacy clean; with-output convergence unchanged.
 - **Next bounded task:** T8 instance nodes + 3-node minimum (no videos in this pass).
+
+## Entry — 2026-09-27, T8 instance nodes + minimum (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** plan Task 8; boards need ≥3 nodes, concepts may instantiate ≤3.
+- **Implemented:** instance rule + min rule + mention-aware repeat signature (`anchor` on previousElements, populated runLive S6); S4 4–7 mentions (`v4/v5-mentions-4-7`); board-bank v2-instances + abstract-lookup example; legacy fixtures fixed by adding markers (never relaxing rules). Deviations: `magnifying glass` for spec's `magnifier` (absent from catalog); prompt concept rule rewritten (spec gave validator text only); catalog-once test scoped to icon_catalog block.
+- **Verification:** typecheck clean; full 500 node + 24 + 12 py; `git diff --check` clean.
+- **Next bounded task:** T9 occupancy gate + board-too-sparse.

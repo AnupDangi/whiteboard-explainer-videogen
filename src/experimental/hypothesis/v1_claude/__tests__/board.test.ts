@@ -158,10 +158,34 @@ test('fallback board is built from data: concept-matched mentions, confident ico
   assert.equal(compileBoard(board, scene).spec.edges.length, 3);
 });
 
-test('board rejects duplicate source-concept nodes even when node ids differ', () => {
-  const duplicate = goodBoard();
-  duplicate.nodes[1] = { ...duplicate.nodes[1]!, concept: duplicate.nodes[0]!.concept, mention: duplicate.nodes[0]!.mention };
-  assert.match(validateBoard(duplicate, scene).problems.join(' | '), /duplicate concept src_a/);
+test('a concept may appear as up to three labelled instances with distinct mentions', () => {
+  const input = makeScene(WORDS);
+  input.mentions.push({ id: 'm_a2', phrase: 'more flour' });
+  const board = goodBoard();
+  board.nodes.push({ id: 'n5', mention: 'm_a2', concept: 'src_a', icon: 'flour', label: 'more flour', role: 'input' });
+  const { problems, spec } = validateBoard(board, input);
+  assert.deepEqual(problems, []);
+  const fromA = spec!.edges.filter((e) => e.factualRelation?.fromConceptId === 'src_a');
+  assert.equal(fromA.length, 1);
+  assert.equal(fromA[0].from, 'n1');
+});
+
+test('instances must use distinct mentions and labels, and at most three per concept', () => {
+  const board = goodBoard();
+  board.nodes.push({ id: 'n5', mention: 'm_a', concept: 'src_a', icon: 'flour', label: 'flour', role: 'input' });
+  assert.ok(validateBoard(board, scene).problems.some((p) => p.includes('distinct mention')));
+  const crowded = makeScene(WORDS);
+  const extra: Array<[string, string]> = [['m_a2', 'more flour'], ['m_a3', 'fine flour'], ['m_a4', 'warm flour']];
+  for (const [id, phrase] of extra) crowded.mentions.push({ id, phrase });
+  const many = goodBoard();
+  (['n5', 'n6', 'n7'] as const).forEach((id, i) => many.nodes.push({ id, mention: extra[i]![0], concept: 'src_a', icon: 'flour', label: extra[i]![1], role: 'input' }));
+  assert.ok(validateBoard(many, crowded).problems.some((p) => p.includes('at most 3 instances')));
+});
+
+test('a process board with fewer than three nodes is rejected with a fix hint', () => {
+  const board = { ...goodBoard(), layout: 'flow' as const, nodes: goodBoard().nodes.slice(2) };
+  const problems = validateBoard(board, scene).problems;
+  assert.ok(problems.some((p) => p.includes('at least 3 nodes')));
 });
 
 test('typed visual forms compile into the existing deterministic SceneSpec primitives', () => {
@@ -211,7 +235,7 @@ test('source-backed plot and number-line values accept decimal and scientific no
 });
 
 test('board rejects an exact consecutive visual repeat', () => {
-  const previousElements = goodBoard().nodes.map((node) => ({ id: node.id, prim: node.icon === 'label' ? 'box' : 'object', label: node.label, conceptIds: [node.concept] }));
+  const previousElements = goodBoard().nodes.map((node) => ({ id: node.id, prim: node.icon === 'label' ? 'box' : 'object', label: node.label, conceptIds: [node.concept], anchor: `mention:${node.mention}` }));
   assert.match(validateBoard(goodBoard(), { ...scene, previousElements }).problems.join(' | '), /repeats the immediately previous board/);
 });
 
@@ -280,7 +304,7 @@ test('rainbow arc prompt handles many mentions for one source concept and retain
   };
   const prompt = buildBoardPrompt(rainbowScene);
   assert.match(prompt.user, /"mustShow": \[\s*"colored_arc"\s*\]/);
-  assert.match(prompt.system, /exactly one node per source concept, even when several mentions refer to that concept/);
+  assert.match(prompt.system, /up to 3 nodes when the narration names distinct instances/);
   assert.match(prompt.system, /visual\.kind "process" must include at least one node whose role is "process"/);
 });
 
@@ -327,7 +351,8 @@ test('prompt lists the catalog once and permits teacher metaphors', () => {
   assert.match(system, /visual metaphor a teacher would sketch/);
   assert.doesNotMatch(system, /Never invent a metaphor/);
   assert.match(user, /"key"/);
-  assert.equal(`${system}\n${user}`.split('"key"').length - 1, 1, 'catalog names appear once across both prompts');
+  const catalogBlock = user.match(/<icon_catalog[^>]*>([\s\S]*)<\/icon_catalog>/)?.[1] ?? '';
+  assert.equal(catalogBlock.split('"key"').length - 1, 1, 'the cacheable catalog block lists each name once (few-shot boards may reuse the name)');
 });
 
 test('a large catalog is admissible in full, checked in code rather than a provider enum', () => {

@@ -61,8 +61,8 @@ export interface PlannerSceneInput {
   candidates?: Record<string, Array<{ id?: string; name: string; score: number }>>;
   /** Board planner only: every icon in the enabled catalog (one name per icon), so a node may use a standard visual metaphor, not just a retrieval hit. */
   iconCatalog?: Array<{ id: string; name: string }>;
-  /** Elements on the previous scene's board, for carryOver continuity. */
-  previousElements?: Array<{ id: string; prim: string; label?: string; conceptIds?: string[] }>;
+  /** Elements on the previous scene's board, for carryOver continuity. `anchor` (when present) is the element's reveal anchor, so repeated-board detection can tell instances apart. */
+  previousElements?: Array<{ id: string; prim: string; label?: string; conceptIds?: string[]; anchor?: string }>;
   /** Present only for a generated lesson with a validated S3 contract and measured S5 mentions. */
   planningContext?: ScenePlanningContext;
 }

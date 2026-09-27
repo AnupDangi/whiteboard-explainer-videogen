@@ -313,7 +313,7 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
 // S4 — Script with [[id|phrase]] mention markers
 // ---------------------------------------------------------------------------
 
-export const MENTIONS_PER_SCENE = { min: 3, max: 8 };
+export const MENTIONS_PER_SCENE = { min: 4, max: 7 };
 /** Audio is the master clock, so length only needs to be roughly right; the tolerance keeps scenes from being thin. */
 const WORD_TOLERANCE = 0.4;
 
@@ -365,7 +365,7 @@ Return ONE JSON object: { "text": "..." }.
 
 MENTION MARKERS (required): wrap each phrase whose drawing should appear the moment it is spoken as [[id|spoken words]].
 - The spoken words stay in the sentence exactly as said; id is lowercase snake_case, unique within the scene.
-- The scene needs ${MENTIONS_PER_SCENE.min} to ${MENTIONS_PER_SCENE.max} markers, spread from the first sentence to the last. Mark the concrete things the board shows: objects, quantities, symbols of a formula, each step.
+- The scene needs ${MENTIONS_PER_SCENE.min} to ${MENTIONS_PER_SCENE.max} markers, spread from the first sentence to the last. Mark the concrete, drawable things the board shows — objects, people, places, tools, quantities — and each step; name abstract ideas through a concrete stand-in when the source supports one.
 - Example (18 s, ${Math.round(18 * WORDS_PER_SEC)} words, 5 markers):
   "Picture [[line|a straight line]] climbing across the page. Pick [[two_points|two points]] on it, one on the left and one further right. The sideways distance between them is [[run|the run]], and the upward distance is [[rise|the rise]]. Divide the rise by the run, and that single number is [[slope|the slope]] of the line."
 

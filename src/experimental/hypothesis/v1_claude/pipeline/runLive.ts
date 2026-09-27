@@ -418,7 +418,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (sceneInput.spec) planned = handAuthored(sceneInput.spec, plannerInput);
     else if (ctx.artifactStore) {
       const cached = await ctx.artifactStore.run<{ result: PlanSceneResult; promptAudit?: NonNullable<typeof promptAudit> }>('S6-scene-planner', { plannerInput, promptAudit, hardAlignmentFailureCount, planDespiteAlignmentFailure: Boolean(ctx.planDespiteAlignmentFailure) }, {
-        schemaVersion: board ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', stageVersion: board ? 'board-1' : '4', promptVersion: board ? BOARD_PROMPT_VERSION : SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
+        schemaVersion: board ? BOARD_SCHEMA_VERSION : 'claude-scene-spec/v1', stageVersion: board ? 'board-2-instances' : '4', promptVersion: board ? BOARD_PROMPT_VERSION : SCENE_PROMPT_VERSION, modelId: plannerSkipped ? 'not-called-upstream-alignment-failure' : ctx.plannerModel, catalogVersion: activeCatalogVersion,
       }, async () => ({
         result: plannerSkipped ? skip() : await plan(compiledPrompt),
         ...(promptAudit ? { promptAudit } : {}),
@@ -549,7 +549,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const laidOut = layoutStage?.artifact.payload ?? layoutScene(resolved, { previous: previousBoxes });
     recordLocalStage('S8-layout', layoutStartedAtMs, Boolean(layoutStage?.cacheHit));
     previousBoxes = new Map(laidOut.elements.map((e) => [e.id, e.bbox]));
-    previousElements = laidOut.elements.map((e) => ({ id: e.id, prim: e.element.prim, label: e.element.label ?? (e.element.prim === 'object' ? e.element.concept : undefined), conceptIds: e.element.conceptIds }));
+    previousElements = laidOut.elements.map((e) => ({ id: e.id, prim: e.element.prim, label: e.element.label ?? (e.element.prim === 'object' ? e.element.concept : undefined), conceptIds: e.element.conceptIds, anchor: e.element.anchor }));
 
     const bounds = sceneBoundsMs[sceneInput.sceneId] ?? { startMs: 0, endMs: finalDurationMs };
     const timelineStartedAtMs = Date.now();

@@ -7,7 +7,7 @@
  * nothing in these examples can be copied into a generated scene. They are
  * never counted as generated planner results.
  */
-export const BOARD_BANK_VERSION = 'board-bank-v1';
+export const BOARD_BANK_VERSION = 'board-bank-v2-instances';
 
 export interface BoardExample {
   id: string;
@@ -93,6 +93,42 @@ export const BOARD_EXAMPLES: readonly BoardExample[] = [
         { id: 'n1', mention: 'warehouse', concept: 'warehouse', icon: 'warehouse', label: 'Warehouse', role: 'input' },
         { id: 'n2', mention: 'truck', concept: 'delivery', icon: 'delivery-truck', label: 'Truck', role: 'process' },
         { id: 'n3', mention: 'house', concept: 'home', icon: 'house', label: 'House', role: 'output' },
+      ],
+    },
+  },
+  {
+    // Abstract topics still fill the board: a metaphor icon, a label box, and
+    // two instances of one concept with distinct mentions and labels.
+    id: 'abstract-lookup',
+    origin: 'illustrative-example',
+    sceneData: {
+      narration: 'A librarian hunts a missing book: she reads the catalog card, turns the key in the archive, and finds the first copy and the second copy on the shelf.',
+      mentions: [
+        { id: 'card', phrase: 'catalog card', iconSuggestions: ['book'] },
+        { id: 'key', phrase: 'the key', iconSuggestions: ['key'] },
+        { id: 'copy1', phrase: 'first copy', iconSuggestions: ['book'] },
+        { id: 'copy2', phrase: 'second copy', iconSuggestions: ['book'] },
+      ],
+      concepts: [
+        { id: 'card', label: 'Catalog card' },
+        { id: 'lookup', label: 'Lookup' },
+        { id: 'book', label: 'Book' },
+      ],
+      relations: [
+        { from: 'card', to: 'lookup', type: 'feeds' },
+        { from: 'lookup', to: 'book', type: 'produces' },
+      ],
+    },
+    board: {
+      schemaVersion: 'claude-board/v2',
+      title: 'A Card Finds A Book',
+      layout: 'flow',
+      visual: { kind: 'process' },
+      nodes: [
+        { id: 'n1', mention: 'card', concept: 'card', icon: 'label', label: 'Card', role: 'input' },
+        { id: 'n2', mention: 'key', concept: 'lookup', icon: 'key', label: 'Lookup', role: 'process' },
+        { id: 'n3', mention: 'copy1', concept: 'book', icon: 'book', label: 'First copy', role: 'output' },
+        { id: 'n4', mention: 'copy2', concept: 'book', icon: 'magnifying glass', label: 'Second copy', role: 'output' },
       ],
     },
   },

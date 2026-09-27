@@ -95,7 +95,7 @@ const words = (n: number, marked: string[]) => {
   return `${marked.map((m) => `[[${m}|${m}]]`).join(' ')} ${filler}.`;
 };
 
-test('script validator: correct length and 3-8 unique markers per scene pass', () => {
+test('script validator: correct length and 4-7 unique markers per scene pass', () => {
   const script = { scenes: plan.sections.map((s) => ({ sectionId: s.id, text: words(Math.round(s.budgetSec * WORDS_PER_SEC), ['a', 'b', 'c', 'd']) })) };
   assert.deepEqual(validateScript(script, plan), []);
 });
@@ -111,7 +111,7 @@ test('script validator: too few markers, duplicate ids and wrong section order a
   };
   const problems = validateScript(script, plan).join(' | ');
   assert.match(problems, /sectionId "valley"/);
-  assert.match(problems, /markers, needs 3-8/);
+  assert.match(problems, /markers, needs 4-7/);
   assert.match(problems, /used twice/);
 });
 
