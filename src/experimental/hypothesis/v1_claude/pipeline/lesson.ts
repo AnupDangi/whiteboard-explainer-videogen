@@ -119,7 +119,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
 
   if ([60, 300, 600, 1800].includes(groundedRequest.targetDurationSec)) {
     const requestedDurationSec = groundedRequest.targetDurationSec;
-    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v2', 'hierarchical-syllabus-v3-compact-source-label-limit', () => buildSyllabus(groundedRequest, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v3', 'hierarchical-syllabus-v4-bounded-span-excerpts-id-normalization', () => buildSyllabus(groundedRequest, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
     const syllabusResult = syllabusRun.result;
     addUsage(usage, syllabusResult.usage); failures.push(...syllabusResult.failures); rawResponses.syllabus = syllabusResult.rawResponses;
     if (!syllabusResult.value) return preparedResult({ requestedDurationSec });
