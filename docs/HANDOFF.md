@@ -2035,3 +2035,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** `boardRepairLossProblems(previous, candidate)` — relation drawn-set + process-role diffs with named messages; `validateBoard` optional preservation check; `planBoardScene` validates the single repair against the FULL board. Budget unchanged (one repair). No topic keywords.
 - **Verification:** typecheck clean; board 41/41 (3 new fail-pre/pass-post); full 542 node + 28 + 12 py; `git diff --check` clean.
 - **Next bounded task:** re-run interpretability 60s + yellows triage.
+
+## Entry — 2026-09-27, interpretability re-run post-preservation (branch fix/chat-audit-rollup-20260927)
+
+- **Run:** same 60s interpretability → `output/2026-09-27T19-53-44-725Z-interpretability-features/` (`tampered=false`). Failed, 11 hard (was 19), 61s diagnostic, $0.0132. P4 `timeline-idle-filled` warning fires visibly as designed.
+- **Compare:** `contains`-loss gone; recap now omits concepts 1/4/5/6 + `produces`-family relations + process role — model cannot fit 4+ required concepts on one board in one repair. Preservation check moved failure earlier with named losses (honest), but single-repair budget is now the binding constraint on dense recaps.
+- **Validator question:** allow recap scenes a second repair round, or split dense recaps into two scenes at plan time (P-class)? Recommend the latter — recaps summarizing 4+ concepts want two boards.
+- **Next bounded task:** yellows triage + recap-split decision.
