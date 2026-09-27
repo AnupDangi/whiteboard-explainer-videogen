@@ -433,5 +433,7 @@ export interface StageFailure {
   stage: string;
   message: string;
   hard: boolean;
+  /** P1 taxonomy label (P/S/C/T/R/A). Pure mapping; never changes hard/soft. */
+  failureClass?: 'P' | 'S' | 'C' | 'T' | 'R' | 'A';
 }
 import type { EvidenceReference } from '../shared/contracts.js';

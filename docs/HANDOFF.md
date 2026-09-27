@@ -1858,3 +1858,10 @@ hypothesis before layering on production-latency infrastructure.
   - `.superpowers/sdd/.../progress.md` (gitignored, on-disk only): Task 7 complete line, T8-T13 not-started, post-ledger map (8390cce/19f8b30/37cc840/ad82287/cf6c328), `4/4` clarification note.
 - **Verification:** `git diff --check` clean. Tracked change = `docs/SIMI-60-BENCHMARK.md` + this entry only.
 - **Next bounded task:** P1 failure-taxonomy wiring (`failureClass` P/S/C/T/R/A in evaluation bundle + baseline reclassification of the 60s run).
+
+## Entry — 2026-09-27, P1 failure taxonomy (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** validator classifies every failure before any fix, so agents stop changing the wrong layer.
+- **Implemented (labels only, gates unchanged):** new `shared/failure-taxonomy.ts` pure `classifyFailureCode()` + `withFailureClass()` + `SIMI_60_BASELINE_CLASSIFICATION`; `FailureClass` on `RunFailure`/`StageFailure`; mapping applied at return boundaries in `evaluation.ts`/`gates.ts`. Precedence P→S→A→T→C→R, `dangling-event`=T. Baseline: reasoning_modes 4 codes S (F1/F2), llm_gap element-count S (F3), sensory_bridge duplicate C, key_takeaway overlap C (F4).
+- **Verification:** `typecheck:hypothesis` clean; taxonomy+evaluation+typed-board-adequacy 18 pass; `git diff --check` clean.
+- **Next bounded task:** P2 VSR v1 + planner repairs (title ownership, fallback output, generic-edge ban).

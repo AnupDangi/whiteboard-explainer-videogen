@@ -1,5 +1,6 @@
 import type { BoardIntent, LaidOutScene, StageFailure, Timeline } from '../types.js';
 import type { EvidenceReference, NeutralElement, NeutralTimelineEvent } from '../../shared/contracts.js';
+import { withFailureClass } from '../../shared/failure-taxonomy.js';
 import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 
 import { LICENSE_ALLOWLIST } from '../catalog/normalize.js';
@@ -77,7 +78,6 @@ export function typedBoardAdequacyFailures(
   if (intent.visualKind === 'process' && !intent.roles.some(({ role, elementId }) => role === 'process' && ids.has(elementId))) {
     failures.push({ code: 'board-role-incomplete', stage: 'planner', message: `${scene.sceneId}: process board intent requires a visible process-role node`, hard: true });
   }
-
   // These templates preserve their structural slots through SceneSpec ->
   // layout. Validate both the retained semantic intent and the visible slots.
   const slots = new Set(scene.elements.filter((element) => (element.element.conceptIds?.length ?? 0) > 0).map((element) => element.element.slot));
@@ -103,7 +103,8 @@ export function typedBoardAdequacyFailures(
     });
   }
 
-  return failures;
+  // P1 taxonomy: pure label attached at the boundary; hard/soft unchanged.
+  return failures.map(withFailureClass);
 }
 
 /** Container elements are organizational (they hug their children) and are excluded from overlap/leaf accounting per claude_pipeline.md §20's "excluding declared containers/badges". */
@@ -193,5 +194,6 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
     warnings.push({ code: 'element-count', stage: 'planner', message: `scene has ${scene.elements.length} elements (expected 2-9)`, hard: false });
   }
 
-  return { failures, warnings };
+  // P1 taxonomy: pure labels attached at the boundary; hard/soft unchanged.
+  return { failures: failures.map(withFailureClass), warnings: warnings.map(withFailureClass) };
 }

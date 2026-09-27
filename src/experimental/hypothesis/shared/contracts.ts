@@ -63,7 +63,9 @@ export interface StageArtifact<T> {
 }
 
 export interface RunUsage {calls:number;promptTokens:number;completionTokens:number;cachedTokens:number;costUsd:number;repairs:number;fallbacks:number;cacheHits:number}
-export interface RunFailure {code:string;stage:string;message:string;hard:boolean}
+/** Failure taxonomy class: P planner, S semantic-visualizer, C composition, T timing, R renderer, A audio. Pure label; never changes hard/soft gate behavior. */
+export type FailureClass='P'|'S'|'C'|'T'|'R'|'A';
+export interface RunFailure {code:string;stage:string;message:string;hard:boolean;failureClass?:FailureClass}
 export interface StageRunRecord {
   stage:string;
   kind:'provider'|'local'|'mixed';

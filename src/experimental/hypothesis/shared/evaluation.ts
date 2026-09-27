@@ -1,4 +1,5 @@
 import {EXPERIMENT,type EvaluationBundle,type GoldenCase,type NeutralElement,type NeutralTimelineEvent,type RunFailure,type RunStatus} from './contracts.js';
+import {withFailureClass} from './failure-taxonomy.js';
 
 const intersects=(a:NeutralElement['bbox'],b:NeutralElement['bbox']):boolean=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
 
@@ -19,7 +20,8 @@ export function deterministicGates(input:{golden?:GoldenCase;elements:NeutralEle
   if(input.golden&&Math.abs(input.durationMs-input.golden.targetDurationMs)>200)failures.push({code:'av-sync',stage:'timeline',message:`Duration ${input.durationMs}ms differs from ${input.golden.targetDurationMs}ms`,hard:true});
   if(/<script\b|on\w+\s*=|javascript:/i.test(input.svg))failures.push({code:'unsafe-svg',stage:'render',message:'Rendered SVG contains executable content',hard:true});
   if(input.licenses?.some(item=>!['MIT','ISC','Apache-2.0','CC0-1.0','CC-BY-4.0','manual'].includes(item)))failures.push({code:'license',stage:'resolve',message:'Asset license is not allowlisted',hard:true});
-  return failures;
+  // P1 taxonomy: pure label attached at the boundary; hard/soft unchanged.
+  return failures.map(withFailureClass);
 }
 
 export interface PublishEvidence { factualEvidenceComplete: boolean; alignmentComplete: boolean }
