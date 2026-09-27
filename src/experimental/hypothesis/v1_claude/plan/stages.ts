@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sha256 } from '../../shared/artifacts.js';
 import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from '../llm/structuredCall.js';
 import { parseMarkers } from '../narration/markers.js';
 import { spokenForm } from '../narration/spokenForm.js';
@@ -281,6 +282,129 @@ export function teachingPlanTokenBudget(sceneCount: number, conceptCount: number
   return Math.min(10_000, 1_500 + Math.ceil(sceneCount) * 500 + Math.ceil(conceptCount) * 150 + Math.ceil(relationCount) * 100);
 }
 
+/**
+ * A recap-kind section above either density limit is unboardable: one scene
+ * cannot draw that many claims at once (observed: a 4-concept recap with its
+ * produces-family relations fails its single repair). Split it into two recap
+ * halves instead. Domain-general: only counts and original order are used,
+ * never lesson content.
+ */
+export const RECAP_SPLIT_MAX_CONCEPTS = 3;
+export const RECAP_SPLIT_MAX_RELATIONS = 2;
+
+/** Split-section id: `{base}_a`/`{base}_b`, hash-truncated like scopedSectionId when the join overflows 40 chars. */
+function recapSplitId(base: string, half: 'a' | 'b'): string {
+  const raw = `${base}_${half}`;
+  if (raw.length <= 40 && /^[a-z0-9_]+$/.test(raw)) return raw;
+  const hash = sha256(raw).slice(0, 8);
+  return `${raw.slice(0, 31)}_${hash}`;
+}
+
+/**
+ * Deterministic plan-time split of dense recap sections. A recap section with
+ * more than RECAP_SPLIT_MAX_CONCEPTS distinct concepts or more than
+ * RECAP_SPLIT_MAX_RELATIONS relations becomes two recap sections with halved
+ * concept lists (original order, first half longer on odd counts) and halved
+ * budgets (exact sum preserved). Relations spanning the cut join the smaller
+ * half with their missing endpoint pulled in, so no source relation is lost
+ * and neither half lists an endpoint outside its concepts; evidence spans are
+ * the original order filtered to each half's concepts and relations; concepts
+ * shared by both halves are declared persistent with graph-backed terminology
+ * so the teaching contract stays green. Non-recap sections pass through by
+ * reference; when nothing splits, the input plan is returned unchanged.
+ */
+export function splitDenseRecapSections(plan: TeachingPlan, graph: ConceptGraph): TeachingPlan {
+  const graphConcepts = new Map(graph.concepts.map((c) => [c.id, c]));
+  const graphRelations = new Map(graph.relations.map((r) => [`${r.from}|${r.type}|${r.to}`, r]));
+  let splits = 0;
+  const sections: TeachingPlan['sections'] = [];
+  for (const section of plan.sections) {
+    const distinctConcepts = [...new Set(section.conceptIds)];
+    const relationCount = section.contract?.requiredRelations.length ?? 0;
+    const dense = section.kind === 'recap'
+      && (distinctConcepts.length > RECAP_SPLIT_MAX_CONCEPTS || relationCount > RECAP_SPLIT_MAX_RELATIONS);
+    if (!dense || plan.sections.length + splits >= 40) {
+      sections.push(section);
+      continue;
+    }
+    const order = new Map(distinctConcepts.map((id, i) => [id, i]));
+    const byOrder = (a: string, b: string) => (order.get(a) ?? 0) - (order.get(b) ?? 0);
+    const first: string[] = distinctConcepts.slice(0, Math.ceil(distinctConcepts.length / 2)).sort(byOrder);
+    const second: string[] = distinctConcepts.slice(Math.ceil(distinctConcepts.length / 2)).sort(byOrder);
+    const halves = [first, second];
+    // Relations wholly inside one half stay there; spanning relations join the
+    // smaller half (ties to the first), pulling in their missing endpoint.
+    for (const r of section.contract?.requiredRelations ?? []) {
+      const inFirst = first.includes(r.from) && first.includes(r.to);
+      const inSecond = second.includes(r.from) && second.includes(r.to);
+      if (inFirst || inSecond) continue;
+      const target = first.length <= second.length ? first : second;
+      for (const end of [r.from, r.to]) {
+        if (!target.includes(end)) {
+          target.push(end);
+          target.sort(byOrder);
+        }
+      }
+    }
+    const budgetA = section.budgetSec / 2;
+    const budgets = [budgetA, section.budgetSec - budgetA];
+    const ids = [recapSplitId(section.id, 'a'), recapSplitId(section.id, 'b')];
+    if (new Set([...sections.map((s) => s.id), ...ids]).size !== sections.length + 2) {
+      sections.push(section);
+      continue;
+    }
+    halves.forEach((conceptIds, i) => {
+      const wanted = new Set(conceptIds);
+      const requiredRelations = (section.contract?.requiredRelations ?? [])
+        .filter((r) => wanted.has(r.from) && wanted.has(r.to))
+        .map(({ from, to, type }) => ({ from, to, type }));
+      const allowed = new Set<string>();
+      for (const id of conceptIds) for (const ref of graphConcepts.get(id)?.evidence ?? []) allowed.add(ref.spanId);
+      for (const r of requiredRelations) for (const ref of graphRelations.get(`${r.from}|${r.type}|${r.to}`)?.evidence ?? []) allowed.add(ref.spanId);
+      const evidenceSpanIds = (section.contract?.evidenceSpanIds ?? []).filter((s) => allowed.has(s));
+      const budgetSec = budgets[i]!;
+      sections.push({
+        ...section,
+        id: ids[i]!,
+        budgetSec,
+        conceptIds: [...conceptIds],
+        contract: section.contract ? {
+          learningDelta: section.contract.learningDelta,
+          targetDurationSec: budgetSec,
+          requiredConceptIds: [...conceptIds],
+          requiredRelations,
+          evidenceSpanIds,
+          teachingSkill: section.contract.teachingSkill,
+          candidateMechanisms: [...section.contract.candidateMechanisms],
+        } : undefined,
+      });
+    });
+    splits += 1;
+  }
+  if (!splits) return plan;
+  // Concepts taught in more than one section (including split overlap) must be persistent.
+  const counts = new Map<string, number>();
+  for (const s of sections) for (const id of new Set(s.conceptIds)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const recurring = [...counts].filter(([, n]) => n > 1).map(([id]) => id);
+  const lessonBible = plan.lessonBible ? {
+    ...plan.lessonBible,
+    persistentConceptIds: [
+      ...plan.lessonBible.persistentConceptIds,
+      ...recurring.filter((id) => !plan.lessonBible!.persistentConceptIds.includes(id)),
+    ],
+    terminology: [
+      ...plan.lessonBible.terminology,
+      ...recurring
+        .filter((id) => !plan.lessonBible!.terminology.some((t) => t.conceptId === id))
+        .flatMap((id) => {
+          const label = graphConcepts.get(id)?.label;
+          return label ? [{ conceptId: id, label }] : [];
+        }),
+    ],
+  } : undefined;
+  return { ...plan, sections, ...(lessonBible ? { lessonBible } : {}) };
+}
+
 export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph, m: StageModel, variant: PlanPromptVariant = DEFAULT_PLAN_PROMPT_VARIANT): Promise<StructuredCallResult<TeachingPlan>> {
   const scenes = sceneCountFor(req.targetDurationSec);
   const conceptIdChecklist = graph.concepts.map((concept) => `- ${concept.id}: ${concept.label}`).join('\n');
@@ -306,7 +430,15 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
       return problems;
     },
   });
-  return result;
+  // Plan-time recap split (validator decision A, 2026-09-27): dense recaps
+  // are unboardable in one scene, so halve them deterministically here — after
+  // the model's single repair, which still runs against the raw output above.
+  // The split output flows through the unchanged downstream gates (analyse +
+  // contracts in prepareLesson) and the per-section S4 narration without any
+  // extra model calls.
+  if (!result.value) return result;
+  const split = splitDenseRecapSections(result.value, graph);
+  return split === result.value ? result : { ...result, value: split };
 }
 
 // ---------------------------------------------------------------------------

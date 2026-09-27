@@ -2042,3 +2042,11 @@ hypothesis before layering on production-latency infrastructure.
 - **Compare:** `contains`-loss gone; recap now omits concepts 1/4/5/6 + `produces`-family relations + process role — model cannot fit 4+ required concepts on one board in one repair. Preservation check moved failure earlier with named losses (honest), but single-repair budget is now the binding constraint on dense recaps.
 - **Validator question:** allow recap scenes a second repair round, or split dense recaps into two scenes at plan time (P-class)? Recommend the latter — recaps summarizing 4+ concepts want two boards.
 - **Next bounded task:** yellows triage + recap-split decision.
+
+## Entry — 2026-09-27, validator decision A: plan-time dense-recap split (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** interpretability re-run recap needs concepts 1/4/5/6 + produces-family relations + process role on ONE board; single repair cannot build it (11 hard). Simi rhythm: one micro-claim per scene.
+- **Implemented:** `splitDenseRecapSections()` in `plan/stages.ts` — recap-kind sections with >3 distinct concepts or >2 relations split into `{id}_a`/`{id}_b` (hash-truncated to 40 chars when needed); concept halves in original order, spanning relations join the smaller half with missing endpoint pulled in (no relation lost, no unsupported listing), evidence spans filtered in original order, budgets halved with exact sum, shared concepts declared persistent with graph-backed terminology. Non-recap sections pass through by reference; 40-section cap respected. Hooked into `buildTeachingPlan` post-repair (single-repair budget unchanged); S3 cache identity bumped to `*-v6-recap-split` (single + module). No topic keywords.
+- **Verification:** new `__tests__/recap-split.test.ts` 6/6 (fail-pre: missing export; pass-post). Typecheck clean; touched 6/6; full node 548/548 (was 542, +6 new) + alignment 28 + rag-engine 12 py; `git diff --check` clean. NOT committed.
+- **Limitation:** halves below 14 s trip the pacing gate honestly (even split maximizes the minimum half); fully-interconnected recaps (e.g. triangle) split validly but one half may retain all relations — chains/stars (the observed shape) split into boardable halves.
+- **Next bounded task:** interpretability 60s re-run to confirm recap boards + yellows triage.
