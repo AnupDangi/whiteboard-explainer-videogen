@@ -6,7 +6,7 @@ import { MAX_LABEL_WORDS, MAX_TITLE_WORDS } from '../style.js';
 import { TAU_HIGH_EMB } from '../catalog/ladder.js';
 import { BOARD_EXAMPLES, BOARD_BANK_VERSION } from '../fewshots/boardBank.v1.js';
 import type { PlannerSceneInput } from './prompt.js';
-import { plannerProblems, type PlanSceneOptions, type PlanSceneResult, type PlannerCallUsage } from './plan.js';
+import { plannerProblems, genericRelationWordingSupported, GENERIC_RELATION_TYPES, type PlanSceneOptions, type PlanSceneResult, type PlannerCallUsage } from './plan.js';
 import { boardLayoutForStructure, resolveRepresentation } from '../plan/visualSemantics.js';
 
 /**
@@ -471,7 +471,13 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
     const to = nodeFor(relation.to);
     if (!from || !to || from.id === to.id) continue;
     const evidenceRefs = relation.evidenceRefs.slice(0, 6);
-    edges.push({ from: from.id, to: to.id, label: relation.type, evidenceRefs, factualRelation: { fromConceptId: relation.from, toConceptId: relation.to, type: relation.type as NonNullable<Edge['factualRelation']>['type'], evidenceRefs } });
+    // P2d relation-without-verb: a generic relation type the source never
+    // states as a word is carried by the arrow alone (no word label), so the
+    // planner generic-verb gate and the adequacy gate agree. Specific verbs
+    // and source-stated generics keep their word label.
+    const verbStated = !GENERIC_RELATION_TYPES.has(relation.type.toLowerCase())
+      || genericRelationWordingSupported(relation.type, evidenceRefs.map((ref) => ref.quote));
+    edges.push({ from: from.id, to: to.id, ...(verbStated ? { label: relation.type } : {}), evidenceRefs, factualRelation: { fromConceptId: relation.from, toConceptId: relation.to, type: relation.type as NonNullable<Edge['factualRelation']>['type'], evidenceRefs } });
   }
   const { title, problem } = boardTitle(board, input);
   const titleConceptIds = [...new Set(board.nodes.map((node) => node.concept))].slice(0, 4);

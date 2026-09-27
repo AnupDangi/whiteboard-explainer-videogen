@@ -95,6 +95,15 @@ test('typed-board adequacy detects a retained convergence role placed in the wro
   assert.ok(failures.some((failure) => failure.code === 'board-role-misplaced' && failure.message.includes('process role n2')));
 });
 
+test('typed-board adequacy accepts an unlabeled arrow carrying the relation (P2d verb-less topology)', () => {
+  const scene = makeScene();
+  for (const edge of scene.edges) delete (edge as { label?: string }).label;
+  assert.deepEqual(typedBoardAdequacyFailures(scene), [], 'adequacy checks the drawn factual relation, never the word label');
+  const labelled = makeScene();
+  for (const edge of labelled.edges) edge.label = edge.factualRelation!.type;
+  assert.deepEqual(typedBoardAdequacyFailures(labelled), [], 'a labelled edge still satisfies adequacy when the relation is drawn and cited');
+});
+
 test('legacy scenes without retained board intent remain backward compatible', () => {
   const scene = makeScene();
   delete scene.boardIntent;

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PlannerSceneInput } from '../planner/prompt.js';
 import type { ScenePlanningContext } from '../planner/context.js';
 import { BOARD_SCHEMA_VERSION, boardEnums, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
+import { safeParseSceneSpec } from '../schema.js';
 
 // Synthetic, topic-neutral scene: two inputs combine through a process into an output.
 function makeScene(words: { a: string; b: string; p: string; o: string }, prefix = 'src'): PlannerSceneInput {
@@ -79,6 +80,32 @@ test('a valid board compiles to a gated SceneSpec with data-derived evidence, ar
   ]);
   assert.deepEqual(spec.edges.map((edge) => [edge.from, edge.to, edge.factualRelation?.type]), [['n1', 'n3', 'feeds'], ['n2', 'n3', 'feeds'], ['n3', 'n4', 'produces']]);
   assert.deepEqual(checked.iconAssets, { n1: 'lib:flour', n2: 'lib:water', n4: 'lib:dough' });
+});
+
+test('compileBoard draws unstated generic relations as verb-less arrows but keeps stated and specific word labels (P2d)', () => {
+  const cmpRef = { sourceId: 'src_doc', spanId: 'src_cmp', startChar: 300, endChar: 331, startLine: 5, endLine: 5, quote: 'flour differs from water in use' };
+  const statedRef = { sourceId: 'src_doc', spanId: 'src_req', startChar: 340, endChar: 378, startLine: 6, endLine: 6, quote: 'mixing requires steady dough handling' };
+  const genericScene: PlannerSceneInput = {
+    ...scene,
+    teachingContext: {
+      ...scene.teachingContext!,
+      sourceEvidenceRefs: [...scene.teachingContext!.sourceEvidenceRefs!, cmpRef, statedRef],
+      relations: [
+        { from: 'src_a', to: 'src_b', type: 'compares', evidenceRefs: [cmpRef] },
+        { from: 'src_p', to: 'src_o', type: 'requires', evidenceRefs: [statedRef] },
+      ],
+    },
+  };
+  const { spec } = compileBoard(goodBoard(), genericScene);
+  const byPair = new Map(spec.edges.map((edge) => [`${edge.from}->${edge.to}`, edge]));
+  const verbLess = byPair.get('n1->n2')!;
+  assert.ok(!('label' in verbLess), 'an unstated generic relation draws with no word label — the arrow carries it');
+  assert.equal(verbLess.factualRelation?.type, 'compares');
+  const stated = byPair.get('n3->n4')!;
+  assert.equal(stated.label, 'requires', 'a source-stated generic keeps its word label');
+  assert.ok(spec.edges.every((edge) => edge.factualRelation && edge.evidenceRefs?.length), 'every drawn arrow retains its relation and citation');
+  assert.ok(safeParseSceneSpec(spec).success);
+  assert.deepEqual(validateBoard(goodBoard(), genericScene).problems, [], 'planner and adequacy gates agree on the verb-less board');
 });
 
 test('board rules reject invented content words and missing relation concepts; another mention\'s icon is a metaphor; a shared mention is allowed', () => {

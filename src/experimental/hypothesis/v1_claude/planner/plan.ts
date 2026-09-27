@@ -119,15 +119,29 @@ const numberWords: Record<string, number> = {
  * Generic structural relation verbs that must not pass as a teaching
  * explanation on wording alone (domain-general stop-list, no topic words).
  * Such an edge passes only when at least one of its cited source spans
- * actually states the relation word — otherwise it is an ungrounded generic
- * label (e.g. a fallback/spec emitting COMPARES/REQUIRES as explanation).
+ * actually states the relation word, or when the edge carries no verb label
+ * at all — the drawn arrow (topology) then carries the relation and the
+ * narration states it. A labelled generic verb without source wording is an
+ * ungrounded generic label (e.g. a fallback/spec emitting COMPARES/REQUIRES
+ * as explanation).
  */
-const GENERIC_RELATION_TYPES = new Set(['compares', 'requires', 'contains']);
+export const GENERIC_RELATION_TYPES = new Set(['compares', 'requires', 'contains']);
 const genericWords = (value: string): string[] => value.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean);
 const genericStem = (word: string): string => word.replace(/(ies|es|s)$/u, '');
-function genericRelationWordingSupported(type: string, quotes: string[]): boolean {
+export function genericRelationWordingSupported(type: string, quotes: string[]): boolean {
   const wanted = genericStem(type.toLowerCase());
   return quotes.some((quote) => genericWords(quote).some((word) => genericStem(word) === wanted));
+}
+
+/**
+ * P2d relation-without-verb: an edge shows a verb label only when it carries
+ * a non-blank word on the arrow. A missing/blank label means the topology
+ * (the drawn A→B arrow) carries the relation, so the generic-verb gate does
+ * not apply — both gates agree that an unlabeled drawn edge satisfies the
+ * relation requirement when the narration states it.
+ */
+export function edgeHasVerbLabel(edge: { label?: string }): boolean {
+  return Boolean(edge.label?.trim());
 }
 
 function numericClaims(value: string): NumericClaim[] {
@@ -301,8 +315,8 @@ export function plannerProblems(spec: SceneSpec, input: PlannerSceneInput): stri
       }
       if (edge.origin !== 'illustrative-example' && edge.factualRelation && GENERIC_RELATION_TYPES.has(edge.factualRelation.type.toLowerCase())) {
         const quotes = [...(edge.evidenceRefs ?? []), ...(edge.factualRelation.evidenceRefs ?? [])].map((ref) => ref.quote);
-        if (!genericRelationWordingSupported(edge.factualRelation.type, quotes)) {
-          problems.push(`edge ${edge.from}->${edge.to} uses generic relation "${edge.factualRelation.type}" without source wording; replace it with a specific relation stated in a cited source span, and keep every other field unchanged`);
+        if (!genericRelationWordingSupported(edge.factualRelation.type, quotes) && edgeHasVerbLabel(edge)) {
+          problems.push(`edge ${edge.from}->${edge.to} uses generic relation "${edge.factualRelation.type}" without source wording; either replace it with a specific relation stated in a cited source span, or drop the edge label and let the arrow carry the relation, keeping every other field unchanged`);
         }
       }
     }

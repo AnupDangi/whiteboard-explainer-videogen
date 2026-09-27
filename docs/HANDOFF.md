@@ -1901,3 +1901,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Key tension found:** adequacy gate REQUIRES `concept_1-[compares]->concept_3` drawn while planner gate REJECTS generic `compares` wording. Topology must carry the relation without a verb label — VSR role edge, not word edge.
 - **Validator verdict:** CHANGE planner/adequacy agreement (P2d: verb-less relation rendering + aligned gate language), DO NOT BUILD new subsystems.
 - **Next bounded task:** P2d relation-without-verb (draw A→B, no generic word) + gate agreement, then regenerate.
+
+## Entry — 2026-09-27, P2d verb-less relations (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** regen-2 deadlock — adequacy demands the arrow, planner rejects the word. Class S.
+- **Implemented:** `GENERIC_RELATION_TYPES` + `edgeHasVerbLabel()` in `plan.ts`; generic gate rejects only *labelled* unstated generics; `compileBoard` omits label for unstated generic relations (specific/stated keep labels); repair message offers drop-the-label path. Schema/render/layout already optional-label safe, untouched. No topic keywords.
+- **Verification:** `typecheck:hypothesis` clean; touched 4 suites 61/61; full `test:hypothesis` 489/489 node + 24 + 12 py; `git diff --check` clean. Synthetic before/after: unstated `compares` → no label, passes; labelled generic still fails; dropped arrow still fails omitted-relation.
+- **Next bounded task:** regenerate same 60s one-shot for validation video, no mid edits.
