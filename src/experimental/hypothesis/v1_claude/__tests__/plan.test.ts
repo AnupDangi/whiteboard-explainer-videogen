@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeTeachingPlan, WORDS_PER_SEC } from '../plan/analyze.js';
+import { analyzeTeachingPlan, WORDS_PER_SEC, SCENE_SEC, sceneCountFor } from '../plan/analyze.js';
 import { validateScript } from '../plan/stages.js';
 import { ConceptGraphSchema, ScriptSchema, TeachingPlanSchema, type ConceptGraph, type TeachingPlan } from '../plan/schemas.js';
 import { parseCandidates, extractJsonCandidates } from '../llm/structuredCall.js';
@@ -21,8 +21,8 @@ const plan: TeachingPlan = {
   sections: [
     { id: 'valley', title: 'The Loss Valley', goal: 'See loss as a valley over parameters', kind: 'explain', conceptIds: ['loss'], budgetSec: 16 },
     { id: 'slope', title: 'Follow The Slope', goal: 'Read the gradient as the uphill direction', kind: 'step', conceptIds: ['gradient'], budgetSec: 16 },
-    { id: 'rule', title: 'Step Against The Slope', goal: 'Apply the update rule once', kind: 'step', conceptIds: ['update'], budgetSec: 16 },
-    { id: 'recap', title: 'Why It Works', goal: 'Summarise repeated shrinking steps', kind: 'recap', conceptIds: [], budgetSec: 12 },
+    { id: 'rule', title: 'Step Against The Slope', goal: 'Apply the update rule once', kind: 'step', conceptIds: ['update'], budgetSec: 14 },
+    { id: 'recap', title: 'Why It Works', goal: 'Summarise repeated shrinking steps', kind: 'recap', conceptIds: [], budgetSec: 14 },
   ],
   recap: { keyPoints: ['Step against the gradient'] },
 };
@@ -61,6 +61,33 @@ test('plan analyser: a multi-step concept squeezed into one scene is rejected', 
 test('plan analyser: prerequisite cycles are rejected', () => {
   const a = analyzeTeachingPlan(plan, { ...graph, prerequisites: [...graph.prerequisites, { concept: 'loss', needs: 'update' }] });
   assert.ok(a.findings.some((f) => f.check === 'prerequisites' && f.severity === 'error'));
+});
+
+test('pacing constants come from measured Supertonic rate and Simi scene lengths', () => {
+  assert.equal(WORDS_PER_SEC, 2.25); // measured 2.287 / 2.293 w/s, phase6-2026-09-27 bicycle+composting
+  assert.deepEqual(SCENE_SEC, { min: 14, max: 30 });
+  assert.equal(sceneCountFor(60), 3);
+  assert.equal(sceneCountFor(75), 4);
+  assert.equal(sceneCountFor(300), 17);
+});
+
+test('plan analyser: seven thin ~8.6s sections are a blocking F-PED pacing error', () => {
+  // Built from the smallest existing plan fixture above, overriding only sections and budgetSec:
+  // 60s split across 7 sections (~8.57s each) is exactly the reference-violating shape the
+  // measured Simi pacing constants (SCENE_SEC.min = 14s) must now block.
+  const thin: TeachingPlan = {
+    ...plan,
+    sections: Array.from({ length: 7 }, (_, i) => ({
+      id: `thin_${i + 1}`,
+      title: `Thin Section ${i + 1}`,
+      goal: `Cover one small idea in part ${i + 1}`,
+      kind: 'explain' as const,
+      conceptIds: ['loss'],
+      budgetSec: 60 / 7,
+    })),
+  };
+  const a = analyzeTeachingPlan(thin, graph);
+  assert.ok(a.findings.some((f) => f.code === 'F-PED' && f.check === 'pacing' && f.severity === 'error'));
 });
 
 const words = (n: number, marked: string[]) => {

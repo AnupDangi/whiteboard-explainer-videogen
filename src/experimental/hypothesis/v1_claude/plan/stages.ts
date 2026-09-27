@@ -3,7 +3,7 @@ import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from 
 import { parseMarkers } from '../narration/markers.js';
 import { spokenForm } from '../narration/spokenForm.js';
 import { ConceptGraphSchema, RELATION_TYPES, SECTION_KINDS, SECTION_TITLE_MAX_WORDS, TEACHING_SKILLS, VISUAL_MECHANISMS, ScriptSchema, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
-import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan } from './analyze.js';
+import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan, sceneCountFor } from './analyze.js';
 import type { StageRunRecord } from '../../shared/contracts.js';
 import { sourceDocFromText, sourcePrompt, type SourceDoc, type SourceBundle } from './sourceDoc.js';
 import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
@@ -282,7 +282,7 @@ export function teachingPlanTokenBudget(sceneCount: number, conceptCount: number
 }
 
 export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph, m: StageModel, variant: PlanPromptVariant = DEFAULT_PLAN_PROMPT_VARIANT): Promise<StructuredCallResult<TeachingPlan>> {
-  const scenes = Math.max(1, Math.round(req.targetDurationSec / 18));
+  const scenes = sceneCountFor(req.targetDurationSec);
   const conceptIdChecklist = graph.concepts.map((concept) => `- ${concept.id}: ${concept.label}`).join('\n');
   const { system, user } = PLAN_PROMPT_VARIANTS[variant]({ scenes, req, graph, conceptIdChecklist });
   // Every section includes a full contract, so output size tracks scenes as well

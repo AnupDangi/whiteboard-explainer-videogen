@@ -6,12 +6,15 @@ import type { ConceptGraph, TeachingPlan } from './schemas.js';
  * the F-PED code from the failure taxonomy (hypothesis/v1_claude/03 §6).
  * `error` findings block the lesson; `warn` findings are recorded.
  *
- * Pacing numbers come from the Lamina reference pack: scenes run ~10-28 s
- * (median ~18 s), and a 2.6 words/s speaking rate matches the local TTS.
+ * Pacing from measurement: Supertonic speaks 2.29 words/s (phase6-2026-09-27
+ * bicycle 158 w / 68.9 s, composting 159 w / 69.5 s); Lamina scenes run
+ * 10.5-28.5 s, mean 18.6 s (harness/reference/lamina/index.json).
  */
-export const WORDS_PER_SEC = 2.6;
-export const SCENE_SEC = { min: 8, max: 30 };
+export const WORDS_PER_SEC = 2.25;
+export const SCENE_SEC = { min: 14, max: 30 };
 export const BUDGET_TOLERANCE = 0.05;
+/** One scene per ~18s of reference Simi pacing (harness/reference/lamina/index.json mean scene length). */
+export const sceneCountFor = (targetSec: number): number => Math.max(1, Math.round(targetSec / 18));
 
 export interface PlanFinding {
   code: 'F-PED';
@@ -83,7 +86,7 @@ export function analyzeTeachingPlan(plan: TeachingPlan, graph: ConceptGraph): Pl
     add('error', 'budget', `section budgets sum to ${total}s, target is ${plan.targetDurationSec}s (±${BUDGET_TOLERANCE * 100}%)`);
   }
   for (const s of plan.sections) {
-    if (s.budgetSec < SCENE_SEC.min || s.budgetSec > SCENE_SEC.max) add('warn', 'pacing', `section ${s.id} is ${s.budgetSec}s; scenes read best at ${SCENE_SEC.min}-${SCENE_SEC.max}s`);
+    if (s.budgetSec < SCENE_SEC.min || s.budgetSec > SCENE_SEC.max) add('error', 'pacing', `section ${s.id} is ${s.budgetSec}s; scenes read best at ${SCENE_SEC.min}-${SCENE_SEC.max}s`);
   }
 
   // Multi-step ideas get a scene per step; longer lessons end with a recap.

@@ -66,7 +66,10 @@ test('measured module audio changes only the target of narration not yet written
           recap: { keyPoints: ['The two mechanisms build on one another.'] },
         };
       } else if (name === 'scene_narration') {
-        value = { text: 'First consider [[topic_one|the core idea]] as a useful starting point. Notice [[mechanism|the mechanism]] and follow [[process|the process]] through each step. This helps you understand how the parts connect, why the sequence matters, and what changes when one part behaves differently. Keep the central idea in view as we connect the example to the larger explanation.' };
+        // 53 spoken words: fits every scene budget this test produces (17-19s at the
+        // measured WORDS_PER_SEC = 2.25), including the narrowest (17s => 22.95-53.55
+        // words, unrounded) — see the word-count check in plan/stages.ts validateSceneText.
+        value = { text: 'First consider [[topic_one|the core idea]] as a useful starting point. Notice [[mechanism|the mechanism]] and follow [[process|the process]] through each step. This helps you understand how the parts connect, why the sequence matters, and what changes when one part behaves. Keep the central idea in view as we connect the example to the explanation.' };
       } else assert.fail(`unexpected model response schema ${name}`);
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) }, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 5, cost: 0.001 } }), { status: 200, headers: { 'content-type': 'application/json' } });
     };

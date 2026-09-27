@@ -26,14 +26,14 @@ test('v5 worked example demonstrates a filled terminology array and a multi-rela
     prerequisites: [],
   };
   const validPlan: TeachingPlan = {
-    targetDurationSec: 8,
+    targetDurationSec: 18,
     intro: { sourceTitle: 'Heat and pressure', sections: ['Rising pressure'] },
     lessonBible: { audience: 'general learner', domain: 'physics', terminology: [{ conceptId: 'heat', label: 'Heat' }, { conceptId: 'pressure', label: 'Pressure' }], persistentConceptIds: [] },
     recap: { keyPoints: ['Heat causes pressure to rise'] },
     sections: [{
-      id: 'rising_pressure', title: 'Rising pressure', goal: 'Explain how heat raises pressure', kind: 'explain', conceptIds: ['heat', 'pressure'], budgetSec: 8,
+      id: 'rising_pressure', title: 'Rising pressure', goal: 'Explain how heat raises pressure', kind: 'explain', conceptIds: ['heat', 'pressure'], budgetSec: 18,
       contract: {
-        learningDelta: 'Explain how heat raises pressure', targetDurationSec: 8, requiredConceptIds: ['heat', 'pressure'],
+        learningDelta: 'Explain how heat raises pressure', targetDurationSec: 18, requiredConceptIds: ['heat', 'pressure'],
         requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: [sourceSpan.id], teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
       },
     }],
@@ -45,7 +45,7 @@ test('v5 worked example demonstrates a filled terminology array and a multi-rela
     const body = JSON.stringify({ id: 'gen-t', model: 'test/model', choices: [{ message: { content: JSON.stringify(validPlan) }, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 3, cost: 0.0001 } });
     return new Response(body, { status: 200 });
   };
-  const req: LessonRequest = { source: sourceDoc.text, sourceDoc, targetDurationSec: 8 };
+  const req: LessonRequest = { source: sourceDoc.text, sourceDoc, targetDurationSec: 18 };
   const m: StageModel = { model: 'test/model', apiKey: 'test-only', remainingBudgetUsd: 0.05, fetcher };
   const result = await buildTeachingPlan(req, graph, m, 'v5-fully-worked-example');
   assert.equal(result.usage.repairs, 0);

@@ -20,13 +20,13 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     prerequisites: [],
   };
   const plan = {
-    targetDurationSec: 8,
+    targetDurationSec: 15,
     intro: { sourceTitle: 'Light and leaves', sections: ['Building sugar'] },
     lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Sugar' }], persistentConceptIds: [] },
     sections: [{
-      id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 8,
+      id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 15,
       contract: {
-        learningDelta: 'Explain how leaves build sugar', targetDurationSec: 8, requiredConceptIds: ['leaf', 'sugar'],
+        learningDelta: 'Explain how leaves build sugar', targetDurationSec: 15, requiredConceptIds: ['leaf', 'sugar'],
         requiredRelations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id],
         teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
       },
@@ -57,7 +57,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
   };
   const root = await mkdtemp(join(tmpdir(), 'hyp-source-prep-'));
   try {
-    const cold = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 8 }, {
+    const cold = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(root, 'cold'), fetcher: fakeProvider,
     });
@@ -79,7 +79,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     assert.ok(coldSceneRun?.startedAt && coldSceneRun.completedAt, 'scene API call records its wall-clock interval');
     assert.equal(coldSceneRun?.apiCostUsd, 0.001, 'per-scene provider spend is retained');
 
-    const warm = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 8 }, {
+    const warm = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(root, 'warm'),
       fetcher: async () => { throw new Error('cache hit must not call the provider'); },
@@ -98,7 +98,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     relationOmittingPlan.sections[0]!.contract!.requiredRelations = [];
     payloads.teaching_plan = relationOmittingPlan;
     received.length = 0;
-    const rejected = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 8 }, {
+    const rejected = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(join(root, 'relation-omission'), 'cold'), fetcher: fakeProvider,
     });
@@ -124,10 +124,10 @@ test('S3 rejects a model plan that omits a SceneContract, after exactly one repa
     prerequisites: [],
   };
   const planMissingContract = {
-    targetDurationSec: 8,
+    targetDurationSec: 15,
     intro: { sourceTitle: 'Light and leaves', sections: ['Building sugar'] },
     lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Sugar' }], persistentConceptIds: [] },
-    sections: [{ id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 8 }],
+    sections: [{ id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 15 }],
     recap: { keyPoints: ['Leaves use light to build sugar'] },
   };
   const payloads: Record<string, unknown> = { concept_graph: graph, teaching_plan: planMissingContract };
@@ -144,7 +144,7 @@ test('S3 rejects a model plan that omits a SceneContract, after exactly one repa
   };
   const root = await mkdtemp(join(tmpdir(), 'hyp-source-prep-missing-contract-'));
   try {
-    const rejected = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 8 }, {
+    const rejected = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(root, 'cold'), fetcher: fakeProvider,
     });
@@ -170,15 +170,15 @@ test('S3 rejects a model plan that invents an unsupported relation, after exactl
     prerequisites: [],
   };
   const planUnsupportedRelation = {
-    targetDurationSec: 8,
+    targetDurationSec: 15,
     intro: { sourceTitle: 'Light and leaves', sections: ['Building sugar'] },
     lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Sugar' }], persistentConceptIds: [] },
     sections: [{
-      id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 8,
+      id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 15,
       contract: {
         // "contains" is a valid RELATION_TYPES enum value, but the graph only declares "produces"
         // between leaf and sugar: this relation is not grounded in the graph and must be rejected.
-        learningDelta: 'Explain how leaves build sugar', targetDurationSec: 8, requiredConceptIds: ['leaf', 'sugar'],
+        learningDelta: 'Explain how leaves build sugar', targetDurationSec: 15, requiredConceptIds: ['leaf', 'sugar'],
         requiredRelations: [{ from: 'leaf', to: 'sugar', type: 'contains' }], evidenceSpanIds: [sourceSpan.id],
         teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
       },
@@ -199,7 +199,7 @@ test('S3 rejects a model plan that invents an unsupported relation, after exactl
   };
   const root = await mkdtemp(join(tmpdir(), 'hyp-source-prep-unsupported-relation-'));
   try {
-    const rejected = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 8 }, {
+    const rejected = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(root, 'cold'), fetcher: fakeProvider,
     });
