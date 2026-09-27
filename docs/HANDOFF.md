@@ -1982,3 +1982,10 @@ hypothesis before layering on production-latency infrastructure.
 - **P6 (explain-canvas-lab, env only):** `rag-engine/.venv` (raganything 1.4.1 + lightrag-hku 1.4.16) + `parse-engine/.venv` (docling 2.130.0); sidecar `check` ok:true/llm:true/embeddings:false (EMBEDDINGS_API_KEY missing, OPENROUTER key present); `RAG_ENGINE` still unset (inert preserved). Venvs gitignored, uncommitted. Index/query test not run (needs spend).
 - **Verification:** typecheck clean; full 524 node + 28 + 12 py; `git diff --check` clean.
 - **Next bounded task:** P8 reviewer cleanup (safe deletes only).
+
+## Entry — 2026-09-27, P8 cleanup (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** reviewer dead-code pass; safe deletes only, no videos.
+- **Removed:** `.DS_Store`, `explain-canvas-lab/app.log`, root `files.zip` (zero refs), `calibration.v1.withdrawn.json` (zero code refs; loader reads v2 only); `videos_to_generate.md` dead HF URL line stripped (file kept). Plan doc S5 cell updated (history in git). Kept: DeepSeek PDF (test dep), node_modules/dist (needed/ignored), root `.gitignore` (not in git), both worktree `.gitignore` (already complete).
+- **Verification:** typecheck clean; publish-status 7/7; alignment py pass; `git diff --check` clean.
+- **Next bounded task:** full volume matrix + determinism/harness report (needs validator go + live spend).
