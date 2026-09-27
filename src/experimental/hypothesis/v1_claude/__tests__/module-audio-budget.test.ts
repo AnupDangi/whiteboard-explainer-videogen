@@ -23,7 +23,7 @@ test('measured module audio changes only the target of narration not yet written
       { id: 'topic_two', label: 'Topic two', definition: 'A later mechanism.', evidence: [{ spanId: span.id, quote: 'Topic two explains how a second mechanism builds on the first.' }] },
     ];
     const syllabus = {
-      requestedDurationSec: 600, plannedDurationSec: 600, coverageReason: 'The source supports two connected modules.',
+      requestedDurationSec: 600, plannedDurationSec: 600, coverageReason: 'The source supports two connected modules.', coreGoalSupported: true,
       learningObjective: 'Explain both mechanisms and their relationship.', audienceAssumptions: ['Basic vocabulary.'], concepts,
       prerequisites: [{ concept: 'topic_two', needs: 'topic_one' }],
       modules: [

@@ -1,4 +1,4 @@
-import type { Edge, Element, LaidOutScene, StageFailure, Timeline } from '../types.js';
+import type { Edge, Element, LaidOutScene, ResolutionRecord, StageFailure, Timeline } from '../types.js';
 import { TEMPLATE_SPECS } from '../templates/catalog.js';
 import type { EvidenceReference, NeutralElement, NeutralTimelineEvent } from '../../shared/contracts.js';
 import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js';
@@ -103,6 +103,52 @@ export function typedBoardAdequacyFailures(scene: BoardAdequacyInput): StageFail
   return failures;
 }
 
+/**
+ * A weak catalog match shown as an icon teaches the wrong association: a wrong
+ * icon is worse than no icon. Rung 3 is the weak-match zone (mid thresholds in
+ * catalog/ladder.ts are explicitly uncalibrated starting points), so an object
+ * element resolved there is a hard failure. The safe fallback is a labelled
+ * primitive or short text (rung 4), never the doubtful asset.
+ */
+export interface AssetMismatchInput {
+  sceneId: string;
+  elements: ReadonlyArray<{
+    id: string;
+    element: Pick<Element, 'prim'> & { concept?: string; iconBasis?: Element['iconBasis'] };
+    resolution?: ResolutionRecord;
+  }>;
+}
+
+export function semanticAssetMismatchFailures(scene: AssetMismatchInput): StageFailure[] {
+  const failures: StageFailure[] = [];
+  for (const { id, element, resolution } of scene.elements) {
+    if (element.prim !== 'object' || resolution?.rung !== 3) continue;
+    failures.push({
+      code: 'semantic-asset-mismatch', stage: 'resolve',
+      message: `${scene.sceneId}: ${id} shows a weak catalog match for "${element.concept ?? id}" (asset ${resolution.assetId}, score ${resolution.score.toFixed(2)}, ${element.iconBasis ?? 'unknown basis'}); use a labelled primitive or short text instead`,
+      hard: true,
+    });
+  }
+  return failures;
+}
+
+/** Review cue only: a word-only process may still be the right diagram for an abstract lesson. */
+export function labelOnlyProcessWarnings(scene: BoardAdequacyInput): StageFailure[] {
+  if (scene.boardIntent?.visualKind !== 'process') return [];
+  const byId = new Map(scene.elements.map(({ id, element }) => [id, element]));
+  const textOnly = (id: string): boolean => {
+    const prim = byId.get(id)?.prim;
+    return prim === 'box' || prim === 'pill' || prim === 'text';
+  };
+  return scene.edges
+    .filter((edge) => edge.factualRelation && textOnly(edge.from) && textOnly(edge.to))
+    .map((edge) => ({
+      code: 'board-label-only-process', stage: 'planner' as const,
+      message: `${scene.sceneId}: source relation ${edge.from} -> ${edge.to} is shown with text-only endpoints; review whether a geometric or state-change depiction would teach it more clearly`,
+      hard: false,
+    }));
+}
+
 /** Container elements are organizational (they hug their children) and are excluded from overlap/leaf accounting per claude_pipeline.md §20's "excluding declared containers/badges". */
 export function toNeutralElements(scene: LaidOutScene): NeutralElement[] {
   return scene.elements
@@ -176,7 +222,11 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
 
   // The retained S6 intent marks typed-board-v2 output. Older SceneSpec
   // artifacts omit it and remain backward-compatible without this gate.
-  if (scene.boardIntent) failures.push(...typedBoardAdequacyFailures(scene));
+  if (scene.boardIntent) {
+    failures.push(...typedBoardAdequacyFailures(scene));
+    warnings.push(...labelOnlyProcessWarnings(scene));
+  }
+  failures.push(...semanticAssetMismatchFailures(scene));
 
   for (const el of scene.elements) {
     if (el.element.prim === 'object' && !el.resolution) {

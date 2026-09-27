@@ -25,6 +25,7 @@ import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
 import { encodeVideoAtomically, rasterizePng, type VideoScene } from '../export/videoEncode.js';
 import { assembleModuleVideos, encodeModuleVideos, type ModuleVideoArtifact, type ModuleVideoInput } from '../export/moduleVideo.js';
+import { probeMediaDurationMs } from '../export/ffmpeg.js';
 import { attributionForSources, loadCatalogLibraries } from '../catalog/streamline.js';
 import { buildWebVtt, buildWebVttForRun } from '../export/captions.js';
 import { resolveSourceEvidence, type SourceDoc, type SourceBundle } from '../plan/sourceDoc.js';
@@ -42,6 +43,7 @@ import { sourceCommit } from './provenance.js';
 import { PIPELINE } from '../config.js';
 import { configuredConcurrency, createLimiter } from './limiter.js';
 import { sceneAudioStage, synthesizeSceneAudio } from './sceneAudio.js';
+import { buildModuleSceneClock } from './moduleClock.js';
 
 /**
  * Live-mode pipeline (per claude_pipeline.md §1/§2): source-generated lessons
@@ -138,6 +140,8 @@ export interface HypothesisLiveRunResult {
   status: RunStatus;
   audioPath: string;
   videoPath?: string;
+  /** Duration probed from the completed MP4; undefined when no MP4 exists or probing fails. */
+  encodedVideoDurationMs?: number;
   captionsPath?: string;
 }
 
@@ -451,7 +455,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
     if (!planned.spec) continue; // real, recorded planner failure for this scene.
 
-    // A board names its icon exactly; pin it (an earlier scene's pin for the same concept still wins, for lesson-wide consistency).
+    // A board names its icon exactly; reuse it only for the same depicted referent.
     const boardIcons = (planned as { iconAssets?: Record<string, string> }).iconAssets ?? {};
     for (const element of planned.spec.elements) {
       const assetId = boardIcons[element.id];
@@ -600,14 +604,18 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   // --- S11: real MP4 export (resvg PNG frames -> ffmpeg, real audio muxed in) ---
   let videoPath: string | undefined;
+  let encodedVideoDurationMs: number | undefined;
   let diagnosticCaptionFailure: string | undefined;
   let moduleVideoArtifacts: ModuleVideoArtifact[] = [];
+  const renderedSceneIds = new Set(scenes.map((scene) => scene.sceneId));
+  const missingVideoSceneIds = input.scenes.map((scene) => scene.sceneId).filter((sceneId) => !renderedSceneIds.has(sceneId));
+  if (missingVideoSceneIds.length) failures.push({ code: 'video-scenes-incomplete', stage: 'render', message: `No visual scene for ${missingVideoSceneIds.join(', ')}; diagnostic video retains the full narration clock`, hard: true });
   const encodeStartedAtMs = Date.now();
   if (videoScenes.length > 0) {
     videoPath = path.join(outputDir, 'video.mp4');
     try {
       const produce = async () => {
-        if (!input.modules?.length) {
+        if (!input.modules?.length || input.modules.some((module) => module.sceneIds.every((sceneId) => !renderedSceneIds.has(sceneId)))) {
           await withHostResourcePermit('raster', DEFAULT_HOST_RASTER_CONCURRENCY, () => encodeVideoAtomically(videoScenes, finalDurationMs, masterWavPath, videoPath!, options.render.fps));
           return;
         }
@@ -617,30 +625,31 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
           const moduleWords: Record<string, AlignedWord[]> = {};
           const moduleBounds: AlignedAudio['sceneBoundsMs'] = {};
           const moduleMentions: AlignedAudio['mentions'] = [];
-          let moduleCursor = 0;
-          const orderedSceneIds = module.sceneIds.filter((sceneId) => scenes.some((scene) => scene.sceneId === sceneId));
-          for (const [moduleSceneIndex, sceneId] of orderedSceneIds.entries()) {
+          // Preserve the full narrated module clock even if S6 failed to produce a visual scene.
+          // frameSvgAt holds the nearest available board over such an interval; the hard failure
+          // above keeps this diagnostic output ineligible for publication.
+          const orderedSceneIds = module.sceneIds;
+          const moduleBoundarySilenceMs = moduleIndex < input.modules.length - 1 ? SCENE_GAP_MS : 0;
+          const moduleClock = buildModuleSceneClock(orderedSceneIds, sceneDurationMsById, SCENE_GAP_MS, moduleBoundarySilenceMs);
+          for (const { sceneId, startMs: localStart, endMs: localEnd } of moduleClock.intervals) {
             const scene = scenes.find((candidate) => candidate.sceneId === sceneId);
             const sourceAudioPath = sceneAudioPathById.get(sceneId);
-            const sceneDurationMs = sceneDurationMsById.get(sceneId);
             const masterBounds = sceneBoundsMs[sceneId];
-            if (!scene || !sourceAudioPath || sceneDurationMs === undefined || !masterBounds) continue;
-            const localStart = moduleCursor;
-            const localEnd = localStart + sceneDurationMs;
+            if (!sourceAudioPath || !masterBounds) throw new Error(`Module ${module.id} is missing narrated audio for ${sceneId}`);
             const masterStart = masterBounds.startMs;
             moduleWords[sceneId] = (sceneWords[sceneId] ?? []).map((word) => ({ ...word, startMs: word.startMs - masterStart + localStart, endMs: word.endMs - masterStart + localStart }));
             moduleBounds[sceneId] = { startMs: localStart, endMs: localEnd };
             moduleMentions.push(...alignedAudio.mentions.filter((mention) => mention.sceneId === sceneId).map((mention) => ({ ...mention, startMs: mention.startMs - masterStart + localStart, endMs: mention.endMs - masterStart + localStart })));
-            const localShift = localStart - masterStart;
-            const localTimeline = { ...scene.timeline, sceneStartMs: scene.timeline.sceneStartMs + localShift, sceneEndMs: scene.timeline.sceneEndMs + localShift, events: scene.timeline.events.map((event) => ({ ...event, t0: event.t0 + localShift, t1: event.t1 + localShift })) };
-            moduleScenes.push({ laidOut: scene.laidOut, timeline: localTimeline, startMs: localStart, endMs: localEnd });
-            moduleCursor = localEnd + (moduleSceneIndex < orderedSceneIds.length - 1 ? SCENE_GAP_MS : 0);
+            if (scene) {
+              const localShift = localStart - masterStart;
+              const localTimeline = { ...scene.timeline, sceneStartMs: scene.timeline.sceneStartMs + localShift, sceneEndMs: scene.timeline.sceneEndMs + localShift, events: scene.timeline.events.map((event) => ({ ...event, t0: event.t0 + localShift, t1: event.t1 + localShift })) };
+              moduleScenes.push({ laidOut: scene.laidOut, timeline: localTimeline, startMs: localStart, endMs: localEnd });
+            }
           }
           if (moduleScenes.length === 0) throw new Error(`Module ${module.id} has no completed scenes`);
           const moduleAudioPath = path.join(outputDir, 'module-audio', `${module.id}.wav`);
-          const moduleBoundarySilenceMs = moduleIndex < input.modules.length - 1 ? SCENE_GAP_MS : 0;
-          const moduleDurationMs = moduleCursor + moduleBoundarySilenceMs;
-          await concatSceneAudio(orderedSceneIds.map((sceneId) => sceneAudioPathById.get(sceneId)!).filter(Boolean), SCENE_GAP_MS, moduleBoundarySilenceMs, moduleAudioPath);
+          const moduleDurationMs = moduleClock.durationMs;
+          await concatSceneAudio(orderedSceneIds.map((sceneId) => sceneAudioPathById.get(sceneId)!), SCENE_GAP_MS, moduleBoundarySilenceMs, moduleAudioPath);
           const moduleAlignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: mostEscalatedAligner(orderedSceneIds.map((sceneId) => sceneAlignerById.get(sceneId) ?? 'stable-ts')), wavPath: moduleAudioPath, durationMs: moduleDurationMs, sceneWords: moduleWords, sceneBoundsMs: moduleBounds, mentions: moduleMentions };
           const moduleCaptionsPath = path.join(outputDir, 'module-audio', `${module.id}.vtt`);
           const moduleCaptions = buildWebVttForRun(moduleAlignedAudio, Boolean(options.diagnosticCaptionlessVideo));
@@ -664,14 +673,26 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
         if (artifact.cacheHit) totalUsage.cacheHits += 1;
       } else await produce();
     } catch (error) {
+      // An existing path can belong to an earlier attempt; only a completed encode
+      // or verified cache materialization may be attached to this run.
       videoPath = undefined;
       failures.push({ code: 'encode-failed', stage: 'encode', message: error instanceof Error ? error.message : String(error), hard: true });
+    }
+    if (videoPath) {
+      try {
+        encodedVideoDurationMs = await probeMediaDurationMs(videoPath);
+        const durationDeltaMs = encodedVideoDurationMs - finalDurationMs;
+        if (Math.abs(durationDeltaMs) > 500) failures.push({ code: 'video-audio-duration-mismatch', stage: 'encode', message: `Encoded MP4 is ${encodedVideoDurationMs}ms; master narration is ${finalDurationMs}ms (delta ${durationDeltaMs}ms)`, hard: true });
+      } catch (error) {
+        // The encoder completed, so preserve its MP4 as a failed diagnostic.
+        failures.push({ code: 'media-probe-failed', stage: 'encode', message: error instanceof Error ? error.message : String(error), hard: true });
+      }
     }
   } else {
     failures.push({ code: 'no-scenes', stage: 'render', message: 'no scenes survived planning/validation for this case — no video produced', hard: true });
   }
   const encodeMs = Date.now() - encodeStartedAtMs;
-  stageRuns.push({ stage: 'S11-mp4-encode', kind: 'local', status: videoPath ? 'completed' : 'failed', durationMs: encodeMs, startedAt: new Date(encodeStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: Boolean(stageArtifacts['S11-mp4-encode']?.cacheHit), fallbackCount: 0, failures: failures.filter((failure) => failure.stage === 'encode' || failure.stage === 'render').map(toRunFailure) });
+  stageRuns.push({ stage: 'S11-mp4-encode', kind: 'local', status: videoPath && !failures.some((failure) => failure.hard && (failure.stage === 'encode' || failure.stage === 'render')) ? 'completed' : 'failed', durationMs: encodeMs, startedAt: new Date(encodeStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: Boolean(stageArtifacts['S11-mp4-encode']?.cacheHit), fallbackCount: 0, failures: failures.filter((failure) => failure.stage === 'encode' || failure.stage === 'render').map(toRunFailure) });
 
   await writeJsonArtifact(outputDir, 'narration.json', narration);
   await writeJsonArtifact(outputDir, 'aligned-audio.json', alignedAudio);
@@ -745,6 +766,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   evaluationBundle.metrics['timing.alignmentMs'] = alignmentMs;
   evaluationBundle.metrics['timing.scenePlanningLayoutMs'] = scenePlanningLayoutMs;
   evaluationBundle.metrics['timing.encodeMs'] = encodeMs;
+  evaluationBundle.metrics['video.missingSceneCount'] = missingVideoSceneIds.length;
+  if (encodedVideoDurationMs !== undefined) {
+    evaluationBundle.metrics['video.encodedDurationMs'] = encodedVideoDurationMs;
+    evaluationBundle.metrics['video.audioDurationDeltaMs'] = encodedVideoDurationMs - finalDurationMs;
+  }
   evaluationBundle.metrics['timing.captionsMs'] = captionsMs;
   const pipelineCompletedAtMs = Date.now();
   evaluationBundle.metrics['timing.pipelineWallMs'] = pipelineCompletedAtMs - runStartedAtMs;
@@ -823,10 +849,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     evaluationBundle: 'evaluation-bundle.json',
     svg: 'final-scene.svg',
     video: videoPath ? 'video.mp4' : undefined,
+    ...(encodedVideoDurationMs !== undefined ? { encodedVideoDurationMs } : {}),
     contactSheet: 'contact-sheet.png',
     captions: captionsPath ? 'captions.vtt' : undefined,
     credits,
   });
 
-  return { runId, narration, alignedAudio, scenes, evaluationBundle, contactSheetSvg, failures, status: evaluationBundle.status, audioPath: masterWavPath, videoPath, captionsPath };
+  return { runId, narration, alignedAudio, scenes, evaluationBundle, contactSheetSvg, failures, status: evaluationBundle.status, audioPath: masterWavPath, videoPath, encodedVideoDurationMs, captionsPath };
 }

@@ -36,6 +36,12 @@ const NativeSourceLocationSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('pptx-slide'), slide: z.number().int().positive() }),
   z.object({ kind: z.literal('docx-paragraph'), bodyBlock: z.number().int().positive(), paragraph: z.number().int().positive() }),
   z.object({ kind: z.literal('docx-table'), bodyBlock: z.number().int().positive(), table: z.number().int().positive() }),
+  z.object({
+    kind: z.literal('web-url'),
+    // Local HTML uses file:<path> as its parser-authored locator; URL fetches still require HTTPS.
+    url: z.string().url().refine((url) => url.startsWith('https://') || url.startsWith('file:'), 'source location must be HTTPS or a local file'),
+    selector: z.string().min(1).optional(),
+  }).strict(),
 ]);
 const EvidenceReferenceSchema = z.object({
   sourceId: z.string().min(1),

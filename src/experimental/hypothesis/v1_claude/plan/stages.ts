@@ -280,6 +280,7 @@ Rules:
 - If any concept has level "multi-step", at least 2 sections must have kind "step".
 - Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.
 - domain (optional): a broad subject label of 1-50 characters.
+- intro.sections: use short outline headings of 2-5 words, each under 60 characters; keep explanations in the section goals.
 SCHEMA LIMITS: section ids are unique lowercase snake_case (at most 40 characters); goal 1-240 characters; kind one of ${SECTION_KINDS.join(', ')}; budgetSec positive; intro.sourceTitle 1-80 characters and intro.sections at most 12 strings of 1-80 characters; recap.keyPoints at most 6 strings of 1-160 characters; no other fields.`,
   user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
 
@@ -403,6 +404,9 @@ export function validateSceneText(text: string, section: TeachingPlan['sections'
   if (/\[\[[^\]]*\[\[/.test(text)) problems.push('nested markers');
   const { plainText, mentions } = parseMarkers(text);
   if (/\[\[|\]\]/.test(plainText)) problems.push('malformed marker (use [[id|spoken words]])');
+  if (/(?:^|[.!?]\s+)(?:now[, ]+)?(?:show|display|draw|animate|render|highlight|reveal|place|write|cut to)\b/i.test(plainText)) {
+    problems.push('visual stage direction in spoken narration; describe the idea to the learner instead');
+  }
   const words = plainText.trim().split(/\s+/).filter(Boolean).length;
   const budget = section.budgetSec * WORDS_PER_SEC;
   if (words < budget * (1 - WORD_TOLERANCE) || words > budget * (1 + WORD_TOLERANCE)) {

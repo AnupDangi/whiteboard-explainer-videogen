@@ -28,6 +28,7 @@ test('a valid board compiles to a gated SceneSpec with data-derived evidence, ar
     ['n1', 'object', 'input', 'mention:m_a'], ['n2', 'object', 'input', 'mention:m_b'], ['n3', 'box', 'operator', 'mention:m_p'], ['n4', 'object', 'output', 'mention:m_o'],
   ]);
   assert.deepEqual(spec.edges.map((edge) => [edge.from, edge.to, edge.factualRelation?.type]), [['n1', 'n3', 'feeds'], ['n2', 'n3', 'feeds'], ['n3', 'n4', 'produces']]);
+  assert.deepEqual(spec.edges.map((edge) => edge.label ?? null), [null, null, null], 'geometry carries the relation; no verb label is emitted');
   assert.deepEqual(checked.iconAssets, { n1: 'lib:flour', n2: 'lib:water', n4: 'lib:dough' });
 });
 
@@ -96,7 +97,7 @@ for (const words of [WORDS, { a: 'coal', b: 'petrol', p: 'burning', o: 'heat' }]
     const board: Board = { ...goodBoard(words), nodes: goodBoard(words).nodes.map((node) => (node.id === 'n2' ? { ...node, concept: 'src_a', icon: 'label' } : node)) };
     const checked = validateBoard(board, input);
     assert.deepEqual(checked.problems, []);
-    assert.deepEqual(checked.spec!.edges.map((edge) => [edge.from, edge.to, edge.label]), [['n1', 'n3', 'feeds into'], ['n2', 'n3', undefined], ['n3', 'n4', 'produces']]);
+    assert.deepEqual(checked.spec!.edges.map((edge) => [edge.from, edge.to, edge.label]), [['n1', 'n3', undefined], ['n2', 'n3', undefined], ['n3', 'n4', undefined]]);
     const sameExample = { ...board, nodes: board.nodes.map((node) => (node.id === 'n2' ? { ...node, mention: 'm_a', label: words.a } : node)) };
     assert.match(validateBoard(sameExample, input).problems.join(' | '), /duplicate concept src_a/);
   });
@@ -117,6 +118,26 @@ test('typed visual forms compile into the existing deterministic SceneSpec primi
     assert.ok(compiled.spec.elements.find((element) => element.prim === prim)?.evidenceRefs?.length, `${prim} inherits source evidence from its linked concepts`);
   }
 });
+
+for (const [words, prefix] of [[WORDS, 'src'], [{ a: 'sand', b: 'lime', p: 'heating', o: 'glass' }, 'alt']] as const) {
+  test(`neutral diagram shapes compile with concept evidence and cited arrows (${prefix})`, () => {
+    const input = makeScene(words, prefix);
+    const board = goodBoard(words, prefix);
+    board.nodes[0]!.icon = 'diagram:circle';
+    board.nodes[3]!.icon = 'diagram:rectangle';
+    const checked = validateBoard(board, input);
+    assert.deepEqual(checked.problems, []);
+    const first = checked.spec!.elements.find((element) => element.id === 'n1')!;
+    const last = checked.spec!.elements.find((element) => element.id === 'n4')!;
+    assert.equal(first.prim, 'shape');
+    assert.equal(last.prim, 'shape');
+    assert.equal(first.prim === 'shape' ? first.kind : '', 'circle');
+    assert.equal(last.prim === 'shape' ? last.kind : '', 'rectangle');
+    assert.ok(first.evidenceRefs?.length);
+    assert.ok(checked.spec!.edges.every((edge) => edge.factualRelation?.evidenceRefs.length));
+    assert.deepEqual(checked.iconAssets, { n2: `lib:${words.b}` });
+  });
+}
 
 test('typed visual lexical claims must occur in the scene source quotes', () => {
   const unsupportedMatrix: Board = { ...goodBoard(), visual: { kind: 'matrix', rows: [['invented', 'value']] } };

@@ -126,11 +126,22 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
 
   if ([60, 300, 600, 1800].includes(groundedRequest.targetDurationSec)) {
     const requestedDurationSec = groundedRequest.targetDurationSec;
-    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v3', 'hierarchical-syllabus-v4-bounded-span-excerpts-id-normalization', () => buildSyllabus(groundedRequest, { model: modelFor('syllabus'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v4', 'hierarchical-syllabus-v5-core-goal-support', () => buildSyllabus(groundedRequest, { model: modelFor('syllabus'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
     const syllabusResult = syllabusRun.result;
     addUsage(usage, syllabusResult.usage); failures.push(...syllabusResult.failures); rawResponses.syllabus = syllabusResult.rawResponses;
     if (!syllabusResult.value) return preparedResult({ requestedDurationSec });
     const syllabus = syllabusResult.value;
+    const sufficiencyCheckedAt = new Date().toISOString();
+    const sufficiencyFailure: StageFailure | undefined = syllabus.coreGoalSupported ? undefined : {
+      code: 'source-insufficient-for-goal', stage: 'source',
+      message: `Source cannot teach the requested core learning goal: ${syllabus.coverageReason}`,
+      hard: true,
+    };
+    stageRuns.push({ stage: 'S1-goal-sufficiency', kind: 'local', status: sufficiencyFailure ? 'failed' : 'completed', durationMs: 0, startedAt: sufficiencyCheckedAt, completedAt: sufficiencyCheckedAt, apiCostUsd: 0, cacheHit: false, fallbackCount: 0, failures: sufficiencyFailure ? [sufficiencyFailure] : [] });
+    if (sufficiencyFailure) {
+      failures.push(sufficiencyFailure);
+      return preparedResult({ syllabus, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
+    }
     if (m.budgetLedger) {
       const ledgerSpendBeforeSyllabus = Math.max(0, (await m.budgetLedger.snapshot()).spentUsd - usage.costUsd);
       effectiveBudgetUsd = Math.max(0, lessonCostCapUsd(syllabus.plannedDurationSec) - ledgerSpendBeforeSyllabus);
@@ -168,7 +179,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
         const syllabusConcept = allConcepts.get(concept.id);
         return syllabusConcept ? { ...concept, label: syllabusConcept.label, definition: syllabusConcept.definition, evidence: syllabusConcept.evidence } : concept;
       }) };
-      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v4', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`, () => buildTeachingPlan(moduleRequest, graph, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v4', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v6-short-outline`, () => buildTeachingPlan(moduleRequest, graph, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, planRun.result.usage); failures.push(...planRun.result.failures); rawResponses[`plan:${moduleTag}`] = planRun.result.rawResponses;
       if (!planRun.result.value) return preparedResult({ syllabus, graph, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const modulePlan = planRun.result.value;
@@ -177,7 +188,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       for (const finding of contractFindings) failures.push({ code: finding.code, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: true });
       for (const finding of analysis.findings) failures.push({ code: `${finding.code}:${finding.check}`, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: finding.severity === 'error' });
       if (!analysis.ok || contractFindings.length) return preparedResult({ syllabus, graph, plan: modulePlan, analysis, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
-      const scriptRun = await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-script/v1', 'S4-module-script-v5-mentions-4-7', () => writeScript(moduleRequest, graph, modulePlan, { model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const scriptRun = await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-script/v1', 'S4-module-script-v6-spoken-only', () => writeScript(moduleRequest, graph, modulePlan, { model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, scriptRun.result.usage); failures.push(...scriptRun.result.failures); rawResponses[`script:${moduleTag}`] = scriptRun.result.rawResponses;
       if (!scriptRun.result.value) return preparedResult({ syllabus, graph, plan: modulePlan, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const sectionPrefix = `${moduleTag}_`;
@@ -247,7 +258,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
   addUsage(usage, g.usage); failures.push(...g.failures); rawResponses.concepts = g.rawResponses;
   if (!g.value) return preparedResult({});
 
-  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v4', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`, () => buildTeachingPlan(groundedRequest, g.value!, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v5-pacing`);
+  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v4', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v6-short-outline`, () => buildTeachingPlan(groundedRequest, g.value!, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v6-short-outline`);
   const p = pRun.result;
   addUsage(usage, p.usage); failures.push(...p.failures); rawResponses.plan = p.rawResponses;
   if (!p.value) return preparedResult({ graph: g.value });

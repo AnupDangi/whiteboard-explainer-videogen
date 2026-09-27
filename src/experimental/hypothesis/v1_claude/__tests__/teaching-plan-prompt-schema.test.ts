@@ -27,6 +27,7 @@ test('every S3 prompt variant spells out schema constraints and uses the schema 
       assert.match(system, new RegExp(`title: at most ${SECTION_TITLE_MAX_WORDS} words`), `${name} title constraint`);
       assert.match(system, /no other fields/);
       assert.match(system, /a relation is taught only in a section whose conceptIds contain BOTH of its endpoints/);
+      assert.match(system, /intro\.sections: use short outline headings of 2-5 words, each under 60 characters/);
       assert.doesNotMatch(system, /requiredRelations|evidenceSpanIds|lessonBible/, `${name} must not ask the model to copy derived fields`);
     }
   }

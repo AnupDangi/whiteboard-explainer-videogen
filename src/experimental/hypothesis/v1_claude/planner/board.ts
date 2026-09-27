@@ -26,12 +26,14 @@ import { RELATION_ARROWS, type RelationType } from '../config.js';
  * S7 resolve, S8 layout, S9 timeline, and S10 renderer apply unchanged.
  */
 export const BOARD_SCHEMA_VERSION = 'claude-board/v2';
-export const BOARD_PROMPT_VERSION = `board-prompt-v12-instances-min-nodes+${BOARD_BANK_VERSION}`;
+export const BOARD_PROMPT_VERSION = `board-prompt-v13-diagram-shapes+${BOARD_BANK_VERSION}`;
 /** S6 cache stage version: bump whenever board validation or compilation changes, so cached results from older rules are never replayed. */
-export const BOARD_STAGE_VERSION = 'board-3-instances-arrow-verbs';
+export const BOARD_STAGE_VERSION = 'board-4-diagram-shapes';
 export const BOARD_LAYOUTS = ['flow', 'fan_out', 'convergence', 'list', 'compare', 'cycle', 'hub'] as const;
 export const BOARD_ROLES = ['input', 'process', 'output', 'item', 'attribute'] as const;
 export const LABEL_ONLY = 'label';
+/** Source-neutral geometry for diagrams where a catalog icon would misrepresent a state or material. */
+export const DIAGRAM_SHAPES = ['diagram:circle', 'diagram:triangle', 'diagram:rectangle'] as const;
 export const MAX_BOARD_NODES = 7;
 /** A concept may appear on this many nodes when the narration names different concrete examples of it. */
 export const MAX_INSTANCES_PER_CONCEPT = 3;
@@ -111,13 +113,13 @@ export function boardEnums(input: PlannerSceneInput): BoardEnums {
   // including a teacher's metaphor (Simi draws a key for "key", a chest for "value").
   // A catalog entry literally named "label" would collide with the LABEL_ONLY
   // sentinel, so it is never offered as a pickable icon (choosing "label" always yields a box).
-  for (const icon of input.iconCatalog ?? []) if (icon.name !== LABEL_ONLY && !(icon.name in iconAssetIds)) iconAssetIds[icon.name] = icon.id;
+  for (const icon of input.iconCatalog ?? []) if (icon.name !== LABEL_ONLY && !(DIAGRAM_SHAPES as readonly string[]).includes(icon.name) && !(icon.name in iconAssetIds)) iconAssetIds[icon.name] = icon.id;
   const candidatesByMention: Record<string, string[]> = {};
   for (const mention of input.mentions) {
     candidatesByMention[mention.id] = [];
     for (const candidate of (input.candidates?.[mention.id] ?? []).filter((c) => c.id && c.score >= ICON_HINT_MIN).slice(0, MAX_CANDIDATES_PER_MENTION)) {
       if (!(candidate.name in iconAssetIds)) {
-        if (input.iconCatalog || Object.keys(iconAssetIds).length >= MAX_CANDIDATES_PER_SCENE) continue;
+        if (input.iconCatalog || candidate.name === LABEL_ONLY || (DIAGRAM_SHAPES as readonly string[]).includes(candidate.name) || Object.keys(iconAssetIds).length >= MAX_CANDIDATES_PER_SCENE) continue;
         iconAssetIds[candidate.name] = candidate.id!;
       }
       // With a catalog, dedup keeps only one id per name; a retrieval hint that named
@@ -185,7 +187,7 @@ export function boardSchema(enums: BoardEnums) {
       id: z.enum(NODE_IDS),
       mention: z.enum(nonEmpty(enums.mentionIds, '-')),
       concept: z.enum(nonEmpty(enums.conceptIds, '-')),
-      icon: !enums.fullCatalog && enums.icons.length <= MAX_ICON_ENUM ? z.enum([LABEL_ONLY, ...enums.icons] as [string, ...string[]]) : z.string().min(1).max(48),
+      icon: !enums.fullCatalog && enums.icons.length + DIAGRAM_SHAPES.length + 1 <= MAX_ICON_ENUM ? z.enum([LABEL_ONLY, ...DIAGRAM_SHAPES, ...enums.icons] as [string, ...string[]]) : z.string().min(1).max(48),
       label: z.string().min(1).max(40).regex(NO_MARKUP),
       role: z.enum(BOARD_ROLES),
     }).strict()).min(1).max(MAX_BOARD_NODES),
@@ -230,7 +232,7 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
     if (repeat) problems.push(`nodes ${repeat.id} and ${node.id} duplicate concept ${node.concept}; a repeated concept must show a different concrete example with its own mention and label, otherwise use one node`);
     if (siblings.length === MAX_INSTANCES_PER_CONCEPT) problems.push(`concept ${node.concept} has more than ${MAX_INSTANCES_PER_CONCEPT} nodes`);
     instances.set(node.concept, [...siblings, node]);
-    if (node.icon !== LABEL_ONLY && !(node.icon in enums.iconAssetIds)) {
+    if (node.icon !== LABEL_ONLY && !(DIAGRAM_SHAPES as readonly string[]).includes(node.icon) && !(node.icon in enums.iconAssetIds)) {
       const near = Object.keys(enums.iconAssetIds).filter((name) => words(name).some((part) => words(node.icon).some((wanted) => stem(part) === stem(wanted)))).slice(0, 8);
       problems.push(`node ${node.id}: icon "${node.icon}" is not in the icon catalog; use an exact catalog name${near.length ? ` such as [${near.join(', ')}]` : ''} or "${LABEL_ONLY}"`);
     }
@@ -243,11 +245,14 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
       const extra = words(node.label).filter((word) => word.length > 3 && !allowed.has(stem(word)));
       if (extra.length) problems.push(`node ${node.id}: label words [${extra.join(', ')}] do not come from its mention phrase or concept label; reuse their words`);
     }
+    if ((DIAGRAM_SHAPES as readonly string[]).includes(node.icon) && ((canonicalTerm(input, node.concept) ?? node.label).length > 24)) {
+      problems.push(`node ${node.id}: diagram shape text exceeds 24 characters; use a shorter source-supported label`);
+    }
   }
   if (input.previousElements?.length) {
-    const currentSignature = board.nodes.map((node) => `${node.concept}\u0000${node.icon === LABEL_ONLY ? 'box' : 'object'}\u0000${node.label.toLocaleLowerCase()}`).sort();
+    const currentSignature = board.nodes.map((node) => `${node.concept}\u0000${node.icon === LABEL_ONLY ? 'box' : (DIAGRAM_SHAPES as readonly string[]).includes(node.icon) ? 'shape' : 'object'}\u0000${node.label.toLocaleLowerCase()}`).sort();
     const previousSignature = input.previousElements
-      .filter((element) => element.conceptIds?.length === 1 && (element.prim === 'box' || element.prim === 'object'))
+      .filter((element) => element.conceptIds?.length === 1 && (element.prim === 'box' || element.prim === 'object' || element.prim === 'shape'))
       .map((element) => `${element.conceptIds![0]}\u0000${element.prim}\u0000${(element.label ?? '').toLocaleLowerCase()}`).sort();
     if (currentSignature.length === previousSignature.length && currentSignature.every((item, index) => item === previousSignature[index])) {
       problems.push('board repeats the immediately previous board’s same source concepts, labels, and visual forms; change the visual explanation or use a different scene concept');
@@ -422,6 +427,10 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
     const label = (isFirstInstance ? canonicalTerm(input, node.concept) : undefined) ?? node.label;
     // Label-only nodes draw as pastel boxes (Simi's "SOFTMAX", "NEW CAT VECTOR"), never bare text.
     if (node.icon === LABEL_ONLY) return { ...base, prim: 'box' as const, text: label, fill: boxFillFor(node.concept, node.role) };
+    if ((DIAGRAM_SHAPES as readonly string[]).includes(node.icon)) {
+      const kind = node.icon.slice('diagram:'.length) as 'circle' | 'triangle' | 'rectangle';
+      return { ...base, prim: 'shape' as const, kind, text: label, label, fill: boxFillFor(node.concept, node.role) };
+    }
     iconAssets[node.id] = enums.iconAssetIds[node.icon];
     // Audit: a retrieval hint for this mention, or a teacher's metaphor chosen from the catalog.
     const iconBasis = (enums.candidatesByMention[node.mention] ?? []).includes(node.icon) ? 'retrieval' as const : 'metaphor' as const;
@@ -435,12 +444,13 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
     const toNodes = nodesFor(relation.to);
     if (!fromNodes.length || !toNodes.length) continue;
     // Every example of the source concept points at the target (fan in); a single source points at
-    // every example of the target (fan out). Only the first arrow of a relation carries its verb.
+    // every example of the target (fan out). Geometry carries the relationship (arrow = flow/cause,
+    // containment = contains, side-by-side = comparison); no verb label is emitted.
     const pairs = fromNodes.length > 1 ? fromNodes.map((from) => [from, toNodes[0]!] as const) : toNodes.map((to) => [fromNodes[0]!, to] as const);
     const evidenceRefs = relation.evidenceRefs.slice(0, 6);
     const arrow = RELATION_ARROWS[relation.type as RelationType];
-    pairs.filter(([from, to]) => from.id !== to.id).forEach(([from, to], index) => {
-      edges.push({ from: from.id, to: to.id, ...(index === 0 ? { label: arrow.verb } : {}), ...(arrow.directed ? {} : { head: 'none' as const }), evidenceRefs, factualRelation: { fromConceptId: relation.from, toConceptId: relation.to, type: relation.type as NonNullable<Edge['factualRelation']>['type'], evidenceRefs } });
+    pairs.filter(([from, to]) => from.id !== to.id).forEach(([from, to]) => {
+      edges.push({ from: from.id, to: to.id, ...(arrow.directed ? {} : { head: 'none' as const }), evidenceRefs, factualRelation: { fromConceptId: relation.from, toConceptId: relation.to, type: relation.type as NonNullable<Edge['factualRelation']>['type'], evidenceRefs } });
     });
   }
   const titleConceptIds = [...new Set(board.nodes.map((node) => node.concept))].slice(0, 4);
@@ -566,10 +576,10 @@ export function buildBoardPrompt(input: PlannerSceneInput): { system: string; us
   'Good boards look like hand-drawn teaching diagrams: 3-6 nodes, concrete icons with short labels, and a layout that makes the mechanism readable at a glance. Select a typed visual form that matches the source-supported scene.',
     `Layouts:\n${LAYOUT_GUIDE}`,
     `Rules:
-- Every mention and concept must come from the lists in <scene>; every icon from <icon_catalog> (or "${LABEL_ONLY}"). Use each mention for at most one node.
+- Every mention and concept must come from the lists in <scene>; every icon must be in <icon_catalog> or be one of ${[LABEL_ONLY, ...DIAGRAM_SHAPES].join(', ')}. Use each mention for at most one node.
 - concept: the source concept that node shows. Normally one node per concept. When the narration names different concrete examples of one concept (two kinds of input, several instances), give each example its own node (up to ${MAX_INSTANCES_PER_CONCEPT} per concept), each with its own mention and a different label; arrows are drawn for every example. Show every concept named in "must show".
 - A process board needs at least ${MIN_PROCESS_BOARD_NODES} nodes when the scene has that many mentions: show the scene's concepts, and their concrete examples, rather than one or two boxes.
-- icon: choose from the icon catalog. Prefer an icon that literally depicts the thing (a leaf for "leaf"); otherwise use the standard visual metaphor a teacher would sketch on a whiteboard (a key for a lookup, a treasure chest for stored value, a magnifier for searching, scales for comparing, a gear for a process, people for reviewers). iconSuggestions per mention are retrieval hints, not limits. Never pick an icon that suggests a different meaning. Use "${LABEL_ONLY}" only when no icon or clear metaphor fits — "${LABEL_ONLY}" nodes are drawn as coloured boxes, and boards made only of boxes teach poorly.
+- icon: choose from the icon catalog when an icon literally depicts the thing. Otherwise use a faithful visual metaphor a teacher would sketch; it must not suggest a different meaning. For an abstract state, material, or physical part without a faithful icon, use ${DIAGRAM_SHAPES.join(', ')} as neutral diagram geometry and connect the shapes with the source-backed relation arrows. Use "${LABEL_ONLY}" only for a term that genuinely needs a text box. iconSuggestions per mention are hints, not limits. Repeating an icon for distinct objects or showing only labels does not explain a mechanism.
 - label: 1-2 words is best (whiteboard labels are short, like "LEAF" or "CARBON DIOXIDE"); never more than ${MAX_LABEL_WORDS}. Take the words from the mention phrase or concept label. (A concept with a canonicalTerm is labelled with it automatically.)
 - role: input, process, output, item, or attribute; it decides where the node sits in the layout. A board with visual.kind "process" must include at least one node whose role is "process" (including a one-node board).
 - visual.kind: choose process for a mechanism, comparison for two alternatives (layout must be compare), worked-example for one arithmetic example, or formula/plot/matrix/number-line when the cited scene data supports that visual. Never invent source values.

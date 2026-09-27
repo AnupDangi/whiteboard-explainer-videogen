@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { EvidenceReference } from '../../shared/contracts.js';
 import type { LaidOutScene } from '../types.js';
-import { typedBoardAdequacyFailures } from '../validation/gates.js';
+import { labelOnlyProcessWarnings, typedBoardAdequacyFailures } from '../validation/gates.js';
 
 const evidence = (spanId: string, quote: string): EvidenceReference => ({
   sourceId: 'source-document', spanId, startChar: 0, endChar: quote.length, startLine: 1, endLine: 1, quote,
@@ -52,6 +52,16 @@ function makeScene(options: { template?: LaidOutScene['template']; slots?: Array
 
 test('typed-board adequacy accepts source-cited relation coverage and complete convergence roles', () => {
   assert.deepEqual(typedBoardAdequacyFailures(makeScene()), []);
+});
+
+test('text-only process relations get a review warning without invalidating source-backed boards', () => {
+  const scene = makeScene();
+  assert.deepEqual(typedBoardAdequacyFailures(scene), []);
+  const warnings = labelOnlyProcessWarnings(scene);
+  assert.equal(warnings.length, 2);
+  assert.ok(warnings.every((warning) => warning.code === 'board-label-only-process' && !warning.hard));
+  scene.elements[0]!.element = { id: 'n1', prim: 'shape', kind: 'circle', text: 'material', anchor: 'sceneStart', slot: 'input', conceptIds: ['material'] };
+  assert.equal(labelOnlyProcessWarnings(scene).length, 1);
 });
 
 test('typed-board adequacy hard-fails a missing source relation even when its concepts remain present', () => {

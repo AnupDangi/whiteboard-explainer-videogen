@@ -80,6 +80,37 @@ test('planner: generated factual visuals require references from the exact sourc
   assert.ok(plannerProblems(fixtureMarked, generatedInput).some((problem) => /cannot use fixture provenance/.test(problem)));
 });
 
+test('planner: remote and local HTML evidence require the exact source URL and selector', () => {
+  for (const url of ['https://example.org/cash-flow', 'file:/tmp/cash-flow.html']) {
+    const ref = { sourceId: 'src_web', spanId: 'span_cash', startChar: 0, endChar: 13, startLine: 1, endLine: 1, quote: 'Cash flows in', sourceLocation: { kind: 'web-url' as const, url, selector: 'p' } };
+    const generatedInput: PlannerSceneInput = {
+      ...input,
+      teachingContext: {
+        displayText: 'Cash Flow', requireEvidence: true, sourceId: ref.sourceId,
+        sourceEvidenceRefs: [ref],
+        concepts: [{ id: 'cash', label: 'Cash', kind: 'quantity', definition: 'Cash flows in.', evidenceRefs: [ref] }],
+        relations: [],
+      },
+    };
+    const spec: SceneSpec = {
+      schemaVersion: 'claude-scene-spec/v1', sceneId: generatedInput.sceneId, title: 'Cash Flow',
+      titleConceptIds: ['cash'], titleEvidenceRefs: [ref], template: 'list_icon',
+      elements: [{ id: 'cash', anchor: 'sceneStart', prim: 'text', text: 'CASH', size: 'body', conceptIds: ['cash'], evidenceRefs: [ref] }],
+      edges: [],
+    };
+    assert.ok(safeParseSceneSpec(spec).success);
+    assert.deepEqual(plannerProblems(spec, generatedInput), []);
+    for (const sourceLocation of [
+      { kind: 'web-url' as const, url: url.replace('cash-flow', 'other'), selector: 'p' },
+      { kind: 'web-url' as const, url, selector: 'h1' },
+    ]) {
+      const altered = structuredClone(spec);
+      altered.elements[0].evidenceRefs![0].sourceLocation = sourceLocation;
+      assert.ok(plannerProblems(altered, generatedInput).some((problem) => /element cash lacks valid source evidence/.test(problem)));
+    }
+  }
+});
+
 test('planner: a multi-concept title or element may cite separate supporting source spans', () => {
   const heatRef = { sourceId: 'src_test', spanId: 'span_heat', startChar: 0, endChar: 14, startLine: 1, endLine: 1, quote: 'Heat increases.' };
   const pressureRef = { sourceId: 'src_test', spanId: 'span_pressure', startChar: 15, endChar: 34, startLine: 2, endLine: 2, quote: 'Pressure rises too.' };

@@ -16,7 +16,7 @@ import { iconPinKey, type IconPin } from './catalog/iconPins.js';
 export interface ResolveOptions {
   /** Embedding-ranked catalog candidates per lower-cased concept (catalog/semantic.ts rankConcepts), computed before this sync stage. */
   candidates?: Map<string, Candidate[]>;
-  /** Lesson-level visual selections, keyed by stable source concept identity. */
+  /** Lesson-level visual selections, keyed by source concept IDs and depicted referent. */
   pins?: ReadonlyMap<string, IconPin>;
 }
 

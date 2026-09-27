@@ -19,7 +19,7 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
   const plan = { targetDurationSec: 60, intro: { sourceTitle: 'Water cycle', sections: ['Heating', 'Evaporation', 'Cloud formation'] }, lessonBible: { audience: 'general learner', terminology: concepts.map((concept) => ({ conceptId: concept.id, label: concept.label })), persistentConceptIds: [] }, sections, recap: { keyPoints: ['Sunlight starts the cycle.'] } };
   const script = { text: 'First consider [[sunlight|the sunlight]]. It adds energy to [[water|the water]], which helps the next stage begin. This connects [[evaporation|evaporation]] with [[clouds|clouds]], completing one useful part of the water cycle and showing how these changes fit together.' };
   const syllabus = {
-    requestedDurationSec: 60, plannedDurationSec: 60, coverageReason: 'The source supports this one-minute overview.', learningObjective: 'Explain the first steps of the water cycle.', audienceAssumptions: ['Basic science vocabulary.'],
+    requestedDurationSec: 60, plannedDurationSec: 60, coverageReason: 'The source supports this one-minute overview.', coreGoalSupported: true, learningObjective: 'Explain the first steps of the water cycle.', audienceAssumptions: ['Basic science vocabulary.'],
     concepts: concepts.map(({ id, label, definition, evidence }) => ({ id, label, definition, evidence })), prerequisites: [],
     modules: [{ id: 'water_cycle', title: 'The water cycle begins', goal: 'Connect heating, evaporation, and cloud formation.', budgetSec: 60, conceptIds: concepts.map((concept) => concept.id), evidenceSpanIds: [span.id], recallOfModuleIds: [] }],
   };
@@ -47,4 +47,32 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
   assert.equal(live.targetDurationMs, 60_000);
   assert.equal(live.requestedDurationSec, 60);
   assert.equal(live.modules?.[0]?.sceneIds.length, 3);
+});
+
+test('an index that cannot teach the requested mechanism stops after S1', async () => {
+  const sourceDoc = sourceDocFromText('Soil Biology Primer\nIntroduction to Microbiotic Crusts\nSoil Biology and Land Management', 'pdf');
+  const span = sourceDoc.spans.find((candidate) => candidate.kind !== 'heading')!;
+  const syllabus = {
+    requestedDurationSec: 1800, plannedDurationSec: 60,
+    coverageReason: 'The source lists titles but does not explain the soil food web or nutrient cycling.',
+    coreGoalSupported: false,
+    learningObjective: 'Identify the topics named in the index.', audienceAssumptions: [],
+    concepts: [
+      { id: 'soil_biology', label: 'Soil biology', definition: 'A named document topic.', evidence: [{ spanId: span.id, quote: 'Soil Biology Primer' }] },
+      { id: 'land_management', label: 'Land management', definition: 'A named document topic.', evidence: [{ spanId: span.id, quote: 'Soil Biology and Land Management' }] },
+    ],
+    prerequisites: [],
+    modules: [{ id: 'module_1', title: 'Listed topics', goal: 'Identify listed topics.', budgetSec: 60, conceptIds: ['soil_biology', 'land_management'], evidenceSpanIds: [span.id], recallOfModuleIds: [] }],
+  };
+  const seen: string[] = [];
+  const fetcher: typeof fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as { response_format?: { json_schema?: { name?: string } } };
+    seen.push(request.response_format?.json_schema?.name ?? 'unknown');
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(syllabus) }, finish_reason: 'stop' }], usage: { prompt_tokens: 50, completion_tokens: 40, cost: 0.001 } }), { status: 200 });
+  };
+  const prepared = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 1800, instruction: 'Explain how the soil food web and nutrient cycling connect to soil health.' }, { model: 'test/hierarchy', apiKey: 'test-only', budgetUsd: 0.1, fetcher });
+  assert.deepEqual(seen, ['lesson_syllabus']);
+  assert.equal(prepared.script, undefined);
+  assert.ok(prepared.failures.some((failure) => failure.code === 'source-insufficient-for-goal' && failure.hard));
+  assert.equal(prepared.stageRuns.find((run) => run.stage === 'S1-goal-sufficiency')?.status, 'failed');
 });
