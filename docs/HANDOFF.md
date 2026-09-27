@@ -1879,3 +1879,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** new `plan/visualSemantics.ts` (~230 lines, pure): 12 semantic structures → 6-rung ladder (literal/metaphor/state/topology/labeledPrimitive/text ≤8 words) via generic role cues + 20-asset role table; `boardLayoutForStructure` maps to 7 board layouts. One call site: `fallbackBoard` uses resolver instead of degree heuristic; normal planner path untouched. Zero topic keywords (self-scan test).
 - **Verification:** `typecheck:hypothesis` clean; new suite 9/9; board+anti-hardcoding 40/40; planner/plan/recipes/adequacy 37/37; `git diff --check` clean.
 - **Next bounded task:** P3 composition/reveal discipline + regenerate same 60s benchmark and compare.
+
+## Entry — 2026-09-27, regen same 60s benchmark post-P2 (branch fix/chat-audit-rollup-20260927)
+
+- **Run:** `video:one-shot --prompt="Explain the paper's core argument" --url=...llms-cant-jump.pdf --duration=60` → `output/2026-09-27T08-08-48-238Z-www-tomzahavy-com/` (provenance `tampered=false`, exit 1). Cost $0.0113, wall 119s. Tracked tree clean before/after.
+- **Compare vs baseline (cf6c328: 4 scenes, 4 hard, F1+F2):** now 3 scenes (model re-segmented: inference_modes, grounding_recap + 1 pass), 6 hard, 2 fallbacks. P2a generic-edge gate fires as designed (`compares`×2, `requires`×1 without source wording) — previously silent, now visible. Numeric `Three` persists in fallback path (fallback title still code-owned from displayText). Repair attempt introduced `title words [differ]` disconnect + `process form needs process-role node`.
+- **Classification (P1 taxonomy):** all S. Validator verdict: CHANGE planner layer again (fallback title must go through repaired title; repair prompt must forbid generic verbs or map to source-stated relations), DO NOT BUILD new subsystems.
+- **Next bounded task:** P2c fallback-title ownership + repair-verb guidance, then regenerate same benchmark.
