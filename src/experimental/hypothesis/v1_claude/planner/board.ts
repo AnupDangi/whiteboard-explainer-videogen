@@ -7,6 +7,7 @@ import { TAU_HIGH_EMB } from '../catalog/ladder.js';
 import { BOARD_EXAMPLES, BOARD_BANK_VERSION } from '../fewshots/boardBank.v1.js';
 import type { PlannerSceneInput } from './prompt.js';
 import { plannerProblems, type PlanSceneOptions, type PlanSceneResult, type PlannerCallUsage } from './plan.js';
+import { boardLayoutForStructure, resolveRepresentation } from '../plan/visualSemantics.js';
 
 /**
  * S6 board planner (claude-board/v2, design 2026-09-26).
@@ -513,10 +514,18 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
   }
   const maxOut = Math.max(0, ...outDegree.values());
   const maxIn = Math.max(0, ...inDegree.values());
-  let layout: BoardLayout = 'list';
-  if (shownRelations.length && maxOut <= 1 && maxIn <= 1) layout = 'flow';
-  else if (maxOut >= 2 && maxOut >= maxIn && nodes.length >= 3) layout = 'fan_out';
-  else if (maxIn >= 2 && nodes.length >= 3) layout = 'convergence';
+  // P2b VSR: the fallback layout comes from the claim's generic semantic
+  // structure (comparison -> compare, sequence -> flow, fan -> fan_out /
+  // convergence, default list), never from topic wording. The paid planner
+  // path above is untouched.
+  const claim = [input.teachingContext?.displayText, input.plainText].filter(Boolean).join('. ');
+  const evidence = (input.teachingContext?.sourceEvidenceRefs ?? []).map((ref) => ref.quote).join(' ');
+  const vsr = resolveRepresentation(claim, enums.icons, evidence);
+  let layout: BoardLayout = boardLayoutForStructure(
+    vsr.structure,
+    { fanOut: maxOut, fanIn: maxIn, edges: shownRelations.length },
+    nodes.length,
+  );
   if (layout === 'fan_out' || layout === 'convergence') {
     const degree = layout === 'fan_out' ? outDegree : inDegree;
     const centre = [...degree.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
@@ -531,7 +540,8 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
   // convergence layout rather than emit a board that is guaranteed to fail.
   if (layout === 'convergence' && !nodes.some((node) => node.role === 'output')) layout = 'list';
   const title = (input.teachingContext?.displayText ?? input.plainText).split(/\s+/).slice(0, MAX_TITLE_WORDS).join(' ').slice(0, 60) || input.sceneId;
-  return { schemaVersion: BOARD_SCHEMA_VERSION, title, layout, nodes, visual: { kind: 'process' } };
+  // A compare board must carry the comparison form; every other fallback layout keeps the process form.
+  return { schemaVersion: BOARD_SCHEMA_VERSION, title, layout, nodes, visual: layout === 'compare' ? { kind: 'comparison' } : { kind: 'process' } };
 }
 
 const LAYOUT_GUIDE = `- flow: steps or a causal chain, left to right (A -> B -> C).

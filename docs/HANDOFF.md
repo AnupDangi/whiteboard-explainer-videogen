@@ -1872,3 +1872,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** `boardTitle` digits + zero–twenty share the numeric gate (unsupported heading yields to repairable model title; supported headings stay code-owned); `fallbackBoard` downgrades convergence→list when no output role; `plannerProblems` generic-verb stop-list (compares/requires/contains, stem-matched against cited spans; specific verbs unaffected). No topic keywords in runtime.
 - **Verification:** `typecheck:hypothesis` clean; board+planner+adequacy+intent 55 pass (3 new tests failed pre-fix, pass post-fix); `git diff --check` clean.
 - **Next bounded task:** P2b VSR v1 (`plan/visualSemantics.ts`: semantic structures → representation ladder → composition).
+
+## Entry — 2026-09-27, P2b VSR v1 (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** validator's central problem — semantic visualization with graceful fallback; biggest failure class S.
+- **Implemented:** new `plan/visualSemantics.ts` (~230 lines, pure): 12 semantic structures → 6-rung ladder (literal/metaphor/state/topology/labeledPrimitive/text ≤8 words) via generic role cues + 20-asset role table; `boardLayoutForStructure` maps to 7 board layouts. One call site: `fallbackBoard` uses resolver instead of degree heuristic; normal planner path untouched. Zero topic keywords (self-scan test).
+- **Verification:** `typecheck:hypothesis` clean; new suite 9/9; board+anti-hardcoding 40/40; planner/plan/recipes/adequacy 37/37; `git diff --check` clean.
+- **Next bounded task:** P3 composition/reveal discipline + regenerate same 60s benchmark and compare.
