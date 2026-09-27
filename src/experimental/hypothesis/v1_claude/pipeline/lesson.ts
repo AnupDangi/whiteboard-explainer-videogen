@@ -12,7 +12,7 @@ import type { HypothesisLiveInput, LiveSceneInput } from './runLive.js';
 import type { PersistentBudgetLedger } from './budgetLedger.js';
 import { ContentAddressedArtifactStore } from '../artifactCache.js';
 import type { StageRunRecord } from '../../shared/contracts.js';
-import { loadSourceDoc, loadSourceDocFromUrl } from '../plan/sourceIntake.js';
+import { intakeWarningFailures, loadSourceDoc, loadSourceDocFromUrl } from '../plan/sourceIntake.js';
 import { buildSourceBundle } from '../plan/sourceBundle.js';
 import { buildSyllabus, lessonCostCapUsd, rebudgetUnwrittenModules, type ModulePlan, type Syllabus } from '../plan/hierarchical.js';
 import { parseMarkers } from '../narration/markers.js';
@@ -69,7 +69,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
   const rawResponses: PreparedLesson['rawResponses'] = {};
   const cacheHits: string[] = [];
   const stageArtifacts: PreparedLesson['stageArtifacts'] = {};
-  const stageRuns: StageRunRecord[] = [{ stage: 'S1-source-intake', kind: 'local', status: 'completed', durationMs: req.sourceDoc ? 0 : sourceDurationMs, startedAt: new Date(sourceStartedAtMs).toISOString(), completedAt: new Date(sourceStartedAtMs + sourceDurationMs).toISOString(), timingKnown: !req.sourceDoc, apiCostUsd: 0, cacheHit: false, fallbackCount: 0, failures: [] }];
+  const stageRuns: StageRunRecord[] = [{ stage: 'S1-source-intake', kind: 'local', status: 'completed', durationMs: req.sourceDoc ? 0 : sourceDurationMs, startedAt: new Date(sourceStartedAtMs).toISOString(), completedAt: new Date(sourceStartedAtMs + sourceDurationMs).toISOString(), timingKnown: !req.sourceDoc, apiCostUsd: 0, cacheHit: false, fallbackCount: 0, failures: (sourceDocs ?? []).flatMap(intakeWarningFailures) }];
   if (sourceBundle) stageRuns.push({ stage: 'S1-evidence-retrieval', kind: 'local', status: sourceBundle.evidenceHits.length ? 'completed' : 'failed', durationMs: sourceBundle.retrievalCost.elapsedMs, apiCostUsd: sourceBundle.retrievalCost.apiCostUsd, costEstimated: sourceBundle.retrievalCost.estimated || undefined, cacheHit: false, fallbackCount: 0, failures: sourceBundle.evidenceHits.length ? [] : [{ code: 'no-source-evidence-hit', stage: 'S1-evidence-retrieval', message: 'No source spans matched the lesson instruction; source coverage must be checked before planning.', hard: true }] });
   if (sourceBundle && sourceBundle.evidenceHits.length === 0) failures.push({ code: 'no-source-evidence-hit', stage: 'source', message: 'No source spans matched the lesson instruction; source coverage must be checked before planning.', hard: true });
   const budget = () => Math.max(0, effectiveBudgetUsd - usage.costUsd);
@@ -144,6 +144,8 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       const selected = sourceDoc.spans.filter((span) => spanIds.includes(span.id));
       const text = selected.map((span) => span.text.trimEnd()).join('\n\n');
       return { ...sourceDoc, text, spans: selected, contentSha256: sha256(text), retrievalEvidence: sourceDoc.retrievalEvidence?.filter((hit) => spanIds.includes(hit.citation.spanId)), figureAssets: sourceDoc.figureAssets?.filter((figure) => selected.some((span) => {
+        // A figure belongs to a module only when it comes from the same document as one of its spans.
+        if ((span.citationSourceId ?? sourceDoc.sourceId) !== figure.sourceId) return false;
         if (figure.sourceLocation && JSON.stringify(span.sourceLocation) === JSON.stringify(figure.sourceLocation)) return true;
         if (figure.page && span.sourceLocation?.kind === 'pdf-page') return figure.page === span.sourceLocation.page;
         return span.sourceLocation?.kind === 'pptx-slide' && figure.page === span.sourceLocation.slide;

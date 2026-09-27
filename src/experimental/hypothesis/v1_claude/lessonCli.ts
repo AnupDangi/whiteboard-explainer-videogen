@@ -9,8 +9,7 @@ import { lessonToLiveInput, prepareLesson } from './pipeline/lesson.js';
 import { runHypothesisLive } from './pipeline/runLive.js';
 import { loadAlignmentCalibration } from '../shared/alignment/calibration.js';
 import { closeSpeechWorkers, synthesizeAndAlign } from '../shared/alignment/align.js';
-import { loadSourceDoc } from './plan/sourceIntake.js';
-import { loadSourceDocFromUrl } from './plan/sourceIntake.js';
+import { intakeWarningFailures, loadSourceDoc, loadSourceDocFromUrl, planSourceIntake } from './plan/sourceIntake.js';
 import { buildSourceBundle } from './plan/sourceBundle.js';
 import { indexSourceBundleWithRag } from './plan/ragSidecar.js';
 import { PersistentBudgetLedger } from './pipeline/budgetLedger.js';
@@ -74,11 +73,10 @@ async function main(): Promise<void> {
         const bytes = await readFile(sourcePath);
         const store = new ContentAddressedArtifactStore(sharedStageCache ?? path.join(outBase, id, 'stage-cache'), cacheMode);
         const startedAtMs = Date.now();
-        const stage = await store.run('S1-source-intake', { extension: path.extname(sourcePath).toLowerCase(), bytesSha256: sha256(bytes) }, { schemaVersion: 'source-doc/v2', stageVersion: 'source-intake-native-location-5', promptVersion: 'source-parser-5' }, async () => {
-          const loaded = await loadSourceDoc(sourcePath);
-          if (!loaded.title) loaded.title = path.basename(sourcePath, path.extname(sourcePath));
-          return loaded;
-        });
+        // The chosen reader and its version are part of the key: switching
+        // HYPOTHESIS_PDF_EXTRACTOR never replays another reader's text.
+        const intakePlan = await planSourceIntake({ bytes, name: sourcePath });
+        const stage = await store.run('S1-source-intake', { name: path.basename(sourcePath), bytesSha256: sha256(bytes), extractor: `${intakePlan.extractor.id}@${intakePlan.extractor.version}` }, { schemaVersion: 'source-doc/v2', stageVersion: 'source-intake-6-pluggable', promptVersion: 'none' }, () => loadSourceDoc(sourcePath, intakePlan));
         const doc = stage.artifact.payload;
         return { doc, artifact: { key: stage.key, contentHash: stage.artifact.contentHash, cacheHit: stage.cacheHit }, startedAtMs, completedAtMs: Date.now(), cacheHit: stage.cacheHit };
       }));
@@ -89,7 +87,7 @@ async function main(): Promise<void> {
       }));
     const sourceEntries = [...pathEntries, ...urlEntries];
     sourceArtifacts.set(id, pathEntries.map((entry) => entry.artifact));
-    sourceStageRuns.set(id, sourceEntries.map(({ doc, startedAtMs, completedAtMs, cacheHit }) => ({ stage: `S1-source-intake:${doc.sourceId}`, kind: 'local', status: 'completed', durationMs: completedAtMs - startedAtMs, startedAt: new Date(startedAtMs).toISOString(), completedAt: new Date(completedAtMs).toISOString(), apiCostUsd: 0, cacheHit, fallbackCount: 0, failures: [] })));
+    sourceStageRuns.set(id, sourceEntries.map(({ doc, startedAtMs, completedAtMs, cacheHit }) => ({ stage: `S1-source-intake:${doc.sourceId}`, kind: 'local', status: 'completed', durationMs: completedAtMs - startedAtMs, startedAt: new Date(startedAtMs).toISOString(), completedAt: new Date(completedAtMs).toISOString(), apiCostUsd: 0, cacheHit, fallbackCount: 0, failures: intakeWarningFailures(doc) })));
     const docs = sourceEntries.map((entry) => entry.doc);
     const { sourceDoc, sourceBundle } = buildSourceBundle(docs, arg('instruction') ?? docs.map((doc) => doc.title ?? '').join(' '));
     lessons.push({ id, title: sourceDoc.title ?? 'lesson', source: sourceDoc.text, sourceDoc, sourceBundle, sources: [...sourcePaths.map((sourcePath) => ({ kind: 'document' as const, path: sourcePath })), ...sourceUrls.map((url) => ({ kind: 'url' as const, url }))], sourceFormat: sourceDoc.format, targetDurationSec: requestedDurationSec, instruction: arg('instruction'), expect: { level: 'one-step', minStepScenes: 0 } });

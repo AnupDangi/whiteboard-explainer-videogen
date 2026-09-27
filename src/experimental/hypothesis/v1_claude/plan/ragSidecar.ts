@@ -219,8 +219,8 @@ export function mapRagChunksToEvidence(data: unknown, sourceDoc: SourceDoc, sour
     const content = typeof chunk.content === 'string' ? chunk.content : typeof chunk.text === 'string' ? chunk.text : '';
     if (!content.trim()) continue;
     for (const span of sourceDoc.spans) {
-      const quote = span.text.trim();
-      if (!quote || !sourceTextMatchesChunk(quote, content)) continue;
+      const quote = chunkQuote(span.text, content);
+      if (!quote) continue;
       const citation = resolveSourceEvidence(sourceDoc, span.id, quote);
       if (!citation || found.has(span.id)) continue;
       const existing = localBySpan.get(span.id);
@@ -241,10 +241,36 @@ export function mapRagChunksToEvidence(data: unknown, sourceDoc: SourceDoc, sour
   return [...found.values()].sort((a, b) => a.rank - b.rank).map(({ hit }, index) => ({ ...hit, rank: index + 1 }));
 }
 
-function sourceTextMatchesChunk(sourceQuote: string, retrievedChunk: string): boolean {
-  if (retrievedChunk.includes(sourceQuote)) return true;
-  const normalizeWhitespace = (value: string) => value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
-  return normalizeWhitespace(retrievedChunk).includes(normalizeWhitespace(sourceQuote));
+const normalizeWhitespace = (value: string) => value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+/** Sentences shorter than this are too generic to prove a chunk came from a span. */
+const MIN_CHUNK_SENTENCE_CHARS = 40;
+
+/**
+ * The exact span text a retrieved chunk reproduces: the whole span when the
+ * chunk contains it, otherwise the longest run of consecutive span sentences
+ * (each at least 40 characters) that the chunk contains. Retrieval chunk
+ * boundaries rarely align with source spans, so requiring the whole span
+ * made every long PDF span a miss.
+ */
+export function chunkQuote(spanText: string, retrievedChunk: string): string | undefined {
+  const whole = spanText.trim();
+  if (!whole) return undefined;
+  const chunk = normalizeWhitespace(retrievedChunk);
+  if (retrievedChunk.includes(whole) || chunk.includes(normalizeWhitespace(whole))) return whole;
+  const sentences: Array<{ start: number; end: number; hit: boolean }> = [];
+  for (const match of spanText.matchAll(/[^\s][\s\S]*?(?:[.!?]["')\]\u201d\u2019]*(?=\s|$)|$)/gu)) {
+    const text = match[0].trim();
+    sentences.push({ start: match.index, end: match.index + match[0].length, hit: text.length >= MIN_CHUNK_SENTENCE_CHARS && chunk.includes(normalizeWhitespace(text)) });
+  }
+  let best: { start: number; end: number } | undefined;
+  for (let i = 0; i < sentences.length; i += 1) {
+    if (!sentences[i]!.hit) continue;
+    let j = i;
+    while (j + 1 < sentences.length && sentences[j + 1]!.hit) j += 1;
+    if (!best || sentences[j]!.end - sentences[i]!.start > best.end - best.start) best = { start: sentences[i]!.start, end: sentences[j]!.end };
+    i = j;
+  }
+  return best ? spanText.slice(best.start, best.end).trim() : undefined;
 }
 
 /** Optional multimodal index. Lesson evidence remains exact local spans with citations; the sidecar indexes those same blocks and images. */

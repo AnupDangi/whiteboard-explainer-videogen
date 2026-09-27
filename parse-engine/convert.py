@@ -14,8 +14,9 @@ Contract: prints ONE JSON object to stdout on success:
      "pages":N,"tables":N,"pictures":N,"formulas":N,"crops":N,"device":"mps"}
 On failure prints {"ok":false,"error":"..."} to stdout and exits non-zero.
 
-This process owns no product logic; it only parses. The Node side maps the
-DoclingDocument into SourceBlock contracts (src/parse/docling-blocks.ts).
+This process owns no product logic; it only parses. The Node side maps
+meta.json items into SourceDoc text, page locations and figures
+(src/experimental/hypothesis/v1_claude/plan/intake/pdfDocling.ts).
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import sys
 import traceback
 from pathlib import Path
@@ -68,7 +70,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--device", default=os.environ.get("DOCLING_DEVICE", "mps"))
+    # Apple Silicon has MPS; everywhere else the portable default is CPU.
+    default_device = "mps" if sys.platform == "darwin" and platform.machine() == "arm64" else "cpu"
+    ap.add_argument("--device", default=os.environ.get("DOCLING_DEVICE", default_device))
     ap.add_argument("--threads", type=int, default=int(os.environ.get("DOCLING_NUM_THREADS", "8")))
     ap.add_argument("--ocr", default=os.environ.get("DOCLING_OCR", "on"), choices=["on", "off"])
     ap.add_argument("--formulas", default=os.environ.get("DOCLING_FORMULAS", "on"), choices=["on", "off"])
@@ -242,14 +246,16 @@ def main() -> int:
         "parser": "docling",
         "device": device_name.lower(),
         "deviceFallback": device_fallback,
-        "ocr": args.ocr,
-        "formulas": args.formulas,
+        # Settings and counts use distinct keys (a repeated dict key silently
+        # overwrote the OCR/formula settings and the item count).
+        "ocrMode": args.ocr,
+        "formulaMode": args.formulas,
         "pages": num_pages,
         "tables": len(doc.tables),
         "pictures": len(doc.pictures),
         "formulas": formula_count,
         "crops": len([c for c in crops if "file" in c]),
-        "items": len(items),
+        "itemCount": len(items),
         "itemKinds": sorted({i["type"] for i in items}),
         "items": items,
         "cropsIndex": crops,

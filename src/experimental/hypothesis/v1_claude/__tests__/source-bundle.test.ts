@@ -3,7 +3,7 @@ import test from 'node:test';
 import { buildSourceBundle } from '../plan/sourceBundle.js';
 import { extractHtmlSource } from '../plan/sourceIntake.js';
 import { resolveSourceEvidence, sourceDocFromText } from '../plan/sourceDoc.js';
-import { contentListForRag, indexSourceBundleWithRag, isReusableRagIndexManifest, mapRagChunksToEvidence, ragIndexCompletionProblems, ragQueryCompletionProblems, ragRetrievalStatus, ragWorkingDirectoryNeedsReset } from '../plan/ragSidecar.js';
+import { chunkQuote, contentListForRag, indexSourceBundleWithRag, isReusableRagIndexManifest, mapRagChunksToEvidence, ragIndexCompletionProblems, ragQueryCompletionProblems, ragRetrievalStatus, ragWorkingDirectoryNeedsReset } from '../plan/ragSidecar.js';
 import { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -143,4 +143,11 @@ test('HTML extraction retains structural text and stable URL selectors for evide
   assert.equal(figureSpan.kind, 'figure');
   const { sourceBundle } = buildSourceBundle([doc], 'distance over time plot');
   assert.ok(sourceBundle.evidenceHits.some((hit) => hit.modality === 'figure-metadata' && hit.citation.sourceLocation?.kind === 'web-url'));
+});
+
+test('a retrieval chunk that cuts a long span maps to the exact sentences it reproduces', () => {
+  const span = 'Short intro. The first long sentence explains how the pump raises line pressure. The second long sentence explains why the valve closes at low flow. A closing remark.';
+  assert.equal(chunkQuote(span, '...pressure. The second long sentence explains why the valve closes at low flow. A closing'), 'The second long sentence explains why the valve closes at low flow.');
+  assert.equal(chunkQuote(span, 'The first long sentence explains how the pump raises line pressure.  The second long sentence explains why the valve closes at low flow.'), 'The first long sentence explains how the pump raises line pressure. The second long sentence explains why the valve closes at low flow.');
+  assert.equal(chunkQuote(span, 'Short intro. A closing remark.'), undefined, 'short generic sentences never establish a match');
 });
