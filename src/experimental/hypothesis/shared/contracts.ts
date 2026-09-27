@@ -69,7 +69,7 @@ export interface RunFailure {code:string;stage:string;message:string;hard:boolea
 export interface StageRunRecord {
   stage:string;
   kind:'provider'|'local'|'mixed';
-  status:'completed'|'failed';
+  status:'completed'|'failed'|'skipped';
   durationMs:number;
   /** Wall-clock interval for overlap and critical-path analysis. */
   startedAt?:string;

@@ -20,7 +20,7 @@ interface RagContentItem {
 
 export interface RagIndexOutcome {
   enabled: boolean;
-  status: 'completed' | 'partial' | 'failed' | 'disabled';
+  status: 'completed' | 'partial' | 'failed' | 'disabled' | 'skipped';
   retrievalStatus: 'matched' | 'miss' | 'failed' | 'not-run';
   indexed: boolean;
   cacheHit: boolean;
@@ -30,13 +30,35 @@ export interface RagIndexOutcome {
   actualUsage?: { callAttempts: number; successfulCallAttempts: number; failedCalls: number; providerReportedUsageResponses: number; promptTokens: number; completionTokens: number; totalTokens: number; costUsd: null; costStatus: string };
   artifactEstimatedCostUsd?: number;
   error?: string;
+  /** Human-readable reason when status is 'skipped'; never a failure. */
+  reason?: string;
 }
 
-function repositoryRoot(): string { return path.resolve(process.env.HYPOTHESIS_REPO_ROOT ?? process.cwd()); }
-function pythonPath(): string { return process.env.RAG_PYTHON ?? path.join(repositoryRoot(), 'rag-engine', '.venv', 'bin', 'python'); }
+function repositoryRoot(): string { return path.resolve(process.env.HYPOTHESIS_REPO_ROOT ?? process.cwd()); }function pythonPath(): string { return process.env.RAG_PYTHON ?? path.join(repositoryRoot(), 'rag-engine', '.venv', 'bin', 'python'); }
 function servicePath(): string { return path.join(repositoryRoot(), 'rag-engine', 'service.py'); }
 function enabled(): boolean { return (process.env.RAG_ENGINE ?? '').toLowerCase() === 'on' && existsSync(pythonPath()) && existsSync(servicePath()); }
 const hashJson = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+/**
+ * Deep-RAG indexing pays off only for sources that do not fit in context.
+ * Small single-document prose sources skip it truthfully (`skipped`, never a
+ * fake `completed`/`failed`); callers keep the fast local-text evidence path.
+ * Word count comes from the merged source text because bundle documents carry
+ * metadata only. No lesson-topic keywords: purely structural (size, document
+ * count, figure/table presence).
+ */
+export const RAG_MIN_WORDS = 6000;
+
+export function ragWorthwhile(sourceDoc: SourceDoc, bundle: SourceBundle): { use: boolean; reason: string } {
+  if (bundle.documents.length > 1) return { use: true, reason: 'multiple documents' };
+  if (bundle.figures.length > 0 || sourceDoc.spans.some((span) => span.kind === 'table' || span.kind === 'equation')) {
+    return { use: true, reason: 'figures/tables present' };
+  }
+  const words = sourceDoc.text.split(/\s+/).filter(Boolean).length;
+  return words > RAG_MIN_WORDS
+    ? { use: true, reason: `${words} words` }
+    : { use: false, reason: `${words} words fits in context; full text is sent to S2` };
+}
 
 export function isReusableRagIndexManifest(value: unknown, digest: string, itemCount: number, expectedMultimodalCount: number): boolean {
   if (!value || typeof value !== 'object') return false;
@@ -259,6 +281,8 @@ export async function indexSourceBundleWithRag(input: {
 }): Promise<RagIndexOutcome> {
   const startedAtMs = Date.now();
   if (!enabled()) return { enabled: false, status: 'disabled', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0 };
+  const gate = ragWorthwhile(input.sourceDoc, input.sourceBundle);
+  if (!gate.use) return { enabled: true, status: 'skipped', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0, reason: gate.reason };
   const items = contentListForRag(input.sourceDoc, input.sourceBundle, input.query);
   if (!items.length) return { enabled: true, status: 'failed', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0, error: 'Source bundle contains no indexable blocks.' };
   const digest = hashJson({ contentVersion: 'rag-index-content/v2', bundleId: input.sourceBundle.bundleId, items });

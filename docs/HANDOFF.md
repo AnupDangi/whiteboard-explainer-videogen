@@ -1953,3 +1953,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** growth toward 0.55 with text-floor skip; hard `board-too-sparse` (taxonomy S) with compare/structured exemptions. Deviation per ruling (recorded in `style.ts`): hardMin 0.08 not 0.30 — spec value fails healthy chain 0.23/list 0.21/threshold 0.10 (measured table in code); 0.45 Simi band stays warn-only. Fill test pins ≥hardMin + ≥0.25 regression.
 - **Verification:** typecheck clean; full 503 node + 24 + 12 py; `git diff --check` clean.
 - **Next bounded task:** T10 size-gated RAG + skipped status.
+
+## Entry — 2026-09-27, T10 size-gated RAG (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** stop deep-RAG spend on small sources; truthful `skipped` instead of fake completed/failed.
+- **Implemented:** `ragWorthwhile(sourceDoc, bundle)` structural gate (`RAG_MIN_WORDS=6000`); skip returns zero-cost unindexed outcome, no ledger spend, no spawn. `StageRunRecord` + outcome gain `skipped`; `lessonCli` maps disabled/skipped→skipped (no failure emitted). Inert-by-default untouched. Deviations: two-arg gate (bundle docs carry metadata only); gate lives at `lessonCli` call site (only RAG site). No topic keywords.
+- **Verification:** typecheck clean; touched 13/13; full 505 node + 24 + 12 py; `git diff --check` clean.
+- **Next bounded task:** T11 board metrics + Simi reference.
