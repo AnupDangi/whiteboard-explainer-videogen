@@ -3,6 +3,7 @@ import { STYLE } from '../style.js';
 import { escapeXml, progress as sharedProgress, svgDocument } from '../../shared/svg.js';
 import { partGroupId } from './mathIds.js';
 import { measureTextWidth } from '../layout/measure.js';
+import { edgeLabelAnchor } from '../layout/edges.js';
 
 const strokeAttrs = (width: number = STYLE.stroke.width, color: string = STYLE.stroke.color) =>
   `fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="${STYLE.stroke.cap}" stroke-linejoin="${STYLE.stroke.join}"`;
@@ -169,10 +170,11 @@ function renderEdge(edge: RoutedEdge, ev: TimelineEvent, timeMs: number, index: 
       parts.push(strokeSvg({ d: `M ${b.x} ${b.y} L ${hx} ${hy}`, length: ARROW_HEAD }, headP));
     }
     if (edge.label) {
-      const mid = edge.points[Math.floor(edge.points.length / 2) - (edge.points.length % 2 === 0 ? 1 : 0)];
-      const next = edge.points[Math.min(edge.points.length - 1, edge.points.indexOf(mid) + 1)];
-      const lx = (mid.x + next.x) / 2;
-      const ly = (mid.y + next.y) / 2 - 16;
+      // Layout fits the anchor inside the safe area (labelPos); fall back to
+      // the default anchor only for edges routed outside layout (defensive).
+      const anchor = edge.labelPos ?? edgeLabelAnchor(edge.points);
+      const lx = anchor.x;
+      const ly = anchor.y;
       parts.push(`<g opacity="${headP}">${textSvg({ x: lx, y: ly, text: edge.label.toUpperCase(), size: STYLE.font.sizes.note, anchor: 'middle' })}</g>`);
     }
   }

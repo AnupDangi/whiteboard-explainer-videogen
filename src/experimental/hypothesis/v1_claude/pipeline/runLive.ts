@@ -10,7 +10,7 @@ import { synthesizeAndAlign } from '../../shared/alignment/align.js';
 import { buildNarrationScene } from '../narration/markers.js';
 import { resolveMentions } from '../narration/resolveMentions.js';
 import { alignedWordTimingProblems } from '../narration/align.js';
-import { resolveScene } from '../resolveScene.js';
+import { resolveScene, previousSceneIcons, type PreviousSceneIcon } from '../resolveScene.js';
 import { catalogVersion } from '../catalog/registry.js';
 import { collectPins, iconPinKey, type IconPin } from '../catalog/iconPins.js';
 import { EMBEDDING_MODEL, rankConcepts } from '../catalog/semantic.js';
@@ -331,6 +331,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   };
   let previousBoxes: Map<string, { x: number; y: number; w: number; h: number }> | undefined;
   let previousElements: PlannerSceneInput['previousElements'];
+  /** Previous scene's object icons, for cross-scene dedup in S7 resolve. */
+  let previousIcons: PreviousSceneIcon[] | undefined;
   let iconPins: Map<string, IconPin> = new Map();
   const totalUsage: RunUsage = { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: alignmentCacheHits.size };
 
@@ -529,12 +531,13 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const resolutionCandidates = await rankConcepts(objectConcepts, 5, queryEmbeddingCache);
     const pinsForCache = [...iconPins.entries()].sort(([left], [right]) => left.localeCompare(right));
     const resolvedStage = ctx.artifactStore
-      ? await ctx.artifactStore.run(`S7-resolve:${sceneInput.sceneId}`, { spec: planned.spec, candidates: resolutionCandidates, pins: pinsForCache }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: activeCatalogVersion }, () => resolveScene(planned.spec!, { candidates: resolutionCandidates, pins: iconPins }))
+      ? await ctx.artifactStore.run(`S7-resolve:${sceneInput.sceneId}`, { spec: planned.spec, candidates: resolutionCandidates, pins: pinsForCache, previousIcons: previousIcons ?? [] }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: activeCatalogVersion }, () => resolveScene(planned.spec!, { candidates: resolutionCandidates, pins: iconPins, ...(previousIcons ? { previousIcons } : {}) }))
       : undefined;
     if (resolvedStage) stageArtifacts[`S7-resolve:${sceneInput.sceneId}`] = { key: resolvedStage.key, contentHash: resolvedStage.artifact.contentHash, cacheHit: resolvedStage.cacheHit };
     if (resolvedStage?.cacheHit) totalUsage.cacheHits += 1;
-    const resolved = resolvedStage?.artifact.payload ?? resolveScene(planned.spec, { candidates: resolutionCandidates, pins: iconPins });
+    const resolved = resolvedStage?.artifact.payload ?? resolveScene(planned.spec, { candidates: resolutionCandidates, pins: iconPins, ...(previousIcons ? { previousIcons } : {}) });
     iconPins = collectPins(resolved, iconPins);
+    previousIcons = previousSceneIcons(resolved);
     const previousLayout = previousBoxes ? Object.fromEntries(previousBoxes) : undefined;
     recordLocalStage('S7-resolve', resolveStartedAtMs, Boolean(resolvedStage?.cacheHit));
     const layoutStartedAtMs = Date.now();

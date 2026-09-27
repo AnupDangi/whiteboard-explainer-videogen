@@ -44,6 +44,49 @@ export interface ObjectResolution {
 const singular = (s: string) => (s.length > 3 && s.endsWith('s') && !s.endsWith('ss') ? s.slice(0, -1) : s);
 
 /**
+ * Next-best pick after the top choice was avoided (cross-scene repetition for
+ * a different concept). Mirrors resolveObject's priority — strong embedding
+ * candidates, then other exact-name matches, then weaker embedding
+ * candidates, then lexical overlap — with every tier fully ordered so the
+ * result stays deterministic. Returns undefined when nothing un-avoided
+ * qualifies (the caller falls through to the rung-4 text box).
+ */
+function nextBest(
+  catalog: CatalogEntry[],
+  conceptLower: string,
+  wanted: Set<string>,
+  candidates: Candidate[] | undefined,
+  excludeId: string,
+  avoid: ReadonlySet<string>,
+): { entry: CatalogEntry; score: number; rung: 2 | 3 } | undefined {
+  const usable = (id: string): boolean => id !== excludeId && !avoid.has(id);
+  const byId = new Map(catalog.map((entry) => [entry.id, entry]));
+  const ranked: Array<{ entry: CatalogEntry; score: number; rung: 2 | 3 }> = [];
+  for (const candidate of candidates ?? []) {
+    const entry = byId.get(candidate.id);
+    if (!entry || !usable(entry.id)) continue;
+    if (candidate.score >= TAU_HIGH_EMB) ranked.push({ entry, score: candidate.score, rung: 2 });
+  }
+  for (const entry of catalog.filter((e) => usable(e.id) && e.names.some((name) => wanted.has(name.toLowerCase().replace(/[_-]+/g, ' ')))).sort((a, b) => a.id.localeCompare(b.id))) {
+    ranked.push({ entry, score: 1, rung: 2 });
+  }
+  for (const candidate of candidates ?? []) {
+    const entry = byId.get(candidate.id);
+    if (!entry || !usable(entry.id)) continue;
+    if (candidate.score >= TAU_MID_EMB && candidate.score < TAU_HIGH_EMB) ranked.push({ entry, score: candidate.score, rung: 3 });
+  }
+  if (!candidates?.length) {
+    const lex = catalog
+      .filter((entry) => usable(entry.id))
+      .map((entry) => ({ entry, score: semanticScore(conceptLower, entry) }))
+      .filter(({ score }) => score >= TAU_MID)
+      .sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id));
+    for (const { entry, score } of lex) ranked.push({ entry, score, rung: score >= TAU_HIGH ? 2 : 3 });
+  }
+  return ranked[0];
+}
+
+/**
  * Asset resolution ladder (claude_pipeline.md §10). Every branch resolves —
  * rung 4 is unconditional — so a final render can never contain an
  * unresolved `object` element (a non-compensable hard failure).
@@ -55,7 +98,7 @@ const singular = (s: string) => (s.length > 3 && s.endsWith('s') && !s.endsWith(
  */
 export function resolveObject(
   concept: string,
-  opts: { badge?: Badge; count?: number; label?: string; fill?: PaletteToken; candidates?: Candidate[]; pin?: IconPin; size: { w: number; h: number } },
+  opts: { badge?: Badge; count?: number; label?: string; fill?: PaletteToken; candidates?: Candidate[]; pin?: IconPin; size: { w: number; h: number }; /** Asset ids used by the previous scene for DIFFERENT concepts; a colliding best pick falls through to the next-best candidate. */ avoidAssetIds?: ReadonlySet<string> },
   catalog: CatalogEntry[] = allCatalogEntries(),
 ): ObjectResolution {
   const conceptLower = concept.trim().toLowerCase().replace(/[_-]+/g, ' ');
@@ -86,6 +129,18 @@ export function resolveObject(
       if (!lex || score > lex.score) lex = { entry, score };
     }
     if (lex && lex.score >= TAU_MID) best = { ...lex, rung: lex.score >= TAU_HIGH ? 2 : 3 };
+  }
+
+  // Cross-scene differentiation: when the previous scene already used this
+  // icon for a different concept, fall through to the next-best candidate
+  // instead of repeating the same visual. Pins (same-concept consistency)
+  // always win and are never avoided. Deterministic: every ranking below is
+  // fully ordered (score, then asset id), so the same inputs always pick the
+  // same alternate. When every catalog candidate is avoided, best stays
+  // undefined and the rung-4 text fallback below still resolves.
+  const isPinned = Boolean(best && opts.pin && pinnedEntry && best.entry.id === pinnedEntry.id);
+  if (best && !isPinned && opts.avoidAssetIds?.has(best.entry.id)) {
+    best = nextBest(catalog, conceptLower, wanted, opts.candidates, best.entry.id, opts.avoidAssetIds) ?? undefined;
   }
 
   const attachBadge = (visual: PrimitiveVisual, iconSize: { w: number; h: number }): PrimitiveVisual => (opts.badge ? composeBadge(visual, opts.badge, iconSize) : visual);

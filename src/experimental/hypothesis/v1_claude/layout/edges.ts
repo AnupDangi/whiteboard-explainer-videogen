@@ -1,4 +1,6 @@
 import type { BBox, Edge, RoutedEdge } from '../types.js';
+import { STYLE } from '../style.js';
+import { measureTextWidth } from './measure.js';
 import { boundaryPoint, rectCenter } from './geometry.js';
 
 function segmentsIntersect(a1: { x: number; y: number }, a2: { x: number; y: number }, b1: { x: number; y: number }, b2: { x: number; y: number }): boolean {
@@ -75,5 +77,54 @@ export function routeEdges(edges: Edge[], boxes: Map<string, BBox>): RoutedEdge[
     const a = { x: from.x + from.w, y: fromC.y };
     const b = { x: to.x + to.w, y: toC.y };
     return { ...edge, points: inset([a, { x: right, y: a.y }, { x: right, y: b.y }, b]) };
+  });
+}
+
+/** Default label anchor for a routed edge: the midpoint segment's center, lifted above the line. Shared with the renderer so layout and render agree. */
+export function edgeLabelAnchor(points: Array<{ x: number; y: number }>): { x: number; y: number } {
+  const mid = points[Math.floor(points.length / 2) - (points.length % 2 === 0 ? 1 : 0)];
+  const next = points[Math.min(points.length - 1, points.indexOf(mid) + 1)];
+  return { x: (mid.x + next.x) / 2, y: (mid.y + next.y) / 2 - 16 };
+}
+
+/** Shorten a label to a measured width budget by dropping trailing words, then characters; '' when nothing fits. Deterministic. */
+function shortenEdgeLabel(label: string, maxWidth: number, fontSize: number): string {
+  if (measureTextWidth(label, fontSize) <= maxWidth) return label;
+  const words = label.split(/\s+/).filter(Boolean);
+  for (let n = words.length - 1; n >= 1; n--) {
+    const candidate = `${words.slice(0, n).join(' ')} …`;
+    if (measureTextWidth(candidate, fontSize) <= maxWidth) return candidate;
+  }
+  const word = words[0] ?? '';
+  for (let n = word.length - 1; n >= 1; n--) {
+    const candidate = `${word.slice(0, n)}…`;
+    if (measureTextWidth(candidate, fontSize) <= maxWidth) return candidate;
+  }
+  return '';
+}
+
+/**
+ * Fit every edge label inside the canvas safe area: clamp the anchor into
+ * the safe rect, shorten an over-wide label to the safe width, and drop a
+ * label that cannot fit at all — so no label ever renders past the frame
+ * edge. The fitted anchor is stored as `labelPos`, which the renderer draws.
+ */
+export function fitEdgeLabels(edges: RoutedEdge[]): RoutedEdge[] {
+  const safe = STYLE.canvas.safe;
+  const size = STYLE.font.sizes.note;
+  const maxWidth = STYLE.canvas.w - 2 * safe;
+  return edges.map((edge) => {
+    if (!edge.label || edge.points.length < 2) return edge;
+    let label = edge.label;
+    let width = measureTextWidth(label, size);
+    if (width > maxWidth) {
+      label = shortenEdgeLabel(label, maxWidth, size);
+      if (!label) return { ...edge, label: undefined, labelPos: undefined };
+      width = measureTextWidth(label, size);
+    }
+    const anchor = edgeLabelAnchor(edge.points);
+    const x = Math.min(Math.max(anchor.x, safe + width / 2), STYLE.canvas.w - safe - width / 2);
+    const y = Math.min(Math.max(anchor.y, safe + size), STYLE.canvas.h - safe);
+    return { ...edge, label, labelPos: { x, y } };
   });
 }

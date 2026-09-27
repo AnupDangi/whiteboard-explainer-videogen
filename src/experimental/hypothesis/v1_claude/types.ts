@@ -370,6 +370,8 @@ export interface LaidOutElement {
 export interface RoutedEdge extends Edge {
   /** Straight or single-bend polyline points, from boundary to boundary (never centers). */
   points: Array<{ x: number; y: number }>;
+  /** Label anchor fitted inside the safe area by layout (edge-label clipping fix); the renderer draws the label here. */
+  labelPos?: { x: number; y: number };
 }
 
 export interface LaidOutScene {

@@ -4,6 +4,7 @@ import { DENSE_TEMPLATES, TEMPLATES, applyAxisOverlapFix, type TemplateFn } from
 import type { SlotAssignment } from '../templates/assign.js';
 import { unionBBox, scaleAround, type Rect } from './geometry.js';
 import { routeEdges } from './edges.js';
+import { fitEdgeLabels } from './edges.js';
 
 const TITLE_BAND_H = 150;
 
@@ -163,7 +164,7 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
     bbox: boxes.get(e.element.id) ?? { x: rect.x, y: rect.y, w: e.intrinsicSize.w, h: e.intrinsicSize.h },
   }));
 
-  const edges = routeEdges(scene.edges, boxes);
+  const edges = fitEdgeLabels(routeEdges(scene.edges, boxes));
 
   return { sceneId: scene.sceneId, title: scene.title, template: scene.template, elements, edges, occupancy, carryOver: scene.carryOver, focus: scene.focus, ...(scene.boardIntent ? { boardIntent: scene.boardIntent } : {}) };
 }

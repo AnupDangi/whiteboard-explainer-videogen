@@ -1,9 +1,9 @@
 /** Bump a stage version whenever its deterministic algorithm or relevant style contract changes. */
 export const VISUAL_STAGE_VERSIONS = {
-  resolve: 'resvg-text-metrics-bundled-kalam-8-box-wrap-when-wide',
-  layout: 'template-layout-bundled-kalam-8-dense-fan-out',
+  resolve: 'resvg-text-metrics-bundled-kalam-9-cross-scene-dedup',
+  layout: 'template-layout-bundled-kalam-9-edge-label-safe',
   timeline: 'mention-timeline-2',
-  render: 'svg-renderer-bundled-kalam-9-box-wrap-when-wide',
+  render: 'svg-renderer-bundled-kalam-10-edge-label-safe',
 } as const;
 
 /**

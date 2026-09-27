@@ -1915,3 +1915,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Compare:** baseline 4 hard → regen-1 6 hard → regen-2 15 hard (all gated honestly) → now draft. Verb-less agreement unlocked the deadlock; no numeric, no generic-verb, no missing-output failures.
 - **Contact-sheet read (honest):** top two scenes repeat the same sun icon + INDUCTION (visual repetition, weak differentiation); bottom-left tiny icon/small text; bottom-right keeps labelled REQUIRES + FEED clipped at edge. Draft, not parity — validator must judge muted test + claim coverage.
 - **Next bounded task:** validator reviews this video; P3 composition/reveal (dedup visuals, text floor, edge clipping) per verdict.
+
+## Entry — 2026-09-27, P3 composition/reveal (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** regen-3 contact-sheet: repeated sun+INDUCTION, tiny icon/text, FEED clipped at edge. Class C.
+- **Implemented:** cross-scene dedup (`avoidAssetIds` + `previousIcons`, same-concept repeats kept, deterministic next-best); `tiny-element` hard gate at 0.6 scale (fails loud, containers excluded); `fitEdgeLabels` clamp+shorten shared by layout+renderer (`labelPos`). Stage versions bumped. No topic keywords.
+- **Verification:** typecheck clean; new 8/8; full 497 node + 24 + 12 py; `git diff --check` clean.
+- **Next bounded task:** video matrix various sizes (60/300/600) one-shot, logged per run.

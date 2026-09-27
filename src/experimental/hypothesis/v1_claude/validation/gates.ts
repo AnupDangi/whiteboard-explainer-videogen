@@ -107,6 +107,9 @@ export function typedBoardAdequacyFailures(
   return failures.map(withFailureClass);
 }
 
+/** Minimum element scale vs measured size: the solver's smallest deliberate factor (layout/solver.ts GROWTH_FACTORS). Anything smaller is silent over-shrink and fails loudly here instead of rendering tiny. */
+export const MIN_ELEMENT_SCALE = 0.6;
+
 /** Container elements are organizational (they hug their children) and are excluded from overlap/leaf accounting per claude_pipeline.md §20's "excluding declared containers/badges". */
 export function toNeutralElements(scene: LaidOutScene): NeutralElement[] {
   return scene.elements
@@ -156,6 +159,17 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
       if (renderedPx < MIN_READABLE_FONT_PX) {
         // G6 is a hard floor for every visible text run, including annotations.
         failures.push({ code: 'min-readable-text', stage: 'layout', message: `${el.id} label renders at ${renderedPx.toFixed(1)}px < ${MIN_READABLE_FONT_PX}px`, hard: true });
+      }
+    }
+    // Small-element floor: a leaf scaled below the solver's smallest
+    // deliberate factor is over-shrunk content, not a layout fit — fail hard
+    // instead of rendering a tiny unreadable element. Containers are
+    // excluded (their intrinsic size is a placeholder; the solver hugs them
+    // to their children).
+    if (el.element.prim !== 'container') {
+      const scale = Math.min(el.bbox.w / Math.max(1e-6, el.intrinsicSize.w), sy);
+      if (scale < MIN_ELEMENT_SCALE - 1e-9) {
+        failures.push({ code: 'tiny-element', stage: 'layout', message: `${el.id} renders at ${(scale * 100).toFixed(0)}% of measured size, below the ${(MIN_ELEMENT_SCALE * 100).toFixed(0)}% readable floor`, hard: true });
       }
     }
   }
