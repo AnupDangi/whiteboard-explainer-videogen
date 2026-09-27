@@ -115,6 +115,21 @@ const numberWords: Record<string, number> = {
   seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
 };
 
+/**
+ * Generic structural relation verbs that must not pass as a teaching
+ * explanation on wording alone (domain-general stop-list, no topic words).
+ * Such an edge passes only when at least one of its cited source spans
+ * actually states the relation word — otherwise it is an ungrounded generic
+ * label (e.g. a fallback/spec emitting COMPARES/REQUIRES as explanation).
+ */
+const GENERIC_RELATION_TYPES = new Set(['compares', 'requires', 'contains']);
+const genericWords = (value: string): string[] => value.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean);
+const genericStem = (word: string): string => word.replace(/(ies|es|s)$/u, '');
+function genericRelationWordingSupported(type: string, quotes: string[]): boolean {
+  const wanted = genericStem(type.toLowerCase());
+  return quotes.some((quote) => genericWords(quote).some((word) => genericStem(word) === wanted));
+}
+
 function numericClaims(value: string): NumericClaim[] {
   const normalized = value.replace(/[−–—]/gu, '-');
   const claims: NumericClaim[] = [];
@@ -282,6 +297,12 @@ export function plannerProblems(spec: SceneSpec, input: PlannerSceneInput): stri
         if (!relation || !validEvidence(edge.factualRelation.evidenceRefs) || !validEvidence(relation.evidenceRefs) ||
           !evidenceMatches(edge.factualRelation.evidenceRefs, relation.evidenceRefs) || !evidenceMatches(edge.evidenceRefs, relation.evidenceRefs)) {
           problems.push(`edge ${edge.from}->${edge.to} has an unsupported factual relation or mismatched relation evidence`);
+        }
+      }
+      if (edge.origin !== 'illustrative-example' && edge.factualRelation && GENERIC_RELATION_TYPES.has(edge.factualRelation.type.toLowerCase())) {
+        const quotes = [...(edge.evidenceRefs ?? []), ...(edge.factualRelation.evidenceRefs ?? [])].map((ref) => ref.quote);
+        if (!genericRelationWordingSupported(edge.factualRelation.type, quotes)) {
+          problems.push(`edge ${edge.from}->${edge.to} uses generic relation "${edge.factualRelation.type}" without source wording; cite a source span that states it or use a specific source-stated relation`);
         }
       }
     }

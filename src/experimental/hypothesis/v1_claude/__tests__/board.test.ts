@@ -344,6 +344,39 @@ test('a heading with an unsupported number falls back to the checked model title
   assert.deepEqual(checked.problems, []);
 });
 
+test('a heading with an unsupported number WORD falls back to the repairable model title (F1)', () => {
+  const numbered: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: 'Three mixing steps' } };
+  const board = { ...goodBoard(), title: 'Mixing makes dough' };
+  const checked = validateBoard(board, numbered);
+  assert.equal(checked.spec?.title, 'Mixing makes dough', 'unsupported heading number must not become a code-owned title the repair loop cannot edit');
+  assert.deepEqual(checked.problems, []);
+  // A supported heading number stays code-owned.
+  const supportedRef = { sourceId: 'src_doc', spanId: 'src_count', startChar: 300, endChar: 320, startLine: 3, endLine: 3, quote: 'the three mixing steps' };
+  const supported: PlannerSceneInput = {
+    ...scene,
+    teachingContext: {
+      ...scene.teachingContext!,
+      displayText: 'Three mixing steps',
+      sourceEvidenceRefs: [...scene.teachingContext!.sourceEvidenceRefs!, supportedRef],
+    },
+  };
+  assert.equal(validateBoard(board, supported).spec?.title, 'Three mixing steps');
+  // A numeric model title that lacks evidence is still strictly rejected, so the repair has a signal to fix.
+  const numericBoard = { ...goodBoard(), title: 'Three mixing steps' };
+  assert.match(validateBoard(numericBoard, numbered).problems.join(' | '), /numeric value "Three"/);
+});
+
+test('fallback with converging inputs but no output refuses the convergence layout (F2)', () => {
+  const noOutput: PlannerSceneInput = {
+    ...scene,
+    teachingContext: { ...scene.teachingContext!, relations: scene.teachingContext!.relations!.slice(0, 2) },
+  };
+  const board = fallbackBoard(noOutput);
+  assert.notEqual(board.layout, 'convergence', 'inputs+operator with no output must not claim convergence topology');
+  assert.equal(board.layout, 'list');
+  assert.equal(compileBoard(board, noOutput).spec.template, 'list_icon');
+});
+
 test('label-only nodes compile to deterministic pastel boxes, not bare text', () => {
   const r1 = compileBoard(goodBoard(), scene);
   const n3 = r1.spec.elements.find((e) => e.id === 'n3')!;

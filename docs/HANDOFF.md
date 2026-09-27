@@ -1865,3 +1865,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented (labels only, gates unchanged):** new `shared/failure-taxonomy.ts` pure `classifyFailureCode()` + `withFailureClass()` + `SIMI_60_BASELINE_CLASSIFICATION`; `FailureClass` on `RunFailure`/`StageFailure`; mapping applied at return boundaries in `evaluation.ts`/`gates.ts`. Precedence P→S→A→T→C→R, `dangling-event`=T. Baseline: reasoning_modes 4 codes S (F1/F2), llm_gap element-count S (F3), sensory_bridge duplicate C, key_takeaway overlap C (F4).
 - **Verification:** `typecheck:hypothesis` clean; taxonomy+evaluation+typed-board-adequacy 18 pass; `git diff --check` clean.
 - **Next bounded task:** P2 VSR v1 + planner repairs (title ownership, fallback output, generic-edge ban).
+
+## Entry — 2026-09-27, P2a planner repairs (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** same-benchmark failures F1/F2 + generic edges; validator class S. Smallest corrections in the planner layer only.
+- **Implemented:** `boardTitle` digits + zero–twenty share the numeric gate (unsupported heading yields to repairable model title; supported headings stay code-owned); `fallbackBoard` downgrades convergence→list when no output role; `plannerProblems` generic-verb stop-list (compares/requires/contains, stem-matched against cited spans; specific verbs unaffected). No topic keywords in runtime.
+- **Verification:** `typecheck:hypothesis` clean; board+planner+adequacy+intent 55 pass (3 new tests failed pre-fix, pass post-fix); `git diff --check` clean.
+- **Next bounded task:** P2b VSR v1 (`plan/visualSemantics.ts`: semantic structures → representation ladder → composition).

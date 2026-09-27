@@ -310,12 +310,34 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
   return [...new Set(problems)];
 }
 
+/** Domain-general number words (no topic vocabulary); mirrors the planner numeric gate so title ownership uses the same rule the gate enforces. */
+const NUMBER_WORD_VALUES: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+};
+
+/** Normalized numeric values (digits + number words) in a text, for title ownership checks. */
+function titleNumericValues(text: string): string[] {
+  const fromDigits = numericTokens(text);
+  const tokens = new Set(words(text));
+  const fromWords = Object.entries(NUMBER_WORD_VALUES)
+    .filter(([word]) => tokens.has(word))
+    .map(([, value]) => String(Number(value.toPrecision(12))));
+  return [...fromDigits, ...fromWords];
+};
+
 /** Title: the S3 section heading when it fits; otherwise the model's title if its content words come from the scene. */
 function boardTitle(board: Board, input: PlannerSceneInput): { title: string; problem?: string } {
   const heading = input.teachingContext?.displayText?.trim();
-  // A heading's numbers (e.g. "Step 2") are not source claims; the evidence gate would reject them and the model cannot repair a code-owned title.
+  // A heading's numbers (e.g. "Step 2", "Three stages") are not source claims;
+  // the compiled numeric-evidence gate would reject them and the model cannot
+  // repair a code-owned title. Detect digits AND number words with the same
+  // normalized-value rule the gate enforces, so an unsupported heading falls
+  // back to the model title — the field the repair loop actually edits.
   const evidenceText = (input.teachingContext?.sourceEvidenceRefs ?? []).map((ref) => ref.quote).join(' ');
-  const unsupportedNumber = (heading?.match(/\d+/g) ?? []).some((digits) => !new RegExp(`(^|\\D)${digits}(\\D|$)`).test(evidenceText));
+  const evidenceValues = new Set(titleNumericValues(evidenceText));
+  const unsupportedNumber = titleNumericValues(heading ?? '').some((value) => !evidenceValues.has(value));
   if (heading && !unsupportedNumber && wordCount(heading) <= MAX_TITLE_WORDS && heading.length <= 60) return { title: heading };
   const known = new Set([heading ?? '', input.plainText, ...(input.teachingContext?.concepts ?? []).map((concept) => concept.label)].flatMap(words).map(stem));
   const foreign = words(board.title).filter((word) => word.length >= 4 && !known.has(stem(word)));
@@ -504,6 +526,10 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
       node.role = node.concept === centre ? 'process' : fromCentre.has(node.concept) ? 'output' : feedsCentre.has(node.concept) ? 'input' : layout === 'fan_out' ? 'output' : 'input';
     }
   }
+  // A convergence board without an output slot can never satisfy the
+  // board-role gate (input + operator + output); the fallback must refuse the
+  // convergence layout rather than emit a board that is guaranteed to fail.
+  if (layout === 'convergence' && !nodes.some((node) => node.role === 'output')) layout = 'list';
   const title = (input.teachingContext?.displayText ?? input.plainText).split(/\s+/).slice(0, MAX_TITLE_WORDS).join(' ').slice(0, 60) || input.sceneId;
   return { schemaVersion: BOARD_SCHEMA_VERSION, title, layout, nodes, visual: { kind: 'process' } };
 }

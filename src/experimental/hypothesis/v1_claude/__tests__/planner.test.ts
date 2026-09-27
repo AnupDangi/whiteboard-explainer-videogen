@@ -153,6 +153,53 @@ test('planner: typed factual relations must match the source-grounded relation g
   assert.ok(plannerProblems(mismatchedEvidence, withUnrelated).some((problem) => /mismatched relation evidence/.test(problem)));
 });
 
+test('planner: generic relation labels must be stated by their cited source span (S1/S3)', () => {
+  const ref = { sourceId: 'src_test', spanId: 'span_generic', startChar: 0, endChar: 20, startLine: 1, endLine: 1, quote: 'heat raises pressure' };
+  const genericInput: PlannerSceneInput = {
+    ...input,
+    teachingContext: {
+      requireEvidence: true, sourceEvidenceRefs: [ref],
+      concepts: [
+        { id: 'heat', label: 'Heat', kind: 'quantity', definition: 'Thermal energy.', evidenceRefs: [ref] },
+        { id: 'pressure', label: 'Pressure', kind: 'quantity', definition: 'Force per area.', evidenceRefs: [ref] },
+      ],
+      relations: [{ from: 'heat', to: 'pressure', type: 'compares', evidenceRefs: [ref] }],
+    },
+  };
+  const spec: SceneSpec = {
+    schemaVersion: 'claude-scene-spec/v1', sceneId: genericInput.sceneId, title: 'Heat Raises Pressure', titleConceptIds: ['heat', 'pressure'], titleEvidenceRefs: [ref],
+    template: 'chain',
+    elements: [
+      { id: 'heat', anchor: 'sceneStart', prim: 'box', text: 'HEAT', conceptIds: ['heat'], evidenceRefs: [ref] },
+      { id: 'pressure', anchor: 'sceneStart', prim: 'box', text: 'PRESSURE', conceptIds: ['pressure'], evidenceRefs: [ref] },
+    ],
+    edges: [{ from: 'heat', to: 'pressure', evidenceRefs: [ref], factualRelation: { fromConceptId: 'heat', toConceptId: 'pressure', type: 'compares', evidenceRefs: [ref] } }],
+  };
+  assert.ok(plannerProblems(spec, genericInput).some((problem) => problem.includes('generic relation "compares"')), 'an unstated COMPARES must not pass as teaching explanation');
+  const statedRef = { ...ref, quote: 'heat compares with pressure' };
+  const statedInput: PlannerSceneInput = {
+    ...genericInput,
+    teachingContext: {
+      ...genericInput.teachingContext!,
+      sourceEvidenceRefs: [statedRef],
+      concepts: genericInput.teachingContext!.concepts!.map((concept) => ({ ...concept, evidenceRefs: [statedRef] })),
+      relations: [{ from: 'heat', to: 'pressure', type: 'compares', evidenceRefs: [statedRef] }],
+    },
+  };
+  const stated = structuredClone(spec);
+  stated.titleEvidenceRefs = [statedRef];
+  for (const element of stated.elements) element.evidenceRefs = [statedRef];
+  stated.edges[0].evidenceRefs = [statedRef];
+  stated.edges[0].factualRelation!.evidenceRefs = [statedRef];
+  assert.ok(!plannerProblems(stated, statedInput).some((problem) => problem.includes('generic relation')), 'a source-stated generic relation stays admissible');
+  const requires = structuredClone(spec);
+  requires.edges[0].factualRelation!.type = 'requires';
+  assert.ok(plannerProblems(requires, genericInput).some((problem) => problem.includes('generic relation "requires"')));
+  const specific = structuredClone(spec);
+  specific.edges[0].factualRelation!.type = 'causes';
+  assert.ok(!plannerProblems(specific, genericInput).some((problem) => problem.includes('generic relation')), 'specific mechanism verbs are unaffected');
+});
+
 test('planner: the §9 fallback is a valid list_icon scene built only from the scene\'s own mentions', () => {
   const spec = fallbackScene(input);
   assert.ok(safeParseSceneSpec(spec).success);
