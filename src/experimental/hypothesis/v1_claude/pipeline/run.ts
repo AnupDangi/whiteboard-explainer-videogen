@@ -9,11 +9,8 @@ import { buildNarrationScene } from '../narration/markers.js';
 import { alignFixture } from '../narration/align.js';
 import { resolveMentions } from '../narration/resolveMentions.js';
 import { safeParseSceneSpec, validateSceneSpecStructure } from '../schema.js';
-import { resolveScene } from '../resolveScene.js';
-import { layoutScene } from '../layout/solver.js';
-import { compileTimelineFull } from '../timeline/compile.js';
-import { renderSVG } from '../render/renderScene.js';
-import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
+import { toNeutralElements, toNeutralEvents } from '../validation/gates.js';
+import { runVisualChain } from './visualChain.js';
 import { VISUAL_STAGE_VERSIONS } from './versions.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { sourceCommit } from './provenance.js';
@@ -119,23 +116,14 @@ export async function runHypothesis(input: HypothesisInput, options: HypothesisR
     }
     if (structuralIssues.some((i) => i.code !== 'unresolved-object-candidate')) continue;
 
-    const resolvedStage = await runStage(`S7-resolve:${sceneInput.sceneId}`, { scene: parsed.data }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: catalogVersion() }, () => resolveScene(parsed.data));
-    const resolved = resolvedStage.artifact.payload;
-    const previousLayout = previousBoxes ? Object.fromEntries(previousBoxes) : undefined;
-    const layoutStage = await runStage(`S8-layout:${sceneInput.sceneId}`, { resolvedHash: resolvedStage.artifact.contentHash, previousLayout, fontSha256: KALAM_FONT_SHA256 }, { schemaVersion: 'claude-laid-out-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.layout }, () => layoutScene(resolved, { previous: previousBoxes }));
-    const laidOut = layoutStage.artifact.payload;
-    previousBoxes = new Map(laidOut.elements.map((e) => [e.id, e.bbox]));
-
     const bounds = alignedAudio.sceneBoundsMs[sceneInput.sceneId] ?? { startMs: 0, endMs: EXPERIMENT.targetDurationMs };
     const sceneMentions = alignedAudio.mentions.filter((m) => m.sceneId === sceneInput.sceneId);
-    const timelineStage = await runStage(`S9-timeline:${sceneInput.sceneId}`, { layoutHash: layoutStage.artifact.contentHash, sceneMentions, bounds }, { schemaVersion: 'claude-timeline/v1', stageVersion: VISUAL_STAGE_VERSIONS.timeline }, () => compileTimelineFull(laidOut, sceneMentions, bounds.startMs, bounds.endMs));
-    const timeline = timelineStage.artifact.payload;
-
-    const gateResult = runClaudeGates(laidOut, timeline);
+    const { resolved, laidOut, timeline, finalFrameSvg, gates: gateResult } = await runVisualChain(
+      { sceneId: sceneInput.sceneId, spec: parsed.data, previousBoxes, mentions: sceneMentions, bounds },
+      { store, catalogVersion: catalogVersion(), onStage: (stage, record) => { if (record.artifact) stageArtifacts[`${stage}:${sceneInput.sceneId}`] = record.artifact; if (record.cacheHit) cacheHits++; } },
+    );
+    previousBoxes = new Map(laidOut.elements.map((e) => [e.id, e.bbox]));
     failures.push(...gateResult.failures, ...gateResult.warnings);
-
-    const renderStage = await runStage(`S10-render:${sceneInput.sceneId}`, { layoutHash: layoutStage.artifact.contentHash, timelineHash: timelineStage.artifact.contentHash, frameTimeMs: bounds.endMs - 1, fontSha256: KALAM_FONT_SHA256 }, { schemaVersion: 'image/svg+xml', stageVersion: VISUAL_STAGE_VERSIONS.render, modelId: options.visualModel }, () => renderSVG(laidOut, timeline, bounds.endMs - 1));
-    const finalFrameSvg = renderStage.artifact.payload;
 
     // The shared `deterministicGates` overlap/safe-area checks assume every
     // passed element is simultaneously visible — true WITHIN one scene, but

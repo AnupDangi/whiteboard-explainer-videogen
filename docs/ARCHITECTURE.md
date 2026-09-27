@@ -325,7 +325,7 @@ uncalibrated.
 
 ```
 npm run typecheck:hypothesis && npm run test:hypothesis      # offline, no keys needed
-npm run strip:scene -- <sceneId> out.png                      # progression strip of a fixture scene (after a build)
+npm run strip:scene -- <run>/preview-scenes/0000.json out.png # progression strip of one generated scene (after a build)
 npm run run:lesson -- --lesson=all [--content=<model>] [--planner=<model>]
 npm run video:one-shot -- --prompt="<learner prompt>" --source=<file>|--url=<url> [--duration=60] [--id=<name>]  # locked single run, provenance in output/
 npm run run:hypothesis:live [-- --case=<golden> --planner=<model>]

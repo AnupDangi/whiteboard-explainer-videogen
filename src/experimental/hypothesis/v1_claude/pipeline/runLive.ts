@@ -5,26 +5,22 @@ import { EXPERIMENT, assertCommonRunOptions, type EvaluationBundle, type GateRun
 import { deriveRunStatus, deterministicGates, type PublishEvidence } from '../../shared/evaluation.js';
 import { sha256, stableJson, writeJsonArtifact } from '../../shared/artifacts.js';
 import { svgDocument } from '../../shared/svg.js';
-import { synthesizeAndAlign } from '../../shared/alignment/align.js';
 import { buildNarrationScene } from '../narration/markers.js';
 import { resolveMentions } from '../narration/resolveMentions.js';
 import { alignedWordTimingProblems } from '../narration/align.js';
-import { resolveScene } from '../resolveScene.js';
 import { catalogVersion } from '../catalog/registry.js';
 import { collectPins, iconPinKey, type IconPin } from '../catalog/iconPins.js';
 import { EMBEDDING_MODEL, rankConcepts } from '../catalog/semantic.js';
 import { QueryEmbeddingCache } from '../catalog/queryEmbeddingCache.js';
-import { layoutScene } from '../layout/solver.js';
-import { compileTimelineFull } from '../timeline/compile.js';
-import { renderSVG } from '../render/renderScene.js';
-import { runClaudeGates, toNeutralElements, toNeutralEvents } from '../validation/gates.js';
+import { toNeutralElements, toNeutralEvents } from '../validation/gates.js';
 import { conceptForMention } from '../planner/board.js';
 import { scenePlanner as scenePlannerById } from '../planner/registry.js';
 import { plannerProblems, shouldSkipPaidPlanning, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
 import { buildPlannerSceneInput } from '../planner/sceneInput.js';
 import { safeParseSceneSpec } from '../schema.js';
 import type { PlannerSceneInput, PlannerTeachingContext } from '../planner/prompt.js';
-import { VISUAL_STAGE_VERSIONS, S5_STAGE_VERSION, S5_MODEL_ID } from './versions.js';
+import { VISUAL_STAGE_VERSIONS } from './versions.js';
+import { runVisualChain } from './visualChain.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
 import { encodeVideoAtomically, rasterizePng, type VideoScene } from '../export/videoEncode.js';
@@ -44,6 +40,8 @@ import { SCENE_DIRECTOR_SKILL_HASH } from '../planner/sceneDirectorSkill.js';
 import { promptExperimentEligibilityProblems } from '../harness/promptExperimentEligibility.js';
 import { sourceCommit } from './provenance.js';
 import { PIPELINE } from '../config.js';
+import { configuredConcurrency, createLimiter } from './limiter.js';
+import { sceneAudioStage, synthesizeSceneAudio } from './sceneAudio.js';
 
 /**
  * Live-mode pipeline (per claude_pipeline.md §1/§2): source-generated lessons
@@ -143,47 +141,16 @@ export interface HypothesisLiveRunResult {
   captionsPath?: string;
 }
 
-const configuredConcurrency = (name: string, fallback: number, maximum = 32): number => {
-  const parsed = Number(process.env[name]);
-  return Number.isInteger(parsed) && parsed >= 1 ? Math.min(parsed, maximum) : fallback;
-};
-
 /** Scenes processed at once in S5 (TTS + alignment sidecars). HYPOTHESIS_SCENE_CONCURRENCY overrides. */
 export const DEFAULT_SCENE_CONCURRENCY = configuredConcurrency('HYPOTHESIS_SCENE_CONCURRENCY', 4);
 /** Scene Planner calls share provider and budget resources, so keep their run-wide fanout bounded. */
 export const DEFAULT_SCENE_PLANNER_CONCURRENCY = configuredConcurrency('HYPOTHESIS_S6_CONCURRENCY', 2);
-export const DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY = configuredConcurrency('HYPOTHESIS_TTS_ALIGNMENT_CONCURRENCY', 2);
+export { DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY } from './sceneAudio.js';
 export const DEFAULT_HOST_RASTER_CONCURRENCY = configuredConcurrency('HYPOTHESIS_RASTER_CONCURRENCY', 2, 8);
 
-let activeScenePlannerCalls = 0;
-const scenePlannerWaiters: Array<() => void> = [];
-export async function withScenePlannerSlot<T>(fn: () => Promise<T>): Promise<T> {
-  if (activeScenePlannerCalls >= DEFAULT_SCENE_PLANNER_CONCURRENCY) {
-    await new Promise<void>((resolve) => scenePlannerWaiters.push(resolve));
-  } else {
-    activeScenePlannerCalls++;
-  }
-  try {
-    return await fn();
-  } finally {
-    const next = scenePlannerWaiters.shift();
-    if (next) next();
-    else activeScenePlannerCalls--;
-  }
-}
-
-let activeSceneSynthesisCalls = 0;
-const sceneSynthesisWaiters: Array<() => void> = [];
-async function withSceneSynthesisSlot<T>(fn: () => Promise<T>): Promise<T> {
-  if (activeSceneSynthesisCalls >= DEFAULT_SCENE_CONCURRENCY) await new Promise<void>((resolve) => sceneSynthesisWaiters.push(resolve));
-  else activeSceneSynthesisCalls++;
-  try { return await fn(); }
-  finally {
-    const next = sceneSynthesisWaiters.shift();
-    if (next) next();
-    else activeSceneSynthesisCalls--;
-  }
-}
+/** Runs S6 planning with at most DEFAULT_SCENE_PLANNER_CONCURRENCY scenes in flight. */
+export const withScenePlannerSlot = createLimiter(DEFAULT_SCENE_PLANNER_CONCURRENCY);
+const withSceneSynthesisSlot = createLimiter(DEFAULT_SCENE_CONCURRENCY);
 
 export interface LiveRunContext {
   openRouterApiKey: string;
@@ -268,38 +235,14 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   // Scenes are synthesized and aligned independently, a few at a time (each alignment is its own sidecar
   // process); they are stitched onto the master clock in scene order below, so output stays deterministic.
   const synthesizeScene = async (scene: (typeof narration.scenes)[number], sequence: number) => {
-    const alignmentInput = { text: scene.plainText, language: options.voice.language, voice: options.voice.voiceId, provider: 'auto', model: 'base', calibrationMedianErrorMs: options.alignment.calibrationMedianErrorMs };
-    const align = () => withHostResourcePermit('tts-alignment', DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY, () => synthesizeAndAlign(scene.plainText, {
-      language: options.voice.language,
-      voice: options.voice.voiceId,
-      provider: 'auto',
-      model: 'base',
-    }));
-    if (!ctx.artifactStore) {
-      const generated = await align();
-      const sceneAudioDir = path.join(outputDir, 'scene-audio');
-      await mkdir(sceneAudioDir, { recursive: true });
-      const audioPath = path.join(sceneAudioDir, `${String(sequence).padStart(4, '0')}.wav`);
-      if (generated.audioPath !== audioPath) await writeFile(audioPath, await readFile(generated.audioPath));
-      return { ...generated, audioPath };
-    }
-    const cached = await ctx.artifactStore.run(`S5-tts-alignment:${scene.sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, async () => {
-      const generated = await align();
-      return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
-    });
-    stageArtifacts[`S5-tts-alignment:${scene.sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
-    if (cached.cacheHit) alignmentCacheHits.add(scene.sceneId);
+    const audio = await synthesizeSceneAudio({ sceneId: scene.sceneId, text: scene.plainText, language: options.voice.language, voice: options.voice.voiceId, calibrationMedianErrorMs: options.alignment.calibrationMedianErrorMs }, { artifactStore: ctx.artifactStore });
+    if (audio.artifact) stageArtifacts[sceneAudioStage(scene.sceneId)] = audio.artifact;
+    if (audio.cacheHit) alignmentCacheHits.add(scene.sceneId);
     const sceneAudioDir = path.join(outputDir, 'scene-audio');
     await mkdir(sceneAudioDir, { recursive: true });
     const audioPath = path.join(sceneAudioDir, `${String(sequence).padStart(4, '0')}.wav`);
-    await writeFile(audioPath, Buffer.from(cached.artifact.payload.audioBase64, 'base64'));
-    return {
-      durationMs: cached.artifact.payload.durationMs,
-      words: cached.artifact.payload.words,
-      aligner: cached.artifact.payload.aligner ?? 'stable-ts',
-      repairedWordIndexes: cached.artifact.payload.repairedWordIndexes ?? [],
-      audioPath,
-    };
+    await writeFile(audioPath, audio.audio);
+    return { durationMs: audio.durationMs, words: audio.words, aligner: audio.aligner, repairedWordIndexes: audio.repairedWordIndexes, audioPath };
   };
   const alignedScenePromises = narration.scenes.map((scene, sequence) => withSceneSynthesisSlot(() => synthesizeScene(scene, sequence)));
   const alignmentSettledAtPromise = Promise.all(alignedScenePromises).then(() => Date.now());
@@ -521,49 +464,25 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const resolveStartedAtMs = Date.now();
     const objectConcepts = planned.spec.elements.flatMap((e) => (e.prim === 'object' ? [e.concept] : []));
     const resolutionCandidates = await rankConcepts(objectConcepts, 5, queryEmbeddingCache);
-    const pinsForCache = [...iconPins.entries()].sort(([left], [right]) => left.localeCompare(right));
-    const resolvedStage = ctx.artifactStore
-      ? await ctx.artifactStore.run(`S7-resolve:${sceneInput.sceneId}`, { spec: planned.spec, candidates: resolutionCandidates, pins: pinsForCache }, { schemaVersion: 'claude-resolved-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.resolve, catalogVersion: activeCatalogVersion }, () => resolveScene(planned.spec!, { candidates: resolutionCandidates, pins: iconPins }))
-      : undefined;
-    if (resolvedStage) stageArtifacts[`S7-resolve:${sceneInput.sceneId}`] = { key: resolvedStage.key, contentHash: resolvedStage.artifact.contentHash, cacheHit: resolvedStage.cacheHit };
-    if (resolvedStage?.cacheHit) totalUsage.cacheHits += 1;
-    const resolved = resolvedStage?.artifact.payload ?? resolveScene(planned.spec, { candidates: resolutionCandidates, pins: iconPins });
+    const bounds = sceneBoundsMs[sceneInput.sceneId] ?? { startMs: 0, endMs: finalDurationMs };
+    const { resolved, laidOut, timeline, finalFrameSvg, gates: gateResult } = await runVisualChain(
+      { sceneId: sceneInput.sceneId, spec: planned.spec, resolve: { candidates: resolutionCandidates, pins: iconPins }, previousBoxes, mentions: sceneMentions, bounds },
+      {
+        store: ctx.artifactStore,
+        catalogVersion: activeCatalogVersion,
+        onStage: (stage, record) => {
+          if (record.artifact) stageArtifacts[`${stage}:${sceneInput.sceneId}`] = record.artifact;
+          if (record.cacheHit) totalUsage.cacheHits += 1;
+          // S7 wall time includes the candidate ranking above.
+          recordLocalStage(stage, stage === 'S7-resolve' ? resolveStartedAtMs : record.startedAtMs, record.cacheHit);
+        },
+      },
+    );
     iconPins = collectPins(resolved, iconPins);
-    const previousLayout = previousBoxes ? Object.fromEntries(previousBoxes) : undefined;
-    recordLocalStage('S7-resolve', resolveStartedAtMs, Boolean(resolvedStage?.cacheHit));
-    const layoutStartedAtMs = Date.now();
-    const layoutStage = ctx.artifactStore
-      ? await ctx.artifactStore.run(`S8-layout:${sceneInput.sceneId}`, { resolved, previousLayout, fontSha256: KALAM_FONT_SHA256 }, { schemaVersion: 'claude-laid-out-scene/v1', stageVersion: VISUAL_STAGE_VERSIONS.layout }, () => layoutScene(resolved, { previous: previousBoxes }))
-      : undefined;
-    if (layoutStage) stageArtifacts[`S8-layout:${sceneInput.sceneId}`] = { key: layoutStage.key, contentHash: layoutStage.artifact.contentHash, cacheHit: layoutStage.cacheHit };
-    if (layoutStage?.cacheHit) totalUsage.cacheHits += 1;
-    const laidOut = layoutStage?.artifact.payload ?? layoutScene(resolved, { previous: previousBoxes });
-    recordLocalStage('S8-layout', layoutStartedAtMs, Boolean(layoutStage?.cacheHit));
     previousBoxes = new Map(laidOut.elements.map((e) => [e.id, e.bbox]));
     previousElements = laidOut.elements.map((e) => ({ id: e.id, prim: e.element.prim, label: e.element.label ?? (e.element.prim === 'object' ? e.element.concept : undefined), conceptIds: e.element.conceptIds }));
-
-    const bounds = sceneBoundsMs[sceneInput.sceneId] ?? { startMs: 0, endMs: finalDurationMs };
-    const timelineStartedAtMs = Date.now();
-    const timelineStage = ctx.artifactStore
-      ? await ctx.artifactStore.run(`S9-timeline:${sceneInput.sceneId}`, { laidOut, sceneMentions, bounds }, { schemaVersion: 'claude-timeline/v1', stageVersion: VISUAL_STAGE_VERSIONS.timeline }, () => compileTimelineFull(laidOut, sceneMentions, bounds.startMs, bounds.endMs))
-      : undefined;
-    if (timelineStage) stageArtifacts[`S9-timeline:${sceneInput.sceneId}`] = { key: timelineStage.key, contentHash: timelineStage.artifact.contentHash, cacheHit: timelineStage.cacheHit };
-    if (timelineStage?.cacheHit) totalUsage.cacheHits += 1;
-    const timeline = timelineStage?.artifact.payload ?? compileTimelineFull(laidOut, sceneMentions, bounds.startMs, bounds.endMs);
-    recordLocalStage('S9-timeline', timelineStartedAtMs, Boolean(timelineStage?.cacheHit));
-
-    const gateResult = runClaudeGates(laidOut, timeline);
     failures.push(...gateResult.failures, ...gateResult.warnings);
     gateRecords.push({ gateSet: 'claude', sceneId: sceneInput.sceneId, passed: gateResult.failures.length === 0, failures: gateResult.failures.map(toRunFailure), warnings: gateResult.warnings.map(toRunFailure) });
-
-    const renderStartedAtMs = Date.now();
-    const renderStage = ctx.artifactStore
-      ? await ctx.artifactStore.run(`S10-render:${sceneInput.sceneId}`, { laidOut, timeline, frameTimeMs: bounds.endMs - 1, fontSha256: KALAM_FONT_SHA256 }, { schemaVersion: 'image/svg+xml', stageVersion: VISUAL_STAGE_VERSIONS.render }, () => renderSVG(laidOut, timeline, bounds.endMs - 1))
-      : undefined;
-    if (renderStage) stageArtifacts[`S10-render:${sceneInput.sceneId}`] = { key: renderStage.key, contentHash: renderStage.artifact.contentHash, cacheHit: renderStage.cacheHit };
-    if (renderStage?.cacheHit) totalUsage.cacheHits += 1;
-    const finalFrameSvg = renderStage?.artifact.payload ?? renderSVG(laidOut, timeline, bounds.endMs - 1);
-    recordLocalStage('S10-render', renderStartedAtMs, Boolean(renderStage?.cacheHit));
     const sceneLicenses = laidOut.elements.map((e) => e.resolution?.license).filter((l): l is string => Boolean(l));
     const gateFailures = deterministicGates({ ...(golden ? { golden } : {}), elements: toNeutralElements(laidOut), timeline: toNeutralEvents(laidOut, timeline, bounds.startMs), durationMs: Math.max(0, bounds.endMs - bounds.startMs), svg: finalFrameSvg, licenses: sceneLicenses });
     failures.push(...gateFailures.map((f) => ({ code: f.code, stage: f.stage, message: f.message, hard: f.hard })));

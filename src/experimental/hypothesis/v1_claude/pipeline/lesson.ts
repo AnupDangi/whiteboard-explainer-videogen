@@ -1,6 +1,7 @@
-import { readFile } from 'node:fs/promises';
 import { sha256, stableJson } from '../../shared/artifacts.js';
-import { synthesizeAndAlign } from '../../shared/alignment/align.js';
+import type { synthesizeAndAlign } from '../../shared/alignment/align.js';
+import { PIPELINE } from '../config.js';
+import { sceneAudioStage, synthesizeSceneAudio } from './sceneAudio.js';
 import type { StageFailure } from '../types.js';
 import { addUsage, emptyUsage, type CallUsage, type StructuredCallAttemptRecord } from '../llm/structuredCall.js';
 import { analyzeTeachingPlan, type PlanAnalysis } from '../plan/analyze.js';
@@ -17,7 +18,6 @@ import { buildSourceBundle } from '../plan/sourceBundle.js';
 import { buildSyllabus, lessonCostCapUsd, rebudgetUnwrittenModules, type ModulePlan, type Syllabus } from '../plan/hierarchical.js';
 import { parseMarkers } from '../narration/markers.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
-import { S5_STAGE_VERSION, S5_MODEL_ID } from './versions.js';
 
 /**
  * S2 -> S3 -> plan analysis -> S4 for a free-form lesson request. Stops at
@@ -190,25 +190,11 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       if (m.speechAligner) {
         const alignStartedAtMs = Date.now();
         const alignmentResults = await Promise.allSettled(prefixedScenes.map(async (scene) => {
-          const plainText = parseMarkers(scene.text).plainText;
           const sceneId = scene.sectionId;
-          const alignmentInput = { text: plainText, language: m.speechLanguage ?? 'en', voice: m.speechVoice, provider: 'auto', model: 'base', calibrationMedianErrorMs: m.alignmentCalibrationMedianErrorMs };
-          const generate = async () => {
-            const generated = await m.speechAligner!(plainText, { language: m.speechLanguage ?? 'en', voice: m.speechVoice, provider: 'auto', model: 'base' });
-            return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
-          };
-          if (!m.artifactStore) return { sceneId, ...(await generate()), cacheHit: false };
-          const cached = await m.artifactStore.run(`S5-tts-alignment:${sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, generate);
-          m.artifactStore.reuseWithinRun(`S5-tts-alignment:${sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, cached.artifact);
-          if (cached.cacheHit) cacheHits.push(`S5-tts-alignment:${sceneId}`);
-          stageArtifacts[`S5-tts-alignment:${sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
-          return {
-            sceneId,
-            ...cached.artifact.payload,
-            aligner: cached.artifact.payload.aligner ?? 'stable-ts',
-            repairedWordIndexes: cached.artifact.payload.repairedWordIndexes ?? [],
-            cacheHit: cached.cacheHit,
-          };
+          const audio = await synthesizeSceneAudio({ sceneId, text: parseMarkers(scene.text).plainText, language: m.speechLanguage ?? 'en', voice: m.speechVoice, calibrationMedianErrorMs: m.alignmentCalibrationMedianErrorMs }, { aligner: m.speechAligner, artifactStore: m.artifactStore });
+          if (audio.artifact) stageArtifacts[sceneAudioStage(sceneId)] = audio.artifact;
+          if (audio.cacheHit) cacheHits.push(sceneAudioStage(sceneId));
+          return { sceneId, ...audio };
         }));
         const alignmentErrors = alignmentResults.flatMap((result, index) => result.status === 'rejected' ? [`${prefixedScenes[index]!.sectionId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`] : []);
         if (alignmentErrors.length) {
@@ -226,7 +212,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
           const actualTokens = alignedScene.words.flatMap((word) => tokenizeWords(word.word));
           if (expectedTokens.join('\u0000') !== actualTokens.join('\u0000')) timingProblems.push(`${alignedScene.sceneId}: aligned words do not match narration token sequence`);
           timingProblems.push(...alignedWordTimingProblems(alignedScene.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })), alignedScene.durationMs).map((problem) => `${alignedScene.sceneId}: ${problem}`));
-          moduleAudioDurationMs += alignedScene.durationMs + (sceneIndex < aligned.length - 1 ? 200 : 0);
+          moduleAudioDurationMs += alignedScene.durationMs + (sceneIndex < aligned.length - 1 ? PIPELINE.sceneGapMs : 0);
         }
         completed.actualAudioDurationMs = moduleAudioDurationMs;
         stageRuns.push({ stage: `S5-module-audio:${moduleTag}`, kind: 'local', status: timingProblems.length ? 'failed' : 'completed', durationMs: Date.now() - alignStartedAtMs, startedAt: new Date(alignStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: aligned.length > 0 && aligned.every((scene) => scene.cacheHit), fallbackCount: 0, failures: timingProblems.map((message) => ({ code: 'invalid-module-audio-timing', stage: 'align', message, hard: true })) });
@@ -237,7 +223,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
           completedModules.push(completed);
           return preparedResult({ syllabus, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
         }
-        committedAudioDurationMs += moduleAudioDurationMs + (moduleIndex > 0 ? 200 : 0);
+        committedAudioDurationMs += moduleAudioDurationMs + (moduleIndex > 0 ? PIPELINE.sceneGapMs : 0);
         if (moduleIndex < syllabus.modules.length - 1) {
           remainingModules = [
             ...remainingModules.slice(0, moduleIndex + 1),
