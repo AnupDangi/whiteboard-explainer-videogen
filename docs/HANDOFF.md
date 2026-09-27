@@ -1893,3 +1893,11 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** shared `headingNumberUnsupported` + `stripNumericTokens` (digits + zero–twenty, domain-general); `fallbackTitle()` routes fallback through it (empty → concept labels → sceneId). Repair/gate messages now instruct: specific source-stated relation, grounded replacement words, keep process role, minimal edit. Gate logic unchanged (strict).
 - **Verification:** `typecheck:hypothesis` clean; board+planner 46/46 (3 new fail-pre/pass-post); full `test:hypothesis` 486/486 node (24+12 py per suite); `git diff --check` clean. Real regen input: fallback title `Three Inference Modes`→`Inference Modes`, numeric problems 3→0.
 - **Next bounded task:** regenerate same 60s benchmark and compare.
+
+## Entry — 2026-09-27, regen-2 post-P2c (branch fix/chat-audit-rollup-20260927)
+
+- **Run:** same 60s benchmark → `output/2026-09-27T08-18-31-876Z-www-tomzahavy-com/` (`tampered=false`, exit 1). Cost $0.0123. Tracked tree clean.
+- **Compare:** numeric `Three` errors GONE (P2a/P2c title fix verified live). Remaining 15 hard, all S: model keeps generic `compares`/`requires` (flips direction, keeps verb), loses process role in repair, omits required concepts/relations. New honest signal `planner-fallback-invalid` (no mention↔concept match → no fallback board).
+- **Key tension found:** adequacy gate REQUIRES `concept_1-[compares]->concept_3` drawn while planner gate REJECTS generic `compares` wording. Topology must carry the relation without a verb label — VSR role edge, not word edge.
+- **Validator verdict:** CHANGE planner/adequacy agreement (P2d: verb-less relation rendering + aligned gate language), DO NOT BUILD new subsystems.
+- **Next bounded task:** P2d relation-without-verb (draw A→B, no generic word) + gate agreement, then regenerate.
