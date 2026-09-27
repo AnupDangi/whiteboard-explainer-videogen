@@ -85,7 +85,7 @@ For repeated source inputs, use repeated CLI arguments such as `--source=notes.p
 
 ### Duration-aware planning
 
-The lesson CLI accepts `--duration=60`, `--duration=300`, `--duration=600`, or `--duration=1800` seconds. Canonical requests start with a syllabus call that returns a learning objective, audience assumptions, stable global concept IDs and terminology, prerequisite order, distinct module goals, evidence coverage, and exact module budgets. Module budgets are `[60]`, `[300]`, `[300,300]`, or six 300-second modules. If the source cannot support the requested depth, the syllabus may select a shorter supported canonical duration and must give a coverage reason. The run stores requested and planned durations separately.
+The lesson CLI accepts `--duration=60`, `--duration=300`, `--duration=600`, or `--duration=1800` seconds. Canonical requests start with a syllabus call that returns a learning objective, audience assumptions, stable global concept IDs and terminology, prerequisite order, distinct module goals, evidence coverage, and exact module budgets. Module budgets are `[60]`, `[300]`, `[300,300]`, or six 300-second modules. If the source cannot support the requested depth, the syllabus may select a shorter supported canonical duration and must give a coverage reason. The run stores requested and planned durations separately. For sources above 12,000 characters, S1b sends at most 48,000 characters of exact source text as excerpts paired with their span IDs (opening material, retrieval hits, closing material, document-wide samples); a truncated excerpt is marked. Generated concept and module IDs may be normalized from ASCII uppercase or hyphen spellings to lowercase snake case before strict schema and reference checks; collisions still fail, and span IDs and factual text are never normalized. PDF line-end hyphenation can be matched mechanically to a model quote, but the stored citation keeps the exact source bytes. Paraphrases remain invalid.
 
 Each module is planned independently with a scoped source excerpt and its assigned syllabus concepts. S2 enforces the global concept IDs and labels; S3 retains the existing per-response scene/schema limits; S4 writes one module. In generated lesson CLI runs, S5 then synthesizes and aligns that module before the next module is planned. Measured audio plus scene gaps rebudgets only unwritten modules; each completed module retains its original target and measured duration. The exact scene audio/alignment artifact is reused by the live S5 stage within the same cold run, so the module boundary does not synthesize scenes twice. Alignment words must match narration tokens and have valid, positive intervals to satisfy the timing gate; when a positive audio duration exists, the module clock can still rebudget later scenes while the alignment finding remains a hard publication failure. A global lesson bible is assembled after module validation, recurring concepts are marked persistent, and module scene IDs are namespaced to avoid collisions. `lessonToLiveInput()` flattens ordered scenes for the current player/export path while carrying module targets and measured audio durations. Generated lessons use actual concatenated audio duration and do not add trailing silence to satisfy the nominal target; their duration delta remains in run metrics. Golden diagnostic clips retain their existing target padding behavior. After an S4 scene script is available, the live path overlaps S5 for that scene with timing-independent S6 planning, then joins the measured audio before layout, gates, and scene-event emission.
 
@@ -277,8 +277,14 @@ Timing comes from the Lamina reference pack (`harness/reference/lamina/OBSERVATI
   - `formula` with `latex` or with term-by-term `parts`.
   - Templates `formula_focus` (up to 4 derivation lines) and `plot_focus`. Each item in these is fitted to
     its own column.
-- **Layout growth**: templates are tried at element sizes from 1.6× down to 0.6×. The largest placement
-  that fits inside the safe area with no overlaps wins, so small icons are not left in empty space.
+- **Layout growth**: templates are tried at element sizes from 1.6× down to 1.0×; then, when a template has a
+  dense variant (`DENSE_TEMPLATES`), that variant at the same sizes; only then 0.85× down to 0.6×. The first
+  placement that fits inside the safe area with no overlaps wins, so small icons are not left in empty space and
+  a board that already fits keeps its default geometry. Dense `fan_out` puts the source at the centre and targets
+  on the elliptical ring (straight arrows cannot cross other targets); dense `layered_stack` narrows the layer
+  gap. A board that still needs shrinking fails the 32 px readability gate visibly.
+- **Box labels**: `boxLabelLines()` keeps a box label on one line unless its padded one-line width exceeds 420 px,
+  then splits it into at most two balanced lines at body size. Layout sizing and rendering share the decision.
 - **Convergence inputs**: 3+ inputs use a data-sized grid within the generic convergence template; a long
   single column had shrunk icon labels below the 32 px hard readability floor. The Attention fixture now
   exercises the shared object-icon ladder with explicitly illustrative magnifying-glass/key metaphors.
@@ -321,6 +327,7 @@ uncalibrated.
 npm run typecheck:hypothesis && npm run test:hypothesis      # offline, no keys needed
 npm run strip:scene -- <sceneId> out.png                      # progression strip of a fixture scene (after a build)
 npm run run:lesson -- --lesson=all [--content=<model>] [--planner=<model>]
+npm run video:one-shot -- --prompt="<learner prompt>" --source=<file>|--url=<url> [--duration=60] [--id=<name>]  # locked single run, provenance in output/
 npm run run:hypothesis:live [-- --case=<golden> --planner=<model>]
 npm run preview:hypothesis -- <run-directory> [port]                 # loopback browser player
 npm run judge:hypothesis -- --runs=.data/hypothesis-runs/claude/lessons [--cache-dir=.data/hypothesis-runs/judge-cache]

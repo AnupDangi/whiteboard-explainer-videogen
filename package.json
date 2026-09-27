@@ -19,6 +19,7 @@
     "preview:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/player/previewCli.js",
     "run:hypothesis:live": "npm run build && node dist/src/experimental/hypothesis/v1_claude/liveCli.js",
     "run:lesson": "npm run build && node dist/src/experimental/hypothesis/v1_claude/lessonCli.js",
+    "video:one-shot": "node scripts/one-shot-video.mjs",
     "catalog:build": "node scripts/build-catalog.mjs && node scripts/embed-catalog.mjs",
     "catalog:e4:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/catalog/e4CalibrationCli.js",
     "plan:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/planCalibrationCli.js",
