@@ -2020,3 +2020,11 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** structured+convergence rejected repairably in `boardProblems` (gate untouched, strict); `queryDeep` maps `{data}` chunks (real `answer` kept if present); reliability forwards CLI `--budget`. No topic keywords.
 - **Audit:** my full run 539/539 + 28 + 12, exit 0; `git diff --check` clean. Limitation: queryDeep e2e (sidecar spawn) untested — mapping unit only.
 - **Next bounded task:** re-run matrix (600s compost + bicycle) + yellows triage.
+
+## Entry — 2026-09-27, matrix-3 new topics + RAG path (branch fix/chat-audit-rollup-20260927)
+
+- **Runs (locked one-shot, no mid edits, all `tampered=false`):**
+  - 60s interpretability (new AI topic): `output/2026-09-27T19-29-11-093Z-interpretability-features/` — FAILED, 19 hard, 61s diagnostic, $0.0127. Recap scene drops `contains` relation + process role. Frame @20s (`UNTANGLING ACTIVATIONS` + bolt) is sparse single-icon — S-class density failure.
+  - 60s DeepSeek PDF with `RAG_ENGINE=on`: `output/2026-09-27T19-31-41-702Z-deepseek_v41_tech_report/` — FAILED, no video. RAG gate WORKED (233 items, 41 chunks verified) but `qwen/qwen3.8-flash` hit upstream 429 → ledger fail-closed blocked spend → syllabus failed. Provider limit, not our bug. RAG path mechanically proven end-to-end (index partial, verified chunks).
+- **Remaining:** recap relation/role repair, RAG retry after rate-limit window, yellows triage, 10/5/5 matrix, determinism/harness report.
+- **Next bounded task:** yellows triage (ladder order, cursor rewind, alignment gaps) + recap-scene fix.
