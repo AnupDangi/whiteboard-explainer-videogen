@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { deriveRunStatus, deterministicGates } from '../../shared/evaluation.js';
 import { loadAlignmentCalibration } from '../../shared/alignment/calibration.js';
 import { assertCommonRunOptions, type HypothesisRunOptions } from '../../shared/contracts.js';
 import { goldenForRun } from '../pipeline/runLive.js';
 
-test('only an external judge can promote a clean run from draft to passed', () => {
+test('clean runs are draft until judge + evidence + calibration all pass', () => {
   assert.equal(deriveRunStatus(0), 'draft');
   assert.equal(deriveRunStatus(0, true, { factualEvidenceComplete: true, alignmentComplete: true }), 'passed');
   assert.equal(deriveRunStatus(1, true), 'failed');
-  assert.equal(deriveRunStatus(0, true, { factualEvidenceComplete: false, alignmentComplete: true }), 'failed');
-  assert.equal(deriveRunStatus(0, true, { factualEvidenceComplete: true, alignmentComplete: false }), 'failed');
+  assert.equal(deriveRunStatus(0, true, { factualEvidenceComplete: false, alignmentComplete: true }), 'draft');
+  assert.equal(deriveRunStatus(0, true, { factualEvidenceComplete: true, alignmentComplete: false }), 'draft');
 });
 
 test('generic inputs do not receive a golden-duration gate', () => {
@@ -55,4 +57,29 @@ test('source-generated IDs cannot activate a frozen golden target by filename or
   assert.equal(goldenForRun({ caseId: 'photosynthesis', runClass: 'generated-lesson' }), undefined);
   assert.equal(goldenForRun({ caseId: 'transformer-attention', runClass: 'generated-lesson' }), undefined);
   assert.equal(goldenForRun({ caseId: 'photosynthesis', runClass: 'hand-authored-script' })?.id, 'photosynthesis');
+});
+
+// No existing test drives runHypothesisLive end-to-end in `mode: 'live'` with mocked TTS/aligner/planner
+// providers (checked run-live-concurrency.test.ts, e2e.test.ts, module-audio-budget.test.ts — none of
+// them call runHypothesisLive), so a full clean-live-run assertion is not available. Instead this pins
+// the two properties the brief cares about: (a) the calibration-unmeasured record stays a soft warning,
+// and (b) runLive.ts's own draft/failed split (it always calls deriveRunStatus with judgePassed=false,
+// since there is no judge-verdict field yet) is exactly gated by the hard-failure count.
+test('uncalibrated live path: calibration failure is soft, and draft status is exactly gated by hard failures', () => {
+  const runLiveSource = readFileSync(resolve(process.cwd(), 'src/experimental/hypothesis/v1_claude/pipeline/runLive.ts'), 'utf8');
+  const calibrationFailureRecord = runLiveSource.match(/\{\s*code:\s*'alignment-calibration-unmeasured'[\s\S]*?hard:\s*(true|false)\s*\}/);
+  assert.ok(calibrationFailureRecord, 'expected to find the alignment-calibration-unmeasured failure record in runLive.ts');
+  assert.equal(calibrationFailureRecord![1], 'false', 'the calibration gate must not be a hard failure, or every live run would stay failed forever');
+
+  // runLive.ts never has a judge verdict yet, so judgePassed is always false at its deriveRunStatus call sites.
+  // With judgePassed=false, deriveRunStatus collapses to: 'failed' when hardFailures > 0, else 'draft' —
+  // regardless of factualEvidenceComplete/alignmentComplete. This is the "iff" property the brief asks for.
+  for (const evidence of [
+    { factualEvidenceComplete: true, alignmentComplete: true },
+    { factualEvidenceComplete: false, alignmentComplete: false },
+    { factualEvidenceComplete: true, alignmentComplete: false },
+  ]) {
+    assert.equal(deriveRunStatus(0, false, evidence), 'draft');
+    assert.equal(deriveRunStatus(1, false, evidence), 'failed');
+  }
 });

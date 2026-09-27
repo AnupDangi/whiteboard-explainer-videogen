@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AlignedAudio, AlignedWord, LaidOutScene, NarrationScript, ResolvedScene, SceneSpec, StageFailure, Timeline } from '../types.js';
 import { EXPERIMENT, assertCommonRunOptions, type EvaluationBundle, type GateRunRecord, type GoldenCase, type HypothesisRunOptions, type RunClass, type RunFailure, type RunStatus, type RunUsage, type StageRunRecord } from '../../shared/contracts.js';
-import { deriveRunStatus, deterministicGates } from '../../shared/evaluation.js';
+import { deriveRunStatus, deterministicGates, type PublishEvidence } from '../../shared/evaluation.js';
 import { sha256, stableJson, writeJsonArtifact } from '../../shared/artifacts.js';
 import { goldenById } from '../../shared/fixtures.js';
 import { svgDocument } from '../../shared/svg.js';
@@ -243,7 +243,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   const runStartedAtMs = Date.now();
   const startedAt = new Date(runStartedAtMs).toISOString();
   if (options.mode === 'live' && options.alignment.calibrationMedianErrorMs === undefined) {
-    failures.push({ code: 'alignment-calibration-unmeasured', stage: 'align', message: 'S5 can run for diagnosis, but no reproducible word-boundary calibration is available; this run cannot pass publish gates.', hard: true });
+    failures.push({ code: 'alignment-calibration-unmeasured', stage: 'align', message: 'S5 can run for diagnosis, but no reproducible word-boundary calibration is available; this run is capped at draft until calibration is measured.', hard: false });
   }
   if (input.runClass === 'generated-lesson' && !input.sourceDoc) {
     failures.push({ code: 'source-document-missing', stage: 'provenance', message: 'generated lessons require the exact SourceDoc used by concept extraction', hard: true });
@@ -621,11 +621,21 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   for (const s of scenes) for (const e of s.laidOut.elements) if (e.resolution) rungCounts[`rung${e.resolution.rung}`] = (rungCounts[`rung${e.resolution.rung}`] ?? 0) + 1;
   const ambiguousMentions = alignedAudio.mentions.filter((m) => m.ambiguous).length;
 
+  // Publish evidence is fixed once the S5/S6 stages have finished producing their failures; later
+  // stages (encode/captions/budget) can still add *hard* failures, so only the hard-failure count
+  // is re-read at each deriveRunStatus call below — factualEvidenceComplete/alignmentComplete stay frozen.
+  const factualEvidenceComplete = !failures.some((f) => f.code.startsWith('board-concept-omitted') || f.code.startsWith('board-relation-omitted') || f.code.startsWith('source-'));
+  const alignmentComplete = options.alignment.calibrationMedianErrorMs !== undefined && !failures.some((f) => f.code === 'invalid-word-alignment');
+  const publishEvidence: PublishEvidence = { factualEvidenceComplete, alignmentComplete };
+  // runLive.ts has no judge-verdict field yet; every call site below passes judgePassed = false.
+  const judgePassed = false;
+  const derivePublishStatus = () => deriveRunStatus(failures.filter((f) => f.hard).length, judgePassed, publishEvidence);
+
   const evaluationBundle: EvaluationBundle = {
     schemaVersion: 'evaluation-bundle/v2',
     pipeline: 'claude',
     runClass: input.runClass ?? (input.scenes.every((s) => Boolean(s.spec)) ? 'renderer-fixture' : 'hand-authored-script'),
-    status: deriveRunStatus(failures.filter((f) => f.hard).length),
+    status: derivePublishStatus(),
     caseId: input.caseId,
     runId,
     commit: 'uncommitted-worktree',
@@ -774,7 +784,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     await writeJsonArtifact(outputDir, `timeline.${s.sceneId}.json`, s.timeline);
   }
   evaluationBundle.failures = failures.map(toRunFailure); // re-sync after S11/S10 artifact results
-  evaluationBundle.status = deriveRunStatus(failures.filter((f) => f.hard).length);
+  evaluationBundle.status = derivePublishStatus();
   gateRecords.push({ gateSet: 'publish', passed: evaluationBundle.status === 'passed', failures: failures.filter((failure) => failure.hard).map(toRunFailure), warnings: failures.filter((failure) => !failure.hard).map(toRunFailure) });
   await writeFile(path.join(outputDir, 'final-scene.svg'), combinedSvg, 'utf8');
   await writeFile(path.join(outputDir, 'contact-sheet.svg'), contactSheetSvg, 'utf8');
@@ -794,7 +804,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (credits) await writeFile(path.join(outputDir, 'attribution.txt'), `${credits}\n`, 'utf8');
 
   evaluationBundle.failures = failures.map(toRunFailure);
-  evaluationBundle.status = deriveRunStatus(failures.filter((f) => f.hard).length);
+  evaluationBundle.status = derivePublishStatus();
   evaluationBundle.stageRuns = stageRuns;
   evaluationBundle.gateRecords = gateRecords;
   evaluationBundle.nativeArtifacts = {

@@ -28,7 +28,7 @@ export interface PublishEvidence { factualEvidenceComplete: boolean; alignmentCo
 export function deriveRunStatus(hardFailures:number,judgePassed=false,evidence:PublishEvidence={factualEvidenceComplete:false,alignmentComplete:false}):RunStatus{
   if(hardFailures>0)return 'failed';
   if(!judgePassed)return 'draft';
-  return evidence.factualEvidenceComplete&&evidence.alignmentComplete?'passed':'failed';
+  return evidence.factualEvidenceComplete&&evidence.alignmentComplete?'passed':'draft';
 }
 
 export function mechanismCoverage(golden:GoldenCase,bundle:Pick<EvaluationBundle,'claims'|'relations'>):Record<string,number|string>{
