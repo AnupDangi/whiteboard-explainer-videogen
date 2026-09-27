@@ -1967,3 +1967,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Implemented:** `harness/boardMetrics.ts` collector (nodes/reveals/occupancy/text-px/edges/fallback/dedup/floor/outline-fill) + `--compare/--check` CLI (`metrics:boards`); frozen `harness/reference/lamina/metrics.v1.json` from existing index.json + OBSERVATIONS.md only (33 scenes, median 18.5s, coverage 0.5–0.7, reveal band 5–7). Deviations: no raster/ffmpeg/`measureFrame` (pixel similarity banned; videos not in repo). No topic keywords, no Lamina-internals claims.
 - **Verification:** typecheck clean; new 4/4; full 509 node + 24 + 12 py; CLI `--check` reference ok 33 scenes; `git diff --check` clean.
 - **Next bounded task:** T12/T13 code (batch + calibration writer, no live calls).
+
+## Entry — 2026-09-27, T12/T13 batch + calibration code (branch fix/chat-audit-rollup-20260927)
+
+- **Why:** plan Tasks 12+13; code only, zero live spend in this pass per user order.
+- **Implemented:** `harness/validationBatch{,Cli}.ts` (`validate:batch`, requires `--confirm-live` + clean tree, shells to one-shot per combo, writes batch-report + SUMMARY, exit 3 if tampered); `word_boundary_review.py score --write-calibration` (writes measured v2 only from 2-vote agreement + key-hash verify, aligner from recorded lowest-median); loader accepts recorded aligner family. No topic keywords.
+- **Verification:** typecheck clean; 515 node + alignment py (6 new TS + 4 new py); refusal paths verified; `git diff --check` clean. Batch never executed.
+- **Next bounded task:** P4/P5-code/P6/P8 (audio-min, model caps, RAG venvs, cleanup).

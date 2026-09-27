@@ -35,7 +35,8 @@
     "strip:scene": "node scripts/render-strip.mjs",
     "baseline:freeze": "node scripts/baselines.mjs --freeze",
     "baseline:verify": "node scripts/baselines.mjs",
-    "metrics:boards": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/boardMetricsCli.js"
+    "metrics:boards": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/boardMetricsCli.js",
+    "validate:batch": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/validationBatchCli.js"
   },
   "optionalDependencies": {
     "pg": "^8.23.0",

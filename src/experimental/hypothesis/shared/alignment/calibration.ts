@@ -22,6 +22,19 @@ export interface AlignmentCalibration {
 
 const CALIBRATION_RELATIVE_PATH = 'src/experimental/hypothesis/shared/alignment/calibration.v2.json';
 
+/**
+ * Aligner identities recorded by run_alignment (shared/alignment/align.py).
+ * The loader accepts the whole recorded family so a human-measured calibration
+ * file written by word_boundary_review.py --write-calibration loads; it never
+ * accepts an invented name.
+ */
+export const RECORDED_ALIGNERS = [
+  'stable-ts',
+  'stable-ts-fast-mode',
+  'torchaudio-wav2vec2-ctc',
+  'stable-ts+collapsed-repair',
+] as const;
+
 export async function loadAlignmentCalibration(projectRoot = process.cwd()): Promise<AlignmentCalibration> {
   const value = JSON.parse(await readFile(resolve(projectRoot, CALIBRATION_RELATIVE_PATH), 'utf8')) as Partial<AlignmentCalibration>;
   const validMeasurement = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
@@ -29,7 +42,8 @@ export async function loadAlignmentCalibration(projectRoot = process.cwd()): Pro
     && (value.status === 'measured' || value.status === 'unmeasured')
     && typeof value.id === 'string' && value.id.length > 0
     && value.voiceEngine === 'voice-engine' && value.voiceProvider === 'supertonic'
-    && value.aligner === 'stable-ts' && value.alignerModel === 'base'
+    && typeof value.aligner === 'string' && (RECORDED_ALIGNERS as readonly string[]).includes(value.aligner)
+    && value.alignerModel === 'base'
     && typeof value.groundTruthMethod === 'string' && value.groundTruthMethod.length > 0
     && typeof value.measurementSource === 'string' && value.measurementSource.length > 0
     && typeof value.limitations === 'string' && value.limitations.length > 0;

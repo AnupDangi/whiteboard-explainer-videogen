@@ -1,10 +1,12 @@
 import importlib.util
 import json
 import struct
+import sys
 import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).with_name('word_boundary_review.py')
@@ -184,6 +186,136 @@ class WordBoundaryReviewTests(unittest.TestCase):
                 paths.append(path)
             with self.assertRaisesRegex(ValueError, 'invalid interval'):
                 REVIEW.score_pack(key_path, paths)
+
+
+def make_measured_pack(root: Path):
+    """Three independent runs x 35 words with two agreeing votes (no live calls)."""
+    runs = []
+    for index in range(3):
+        run = root / f'run-{index}'
+        make_run(run, f'run-{index}', f'source-{index}', word_count=35)
+        runs.append(run)
+    out, key_path = root / 'pack', root / 'key.json'
+    key = REVIEW.build_pack(runs, out, key_path)
+    votes = []
+    for reviewer, shift in [('reviewer-a', 0), ('reviewer-b', 10)]:
+        items = []
+        for item in key['items']:
+            items.append({
+                'itemId': item['itemId'],
+                'words': [{'startMs': 100 + i * 100 + shift, 'endMs': 160 + i * 100 + shift}
+                          for i in range(len(item['words']))],
+            })
+        path = root / f'{reviewer}.json'
+        path.write_text(json.dumps({'schemaVersion': REVIEW.VOTE_SCHEMA, 'packageId': key['packageId'],
+                                    'participantId': reviewer, 'annotations': items}))
+        votes.append(path)
+    report = REVIEW.score_pack(key_path, votes)
+    assert report['status'] == 'measured-candidate-comparison'
+    return key_path, votes, report
+
+
+class WriteCalibrationTests(unittest.TestCase):
+    def test_measured_evidence_writes_loader_shaped_calibration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            key_path, _votes, report = make_measured_pack(root)
+            key = json.loads(key_path.read_text())
+            calibration = REVIEW.build_calibration(report, key)
+            self.assertEqual(calibration['schemaVersion'], 'alignment-calibration/v2')
+            self.assertEqual(calibration['status'], 'measured')
+            # Aligner comes from the candidates recorded in the review pack.
+            self.assertEqual(calibration['aligner'], 'stable-ts')
+            self.assertEqual(calibration['medianAbsoluteBoundaryErrorMs'],
+                             report['candidateErrorsAgainstMeanHumanBoundary']['stable-ts']['medianAbsoluteErrorMs'])
+            self.assertEqual(calibration['boundarySamples'],
+                             report['candidateErrorsAgainstMeanHumanBoundary']['stable-ts']['boundaryCount'])
+            self.assertEqual(calibration['independentClips'], report['reviewItemCount'])
+            # Loader-shaped: identity pins plus ordered error statistics.
+            self.assertEqual(calibration['voiceEngine'], 'voice-engine')
+            self.assertEqual(calibration['voiceProvider'], 'supertonic')
+            self.assertEqual(calibration['alignerModel'], 'base')
+            self.assertIn(calibration['aligner'], REVIEW.RECORDED_ALIGNERS)
+            self.assertLessEqual(calibration['minimumAbsoluteBoundaryErrorMs'],
+                                 calibration['medianAbsoluteBoundaryErrorMs'])
+            self.assertLessEqual(calibration['medianAbsoluteBoundaryErrorMs'],
+                                 calibration['maximumAbsoluteBoundaryErrorMs'])
+            self.assertTrue(all(v >= 0 for v in (
+                calibration['medianAbsoluteBoundaryErrorMs'],
+                calibration['meanAbsoluteBoundaryErrorMs'],
+                calibration['minimumAbsoluteBoundaryErrorMs'],
+                calibration['maximumAbsoluteBoundaryErrorMs'])))
+
+    def test_pilot_only_report_refuses_with_explicit_reason(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / 'run'
+            make_run(run, 'run-a', 'source-hash-a', word_count=3)
+            out, key_path = root / 'pack', root / 'key.json'
+            key = REVIEW.build_pack([run], out, key_path)
+            item = key['items'][0]
+            annotations = [{'itemId': item['itemId'],
+                            'words': [{'startMs': 100 + i * 100, 'endMs': 160 + i * 100}
+                                      for i in range(len(item['words']))]}]
+            votes = []
+            for reviewer in ('reviewer-a', 'reviewer-b'):
+                path = root / f'{reviewer}.json'
+                path.write_text(json.dumps({'schemaVersion': REVIEW.VOTE_SCHEMA,
+                                            'packageId': key['packageId'],
+                                            'participantId': reviewer, 'annotations': annotations}))
+                votes.append(path)
+            report = REVIEW.score_pack(key_path, votes)
+            self.assertEqual(report['status'], 'pilot-only-unmeasured')
+            with self.assertRaisesRegex(ValueError, 'three distinct source'):
+                REVIEW.build_calibration(report, json.loads(key_path.read_text()))
+
+    def test_single_vote_file_and_unknown_aligner_refuse(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            key_path, votes, report = make_measured_pack(root)
+            key = json.loads(key_path.read_text())
+            with self.assertRaisesRegex(ValueError, 'exactly two independent'):
+                REVIEW.score_pack(key_path, votes[:1])
+            with self.assertRaisesRegex(ValueError, 'not a measured candidate'):
+                REVIEW.build_calibration(report, key, aligner='invented-aligner')
+
+    def test_cli_write_calibration_writes_file_only_on_measured_evidence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            key_path, votes, _report = make_measured_pack(root)
+            calibration_path = root / 'calibration.v2.json'
+            argv = ['word_boundary_review.py', 'score', f'--key={key_path}',
+                    f'--votes={votes[0]}', f'--votes={votes[1]}',
+                    f'--write-calibration={calibration_path}']
+            with mock.patch.object(sys, 'argv', argv):
+                REVIEW.main()
+            written = json.loads(calibration_path.read_text())
+            self.assertEqual(written['status'], 'measured')
+            self.assertEqual(written['aligner'], 'stable-ts')
+
+            run = root / 'pilot'
+            make_run(run, 'run-pilot', 'source-pilot', word_count=3)
+            pilot_key = REVIEW.build_pack([run], root / 'pilot-pack', root / 'pilot-key.json')
+            pilot_item = pilot_key['items'][0]
+            pilot_votes = []
+            for reviewer in ('reviewer-a', 'reviewer-b'):
+                path = root / f'pilot-{reviewer}.json'
+                path.write_text(json.dumps({
+                    'schemaVersion': REVIEW.VOTE_SCHEMA, 'packageId': pilot_key['packageId'],
+                    'participantId': reviewer,
+                    'annotations': [{'itemId': pilot_item['itemId'],
+                                     'words': [{'startMs': 100 + i * 100, 'endMs': 160 + i * 100}
+                                               for i in range(len(pilot_item['words']))]}]}))
+                pilot_votes.append(path)
+            refused = root / 'refused.json'
+            with self.assertRaises(SystemExit):
+                with mock.patch.object(sys, 'argv', ['word_boundary_review.py', 'score',
+                                                     f'--key={root / "pilot-key.json"}',
+                                                     f'--votes={pilot_votes[0]}',
+                                                     f'--votes={pilot_votes[1]}',
+                                                     f'--write-calibration={refused}']):
+                    REVIEW.main()
+            self.assertFalse(refused.exists())
 
 
 if __name__ == '__main__':

@@ -30,8 +30,18 @@ from compare_aligners import (  # noqa: E402
 SCHEMA = "word-boundary-review/v1"
 VOTE_SCHEMA = "word-boundary-vote/v1"
 REPORT_SCHEMA = "word-boundary-report/v1"
+CALIBRATION_SCHEMA = "alignment-calibration/v2"
 MEDIAN_AGREEMENT_LIMIT_MS = 80.0
 P90_AGREEMENT_LIMIT_MS = 200.0
+# Aligner identities recorded by run_alignment (shared/alignment/align.py) and
+# accepted by shared/alignment/calibration.ts. Calibration never invents a new
+# name: --write-calibration only writes one of the candidates recorded here.
+RECORDED_ALIGNERS = (
+    "stable-ts",
+    "stable-ts-fast-mode",
+    "torchaudio-wav2vec2-ctc",
+    "stable-ts+collapsed-repair",
+)
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -454,6 +464,101 @@ def score_pack(key_path: Path, vote_paths: list[Path]) -> dict[str, Any]:
     }
 
 
+def _candidate_boundary_errors(key_items: list[dict[str, Any]], report: dict[str, Any],
+                                 candidate_name: str) -> list[float]:
+    """Absolute boundary errors of a recorded candidate against the mean human mark.
+
+    Recomputed from the organizer key words and the scored report's individual
+    annotations, so the calibration file derives only from valid human evidence.
+    """
+    by_item_reviewer: dict[str, list[list[dict[str, Any]]]] = {}
+    for reviewer in report["individualAnnotations"]:
+        for annotation in reviewer["annotations"]:
+            by_item_reviewer.setdefault(annotation["itemId"], []).append(annotation["words"])
+    errors: list[float] = []
+    for item in key_items:
+        candidate = item["stableTsWords"] if candidate_name == "stable-ts" else item.get("ctcWords")
+        if candidate is None:
+            continue
+        human = by_item_reviewer.get(item["itemId"])
+        if human is None or len(human) != 2 or len(candidate) != len(human[0]):
+            raise ValueError(f"human evidence is missing or mismatched for item {item['itemId']}")
+        for index, predicted in enumerate(candidate):
+            for boundary in ("startMs", "endMs"):
+                target = (float(human[0][index][boundary]) + float(human[1][index][boundary])) / 2.0
+                errors.append(abs(float(predicted[boundary]) - target))
+    return errors
+
+
+def build_calibration(report: dict[str, Any], key: dict[str, Any],
+                      aligner: str | None = None) -> dict[str, Any]:
+    """Build a measured alignment-calibration/v2 document from scored evidence.
+
+    Refuses (ValueError with an explicit reason, writing nothing) unless the
+    report reached measured status from two independent vote files whose
+    reviewer agreement met the pre-registered criteria. The aligner name is
+    taken from the candidates recorded in the review pack, never hard-coded.
+    """
+    if report.get("schemaVersion") != REPORT_SCHEMA:
+        raise ValueError("refusing to write calibration: not a word-boundary report")
+    if report.get("status") != "measured-candidate-comparison":
+        reasons = report.get("reasons") or ["report is not measured"]
+        raise ValueError("refusing to write calibration: " + "; ".join(str(r) for r in reasons))
+    reviewer_ids = report.get("reviewerIds", [])
+    vote_hashes = report.get("voteFileSha256", [])
+    if len(reviewer_ids) != 2 or len(set(reviewer_ids)) != 2:
+        raise ValueError("refusing to write calibration: requires two independent vote files "
+                         "from distinct reviewers")
+    if len(vote_hashes) != 2 or len(set(vote_hashes)) != 2:
+        raise ValueError("refusing to write calibration: the two vote files must differ")
+    if report.get("packageId") != key.get("packageId"):
+        raise ValueError("refusing to write calibration: report does not belong to this organizer key")
+    recorded_hash = key.get("keySha256")
+    canonical = {k: v for k, v in key.items() if k != "keySha256"}
+    if (not isinstance(recorded_hash, str)
+            or hashlib.sha256((json.dumps(canonical, ensure_ascii=False, indent=2) + "\n").encode())
+            .hexdigest() != recorded_hash):
+        raise ValueError("refusing to write calibration: organizer key hash is missing or invalid")
+    if report.get("organizerKeySha256") != recorded_hash:
+        raise ValueError("refusing to write calibration: report was scored against a different organizer key")
+    candidates = report.get("candidateErrorsAgainstMeanHumanBoundary", {})
+    measured = {name: metrics for name, metrics in candidates.items()
+                if isinstance(metrics, dict) and name in RECORDED_ALIGNERS}
+    if not measured:
+        raise ValueError("refusing to write calibration: no recorded aligner has measured errors")
+    if aligner is None:
+        aligner = min(measured, key=lambda name: float(measured[name]["medianAbsoluteErrorMs"]))
+    if aligner not in measured:
+        raise ValueError(f"refusing to write calibration: {aligner!r} is not a measured candidate "
+                         f"in this review pack (recorded: {sorted(measured)})")
+    errors = _candidate_boundary_errors(key["items"], report, aligner)
+    if not errors:
+        raise ValueError("refusing to write calibration: no candidate boundaries overlap human evidence")
+    package_id = report["packageId"]
+    return {
+        "schemaVersion": CALIBRATION_SCHEMA,
+        "status": "measured",
+        "id": f"{aligner}-base-two-human-{str(package_id)[:12]}",
+        "voiceEngine": "voice-engine",
+        "voiceProvider": "supertonic",
+        "aligner": aligner,
+        "alignerModel": "base",
+        "boundarySamples": len(errors),
+        "independentClips": int(report["reviewItemCount"]),
+        "medianAbsoluteBoundaryErrorMs": statistics.median(errors),
+        "meanAbsoluteBoundaryErrorMs": statistics.mean(errors),
+        "minimumAbsoluteBoundaryErrorMs": min(errors),
+        "maximumAbsoluteBoundaryErrorMs": max(errors),
+        "groundTruthMethod": "Two independent human word-boundary annotations of source-generated "
+                             "scene audio; candidate error is measured against the mean human boundary.",
+        "measurementSource": f"word-boundary-review.py score package {package_id} "
+                             f"({report['sourceCount']} sources, {report['wordCount']} words)",
+        "limitations": "Two reviewers and the current source set do not justify automatic "
+                       "live-aligner promotion; this file measures audio timing only and says "
+                       "nothing about visual or teaching quality.",
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -467,6 +572,13 @@ def main() -> None:
     score.add_argument("--key", type=Path, required=True)
     score.add_argument("--votes", action="append", type=Path, required=True)
     score.add_argument("--out", type=Path, help="report output; stdout if omitted")
+    score.add_argument("--write-calibration", type=Path, default=None,
+                       help="write a measured alignment-calibration/v2 file here, but only when the "
+                            "scored report meets its agreement criteria from two independent votes; "
+                            "otherwise write nothing and exit non-zero")
+    score.add_argument("--aligner", default=None,
+                       help="which recorded candidate to calibrate; defaults to the recorded "
+                            "candidate with the lowest median error")
     args = parser.parse_args()
     try:
         if args.command == "pack":
@@ -487,6 +599,15 @@ def main() -> None:
                 print(f"wrote {args.out}")
             else:
                 print(rendered, end="")
+            if args.write_calibration is not None:
+                key = _json(args.key)
+                calibration = build_calibration(report, key, args.aligner)
+                if args.write_calibration.exists():
+                    raise FileExistsError(f"calibration path already exists: {args.write_calibration}")
+                args.write_calibration.parent.mkdir(parents=True, exist_ok=True)
+                args.write_calibration.write_text(
+                    json.dumps(calibration, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                print(f"wrote {args.write_calibration}")
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
 
