@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import type { RagSidecarEnv } from '../planner/env.js';
 import { resolveSourceEvidence, type EvidenceHit, type SourceBundle, type SourceDoc } from './sourceDoc.js';
+import { PIPELINE } from '../config.js';
 
 interface RagContentItem {
   type: 'text' | 'table' | 'equation' | 'image';
@@ -20,7 +21,7 @@ interface RagContentItem {
 
 export interface RagIndexOutcome {
   enabled: boolean;
-  status: 'completed' | 'partial' | 'failed' | 'disabled';
+  status: 'completed' | 'partial' | 'failed' | 'disabled' | 'skipped';
   retrievalStatus: 'matched' | 'miss' | 'failed' | 'not-run';
   indexed: boolean;
   cacheHit: boolean;
@@ -30,12 +31,25 @@ export interface RagIndexOutcome {
   actualUsage?: { callAttempts: number; successfulCallAttempts: number; failedCalls: number; providerReportedUsageResponses: number; promptTokens: number; completionTokens: number; totalTokens: number; costUsd: null; costStatus: string };
   artifactEstimatedCostUsd?: number;
   error?: string;
+  /** Why the index was not built for this source (status 'skipped'). */
+  skipReason?: string;
 }
 
 function repositoryRoot(): string { return path.resolve(process.env.HYPOTHESIS_REPO_ROOT ?? process.cwd()); }
 function pythonPath(): string { return process.env.RAG_PYTHON ?? path.join(repositoryRoot(), 'rag-engine', '.venv', 'bin', 'python'); }
 function servicePath(): string { return path.join(repositoryRoot(), 'rag-engine', 'service.py'); }
-function enabled(): boolean { return (process.env.RAG_ENGINE ?? '').toLowerCase() === 'on' && existsSync(pythonPath()) && existsSync(servicePath()); }
+function enabled(): boolean { return ['on', 'always'].includes((process.env.RAG_ENGINE ?? '').toLowerCase()) && existsSync(pythonPath()) && existsSync(servicePath()); }
+
+/**
+ * Why a source does not need the paid multimodal index, or undefined when it
+ * does: several documents, embedded figures, or at least
+ * PIPELINE.ragMinSourceChars characters. RAG_ENGINE=always overrides.
+ */
+export function ragSkipReason(sourceDoc: SourceDoc, sourceBundle: SourceBundle, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if ((env.RAG_ENGINE ?? '').toLowerCase() === 'always') return undefined;
+  if (sourceBundle.documents.length > 1 || (sourceDoc.figureAssets?.length ?? 0) > 0 || sourceDoc.text.length >= PIPELINE.ragMinSourceChars) return undefined;
+  return `one text-only document of ${sourceDoc.text.length.toLocaleString()} characters (< ${PIPELINE.ragMinSourceChars.toLocaleString()}); local exact-span ranking covers it`;
+}
 const hashJson = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 export function isReusableRagIndexManifest(value: unknown, digest: string, itemCount: number, expectedMultimodalCount: number): boolean {
@@ -285,6 +299,8 @@ export async function indexSourceBundleWithRag(input: {
 }): Promise<RagIndexOutcome> {
   const startedAtMs = Date.now();
   if (!enabled()) return { enabled: false, status: 'disabled', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0 };
+  const skipReason = ragSkipReason(input.sourceDoc, input.sourceBundle);
+  if (skipReason) return { enabled: true, status: 'skipped', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0, skipReason };
   const items = contentListForRag(input.sourceDoc, input.sourceBundle, input.query);
   if (!items.length) return { enabled: true, status: 'failed', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0, error: 'Source bundle contains no indexable blocks.' };
   const digest = hashJson({ contentVersion: 'rag-index-content/v2', bundleId: input.sourceBundle.bundleId, items });

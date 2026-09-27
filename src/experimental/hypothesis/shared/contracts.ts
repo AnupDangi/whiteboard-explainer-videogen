@@ -68,6 +68,8 @@ export interface StageRunRecord {
   stage:string;
   kind:'provider'|'local'|'mixed';
   status:'completed'|'failed';
+  /** The stage deliberately did no work for this input (e.g. RAG index for a short single text). */
+  skipReason?:string;
   durationMs:number;
   /** Wall-clock interval for overlap and critical-path analysis. */
   startedAt?:string;

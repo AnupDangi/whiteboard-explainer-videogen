@@ -24,4 +24,10 @@ export const PIPELINE = {
   providerTimeoutMs: 180_000,
   /** Spend cap for one fixture/diagnostic clip (not a generated lesson). */
   clipCostCapUsd: EXPERIMENT.maxClipCostUsd,
+  /**
+   * The multimodal RAG index pays off only when local span ranking cannot see
+   * the whole source: several documents, embedded figures, or a long text.
+   * RAG_ENGINE=always indexes every source.
+   */
+  ragMinSourceChars: 40_000,
 } as const;
