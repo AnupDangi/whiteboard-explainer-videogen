@@ -1,15 +1,29 @@
 # Architecture — Claude hypothesis track (`src/experimental/hypothesis/v1_claude/`)
 
 This is the implementation of the hypothesis in `claude_pipeline.md` and `hypothesis/v1_claude/*.md`. All code
-lives under `src/experimental/`. Production code (`src/server.ts`, `src/runtime/*`, `src/gateway/*`, and the
-existing renderer) is not modified.
+lives under `src/experimental/`; the unreachable legacy runtime (`src/core`, `src/domain`, `src/gateway`,
+`src/ingest`) was removed on 2026-09-27. `docs/AUDIT-2026-09-27.md` is the developer report: findings, what was
+fixed, and how to extend each part (template, planner, model, document reader).
+
+**Extension points** (none needs an edit to the pipeline runners):
+
+| To add | Where | Contract |
+|---|---|---|
+| Document format / PDF reader | `plan/intake/registry.ts` `registerSourceExtractor` | `SourceExtractor` in `plan/intake/types.ts` |
+| Scene template | `templates/catalog.ts` spec + geometry in `templates/definitions.ts` | slots, required slots, recipe; the type, zod enum, prompt table and gate derive from it |
+| S6 planner | `planner/registry.ts` `registerScenePlanner` | `ScenePlanner` (prompt, plan, versions) |
+| Model provider | `llm/modelClient.ts` | `ModelClient { chat, pricing? }`, passed to `structuredCall` |
+| Relation arrow wording | `config.ts` `RELATION_ARROWS` | verb + whether it has a direction |
 
 ## Pipeline order (logical dependency order)
 
 S1–S4 retain their dependency order. Once an S4 scene script is ready, S5 audio/alignment and timing-independent S6 semantic planning can run together. Each scene joins its own measured S5 result before mention-time validation, layout, timed gates, and its playable event. Scene events and final rendering remain in original lesson order.
 
 ```
-LessonRequest (multiple local files, HTTPS HTML/text/PDF, text + duration)    plan/sourceIntake.ts, lessonCli.ts
+LessonRequest (local files or HTTPS URLs: PDF, DOCX, PPTX, HTML, text)         plan/sourceIntake.ts -> plan/intake/*, lessonCli.ts
+  S1  intake              one reader per format (registry);  plan/intake/{registry,pdfPoppler,pdfDocling,
+                           canonical text, native locations,  office,html,text}.ts
+                           titles, figures, warnings
   S1  SourceBundle        per-document hashes/locations,     plan/sourceBundle.ts
                            ranked exact EvidenceHits,
                            local BM25 fallback, figure crops
@@ -28,7 +42,7 @@ LessonRequest (multiple local files, HTTPS HTML/text/PDF, text + duration)    pl
   S4  NarrationScript      one call per scene, in parallel, plan/stages.ts writeScript
                            [[id|phrase]] markers, word
                            budget of 2.6 words/s
-  S5  TTS + alignment      persistent bounded voice and     pipeline/runLive.ts, voice-engine/src,
+  S5  TTS + alignment      persistent bounded voice and     pipeline/sceneAudio.ts, voice-engine/src,
                            stable-ts workers; overlaps S6   shared/alignment
                            for that scene; validate each
                            word interval before timed work
@@ -37,11 +51,14 @@ LessonRequest (multiple local files, HTTPS HTML/text/PDF, text + duration)    pl
       mention resolution                                     narration/resolveMentions.ts
       retrieval            top-k Streamline icons for each   catalog/semantic.ts rankConcepts
                            mention (local MiniLM)
-  S6  Scene Planner        timing-independent context;      planner/{context,exemplars,prompt,plan}.ts
+  S6  Scene Planner        planner chosen by id (default    planner/registry.ts, planner/board.ts,
+                           board-v2); timing-independent    planner/{context,exemplars,prompt,plan}.ts
+                           context;
                            joins S5 before timed stages
                            one visual-model call + 1 repair;
                            hard S5 alignment errors skip paid planning by default;
                            diagnostic opt-in preserves failures and failed status
+  S7-S10 one shared chain (fixture and live runners)          pipeline/visualChain.ts
   S7  resolve (ladder)     exact -> embedding -> lexical ->  resolveScene.ts, catalog/*
                            styled text box
   S8  layout               templates + measured text bounds  layout/measure.ts, solver.ts,
@@ -294,21 +311,24 @@ Timing comes from the Lamina reference pack (`harness/reference/lamina/OBSERVATI
 
 ## Models
 
-| Stage | Model | Notes |
+Every stage model is configuration (`.env`); there are no code defaults.
+
+| Stage | Variable | Notes |
 |---|---|---|
-| S2–S4 | `OPENROUTER_CONTENT_MODEL` (qwen3.8-flash; deepseek-v4.1-flash when the qwen pool is rate-limited, chosen explicitly with `--content`) | a reasoning cap is sent to hidden-reasoning models |
-| S6 | `OPENROUTER_SCENE_MODEL`, default `anthropic/claude-sonnet-5` | no `temperature` (Anthropic endpoints reject it); `reasoning.effort: medium`; the SceneSpec schema is too large for Anthropic's grammar compiler, so JSON is requested by the prompt and fully validated by zod |
-| Judge | `OPENROUTER_VISION_MODEL` | separate $0.25 cap |
+| S1b–S4 | `OPENROUTER_CONTENT_MODEL` (legacy alias `OPENROUTER_DIRECTOR_MODEL`); optional `OPENROUTER_{SYLLABUS,CONCEPTS,PLAN,SCRIPT}_MODEL` | `--content=<model>` on the CLI overrides all four |
+| S6 | `OPENROUTER_SCENE_MODEL` | board planner (`planner/registry.ts`) |
+| Judge | `OPENROUTER_VISION_MODEL` | separate $0.25 cap; a response without billed cost is an error |
 
-All LLM stages go through `llm/structuredCall.ts`, which provides:
-- JSON-candidate extraction and a lenient control-character parse;
-- exactly one repair;
-- per-call OpenRouter price ceilings derived under the shared ledger lock from the smaller of the remaining stage and lesson-wide budgets, plus prompt/output bounds,
-  plus a persistent actual-spend ledger and timeout. Price ceilings use OpenRouter's `provider.max_price`
-  in USD per million input/output tokens ([OpenRouter cost controls](https://openrouter.ai/blog/tutorials/how-to-get-the-lowest-cost-llm-inference-on-openrouter/));
-- real cost accounting.
-
-The HTTP client is `llm/openrouter.ts`, which mirrors the production gateway without modifying it.
+All LLM stages go through `llm/structuredCall.ts` over a `ModelClient` (`llm/modelClient.ts`; OpenRouter by
+default, `OPENROUTER_BASE_URL` for any compatible endpoint):
+- JSON-candidate extraction and a lenient control-character parse; exactly one repair;
+- `finishReason` is recorded; a response cut at the token limit is labelled `<stage>-truncated` and its repair
+  gets 1.5x the output tokens;
+- price-aware routing: `max_price` is the model's own price from `GET /models` plus 25 %; a model whose worst-case
+  call cannot fit the remaining budget fails before sending (`model-too-expensive-for-budget`);
+- the persistent ledger reserves the worst case under its lock, releases the lock during the call, and settles
+  the billed cost, so calls run concurrently; a request the provider rejects (4xx) or that was never sent does not
+  block the ledger.
 
 ## Catalog threshold calibration
 
