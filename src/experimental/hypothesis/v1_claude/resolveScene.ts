@@ -62,6 +62,10 @@ export function resolveScene(spec: SceneSpec, options: ResolveOptions = {}): Res
         pin: options.pins?.get(iconPinKey(element)),
         ...(avoid?.length ? { avoidAssetIds: new Set(avoid) } : {}),
         size: intrinsicSize,
+        ...(element.conceptIds?.[0] ? { conceptId: element.conceptIds[0] } : {}),
+        ...(element.semanticRole ? { semanticRole: element.semanticRole } : {}),
+        ...(element.visualStrategy ? { visualStrategy: element.visualStrategy } : {}),
+        template: spec.template,
       });
       const strokeLength = visual.paths.reduce((s, p) => s + p.length * (p.pxScale ?? 1), 0);
       return { element, resolution, visual, intrinsicSize, strokeLength };

@@ -83,7 +83,8 @@ test('ladder: a concept with no plausible catalog match falls back to rung 4 (st
   const { resolution, visual } = resolveObject('xyzzy_totally_unrelated_concept_zzz', { size: { w: 150, h: 220 } });
   assert.equal(resolution.rung, 4);
   assert.equal(resolution.assetId, null);
-  assert.equal(resolution.lane, 'text-fallback');
+  assert.equal(resolution.lane, 'labelled-primitive');
+  assert.equal(resolution.strategy, 'R8-labelled-primitive');
   assert.ok(visual.texts.length > 0, 'rung 4 must still render a visible label');
 });
 

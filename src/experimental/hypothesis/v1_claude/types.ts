@@ -117,6 +117,13 @@ interface ElementBase {
   origin?: 'illustrative-example' | 'fixture';
   /** Audit only: whether a board icon was a retrieval hint for its mention or a teacher metaphor from the catalog. */
   iconBasis?: 'retrieval' | 'metaphor';
+  /**
+   * S6 semantic request (Teaching Compiler V1 §4). The resolver — never the
+   * planner — chooses the physical asset. All optional; absent fields fall
+   * through the R0–R9 ladder by name matching. The renderer ignores these.
+   */
+  semanticRole?: string;
+  visualStrategy?: 'diagram' | 'semantic-core' | 'literal' | 'metaphor' | 'retrieval' | 'topology' | 'labelled' | 'text';
 }
 
 export type ElementBody =
@@ -244,7 +251,19 @@ export interface SceneSpec {
 // S7 — Resolution ladder output
 // ---------------------------------------------------------------------------
 
-export type NormalizationLane = 'simple-symbol' | 'rich-illustration' | 'procedural' | 'text-fallback';
+export type NormalizationLane = 'simple-symbol' | 'rich-illustration' | 'procedural' | 'text-fallback' | 'labelled-primitive' | 'text-only';
+
+/** Rung of the Teaching Compiler V1 resolution ladder (R0–R9). */
+export type ResolutionStrategy =
+  | 'R0-verified-pin'
+  | 'R1-diagram'
+  | 'R2-semantic-core'
+  | 'R3-house-literal'
+  | 'R4-approved-metaphor'
+  | 'R5-typed-retrieval'
+  | 'R7-state-topology'
+  | 'R8-labelled-primitive'
+  | 'R9-minimal-text';
 
 export interface ResolutionRecord {
   rung: 2 | 3 | 4;
@@ -253,6 +272,16 @@ export interface ResolutionRecord {
   license: string;
   lane: NormalizationLane;
   source: string;
+  /** Which ladder rung produced this resolution (R6 domain assets: no V1 library yet, falls through unrecorded). */
+  strategy?: ResolutionStrategy;
+  /** Bridge concept id the request resolved against, when known. */
+  conceptId?: string;
+  /** Semantic role served (R2/R7), when requested. */
+  semanticRole?: string;
+  /** Diagram ref served (R1), when requested. */
+  diagramRef?: string;
+  /** Bridge catalogVersion backing this resolution (provenance + cache identity). */
+  bridgeVersion?: string;
 }
 
 /** A single drawable stroke path in an element's local coordinate space (origin top-left, sized to `intrinsicSize`). */
