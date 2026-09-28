@@ -2164,3 +2164,14 @@ hypothesis before layering on production-latency infrastructure.
 - **Also live again:** sparse message lie (`0.55 below 0.08`) — message split still unfixed.
 - **Fault tolerance inventory (all verified live or in code):** transport retry + preflight mapping, ledger fail-closed, raster child isolation, budget single-count, honest gates (no silent passes), one-shot tamper record. Gaps: native frame-pipeline aborts still fatal; no seed; no auto-retry on model-side defect swap.
 - **Next bounded task:** validator picks — (a) seed plumbing for determinism, (b) sparse message split, (c) continue matrix.
+
+## Entry — 2026-09-28, stress-5 benchmark 4/5 draft (branch fix/chat-audit-rollup-20260927)
+
+- **Runs (locked one-shot, no mid edits, all `tampered=false`, ~$0.05 total):**
+  - Gradient descent: draft 4/4, 0 hard, $0.0118. Board rich (loss bars → slope arrows → loop) but SLOPE DIRECTION ×2, FEEDS ×3, stray arc at edge.
+  - Attention: draft 3/3, 0 hard, $0.0120. QUERY/FEEDS arrows point at a degenerate dot target — target missing.
+  - Airplane: draft 3/3, 0 hard, $0.0081. Duplicate planes NEWTON LIFT ×2 — repetition.
+  - DNA→protein: draft 4/4, 0 hard, $0.0093. mRNA box + twin codon icons; edge label clipped (`EEDS`).
+  - google.com: FAILED 2 hard (recap fallback), 62s diagnostic, $0.0097. Its chain board (lock → plane → servers, PRODUCES) teaches well despite fail.
+- **Pattern:** math/physics/bio/architecture all draft; only the web-systems recap failed. Repetition + clipping + degenerate targets are the visible defects, not gates.
+- **Next bounded task:** validator picks — label-dedup + degenerate-target guard, or continue matrix.
