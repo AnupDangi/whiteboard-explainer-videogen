@@ -8,6 +8,7 @@ import { BOARD_EXAMPLES, BOARD_BANK_VERSION } from '../fewshots/boardBank.v2.js'
 import type { PlannerSceneInput } from './prompt.js';
 import { plannerProblems, type PlanSceneOptions, type PlanSceneResult, type PlannerCallUsage } from './plan.js';
 import { numericClaims, numericTokens, unsupportedNumericClaims } from '../validation/numericClaims.js';
+import { SEMANTIC_ROLES, isSemanticRole } from '../render/semanticCore.js';
 import { typedBoardAdequacyFailures, visualClaimCoverageFailures } from '../validation/gates.js';
 import { RELATION_ARROWS, type RelationType } from '../config.js';
 import { RELATION_TYPES } from '../plan/schemas.js';
@@ -27,9 +28,9 @@ import { RELATION_TYPES } from '../plan/schemas.js';
  * S7 resolve, S8 layout, S9 timeline, and S10 renderer apply unchanged.
  */
 export const BOARD_SCHEMA_VERSION = 'claude-board/v3';
-export const BOARD_PROMPT_VERSION = `board-prompt-v16-target-evidence+${BOARD_BANK_VERSION}`;
+export const BOARD_PROMPT_VERSION = `board-prompt-v17-semantic-roles+${BOARD_BANK_VERSION}`;
 /** S6 cache stage version: bump whenever board validation or compilation changes, so cached results from older rules are never replayed. */
-export const BOARD_STAGE_VERSION = 'board-7-target-evidence-spans';
+export const BOARD_STAGE_VERSION = 'board-8-semantic-roles';
 export const BOARD_LAYOUTS = ['flow', 'fan_out', 'convergence', 'list', 'compare', 'cycle', 'hub'] as const;
 export const BOARD_ROLES = ['input', 'process', 'output', 'item', 'attribute'] as const;
 export const LABEL_ONLY = 'label';
@@ -84,6 +85,13 @@ export interface Board {
   visualIntents?: VisualIntent[];
 }
 
+/** Semantic-core role request: `role:<name>` draws the procedural role primitive (R2), never a catalog icon. */
+export const roleIconName = (role: string): string => `role:${role}`;
+export function roleIconRole(icon: string): string | undefined {
+  if (!icon.startsWith('role:')) return undefined;
+  const role = icon.slice('role:'.length);
+  return isSemanticRole(role) ? role : undefined;
+}
 /** Per-call vocabulary: every enum the model may use, derived only from this scene's data. */
 export interface BoardEnums {
   mentionIds: string[];
@@ -136,7 +144,7 @@ export function boardEnums(input: PlannerSceneInput): BoardEnums {
       if (matchesKeptIcon && !candidatesByMention[mention.id].includes(candidate.name)) candidatesByMention[mention.id].push(candidate.name);
     }
   }
-  return { mentionIds, conceptIds, icons: Object.keys(iconAssetIds), iconAssetIds, candidatesByMention, fullCatalog: Boolean(input.iconCatalog) };
+  return { mentionIds, conceptIds, icons: [...Object.keys(iconAssetIds), ...SEMANTIC_ROLES.map(roleIconName)], iconAssetIds, candidatesByMention, fullCatalog: Boolean(input.iconCatalog) };
 }
 
 /**
@@ -274,9 +282,9 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
       problems.push(`concept ${node.concept} has ${sameConcept.length} nodes [${sameConcept.map((item) => item.id).join(', ')}]; at most ${MAX_INSTANCES_PER_CONCEPT} instances — drop excess instance node(s) ${excess} and keep one node for the concept with every required relation drawn`);
     }
     instances.set(node.concept, [...siblings, node]);
-    if (node.icon !== LABEL_ONLY && !(DIAGRAM_SHAPES as readonly string[]).includes(node.icon) && !(node.icon in enums.iconAssetIds)) {
+    if (node.icon !== LABEL_ONLY && !(DIAGRAM_SHAPES as readonly string[]).includes(node.icon) && roleIconRole(node.icon) === undefined && !(node.icon in enums.iconAssetIds)) {
       const near = Object.keys(enums.iconAssetIds).filter((name) => words(name).some((part) => words(node.icon).some((wanted) => stem(part) === stem(wanted)))).slice(0, 8);
-      problems.push(`node ${node.id}: icon "${node.icon}" is not in the icon catalog; use an exact catalog name${near.length ? ` such as [${near.join(', ')}]` : ''} or "${LABEL_ONLY}"`);
+      problems.push(`node ${node.id}: icon "${node.icon}" is not in the icon catalog; use an exact catalog name${near.length ? ` such as [${near.join(', ')}]` : ''}, "${LABEL_ONLY}", a diagram shape, or a "role:<name>" semantic role (${SEMANTIC_ROLES.join(', ')})`);
     }
     // Persistent concepts are labelled with their canonical term by code (compileBoard); the model's
     // label is discarded, so only labels that will actually be drawn are checked.
@@ -485,11 +493,16 @@ export function compileBoard(board: Board, input: PlannerSceneInput): { spec: Sc
     const label = (isFirstInstance ? canonicalTerm(input, node.concept) : undefined) ?? node.label;
     // Label-only nodes draw as pastel boxes (Simi's "SOFTMAX", "NEW CAT VECTOR"), never bare text.
     if (node.icon === LABEL_ONLY) return { ...base, prim: 'box' as const, text: label, fill: boxFillFor(node.concept, node.role) };
+    // Semantic-core role request: the resolver draws the procedural role
+    // primitive (R2) for the node's source concept — used when the claim
+    // describes a function (filter, gate, loop, ...) no literal icon teaches.
+    const role = roleIconRole(node.icon);
+    if (role) return { ...base, prim: 'object' as const, concept: node.concept, semanticRole: role, label };
     if ((DIAGRAM_SHAPES as readonly string[]).includes(node.icon)) {
       const kind = node.icon.slice('diagram:'.length) as 'circle' | 'triangle' | 'rectangle';
       return { ...base, prim: 'shape' as const, kind, text: label, label, fill: boxFillFor(node.concept, node.role) };
     }
-    iconAssets[node.id] = enums.iconAssetIds[node.icon];
+    if (roleIconRole(node.icon) === undefined) iconAssets[node.id] = enums.iconAssetIds[node.icon];
     // Audit: a retrieval hint for this mention, or a teacher's metaphor chosen from the catalog.
     const iconBasis = (enums.candidatesByMention[node.mention] ?? []).includes(node.icon) ? 'retrieval' as const : 'metaphor' as const;
     return { ...base, prim: 'object' as const, concept: node.icon.toLowerCase().replace(/[^a-z0-9_ -]/g, ' ').trim().slice(0, 48), label, iconBasis };
@@ -655,10 +668,11 @@ export function buildBoardPrompt(input: PlannerSceneInput): { system: string; us
   'Good boards look like hand-drawn teaching diagrams: 3-6 nodes, concrete icons with short labels, and a layout that makes the mechanism readable at a glance. Select a typed visual form that matches the source-supported scene.',
     `Layouts:\n${LAYOUT_GUIDE}`,
     `Rules:
-- Every mention and concept must come from the lists in <scene>; every icon must be in <icon_catalog> or be one of ${[LABEL_ONLY, ...DIAGRAM_SHAPES].join(', ')}. Use each mention for at most one node.
+- Every mention and concept must come from the lists in <scene>; every icon must be in <icon_catalog>, a "role:<name>" semantic role, or one of ${[LABEL_ONLY, ...DIAGRAM_SHAPES].join(', ')}. Use each mention for at most one node.
 - concept: the source concept that node shows. Normally one node per concept. When the narration names different concrete examples of one concept (two kinds of input, several instances), give each example its own node (up to ${MAX_INSTANCES_PER_CONCEPT} per concept), each with its own mention and a different label; arrows are drawn for every example. Show every concept named in "must show".
 - A process board needs at least ${MIN_PROCESS_BOARD_NODES} nodes when the scene has that many mentions: show the scene's concepts, and their concrete examples, rather than one or two boxes.
 - icon: choose from the icon catalog when an icon literally depicts the thing. Otherwise use a faithful visual metaphor a teacher would sketch; it must not suggest a different meaning. For an abstract state, material, or physical part without a faithful icon, use ${DIAGRAM_SHAPES.join(', ')} as neutral diagram geometry and connect the shapes with the source-backed relation arrows. Use "${LABEL_ONLY}" only for a term that genuinely needs a text box. iconSuggestions per mention are hints, not limits. Repeating an icon for distinct objects or showing only labels does not explain a mechanism.
+- icon "role:<name>": when the claim describes a FUNCTION (filtering, gating, blocking, looping, flowing, merging, buffering, balancing, ...), prefer a semantic role over any literal icon or text box. Available roles: ${SEMANTIC_ROLES.join(', ')}. Set icon to "role:filter" and concept to the source concept it serves; the engine draws the role procedurally with the concept label. A wrong literal icon is worse than a role; a role is worse than a true literal. Never invent role names outside the list.
 - label: 1-2 words is best (whiteboard labels are short, like "LEAF" or "CARBON DIOXIDE"); never more than ${MAX_LABEL_WORDS}. Take the words from the mention phrase or concept label. (A concept with a canonicalTerm is labelled with it automatically.)
 - role: input, process, output, item, or attribute; it decides where the node sits in the layout. A board with visual.kind "process" must include at least one node whose role is "process" (including a one-node board).
 - visual.kind: choose process for a mechanism, comparison for two alternatives (layout must be compare), worked-example for one arithmetic example, or formula/plot/matrix/number-line when the cited scene data supports that visual. Never invent source values.
@@ -689,7 +703,10 @@ export function buildBoardPrompt(input: PlannerSceneInput): { system: string; us
     mustShow: [...new Set([...(input.planningContext?.sceneContract.requiredConceptIds ?? []), ...(input.teachingContext?.relations ?? []).flatMap((relation) => [relation.from, relation.to])])],
   };
   // The catalog is listed once, ahead of the per-scene data, so the shared prefix stays cacheable.
-  const catalog = enums.icons.length ? `<icon_catalog count="${enums.icons.length}" family="one hand-drawn visual family">\n${JSON.stringify(enums.icons)}\n</icon_catalog>\n\n` : '';
+  // The catalog block lists literal icons only; semantic roles are documented
+  // in the rules below and validated in code (they would drown the catalog).
+  const catalogIcons = enums.icons.filter((name) => !name.startsWith('role:'));
+  const catalog = catalogIcons.length ? `<icon_catalog count="${catalogIcons.length}" family="one hand-drawn visual family">\n${JSON.stringify(catalogIcons)}\n</icon_catalog>\n\n` : '';
   return { system, user: `${catalog}<scene id="${input.sceneId}">\n${JSON.stringify(sceneData, null, 1)}\n</scene>` };
 }
 

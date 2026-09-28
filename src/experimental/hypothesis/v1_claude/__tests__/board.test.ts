@@ -11,7 +11,9 @@ test('board enums come only from the scene: mentions, concepts, and candidates a
   const enums = boardEnums(scene);
   assert.deepEqual(enums.mentionIds, ['m_a', 'm_b', 'm_p', 'm_o']);
   assert.deepEqual(enums.conceptIds, ['src_a', 'src_b', 'src_p', 'src_o']);
-  assert.deepEqual(enums.icons, ['flour', 'water', 'dough']);
+  assert.deepEqual(enums.icons.slice(0, 3), ['flour', 'water', 'dough']);
+  assert.ok(enums.icons.includes('role:filter'), 'semantic roles are offered alongside catalog icons');
+  assert.ok(enums.icons.includes('role:loop'));
   assert.deepEqual(enums.candidatesByMention, { m_a: ['flour'], m_b: ['water'], m_p: [], m_o: ['dough'] });
   const json = JSON.stringify(z.toJSONSchema(boardSchema(enums)));
   for (const value of ['m_a', 'src_p', 'dough', 'label', 'convergence']) assert.ok(json.includes(`"${value}"`), value);
@@ -302,7 +304,8 @@ test('a large catalog is admissible in full, checked in code rather than a provi
   const iconCatalog = Array.from({ length: 70 }, (_, i) => ({ id: `lib:icon${i}`, name: `icon${i}` }));
   const big: PlannerSceneInput = { ...scene, iconCatalog };
   const enums = boardEnums(big);
-  assert.equal(enums.icons.length, 70);
+  assert.equal(enums.icons.filter((name) => !name.startsWith('role:')).length, 70);
+  assert.ok(enums.icons.includes('role:filter'), 'roles ride along for code-side checks');
   const json = JSON.stringify(z.toJSONSchema(boardSchema(enums)));
   assert.ok(!json.includes('"icon69"'), 'the provider schema carries no oversized icon enum');
   const board = goodBoard();
@@ -376,4 +379,37 @@ test('duplicate catalog names: a retrieval hint for the non-kept id still record
   const result = validateBoard(board, input);
   assert.deepEqual(result.problems, []);
   assert.equal(result.spec!.elements.find((e) => e.id === 'n3')!.iconBasis, 'retrieval');
+});
+
+test('role: icons compile to semantic-role elements the R2 ladder draws', () => {
+  const board: Board = {
+    ...goodBoard(),
+    nodes: goodBoard().nodes.map((node, i) => (i === 0 ? { ...node, icon: 'role:filter' } : node)),
+  };
+  const checked = validateBoard(board, scene);
+  assert.deepEqual(checked.problems, []);
+  const el = checked.spec!.elements.find((e) => e.id === 'n1')!;
+  assert.equal(el.prim, 'object');
+  assert.equal((el as { semanticRole?: string }).semanticRole, 'filter');
+  assert.deepEqual((el as { conceptIds?: string[] }).conceptIds, ['src_a'], 'role serves the source concept, not the role name');
+});
+
+test('role: icons reject names outside the semantic role list', () => {
+  const board: Board = {
+    ...goodBoard(),
+    nodes: goodBoard().nodes.map((node, i) => (i === 0 ? { ...node, icon: 'role:teleport' } : node)),
+  };
+  const checked = validateBoard(board, scene);
+  // Small catalogs carry the role list in the provider enum, so an invented
+  // role fails at the schema boundary before boardProblems ever runs.
+  assert.ok(
+    checked.problems.some((p) => p.includes('role:teleport')) || checked.spec === undefined,
+    JSON.stringify(checked.problems),
+  );
+});
+
+test('planner prompt documents the semantic role vocabulary', () => {
+  const { system } = buildBoardPrompt(scene);
+  assert.ok(system.includes('role:filter'), 'prompt shows the role: syntax');
+  assert.ok(system.includes('bottleneck'), 'prompt lists role names');
 });

@@ -66,6 +66,8 @@ const elementBase = {
   evidenceRefs,
   origin,
   iconBasis: z.enum(['retrieval', 'metaphor']).optional(),
+  semanticRole: z.string().min(1).max(48).optional(),
+  visualStrategy: z.enum(['diagram', 'semantic-core', 'literal', 'metaphor', 'retrieval', 'topology', 'labelled', 'text']).optional(),
 };
 
 // Every branch is `.strict()`: a model that tries to emit x/y/w/h/coordinates,
