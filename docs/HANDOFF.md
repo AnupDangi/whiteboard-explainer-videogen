@@ -2156,3 +2156,11 @@ hypothesis before layering on production-latency infrastructure.
 - **Compare:** prior attempt died in native raster crash with no summary; isolation fix verified live (summary written, contact PNG soft-failed or written). Frame @200s (`COASTLINES MODIFY THE TIDE`, planet→mountain TRANSFORMS, highlighted box) is a strong board; mild label repetition remains.
 - **Note:** 266s actual vs 600 requested — planner covered what the source supports; duration honesty via playable reporting.
 - **Next bounded task:** compost-600 re-run (sparse era) + remaining yellows if validator wants.
+
+## Entry — 2026-09-28, determinism probe: same input, different plan (branch fix/chat-audit-rollup-20260927)
+
+- **Probe:** rainbow 60s re-run, identical prompt/source/duration → `output/2026-09-28T10-30-16-207Z-rainbow-formation/` (`tampered=false`). FAILED, 6 hard, $0.0083 (prior: draft 3/3, 0 hard). Sections differ entirely (entry/second_bend/arc vs light/colors/recap). Old hyphen ids vs new `01_module_1_` scoped ids reflect Batch 2 code change between runs, but plan content itself differs — LLM output varies run to run.
+- **Verdict:** end-to-end NOT deterministic (temp 0, no seed plumbed). Stage-deterministic given identical stage inputs (pure renderer, content cache, sorted orders). Simi comparison: Simi is consistent per prompt; we are consistent per cache-hit only.
+- **Also live again:** sparse message lie (`0.55 below 0.08`) — message split still unfixed.
+- **Fault tolerance inventory (all verified live or in code):** transport retry + preflight mapping, ledger fail-closed, raster child isolation, budget single-count, honest gates (no silent passes), one-shot tamper record. Gaps: native frame-pipeline aborts still fatal; no seed; no auto-retry on model-side defect swap.
+- **Next bounded task:** validator picks — (a) seed plumbing for determinism, (b) sparse message split, (c) continue matrix.
