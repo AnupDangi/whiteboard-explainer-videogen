@@ -31,6 +31,80 @@ export interface SourceDoc {
   figureAssets?: SourceFigureAsset[];
 }
 
+/** Auto-spans longer than this are split at sentence/paragraph boundaries (see splitLongSourceSpans). */
+export const MAX_AUTO_SPAN_CHARS = 500;
+/** Kinds eligible for auto-splitting; structural spans keep their exact shape. */
+const SPLITTABLE_SPAN_KINDS: ReadonlySet<SourceSpanKind> = new Set(['paragraph', 'list']);
+
+/**
+ * Deterministic, domain-general split of long auto-spans into excerpt-bounded
+ * chunks (~500 chars) at sentence/paragraph boundaries. Unsplit spans keep
+ * their id by reference; each chunk of a split span gets a stable derived id
+ * `{parentId}__p{index}` so the parent maps to its children by prefix.
+ * Offsets stay exact: chunk texts concatenate to the original text with
+ * contiguous, gap-free char/line ranges.
+ */
+export function splitSourceSpan(span: SourceSpan): SourceSpan[] {
+  if (!SPLITTABLE_SPAN_KINDS.has(span.kind) || span.text.length <= MAX_AUTO_SPAN_CHARS) return [span];
+  const parts = span.text.split(/(\n\s*\n+|\n+|(?<=[.!?]["'”’)\]]?)\s+(?=[A-Z0-9"“‘(\[]))/g);
+  const units: string[] = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    const unit = (parts[i] ?? '') + (parts[i + 1] ?? '');
+    if (unit) units.push(unit);
+  }
+  const chunks: string[] = [];
+  let current = '';
+  const pushHardSplit = (unit: string) => {
+    let rest = unit;
+    while (rest.length > MAX_AUTO_SPAN_CHARS + 100) {
+      let cut = rest.lastIndexOf(' ', MAX_AUTO_SPAN_CHARS);
+      if (cut < 200) cut = MAX_AUTO_SPAN_CHARS;
+      chunks.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    return rest;
+  };
+  for (const unit of units) {
+    const piece = unit.length > MAX_AUTO_SPAN_CHARS + 100 ? pushHardSplit(unit) : unit;
+    if (!current) current = piece;
+    else if (current.length + piece.length <= MAX_AUTO_SPAN_CHARS || current.length < 200) current += piece;
+    else { chunks.push(current); current = piece; }
+  }
+  if (current) chunks.push(current);
+  if (chunks.length < 2) return [span];
+  const countNewlines = (value: string): number => value.split('\n').length - 1;
+  return chunks.map((text, index) => {
+    const start = chunks.slice(0, index).reduce((sum, chunk) => sum + chunk.length, 0);
+    const startChar = span.startChar + start;
+    const endChar = startChar + text.length;
+    const startLine = span.startLine + countNewlines(span.text.slice(0, start));
+    const endLine = startLine + countNewlines(text);
+    return {
+      ...span,
+      id: `${span.id}__p${index}`,
+      startChar, endChar, startLine, endLine,
+      ...(span.documentStartChar !== undefined ? { documentStartChar: span.documentStartChar + start } : {}),
+      ...(span.documentStartLine !== undefined ? { documentStartLine: span.documentStartLine + countNewlines(span.text.slice(0, start)) } : {}),
+      text,
+    };
+  });
+}
+
+/** Split every long auto-span; returns the new list plus a parent-to-children id map. */
+export function splitLongSourceSpans(spans: SourceSpan[]): { spans: SourceSpan[]; map: Map<string, string[]> } {
+  const out: SourceSpan[] = [];
+  const map = new Map<string, string[]>();
+  for (const span of spans) {
+    const split = splitSourceSpan(span);
+    if (split.length === 1 && split[0] === span) out.push(span);
+    else {
+      out.push(...split);
+      map.set(span.id, split.map((chunk) => chunk.id));
+    }
+  }
+  return { spans: out, map };
+}
+
 export interface SourceFigureAsset {
   sourceId: string;
   sha256: string;
@@ -99,7 +173,7 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
   if (!text.trim()) throw new Error('source document is empty');
   const sourceId = 'src_' + hash(`${format}\0${text}`).slice(0, 20);
   const lines = text.split(/(?<=\n)/);
-  const spans: SourceSpan[] = [];
+  let spans: SourceSpan[] = [];
   let offset = 0;
   let lineNumber = 1;
   let insideDisplayEquation = false;
@@ -145,6 +219,11 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
     if (line.endsWith('\n')) lineNumber += 1;
   }
   flush(text.length, lineNumber - (text.endsWith('\n') ? 1 : 0));
+
+  // Excerpt-bounded spans: long auto-spans make verbatim quotes fail (the model
+  // paraphrases across hyphen-breaks and jargon in ~2000-char spans), so split
+  // them deterministically here. Short sources keep their exact original spans.
+  spans = splitLongSourceSpans(spans).spans;
 
   const title = spans.find((span) => span.kind === 'heading')?.text.replace(/^\s{0,3}#{1,6}\s*/, '').trim();
   return { schemaVersion: 'source-doc/v2', sourceId, format, contentSha256: hash(text), ...(title ? { title } : {}), text, spans };

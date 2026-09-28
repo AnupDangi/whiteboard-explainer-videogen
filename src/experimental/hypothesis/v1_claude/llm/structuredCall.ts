@@ -6,11 +6,12 @@ import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 /**
  * One validated LLM call for every model stage in this track (S2 concepts,
  * S3 teaching plan, S4 script, S6 Scene Planner): real OpenRouter call with a
- * JSON schema generated from the stage's zod schema, temperature 0, EXACTLY
- * ONE repair attempt that feeds the validator's error back, real token/cost
- * accounting, a per-call timeout, and a per-clip budget check. A second
- * failure is returned as a hard StageFailure — never converted into a
- * fabricated success (AGENTS.md #7).
+ * JSON schema generated from the stage's zod schema, temperature 0, ONE repair
+ * attempt by default (S3 teaching-plan takes exactly two phased repairs, every
+ * other stage stays at one) that feeds the validator's error back, real
+ * token/cost accounting, a per-call timeout, and a per-clip budget check. An
+ * exhausted repair budget is returned as a hard StageFailure — never converted
+ * into a fabricated success (AGENTS.md #7).
  */
 export interface CallUsage {
   calls: number;
@@ -56,6 +57,14 @@ export interface StructuredCallOptions<T> {
   signal?: AbortSignal;
   /** Retries after a ProviderNotDispatchedError. These are transport retries, never the semantic repair. Default 2. */
   transportRetries?: number;
+  /** Budget of semantic repairs after the initial attempt. Default 1; S3 teaching-plan uses exactly 2. */
+  maxRepairs?: number;
+  /**
+   * Build the repair prompt for repair attempt N (1-based) of maxRepairs.
+   * Defaults to buildRepairPrompt. Domain-general: receives only the invalid
+   * output and validator errors, never lesson content.
+   */
+  repairPrompt?: (originalUserPrompt: string, invalidOutput: string, validatorError: string, repairAttempt: number, maxRepairs: number) => string;
   /** Base delay; retry n waits n × this value. Default 5000 ms. */
   transportRetryDelayMs?: number;
   /** Test seam for retry waits. */
@@ -173,9 +182,9 @@ export function parseCandidates<T>(content: string, schema: z.ZodType<T>, valida
   return { ok: false, error: lastError };
 }
 
-export const buildRepairPrompt = (originalUserPrompt: string, invalidOutput: string, validatorError: string): string => `${originalUserPrompt}
+export const buildRepairPrompt = (originalUserPrompt: string, invalidOutput: string, validatorError: string, repairAttempt = 1, maxRepairs = 1): string => `${originalUserPrompt}
 
-Your previous response was NOT valid and was rejected by the validator. This is your one allowed repair attempt — produce a corrected JSON object that fixes every issue below. Do not repeat the same mistake.
+Your previous response was NOT valid and was rejected by the validator.${maxRepairs > 1 ? ` This is repair attempt ${repairAttempt} of ${maxRepairs} — produce a corrected JSON object that fixes every issue below. Do not repeat the same mistake.` : ` This is your one allowed repair attempt — produce a corrected JSON object that fixes every issue below. Do not repeat the same mistake.`}
 
 Your previous (INVALID) response:
 ${invalidOutput}
@@ -287,25 +296,36 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
     return { usage, failures, rawResponses };
   }
   if (first === null) return { usage, failures, rawResponses };
-  const parsed = parseSafely(first);
-  if ('threw' in parsed) { validatorThrew(parsed.threw); return { usage, failures, rawResponses }; }
-  if (parsed.ok) return { value: parsed.value, usage, failures, rawResponses };
+  const firstParsed = parseSafely(first);
+  if ('threw' in firstParsed) { validatorThrew(firstParsed.threw); return { usage, failures, rawResponses }; }
+  if (firstParsed.ok) return { value: firstParsed.value, usage, failures, rawResponses };
 
-  usage.repairs += 1;
-  let second: string | null;
-  try {
-    second = await callWithTransportRetry(buildRepairPrompt(opts.user, first, parsed.error), 2);
-  } catch (error) {
-    failures.push({ code: `${opts.stage}-repair-call-failed`, stage: opts.stage, message: `${opts.subject}: invalid (${parsed.error}); repair call failed: ${error instanceof Error ? error.message : String(error)}`, hard: true });
-    return { usage, failures, rawResponses };
+  const maxRepairs = opts.maxRepairs ?? 1;
+  const buildPrompt = opts.repairPrompt ?? buildRepairPrompt;
+  let invalidOutput = first;
+  let invalidError = firstParsed.error;
+  for (let repairAttempt = 1; repairAttempt <= maxRepairs; repairAttempt++) {
+    usage.repairs += 1;
+    let next: string | null;
+    try {
+      next = await callWithTransportRetry(buildPrompt(opts.user, invalidOutput, invalidError, repairAttempt, maxRepairs), repairAttempt + 1);
+    } catch (error) {
+      failures.push({ code: `${opts.stage}-repair-call-failed`, stage: opts.stage, message: `${opts.subject}: invalid (${invalidError}); repair call failed: ${error instanceof Error ? error.message : String(error)}`, hard: true });
+      return { usage, failures, rawResponses };
+    }
+    if (next === null) {
+      failures.push({ code: `${opts.stage}-invalid`, stage: opts.stage, message: `${opts.subject}: invalid (${invalidError}); repair skipped (budget)`, hard: true });
+      return { usage, failures, rawResponses };
+    }
+    const repaired = parseSafely(next);
+    if ('threw' in repaired) { validatorThrew(repaired.threw); return { usage, failures, rawResponses }; }
+    if (repaired.ok) return { value: repaired.value, usage, failures, rawResponses };
+    invalidOutput = next;
+    invalidError = `initial: ${firstParsed.error} | after repair ${repairAttempt}: ${repaired.error}`;
+    if (repairAttempt === maxRepairs) {
+      failures.push({ code: `${opts.stage}-repair-failed`, stage: opts.stage, message: `${opts.subject}: still invalid after ${maxRepairs === 1 ? 'one repair' : `${maxRepairs} repairs`} — ${invalidError}`, hard: true });
+      return { usage, failures, rawResponses };
+    }
   }
-  if (second === null) {
-    failures.push({ code: `${opts.stage}-invalid`, stage: opts.stage, message: `${opts.subject}: invalid (${parsed.error}); repair skipped (budget)`, hard: true });
-    return { usage, failures, rawResponses };
-  }
-  const repaired = parseSafely(second);
-  if ('threw' in repaired) { validatorThrew(repaired.threw); return { usage, failures, rawResponses }; }
-  if (repaired.ok) return { value: repaired.value, usage, failures, rawResponses };
-  failures.push({ code: `${opts.stage}-repair-failed`, stage: opts.stage, message: `${opts.subject}: still invalid after one repair — initial: ${parsed.error} | after repair: ${repaired.error}`, hard: true });
   return { usage, failures, rawResponses };
 }

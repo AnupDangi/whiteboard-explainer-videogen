@@ -16,7 +16,10 @@ import { schemaKeywordLeaks } from '../prompt/builder.js';
 
 /**
  * S2 -> S3 -> S4 (claude_pipeline.md §1-§4). Mid-tier ("flash") model; every
- * output is zod-validated plus semantic checks, with exactly one repair.
+ * output is zod-validated plus semantic checks, with one repair per stage —
+ * except S3 teaching-plan, which gets exactly two phased repairs (schema/enum
+ * validity first, then contract/span coverage), because one repair cannot fix
+ * two orthogonal defect axes at once.
  * The hypothesis order is preserved: the narration script is final before any
  * scene is planned (no pre-narration visual story, claude_pipeline.md §27).
  */
@@ -138,6 +141,33 @@ ${sourcePrompt(sourceDoc)}`;
 // ---------------------------------------------------------------------------
 // S3 — TeachingPlan
 // ---------------------------------------------------------------------------
+
+/**
+ * S3 repair is two-phase (exactly 2 repairs, S3 only): one repair cannot fix
+ * two orthogonal defect axes at once (observed: a repair fixing one validity
+ * class while introducing another). Phase 1 targets schema/enum validity
+ * (shape, required fields, enum values); phase 2 targets contract/span
+ * coverage (concept/relation/evidence mapping). Both phases enforce the full
+ * validator — the focus only orders the fix, never relaxes a gate.
+ * Domain-general: only schema/contract vocabulary, never lesson content.
+ */
+export const S3_MAX_REPAIRS = 2;
+export const buildS3RepairPrompt = (originalUserPrompt: string, invalidOutput: string, validatorError: string, repairAttempt: number, maxRepairs: number): string => {
+  const phase = repairAttempt === 1
+    ? 'Phase 1/2 — schema and enum validity first: fix the JSON shape, required fields, field types, unknown fields, and enum values (section kind, teachingSkill, candidateMechanisms, relation type). Keep every other constraint satisfied while you do so.'
+    : 'Phase 2/2 — contract and span coverage: fix the concept/relation/evidence mapping (section conceptIds matching the contract, required relations for co-assigned concepts, evidence span coverage with no unrelated spans, lesson-wide relation coverage, terminology/persistence). Do not break the schema validity restored in phase 1.';
+  return `${originalUserPrompt}
+
+Your previous response was NOT valid and was rejected by the validator. This is repair attempt ${repairAttempt} of ${maxRepairs}. ${phase}
+
+Your previous (INVALID) response:
+${invalidOutput}
+
+Validator error(s):
+${validatorError}
+
+Respond with ONLY the corrected JSON object.`;
+};
 
 /** Inputs every S3 prompt variant closes over — never lesson content, only request/graph shape. */
 interface PlanPromptContext {
@@ -427,9 +457,10 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
   const result = await structuredCall({
     stage: 'plan', subject: 'teaching plan', model: m.model, apiKey: m.apiKey, system, user,
     schema: TeachingPlanSchema, schemaName: 'teaching_plan', maxTokens: maxTeachingPlanTokens, remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
+    maxRepairs: S3_MAX_REPAIRS, repairPrompt: buildS3RepairPrompt,
     // The deterministic analyser's blocking checks run INSIDE validation, against the model's raw
     // output. Nothing here mutates the plan before it is checked: a missing SceneContract or an
-    // unsupported relation must surface as a real problem and consume the one repair call, never
+    // unsupported relation must surface as a real problem and consume repair calls, never
     // get silently fixed and reported as clean.
     validate: (p) => {
       const problems: string[] = [];

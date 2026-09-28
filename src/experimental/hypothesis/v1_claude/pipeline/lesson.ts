@@ -21,7 +21,8 @@ import { S5_STAGE_VERSION, S5_MODEL_ID } from './versions.js';
 
 /**
  * S2 -> S3 -> plan analysis -> S4 for a free-form lesson request. Stops at
- * the first stage that fails validation (after its one repair) or when the
+ * the first stage that fails validation (after its repairs: one per stage,
+ * two phased repairs for S3) or when the
  * teaching-plan analyser finds a blocking F-PED error: a bad plan is never
  * narrated. Every call's usage and raw output is kept for the run log.
  */
@@ -176,7 +177,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
         const syllabusConcept = allConcepts.get(concept.id);
         return syllabusConcept ? { ...concept, label: syllabusConcept.label, definition: syllabusConcept.definition, evidence: syllabusConcept.evidence } : concept;
       }) };
-      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v4', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v7-recap-pacing-guard`, () => buildTeachingPlan(moduleRequest, graph, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v4', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v8-two-phase-repair`, () => buildTeachingPlan(moduleRequest, graph, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, planRun.result.usage); failures.push(...planRun.result.failures); rawResponses[`plan:${moduleTag}`] = planRun.result.rawResponses;
       if (!planRun.result.value) return preparedResult({ syllabus, graph, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const modulePlan = planRun.result.value;
@@ -268,7 +269,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
   addUsage(usage, g.usage); failures.push(...g.failures); rawResponses.concepts = g.rawResponses;
   if (!g.value) return preparedResult({});
 
-  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v4', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v7-recap-pacing-guard`, () => buildTeachingPlan(groundedRequest, g.value!, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v6-pacing-floor`);
+  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v4', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v8-two-phase-repair`, () => buildTeachingPlan(groundedRequest, g.value!, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v7-two-phase-repair`);
   const p = pRun.result;
   addUsage(usage, p.usage); failures.push(...p.failures); rawResponses.plan = p.rawResponses;
   if (!p.value) return preparedResult({ graph: g.value });

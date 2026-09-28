@@ -73,7 +73,7 @@ async function main(): Promise<void> {
         const bytes = await readFile(sourcePath);
         const store = new ContentAddressedArtifactStore(sharedStageCache ?? path.join(outBase, id, 'stage-cache'), cacheMode);
         const startedAtMs = Date.now();
-        const stage = await store.run('S1-source-intake', { extension: path.extname(sourcePath).toLowerCase(), bytesSha256: sha256(bytes) }, { schemaVersion: 'source-doc/v2', stageVersion: 'source-intake-native-location-5', promptVersion: 'source-parser-5' }, async () => {
+        const stage = await store.run('S1-source-intake', { extension: path.extname(sourcePath).toLowerCase(), bytesSha256: sha256(bytes) }, { schemaVersion: 'source-doc/v2', stageVersion: 'source-intake-native-location-6-span-split', promptVersion: 'source-parser-5' }, async () => {
           const loaded = await loadSourceDoc(sourcePath);
           if (!loaded.title) loaded.title = path.basename(sourcePath, path.extname(sourcePath));
           return loaded;

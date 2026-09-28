@@ -98,7 +98,10 @@ export function syllabusSourcePrompt(doc: SourceDoc): string {
   // makes quote-to-span mistakes common and repeats a huge PDF on repair.
   if (doc.text.length > 12_000) {
     const textBudget = 48_000;
-    const excerptLimit = 1_800;
+    // Excerpt-bounded: source spans are split at ~500 chars (sourceDoc), so a
+    // 600-char excerpt window always carries a chunk's full text and the model
+    // quotes from displayed text only — never from a truncated middle.
+    const excerptLimit = 600;
     const selected = new Set<string>();
     const candidates: typeof doc.spans = [];
     const add = (span: typeof doc.spans[number] | undefined) => {

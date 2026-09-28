@@ -102,7 +102,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(join(root, 'relation-omission'), 'cold'), fetcher: fakeProvider,
     });
-    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan'], 'S3 gets one repair but never proceeds to S4');
+    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan', 'teaching_plan'], 'S3 gets two phased repairs but never proceeds to S4');
     assert.equal(rejected.script, undefined);
     assert.ok(rejected.failures.some((failure) => failure.hard && /omits source relation leaf\|produces\|sugar/.test(failure.message)));
     assert.equal(rejected.stageRuns.find((stage) => stage.stage === 'S3-teaching-plan')?.status, 'failed');
@@ -111,7 +111,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
   }
 });
 
-test('S3 rejects a model plan that omits a SceneContract, after exactly one repair', async () => {
+test('S3 rejects a model plan that omits a SceneContract, after exactly two repairs', async () => {
   const sourceDoc = sourceDocFromText('# Light and leaves\n\nThe leaf uses light to build sugar.', 'text');
   const sourceSpan = sourceDoc.spans.find((span) => span.kind === 'paragraph')!;
   const evidence = [{ spanId: sourceSpan.id, quote: 'The leaf uses light to build sugar.' }];
@@ -148,7 +148,7 @@ test('S3 rejects a model plan that omits a SceneContract, after exactly one repa
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(root, 'cold'), fetcher: fakeProvider,
     });
-    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan'], 'S3 gets exactly one repair but never proceeds to S4');
+    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan', 'teaching_plan'], 'S3 gets exactly two repairs but never proceeds to S4');
     assert.equal(rejected.script, undefined);
     assert.ok(rejected.failures.some((failure) => failure.hard && /lacks a SceneContract/.test(failure.message)));
     assert.equal(rejected.stageRuns.find((stage) => stage.stage === 'S3-teaching-plan')?.status, 'failed');
@@ -157,7 +157,7 @@ test('S3 rejects a model plan that omits a SceneContract, after exactly one repa
   }
 });
 
-test('S3 rejects a model plan that invents an unsupported relation, after exactly one repair', async () => {
+test('S3 rejects a model plan that invents an unsupported relation, after exactly two repairs', async () => {
   const sourceDoc = sourceDocFromText('# Light and leaves\n\nThe leaf uses light to build sugar.', 'text');
   const sourceSpan = sourceDoc.spans.find((span) => span.kind === 'paragraph')!;
   const evidence = [{ spanId: sourceSpan.id, quote: 'The leaf uses light to build sugar.' }];
@@ -203,7 +203,7 @@ test('S3 rejects a model plan that invents an unsupported relation, after exactl
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(root, 'cold'), fetcher: fakeProvider,
     });
-    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan'], 'S3 gets exactly one repair but never proceeds to S4');
+    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan', 'teaching_plan'], 'S3 gets exactly two repairs but never proceeds to S4');
     assert.equal(rejected.script, undefined);
     assert.ok(rejected.failures.some((failure) => failure.hard && /has unsupported relation leaf\|contains\|sugar/.test(failure.message)));
     assert.equal(rejected.stageRuns.find((stage) => stage.stage === 'S3-teaching-plan')?.status, 'failed');
