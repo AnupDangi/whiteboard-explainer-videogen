@@ -1,5 +1,14 @@
 # HANDOFF — Claude hypothesis track
 
+## Entry — 2026-09-28, playable duration reporting fix (uncommitted)
+
+- **Branch:** `fix/chat-audit-rollup-20260927` (HEAD 8d0f052, was clean before; changes uncommitted per instruction).
+- **Bug:** `lessonCli.ts` reported `finalVideoDurationSec` from `result.alignedAudio.durationMs` (MASTER narration incl. failed scenes) while `video.mp4` contains only playable scenes (10-min run: 29/33 playable → file 527.3 s vs reported 599.994 s).
+- **Fix (domain-general):** `pipeline/runLive.ts` now plumbs `playableDurationMs` — narration total by default (single-clip encodes span the full master clock), refined to the stitched playable module-clip sum when modules drive the encode; exported pure helpers `playableOutputDurationMs` (playable audio + one gap per playable boundary + playable trailing pad) and `lessonSummaryDurations` (narration total kept as `actualNarratedDurationSec`, video figure follows playable, plus `droppedScenes` = planned − playable). `lessonCli.ts` summary uses the helper. New additive evaluation-bundle metrics: `playableDurationMs`, `droppedSceneCount`.
+- **Files:** `src/experimental/hypothesis/v1_claude/pipeline/runLive.ts` (+44/−4 with lessonCli), `src/experimental/hypothesis/v1_claude/lessonCli.ts` (summary block), new `src/experimental/hypothesis/v1_claude/__tests__/playable-duration.test.ts` (5 tests, domain-neutral fixtures).
+- **Verification:** new tests failed pre-fix (missing exports) and pass post-fix. `npm run typecheck:hypothesis` passed, 0 errors. `npm run test:hypothesis` passed: Node **558/558**, alignment Python **28/28**, RAG Python **12/12**, exit 0 (one unrelated `frame-cache` permit-timing flake failed once under full-suite load, then passed isolated and on full re-run). `git diff --check` passed.
+- **Limitation:** no live model/video rerun; the prior 10-min artifact's on-disk summary JSON keeps the old figure — only future runs report the honest value. Not committed.
+
 ## Entry — 2026-09-28, recap pacing guard and transport/preflight retry mapping
 
 - **Branch:** `fix/chat-audit-rollup-20260927`; the working changes are isolated to the hypothesis track.

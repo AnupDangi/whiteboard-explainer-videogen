@@ -69,6 +69,32 @@ function mostEscalatedAligner(aligners: Iterable<AlignedAudio['provider']>): Ali
   return worst;
 }
 
+/**
+ * Playable output duration: stitched playable scene audio plus one gap per
+ * playable boundary (matching concatSceneAudio's gap convention), plus any
+ * trailing pad that belongs to a playable tail. Failed scenes contribute
+ * neither audio nor gaps — their master-clock intervals never reach the file.
+ */
+export function playableOutputDurationMs(playableSceneDurationsMs: number[], gapMs: number, trailingPadMs = 0): number {
+  if (playableSceneDurationsMs.length === 0) return 0;
+  const speechMs = playableSceneDurationsMs.reduce((sum, ms) => sum + ms, 0);
+  return speechMs + gapMs * Math.max(0, playableSceneDurationsMs.length - 1) + Math.max(0, trailingPadMs);
+}
+
+/** Lesson-summary duration rollup: narration total stays honest, the video figure follows playable output. */
+export function lessonSummaryDurations(args: { narratedDurationMs: number; playableDurationMs?: number; playableSceneCount: number; plannedSceneCount: number }): {
+  actualNarratedDurationSec: number;
+  finalVideoDurationSec: number;
+  droppedScenes: number;
+} {
+  const playableMs = args.playableDurationMs ?? args.narratedDurationMs;
+  return {
+    actualNarratedDurationSec: args.narratedDurationMs / 1000,
+    finalVideoDurationSec: playableMs / 1000,
+    droppedScenes: Math.max(0, args.plannedSceneCount - args.playableSceneCount),
+  };
+}
+
 export interface LiveSceneInput {
   sceneId: string;
   sectionId?: string;
@@ -130,6 +156,8 @@ export interface HypothesisLiveRunResult {
   runId: string;
   narration: NarrationScript;
   alignedAudio: AlignedAudio;
+  /** Honest playable output duration in ms: what video.mp4 actually contains. Equals the narration total only when every planned scene is playable. */
+  playableDurationMs: number;
   scenes: LiveScenePipelineResult[];
   evaluationBundle: EvaluationBundle;
   contactSheetSvg: string;
@@ -467,6 +495,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   let totalRawMs = 0;
   let finalDurationMs = 0;
   let trailingPadMs = 0;
+  /** Playable output duration: reassigned to the module-stitched sum below when modules drive the encode. */
+  let playableDurationMs = 0;
   let alignmentMs = 0;
   const eventDirectory = path.join(outputDir, 'preview-scenes');
   await mkdir(eventDirectory, { recursive: true });
@@ -628,6 +658,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   await concatSceneAudio(sceneAudioPaths, SCENE_GAP_MS, trailingPadMs, masterWavPath);
   const alignedAudio: AlignedAudio = { schemaVersion: 'claude-aligned-audio/v1', provider: mostEscalatedAligner(sceneAlignerById.values()), wavPath: masterWavPath, durationMs: finalDurationMs, sceneWords, sceneBoundsMs, mentions };
+  // Single-clip encodes span the full master clock (frozen frames cover failed
+  // intervals), so the narration total is their honest duration. The module
+  // path below refines this to the stitched playable sum, which is what its
+  // concatenated file actually contains.
+  playableDurationMs = finalDurationMs;
   alignmentMs = (await alignmentSettledAtPromise) - alignmentStartedAtMs;
   const alignmentStageFailures = failures.filter((failure) => failure.stage === 'align');
   stageRuns.push({ stage: 'S5-tts-alignment', kind: 'local', status: alignmentStageFailures.some((failure) => failure.hard) ? 'failed' : 'completed', durationMs: alignmentMs, startedAt: new Date(alignmentStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: alignmentCacheHits.size > 0, fallbackCount: 0, usage: { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0, fallbacks: 0, cacheHits: alignmentCacheHits.size }, failures: alignmentStageFailures.map(toRunFailure) });
@@ -695,7 +730,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     elements: allElements,
     timeline: allEvents,
     provenance: Object.fromEntries(scenes.flatMap((s) => s.laidOut.elements.filter((e) => e.resolution).map((e) => [`${s.sceneId}:${e.id}`, [e.resolution!.lane, `rung${e.resolution!.rung}`, e.resolution!.source]]))),
-    metrics: { ...rungCounts, ambiguousMentions, sceneCount: scenes.length, meanOccupancy: scenes.length ? scenes.reduce((sum, s) => sum + s.laidOut.occupancy, 0) / scenes.length : 0, realNarratedMs: totalRawMs, targetDurationMs: targetMs, durationBudgetDeltaMs: totalRawMs - targetMs, trailingPadMs, ...(input.modules ? Object.fromEntries(input.modules.map((module) => [`module.${module.id}.audioMs`, module.actualAudioDurationMs ?? null])) : {}), inputHash, sourceClaimEvidenceRefs: Object.values(input.scenes).reduce((count, scene) => count + (scene.teachingContext?.sourceEvidenceRefs?.length ?? 0), 0), visualEvidenceRefs: Object.values(scenes).reduce((sum, scene) => sum + (scene.spec.titleEvidenceRefs?.length ?? 0) + scene.spec.elements.reduce((n, element) => n + (element.evidenceRefs?.length ?? 0), 0) + scene.spec.edges.reduce((n, edge) => n + (edge.evidenceRefs?.length ?? edge.factualRelation?.evidenceRefs.length ?? 0), 0), 0), evaluationStatus: golden ? 'known-golden-duration-gated' : 'unscored-generic-input' },
+    metrics: { ...rungCounts, ambiguousMentions, sceneCount: scenes.length, droppedSceneCount: input.scenes.length - scenes.length, meanOccupancy: scenes.length ? scenes.reduce((sum, s) => sum + s.laidOut.occupancy, 0) / scenes.length : 0, realNarratedMs: totalRawMs, playableDurationMs, targetDurationMs: targetMs, durationBudgetDeltaMs: totalRawMs - targetMs, trailingPadMs, ...(input.modules ? Object.fromEntries(input.modules.map((module) => [`module.${module.id}.audioMs`, module.actualAudioDurationMs ?? null])) : {}), inputHash, sourceClaimEvidenceRefs: Object.values(input.scenes).reduce((count, scene) => count + (scene.teachingContext?.sourceEvidenceRefs?.length ?? 0), 0), visualEvidenceRefs: Object.values(scenes).reduce((sum, scene) => sum + (scene.spec.titleEvidenceRefs?.length ?? 0) + scene.spec.elements.reduce((n, element) => n + (element.evidenceRefs?.length ?? 0), 0) + scene.spec.edges.reduce((n, edge) => n + (edge.evidenceRefs?.length ?? edge.factualRelation?.evidenceRefs.length ?? 0), 0), 0), evaluationStatus: golden ? 'known-golden-duration-gated' : 'unscored-generic-input' },
     usage: totalUsage,
     failures: failures.map(toRunFailure),
     stageRuns,
@@ -763,6 +798,9 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
           await Promise.all(moduleInputs.flatMap((module) => module.captionsPath ? [rm(module.captionsPath, { force: true })] : []));
           for (const module of moduleInputs) delete module.captionsPath;
         }
+        // The assembled file concatenates exactly these playable module clips:
+        // failed scenes contribute neither audio nor gaps to its duration.
+        playableDurationMs = moduleInputs.reduce((sum, module) => sum + module.durationMs, 0);
         moduleVideoArtifacts = await encodeModuleVideos(moduleInputs, path.join(outputDir, 'module-clips'), { fps: options.render.fps });
         await assembleModuleVideos(moduleVideoArtifacts, videoPath!);
       };
@@ -841,6 +879,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   evaluationBundle.failures = failures.map(toRunFailure);
   evaluationBundle.status = derivePublishStatus();
+  evaluationBundle.metrics['playableDurationMs'] = playableDurationMs;
+  evaluationBundle.metrics['droppedSceneCount'] = input.scenes.length - scenes.length;
   evaluationBundle.stageRuns = stageRuns;
   evaluationBundle.gateRecords = gateRecords;
   evaluationBundle.nativeArtifacts = {
@@ -939,5 +979,5 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     credits,
   });
 
-  return { runId, narration, alignedAudio, scenes, evaluationBundle, contactSheetSvg, failures, status: evaluationBundle.status, audioPath: masterWavPath, videoPath, captionsPath };
+  return { runId, narration, alignedAudio, playableDurationMs, scenes, evaluationBundle, contactSheetSvg, failures, status: evaluationBundle.status, audioPath: masterWavPath, videoPath, captionsPath };
 }
