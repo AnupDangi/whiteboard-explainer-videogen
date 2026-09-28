@@ -222,7 +222,7 @@ export interface Edge {
 export interface BoardIntent {
   schemaVersion: 'typed-board-intent/v1';
   layout: 'flow' | 'fan_out' | 'convergence' | 'list' | 'compare' | 'cycle' | 'hub';
-  visualKind: 'process' | 'comparison' | 'worked-example' | 'formula' | 'plot' | 'matrix' | 'number-line';
+  visualKind: 'process' | 'plain' | 'comparison' | 'worked-example' | 'formula' | 'plot' | 'matrix' | 'number-line';
   roles: Array<{ elementId: string; role: 'input' | 'process' | 'output' | 'item' | 'attribute' }>;
   /** Concepts required by the source-derived scene contract; empty for uncontracted boards. */
   requiredConceptIds: string[];

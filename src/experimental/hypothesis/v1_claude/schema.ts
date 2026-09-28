@@ -189,7 +189,7 @@ const EdgeSchema = z
 const BoardIntentSchema = z.object({
   schemaVersion: z.literal('typed-board-intent/v1'),
   layout: z.enum(['flow', 'fan_out', 'convergence', 'list', 'compare', 'cycle', 'hub']),
-  visualKind: z.enum(['process', 'comparison', 'worked-example', 'formula', 'plot', 'matrix', 'number-line']),
+  visualKind: z.enum(['process', 'plain', 'comparison', 'worked-example', 'formula', 'plot', 'matrix', 'number-line']),
   roles: z.array(z.object({ elementId: z.string().min(1), role: z.enum(['input', 'process', 'output', 'item', 'attribute']) }).strict()).max(7),
   requiredConceptIds: z.array(z.string().min(1)).max(8),
   requiredRelations: z.array(z.object({
