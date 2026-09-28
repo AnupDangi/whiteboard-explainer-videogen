@@ -413,3 +413,18 @@ test('planner prompt documents the semantic role vocabulary', () => {
   assert.ok(system.includes('role:filter'), 'prompt shows the role: syntax');
   assert.ok(system.includes('bottleneck'), 'prompt lists role names');
 });
+
+test('fallback board synthesizes one visual intent per essential claim over shown nodes', () => {
+  const claimed = makeScene(WORDS);
+  const contract = claimed.planningContext!.sceneContract as unknown as { essentialClaims: unknown };
+  (contract as Record<string, unknown>).essentialClaims = [
+    { id: 'mixing_claim', statement: 'Mixing combines flour and water.', conceptIds: ['src_a', 'src_b', 'src_p'], relations: [{ from: 'src_a', to: 'src_p', type: 'feeds' }], evidenceSpanIds: ['src_a', 'src_b', 'src_ap'] },
+  ];
+  const fb = fallbackBoard(claimed);
+  assert.equal(fb.visualIntents?.length, 1);
+  const intent = fb.visualIntents![0]!;
+  assert.equal(intent.claimId, 'mixing_claim');
+  assert.equal(intent.strategy, 'literal');
+  assert.ok(intent.targets.length > 0, 'fallback depicts what it shows');
+  assert.ok(intent.targets.every((t) => (t.evidenceSpanIds ?? []).length > 0), 'every fallback target cites claim spans');
+});

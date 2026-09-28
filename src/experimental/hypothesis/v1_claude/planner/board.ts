@@ -30,7 +30,7 @@ import { RELATION_TYPES } from '../plan/schemas.js';
 export const BOARD_SCHEMA_VERSION = 'claude-board/v3';
 export const BOARD_PROMPT_VERSION = `board-prompt-v18-claim-timing+${BOARD_BANK_VERSION}`;
 /** S6 cache stage version: bump whenever board validation or compilation changes, so cached results from older rules are never replayed. */
-export const BOARD_STAGE_VERSION = 'board-9-claim-timing';
+export const BOARD_STAGE_VERSION = 'board-10-fallback-intents';
 export const BOARD_LAYOUTS = ['flow', 'fan_out', 'convergence', 'list', 'compare', 'cycle', 'hub'] as const;
 export const BOARD_ROLES = ['input', 'process', 'output', 'item', 'attribute'] as const;
 export const LABEL_ONLY = 'label';
@@ -643,7 +643,33 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
   const title = candidates.find((candidate) => numericClaims(candidate).length === 0) ?? input.sceneId;
   // Compare layout requires the comparison form (boardProblems); every other
   // fallback layout keeps the process form.
-  return { schemaVersion: BOARD_SCHEMA_VERSION, title, layout, nodes, visual: layout === 'compare' ? { kind: 'comparison' } : { kind: 'process' } };
+  // The fallback depicts what it depicts: synthesize one visual intent per
+  // essential claim over the nodes/edges actually shown, so B3 can verify
+  // coverage instead of failing on a missing intent list. Strategy is
+  // 'literal' — the fallback never invents a mechanism depiction.
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const shownEdges = shownRelations.map((relation) => ({
+    fromElementId: conceptNode.get(relation.from)!,
+    toElementId: conceptNode.get(relation.to)!,
+    relationType: relation.type as NonNullable<import('../types.js').Edge['factualRelation']>['type'],
+  }));
+  const visualIntents = (input.planningContext?.sceneContract.essentialClaims ?? []).map((claim) => {
+    const targets: import('../types.js').VisualIntent['targets'] = [];
+    for (const node of nodes) {
+      if (claim.conceptIds.includes(node.concept)) {
+        targets.push({ kind: 'element', elementId: node.id, evidenceSpanIds: claim.evidenceSpanIds.slice(0, 3) });
+      }
+    }
+    for (const edge of shownEdges) {
+      const fromConcept = nodeById.get(edge.fromElementId)?.concept;
+      const toConcept = nodeById.get(edge.toElementId)?.concept;
+      if (claim.relations.some((r) => r.from === fromConcept && r.to === toConcept && r.type === edge.relationType)) {
+        targets.push({ kind: 'edge', ...edge, evidenceSpanIds: claim.evidenceSpanIds.slice(0, 3) });
+      }
+    }
+    return { claimId: claim.id, strategy: 'literal' as const, targets };
+  });
+  return { schemaVersion: BOARD_SCHEMA_VERSION, title, layout, nodes, visual: layout === 'compare' ? { kind: 'comparison' } : { kind: 'process' }, visualIntents };
 }
 
 const LAYOUT_GUIDE = `- flow: steps or a causal chain, left to right (A -> B -> C).
