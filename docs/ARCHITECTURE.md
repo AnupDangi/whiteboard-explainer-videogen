@@ -1,15 +1,29 @@
 # Architecture — Claude hypothesis track (`src/experimental/hypothesis/v1_claude/`)
 
 This is the implementation of the hypothesis in `claude_pipeline.md` and `hypothesis/v1_claude/*.md`. All code
-lives under `src/experimental/`. Production code (`src/server.ts`, `src/runtime/*`, `src/gateway/*`, and the
-existing renderer) is not modified.
+lives under `src/experimental/`; the unreachable legacy runtime (`src/core`, `src/domain`, `src/gateway`,
+`src/ingest`) was removed on 2026-09-27. `docs/AUDIT-2026-09-27.md` is the developer report: findings, what was
+fixed, and how to extend each part (template, planner, model, document reader).
+
+**Extension points** (none needs an edit to the pipeline runners):
+
+| To add | Where | Contract |
+|---|---|---|
+| Document format / PDF reader | `plan/intake/registry.ts` `registerSourceExtractor` | `SourceExtractor` in `plan/intake/types.ts` |
+| Scene template | `templates/catalog.ts` spec + geometry in `templates/definitions.ts` | slots, required slots, recipe; the type, zod enum, prompt table and gate derive from it |
+| S6 planner | `planner/registry.ts` `registerScenePlanner` | `ScenePlanner` (prompt, plan, versions) |
+| Model provider | `llm/modelClient.ts` | `ModelClient { chat, pricing? }`, passed to `structuredCall` |
+| Relation arrow wording | `config.ts` `RELATION_ARROWS` | verb + whether it has a direction |
 
 ## Pipeline order (logical dependency order)
 
 S1–S4 retain their dependency order. Once an S4 scene script is ready, S5 audio/alignment and timing-independent S6 semantic planning can run together. Each scene joins its own measured S5 result before mention-time validation, layout, timed gates, and its playable event. Scene events and final rendering remain in original lesson order.
 
 ```
-LessonRequest (multiple local files, HTTPS HTML/text/PDF, text + duration)    plan/sourceIntake.ts, lessonCli.ts
+LessonRequest (local files or HTTPS URLs: PDF, DOCX, PPTX, HTML, text)         plan/sourceIntake.ts -> plan/intake/*, lessonCli.ts
+  S1  intake              one reader per format (registry);  plan/intake/{registry,pdfPoppler,pdfDocling,
+                           canonical text, native locations,  office,html,text}.ts
+                           titles, figures, warnings
   S1  SourceBundle        per-document hashes/locations,     plan/sourceBundle.ts
                            ranked exact EvidenceHits,
                            local BM25 fallback, figure crops
@@ -28,7 +42,7 @@ LessonRequest (multiple local files, HTTPS HTML/text/PDF, text + duration)    pl
   S4  NarrationScript      one call per scene, in parallel, plan/stages.ts writeScript
                            [[id|phrase]] markers, word
                            budget of 2.6 words/s
-  S5  TTS + alignment      persistent bounded voice and     pipeline/runLive.ts, voice-engine/src,
+  S5  TTS + alignment      persistent bounded voice and     pipeline/sceneAudio.ts, voice-engine/src,
                            stable-ts workers; overlaps S6   shared/alignment
                            for that scene; validate each
                            word interval before timed work
@@ -37,11 +51,14 @@ LessonRequest (multiple local files, HTTPS HTML/text/PDF, text + duration)    pl
       mention resolution                                     narration/resolveMentions.ts
       retrieval            top-k Streamline icons for each   catalog/semantic.ts rankConcepts
                            mention (local MiniLM)
-  S6  Scene Planner        timing-independent context;      planner/{context,exemplars,prompt,plan}.ts
+  S6  Scene Planner        planner chosen by id (default    planner/registry.ts, planner/board.ts,
+                           board-v2); timing-independent    planner/{context,exemplars,prompt,plan}.ts
+                           context;
                            joins S5 before timed stages
                            one visual-model call + 1 repair;
                            hard S5 alignment errors skip paid planning by default;
                            diagnostic opt-in preserves failures and failed status
+  S7-S10 one shared chain (fixture and live runners)          pipeline/visualChain.ts
   S7  resolve (ladder)     exact -> embedding -> lexical ->  resolveScene.ts, catalog/*
                            styled text box
   S8  layout               templates + measured text bounds  layout/measure.ts, solver.ts,
@@ -64,7 +81,7 @@ LessonRequest (multiple local files, HTTPS HTML/text/PDF, text + duration)    pl
 - `planner/sceneInput.ts` supplies the same planner input builder to live runs and the calibration harness. `harness/sceneCalibration.ts` and `sceneCalibrationCli.ts` implement cached S1–S5 prompt-arm diagnostics; `npm run scene:calibrate` writes explicitly labeled reports with a per-invocation budget ledger.
 - `catalog/libraryIngest.ts` and `scripts/ingest-icon-library.mjs` normalize a supported SVG subset and write a catalog plus rejection report. `npm run icons:ingest -- <library-dir>` enforces the manifest license list and rejects paths escaping the library root.
 - `catalog/registry.ts` defines enabled libraries and hashes each enabled catalog and embedding matrix into `catalogVersion()`. Retrieval, run/config identity, and S6/S7 cache inputs use that version. The registry currently enables Streamline only; AssetLab workspace artifacts are not enabled pending source and attribution verification.
-- `catalog/queryEmbeddingCache.ts` caches vectors by embedding model and normalized query. `catalog/iconPins.ts` pins resolved icons by concept identity across scenes; the pin set participates in S7 cache identity.
+- `catalog/queryEmbeddingCache.ts` caches vectors by embedding model and normalized query. `catalog/iconPins.ts` pins resolved icons by concept identity and depicted referent across scenes, so distinct objects tied to one teaching concept retain distinct assets; the pin set participates in S7 cache identity.
 - `harness/reliability.ts` and `reliabilityCli.ts` implement cold S1–S4 reliability measurement. `npm run reliability:run` records conditional stage rates, end-to-end rate, failure codes, retries, evidence-anchor markers, cost, and duration under a capped persistent ledger.
 
 These CLIs have offline contract tests. No Task 14 paid reliability, diagnostic S6, or prompt-arm calibration run has been approved or measured yet.
@@ -80,12 +97,15 @@ Stage records include UTC start/end timestamps and measured elapsed time where a
 `LessonRequest.sources` accepts multiple local PDF, DOCX, PPTX, Markdown, text, and JSON files plus public HTTPS URL sources returning HTML, plain text, or PDF. URL intake rejects credentials, custom ports, private/reserved DNS answers, validates every redirect, and pins the request to validated DNS answers. Office and PDF evidence retains native page/slide/paragraph/table locations. Embedded PDF, DOCX, and PPTX images are content-hashed into `.data/hypothesis-source-assets/` and indexed with their page/slide metadata.
 
 S1 creates `SourceBundle` and ranked `EvidenceHit` artifacts. The deterministic local BM25 retriever is always available and each hit resolves to an exact source quote and original document hash. Conflicting documents remain separate and cited. `sourcePrompt()` includes the ranked evidence and sanitized embedded-figure metadata; absolute asset paths are excluded from model prompts. If the optional `RAG_ENGINE=on` Python environment is installed, `ragSidecar.ts` indexes text, tables, equations, and embedded image assets through the existing RAG-Anything service. The lesson evidence contract still uses ranked exact local citations (`deep-indexed+local-text` mode); the sidecar's answer-only query string is never treated as cited evidence. The sidecar reports estimated cost because it does not expose invoice usage, and the estimate settles only when retrieval matches exact source spans — a miss or partial run keeps $0 with honest `local-text` status while budget gating and fail-closed uncertain-spend blocking stay unchanged. If the environment is absent or indexing fails, the run stays in accurately labeled `local-text` mode.
+HTML source evidence preserves parser-authored element selectors and its source locator. Remote HTML uses an HTTPS locator; local HTML uses a `file:` locator. SceneSpec validation accepts both while the source-evidence check requires the exact locator and quote from intake. The URL fetcher itself remains HTTPS-only.
+
+S1 creates `SourceBundle` and ranked `EvidenceHit` artifacts. The deterministic local BM25 retriever is always available and each hit resolves to an exact source quote and original document hash. Conflicting documents remain separate and cited. `sourcePrompt()` includes the ranked evidence and sanitized embedded-figure metadata; absolute asset paths are excluded from model prompts. If the optional `RAG_ENGINE=on` Python environment is installed, `ragSidecar.ts` indexes text, tables, equations, and embedded image assets through the existing RAG-Anything service. The lesson evidence contract still uses ranked exact local citations (`deep-indexed+local-text` mode); the sidecar's answer-only query string is never treated as cited evidence. The sidecar reports estimated cost because it does not expose invoice usage. If the environment is absent or indexing fails, the run stays in accurately labeled `local-text` mode.
 
 For repeated source inputs, use repeated CLI arguments such as `--source=notes.pdf --source=slides.pptx --url=https://example.org/lesson`. A direct URL source is fetched on each run and then its bytes and parser result are hashed; local document parser artifacts use the shared content-addressed S1 cache.
 
 ### Duration-aware planning
 
-The lesson CLI accepts `--duration=60`, `--duration=300`, `--duration=600`, or `--duration=1800` seconds. Canonical requests start with a syllabus call that returns a learning objective, audience assumptions, stable global concept IDs and terminology, prerequisite order, distinct module goals, evidence coverage, and exact module budgets. Module budgets are `[60]`, `[300]`, `[300,300]`, or six 300-second modules. If the source cannot support the requested depth, the syllabus may select a shorter supported canonical duration and must give a coverage reason. The run stores requested and planned durations separately. For sources above 12,000 characters, S1b sends at most 48,000 characters of exact source text as excerpts paired with their span IDs (opening material, retrieval hits, closing material, document-wide samples); a truncated excerpt is marked. Generated concept and module IDs may be normalized from ASCII uppercase or hyphen spellings to lowercase snake case before strict schema and reference checks; collisions still fail, and span IDs and factual text are never normalized. PDF line-end hyphenation can be matched mechanically to a model quote, but the stored citation keeps the exact source bytes. Paraphrases remain invalid.
+The lesson CLI accepts `--duration=60`, `--duration=300`, `--duration=600`, or `--duration=1800` seconds. Canonical requests start with a syllabus call that returns a learning objective, audience assumptions, stable global concept IDs and terminology, prerequisite order, distinct module goals, evidence coverage, exact module budgets, and `coreGoalSupported`. Module budgets are `[60]`, `[300]`, `[300,300]`, or six 300-second modules. If the source supports the learner's core goal but not the requested depth, the syllabus may select a shorter supported canonical duration and must give a coverage reason. If it cannot teach the core goal, preparation records `source-insufficient-for-goal` and stops before narration, voice synthesis, and rendering. The run stores requested and planned durations separately. For sources above 12,000 characters, S1b sends at most 48,000 characters of exact source text as excerpts paired with their span IDs (opening material, retrieval hits, closing material, document-wide samples); a truncated excerpt is marked. Generated concept and module IDs may be normalized from ASCII uppercase or hyphen spellings to lowercase snake case before strict schema and reference checks; collisions still fail, and span IDs and factual text are never normalized. PDF line-end hyphenation can be matched mechanically to a model quote, but the stored citation keeps the exact source bytes. Paraphrases remain invalid.
 
 Each module is planned independently with a scoped source excerpt and its assigned syllabus concepts. S2 enforces the global concept IDs and labels; S3 retains the existing per-response scene/schema limits; S4 writes one module. In generated lesson CLI runs, S5 then synthesizes and aligns that module before the next module is planned. Measured audio plus scene gaps rebudgets only unwritten modules; each completed module retains its original target and measured duration. The exact scene audio/alignment artifact is reused by the live S5 stage within the same cold run, so the module boundary does not synthesize scenes twice. Alignment words must match narration tokens and have valid, positive intervals to satisfy the timing gate; when a positive audio duration exists, the module clock can still rebudget later scenes while the alignment finding remains a hard publication failure. A global lesson bible is assembled after module validation, recurring concepts are marked persistent, and module scene IDs are namespaced to avoid collisions. `lessonToLiveInput()` flattens ordered scenes for the current player/export path while carrying module targets and measured audio durations. Generated lessons use actual concatenated audio duration and do not add trailing silence to satisfy the nominal target; their duration delta remains in run metrics. Golden diagnostic clips retain their existing target padding behavior. After an S4 scene script is available, the live path overlaps S5 for that scene with timing-independent S6 planning, then joins the measured audio before layout, gates, and scene-event emission.
 
@@ -103,9 +123,13 @@ as a substitute for missing source-generated lessons.
 
 The live path writes `scene.playable` JSONL events only after a scene has passed its timing-dependent layout and deterministic gates. Events carry run/module/scene identity, a contiguous playable-scene sequence, local duration, descriptor SHA-256, and a run-relative preview location. The descriptor carries exact local aligned words and a content-hashed scene WAV. The loopback player polls during generation, retries transient artifact fetches, and plays the validated scene WAVs in event order.
 
+Board planning can select source-neutral diagram circle, triangle, or rectangle nodes when an icon would misstate a concept. These compile to existing deterministic shapes with source citations. Text-only process relations emit a review warning; geometry alone does not establish that the drawing teaches the narrated claim. S4 also rejects spoken visual-director commands before TTS.
+
 Cross-process filesystem leases configure host-wide limits through `HYPOTHESIS_PROVIDER_CONCURRENCY`, `HYPOTHESIS_SCENE_CONCURRENCY`, `HYPOTHESIS_S6_CONCURRENCY`, `HYPOTHESIS_TTS_ALIGNMENT_CONCURRENCY`, and `HYPOTHESIS_RASTER_CONCURRENCY` (defaults 2, 4, 2, 2, and 2). Module clips use content-addressed input manifests that include scene data, local audio/captions, canvas, frame rate, font, visual renderer version, and encoder. The frame cache keys exact rendered SVG bytes plus the complete Resvg options and measured render settings, verifies PNG hashes, and defaults to 256 MiB.
 
 Canonical module clips are assembled in syllabus order. Chapter offsets use probed clip durations, and the final MP4 carries H.264 video, AAC audio, chapter markers, and `mov_text` captions. Offline integration tests decode a synthetic assembled MP4 and verify its stream types, chapter bounds, external captions, and audio/video duration within 100 ms. These fixtures prove export plumbing only.
+
+Module export keeps every narrated scene on its audio clock even when a visual scene fails. Such missing visuals remain hard failures and any retained MP4 is diagnostic. The CLI and one-shot provenance report the probed encoded MP4 duration separately from narrated duration; a material mismatch is a hard failure.
 
 Phase status and evidence are maintained in `docs/HANDOFF.md`: Phase 4 and 5 engineering is implemented and offline-tested, while generated-lesson quality is unmeasured. Two-human word-boundary calibration remains unmeasured, so Phase 3 and publication stay gated. Live RAG-Anything, 1/5/10/30-minute cold/warm runs, 1/3/5-job benchmarks, and human review of complete source-generated lessons remain outstanding.
 
@@ -295,21 +319,24 @@ Timing comes from the Lamina reference pack (`harness/reference/lamina/OBSERVATI
 
 ## Models
 
-| Stage | Model | Notes |
+Every stage model is configuration (`.env`); there are no code defaults.
+
+| Stage | Variable | Notes |
 |---|---|---|
-| S2–S4 | `OPENROUTER_CONTENT_MODEL` (qwen3.8-flash; deepseek-v4.1-flash when the qwen pool is rate-limited, chosen explicitly with `--content`) | a reasoning cap is sent to hidden-reasoning models |
-| S6 | `OPENROUTER_SCENE_MODEL`, default `anthropic/claude-sonnet-5` | no `temperature` (Anthropic endpoints reject it); `reasoning.effort: medium`; the SceneSpec schema is too large for Anthropic's grammar compiler, so JSON is requested by the prompt and fully validated by zod |
-| Judge | `OPENROUTER_VISION_MODEL` | separate $0.25 cap |
+| S1b–S4 | `OPENROUTER_CONTENT_MODEL` (legacy alias `OPENROUTER_DIRECTOR_MODEL`); optional `OPENROUTER_{SYLLABUS,CONCEPTS,PLAN,SCRIPT}_MODEL` | `--content=<model>` on the CLI overrides all four |
+| S6 | `OPENROUTER_SCENE_MODEL` | board planner (`planner/registry.ts`) |
+| Judge | `OPENROUTER_VISION_MODEL` | separate $0.25 cap; a response without billed cost is an error |
 
-All LLM stages go through `llm/structuredCall.ts`, which provides:
-- JSON-candidate extraction and a lenient control-character parse;
-- exactly one repair;
-- per-call OpenRouter price ceilings derived under the shared ledger lock from the smaller of the remaining stage and lesson-wide budgets, plus prompt/output bounds,
-  plus a persistent actual-spend ledger and timeout. Price ceilings use OpenRouter's `provider.max_price`
-  in USD per million input/output tokens ([OpenRouter cost controls](https://openrouter.ai/blog/tutorials/how-to-get-the-lowest-cost-llm-inference-on-openrouter/));
-- real cost accounting.
-
-The HTTP client is `llm/openrouter.ts`, which mirrors the production gateway without modifying it.
+All LLM stages go through `llm/structuredCall.ts` over a `ModelClient` (`llm/modelClient.ts`; OpenRouter by
+default, `OPENROUTER_BASE_URL` for any compatible endpoint):
+- JSON-candidate extraction and a lenient control-character parse; exactly one repair;
+- `finishReason` is recorded; a response cut at the token limit is labelled `<stage>-truncated` and its repair
+  gets 1.5x the output tokens;
+- price-aware routing: `max_price` is the model's own price from `GET /models` plus 25 %; a model whose worst-case
+  call cannot fit the remaining budget fails before sending (`model-too-expensive-for-budget`);
+- the persistent ledger reserves the worst case under its lock, releases the lock during the call, and settles
+  the billed cost, so calls run concurrently; a request the provider rejects (4xx) or that was never sent does not
+  block the ledger.
 
 ## Catalog threshold calibration
 
@@ -326,7 +353,7 @@ uncalibrated.
 
 ```
 npm run typecheck:hypothesis && npm run test:hypothesis      # offline, no keys needed
-npm run strip:scene -- <sceneId> out.png                      # progression strip of a fixture scene (after a build)
+npm run strip:scene -- <run>/preview-scenes/0000.json out.png # progression strip of one generated scene (after a build)
 npm run run:lesson -- --lesson=all [--content=<model>] [--planner=<model>]
 npm run video:one-shot -- --prompt="<learner prompt>" --source=<file>|--url=<url> [--duration=60] [--id=<name>]  # locked single run, provenance in output/
 npm run run:hypothesis:live [-- --case=<golden> --planner=<model>]

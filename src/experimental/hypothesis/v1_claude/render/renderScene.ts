@@ -160,19 +160,25 @@ function renderEdge(edge: RoutedEdge, ev: TimelineEvent, timeMs: number, index: 
     parts.push(strokeSvg({ d, length }, shaftP));
   }
   const headP = p <= 0.8 ? 0 : (p - 0.8) / 0.2;
+  // Symmetric relations (compares/opposes) carry head: 'none': the shaft
+  // reads as a comparison, never a one-way arrow. The label still draws.
   if (headP > 0) {
-    const a = edge.points[edge.points.length - 2];
-    const b = edge.points[edge.points.length - 1];
-    const ang = Math.atan2(b.y - a.y, b.x - a.x);
-    for (const side of [-1, 1]) {
-      const hx = b.x - ARROW_HEAD * Math.cos(ang + side * 0.5);
-      const hy = b.y - ARROW_HEAD * Math.sin(ang + side * 0.5);
-      parts.push(strokeSvg({ d: `M ${b.x} ${b.y} L ${hx} ${hy}`, length: ARROW_HEAD }, headP));
+    if (edge.head !== 'none') {
+      const a = edge.points[edge.points.length - 2];
+      const b = edge.points[edge.points.length - 1];
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      for (const side of [-1, 1]) {
+        const hx = b.x - ARROW_HEAD * Math.cos(ang + side * 0.5);
+        const hy = b.y - ARROW_HEAD * Math.sin(ang + side * 0.5);
+        parts.push(strokeSvg({ d: `M ${b.x} ${b.y} L ${hx} ${hy}`, length: ARROW_HEAD }, headP));
+      }
     }
     if (edge.label) {
-      // Layout fits the anchor inside the safe area (labelPos); fall back to
+      // Layout fits the anchor inside the safe area (labelBox); fall back to
       // the default anchor only for edges routed outside layout (defensive).
-      const anchor = edge.labelPos ?? edgeLabelAnchor(edge.points);
+      const anchor = edge.labelBox
+        ? { x: edge.labelBox.x + edge.labelBox.w / 2, y: edge.labelBox.y + edge.labelBox.h / 2 }
+        : edgeLabelAnchor(edge.points);
       const lx = anchor.x;
       const ly = anchor.y;
       parts.push(`<g opacity="${headP}">${textSvg({ x: lx, y: ly, text: edge.label.toUpperCase(), size: STYLE.font.sizes.note, anchor: 'middle' })}</g>`);

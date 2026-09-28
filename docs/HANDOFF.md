@@ -82,6 +82,33 @@
 - **Live generation:** the first ordinary-sandbox attempt could not resolve `www.tomzahavy.com` and stopped before provider dispatch. One network-enabled cold one-shot then completed from the queued `https://www.tomzahavy.com/files/llms-cant-jump.pdf` source with a 600 s requested/planned budget, `openai/gpt-6-luna` for content and planning, $0.095275 measured provider cost, and 848 s wall time. It produced 29 playable scenes from 33 planned and correctly reported `failed` with 34 hard failures (including missing mention alignment, S6 repair/fallback failures, and minimum-readable-text failures); `tampered=false`. The file is H.264/AAC with subtitle streams, but `ffprobe` measures the encoded MP4 at **527.319 s** (8m 47.3s), not 600 s. The summary's `finalVideoDurationSec: 599.994` is aligned narration duration, not encoded-file duration, so this run exposed a duration-reporting bug as well as missing-scene shortening. Keep the artifact diagnostic; do not label it passed or ten minutes.
 - **Artifact:** `output/2026-09-27T21-06-24-329Z-llms-cant-jump-10m/video.mp4`; provenance is adjacent. No further model/video run was started after this one.
 - **Remaining:** S2/S3, S6 convergence, RAG charge-on-match, and the encoded-duration metric are outside the two completed fixes and remain unmeasured/unfixed by this task. The run supports the prior S6 failure diagnosis; it is not evidence that recap splitting fixed dense-scene planning generally.
+## Entry — 2026-09-28, B2 semantic-asset mismatch is a hard failure
+
+- **Branch/worktree:** `codex/simi-parity-work-20260927` in `hypothesis_claude-simi-parity-work-20260927`. No commit or push.
+- **Observed failure:** a plausible-but-wrong icon (e.g. atom for refraction) could display silently; validator rule is that a wrong icon is worse than no icon. Responsible layer: S7 resolve / S12 gates, not prompt or renderer.
+- **Change:** new `semanticAssetMismatchFailures` in `validation/gates.ts` — any `object` element resolved at rung 3 (the explicitly uncalibrated weak-match zone in `catalog/ladder.ts`) records hard `semantic-asset-mismatch` naming concept, asset, score, and basis, directing to a labelled primitive or short text (rung 4). Wired into `runClaudeGates`. Rung-2 exact/strong matches and rung-4 fallbacks pass. No topic-specific branches. New `__tests__/semantic-asset-mismatch.test.ts` (synthetic contract tests only).
+- **Offline checks:** `npm run typecheck:hypothesis` passed; `git diff --check` passed. Node excluding pre-existing `plan-lock.test.js` mode failure: **536/536 pass** (534 prior + 2 new). Current benchmark runs resolve exact rung-2 icons, so this gate would not have fired on them; it guards future weak matches. Frozen files untouched.
+- **Limitations:** gate fires on weak matches; it does not yet judge a confident-but-wrong rung-2 metaphor (claim-to-visual entailment, B3). No live video run after this change.
+- **Next bounded task:** B3 visual coverage map + diagrammatic intents (every essential spoken claim needs a depicting element; ray/state/comparison topologies). Same five-domain benchmark before/after; audio polish and long-form stay deferred.
+
+## Entry — 2026-09-28, B1 relation-verb labels removed (geometry carries relations)
+
+- **Branch/worktree:** `codex/simi-parity-work-20260927` in `hypothesis_claude-simi-parity-work-20260927`. No commit or push.
+- **Observed failure:** boards printed graph-database predicates (`CAUSES`, `FEEDS INTO`, `PRODUCES`) on arrows; validator review class S — narration good, visualization is label-as-explanation.
+- **Responsible layer:** S6 compile (`planner/board.ts`), not prompt. Verb was code-attached; prompt-only fix cannot remove it.
+- **Change:** `compileBoard` no longer emits `edge.label` from `RELATION_ARROWS`; keeps `directed` head handling and full `factualRelation` + evidence. Gates still require edge existence + evidence match, not label text. Updated `board.test.ts` (valid board + fan-in/fan-out cases) and `board-intent.test.ts` (intent retained through resolve/layout; SVG must not contain role chips or verb labels).
+- **Offline checks:** `npm run typecheck:hypothesis` passed; `git diff --check` passed. Node excluding `plan-lock.test.js`: **534/534 pass**. Full `npm run test:hypothesis` still blocked by the pre-existing frozen-mode check (644 vs required 444; frozen files untouched). Python stages not re-run in this pass.
+- **Limitations:** relation presence still enforced; claim-to-visual entailment, semantic icon fitness, and physical geometry remain unmeasured. No live video run after this change.
+- **Next bounded task:** B2 semantic-asset confidence gate (wrong icon = hard failure → primitive/labelled fallback), then B3 visual coverage map + diagrammatic intents. Same five-domain benchmark before/after; audio polish and long-form stay deferred.
+
+## Entry — 2026-09-28, one-shot correctness and short-lesson semantic guard
+
+- **Branch/worktree:** `codex/simi-parity-work-20260927` in `hypothesis_claude-simi-parity-work-20260927`. No commit or push. The separate `fix/chat-audit-rollup-20260927` checkout was not changed.
+- **Implemented:** SceneSpec accepts exact parser-authored HTTPS and local-HTML `file:` source locations (including selector) while remote fetching remains HTTPS-only. Icon pins now include the depicted referent as well as concept IDs, so distinct objects tied to one concept keep distinct selected assets. S1 syllabus adds `coreGoalSupported`; an unsupported core learner goal records a hard `source-insufficient-for-goal` failure and stops before S2–S11. S4 rejects spoken visual-director imperatives such as “Show …”. S6 can choose neutral cited diagram shapes through the existing renderer; text-only process relations emit review warnings. Module export retains narration for every planned scene even if S6 supplies no visual, records a hard missing-scene failure, probes actual MP4 duration, and separates it from narrated duration in CLI and one-shot provenance. Failed encodes cannot attach a stale MP4; hard-failure details reach one-shot provenance. The S1 and S4 cache versions and S6 prompt/stage versions were bumped. `.gitignore` covers local `.venv` symlinks so the shared manifest can be checked.
+- **Offline checks:** `npm run typecheck:hypothesis` passed; `git diff --check` passed. `npm run test:hypothesis` built successfully and verified the shared manifest; Node: **536 pass, 1 fail, 537 total**. The sole failure is the pre-existing `frozen plans are read-only on disk` mode check: this checkout has mode 644 where the locked check requires 444. The frozen files were not edited or chmod'd. Running all Node suites except `plan-lock.test.js` gave **534/534 pass**. Because the package script uses `&&`, its Python stages did not run after that mode failure; run separately, alignment **24/24** and rag-engine **12/12** passed. Focused local-HTML citation tests, icon-pin regression, module-clock tests, S1 early-stop test, and board tests passed within the Node run.
+- **Independent review:** a reviewer found local HTML locator rejection, stale MP4 attachment after encode failure, and absent completed-run failure details; all three were fixed before final verification. The source-sufficiency Boolean is still a model judgment, not independent proof that the cited source teaches the goal. Diagram shapes and label-only warnings do not yet establish claim-to-visual entailment, correct physical geometry, or semantic icon fitness.
+- **Live status:** no source-generated video was run after these changes. This worktree has no `.env` and no `OPENROUTER_API_KEY` in its process environment; the locked one-shot runner also refuses an uncommitted tracked tree. Five-domain 60-second cold one-shot results, visual review, human alignment calibration, and long-form reliability remain **unmeasured**. The earlier failed MP4s remain diagnostic evidence only.
+- **Next bounded task:** provide the correct worktree with the provider secret through its environment, then run a five-domain short benchmark (science, business, technology, biology, psychology) with one prompt plus one source per lesson and record provenance, scene/audio completeness, hard gates, visual-claim review, first playable scene, duration, and cost. Use Soil titles as an explicit early-stop negative case. Advance to long-form only after short lessons meet the teaching-quality gates.
 
 ## 2026-09-27 — Simi parity recovery plan adopted
 - Plan: docs/superpowers/plans/2026-09-27-simi-parity-recovery.md (not plan-locked).
@@ -2175,3 +2202,62 @@ hypothesis before layering on production-latency infrastructure.
   - google.com: FAILED 2 hard (recap fallback), 62s diagnostic, $0.0097. Its chain board (lock → plane → servers, PRODUCES) teaches well despite fail.
 - **Pattern:** math/physics/bio/architecture all draft; only the web-systems recap failed. Repetition + clipping + degenerate targets are the visible defects, not gates.
 - **Next bounded task:** validator picks — label-dedup + degenerate-target guard, or continue matrix.
+## Entry — 2026-09-27, audit fixes Phases 0–4 (dead code, S6 titles, model layer, S3 contracts, pluggable intake)
+
+- **Plan:** approved whole-codebase audit plan (8 phases). User scope, chat 2026-09-27: "audit the entire codebase … fix all the problems … understand how the PDF and PDFX components are intended to function and implement them accordingly. Remove any dead or unnecessary code … ensure the architecture is reusable so we can update it and plug in new components later." Seed icon catalog: "Keep in code (Recommended)".
+- **Phase 0 (`7bdff3f`):** unreachable legacy runtime (`src/core`, `src/domain`, `src/gateway`, `src/ingest`, `src/types/engine.ts`) and unused exports/deps removed; `package-lock.json` regenerated (`npm ci` works); `shared/MANIFEST.sha256` regenerated and now verified by `test:hypothesis` (`scripts/shared-manifest.mjs --check`); one CLI arg parser (`cli/args.ts`); golden lookup injected by CLIs instead of imported by `runLive.ts`.
+- **Phase 1 (`e93cb86`):** one numeric-claim rule (`validation/numericClaims.ts`) for S6 titles and the final gate (fixes "Three …" titles passing S6 and failing the gate); fallback boards pass their own template gates (convergence without an output → hub; process fallbacks get a process node); template adequacy runs inside `validateBoard` so the repair sees it; failed stage results are no longer cached.
+- **Phase 2 (`420cf3d`):** `ModelClient` adapter; `max_price` from the model's own price (`GET /models`) plus 25 %, worst-case preflight `model-too-expensive-for-budget` (fixes the Gemini 404); ledger reserves, releases the lock during the call and settles (calls run concurrently); timeout starts after the permit; 4xx/abort-before-send are "not dispatched"; `finishReason` recorded, truncation labelled and repaired with 1.5× tokens; per-stage models `OPENROUTER_{SYLLABUS,CONCEPTS,PLAN,SCRIPT}_MODEL`; real git commit in provenance.
+- **Phase 3 (`71a8c4b`):** S3 model writes a draft only; code derives each SceneContract and the lesson bible from the S2 graph (relation loss still fails as `LESSON_OMITS_SOURCE_RELATION`); prompts print span text under span IDs with no offsets (fixes the 600 s module-S2 quote failure); module S2 validates relations only; S4 sees only its section's evidence spans and counts words after spoken-form conversion.
+- **Phase 4 (this commit):** pluggable document intake under `plan/intake/` (`SourceExtractor` registry; `sourceIntake.ts` stays the facade).
+  - PDF: `pdf-poppler` (default; pdftotext reading order with block breaks and de-hyphenation, `HYPOTHESIS_PDF_TEXT_MODE=raw` optional; running headers/page numbers stripped by repetition; `page-without-text` warning; title from `pdfinfo`) or `pdf-docling` via `parse-engine/convert.py` (`HYPOTHESIS_PDF_EXTRACTOR=poppler|docling|auto`; a named unavailable reader fails visibly, `auto` records `extractor-fallback`). `convert.py`: distinct meta keys (`ocrMode`, `formulaMode`, `itemCount`), default device `mps` only on Apple silicon.
+  - DOCX: content controls kept, field codes and deleted revisions dropped, runs joined without spaces, outline-level headings, core title. PPTX: presentation order, grouped shapes, hidden slides skipped, title from core properties or the title placeholder. HTML: each block once, h5/h6/blockquote/pre/dt/dd/prose divs, charset decoding. Office media over 100 → warning and cap.
+  - Shared: canonical text (NFC, ligatures, soft hyphen, zero-width) applied per block before locations; titles never "Page 1"/"Slide 1" (metadata → real heading → file name); files and URLs share one path (fixes URL PDFs being page-wrapped twice); URL total deadline 180 s; intake warnings recorded on `SourceDoc.intake` and as soft S1 failures; S1 cache key includes extractor id/version.
+  - Spans: paragraphs close at a sentence end after 1,500 chars; spans never cross a native location; `$$` state resets per page/document; figure references are singular and case-sensitive, and a figure mentioned inside prose stays in its paragraph.
+  - Anchoring: NFKD + accent folding, ligatures, invisible characters, compound words split at a line end (`well-\nknown`), edge quotes trimmed after folding, first match inside the cited span (relocation still requires a unique other span).
+  - RAG chunk→span mapping accepts the longest run of ≥ 40-char span sentences a chunk reproduces. Module figures match by document and page.
+- **Commands and results (cloud container):** `npx tsc --noEmit -p tsconfig.json` passed; `npm run test:hypothesis`: shared manifest verified, **514 pass, 2 skipped, 1 fail** (`frozen plans are read-only on disk`: clone cannot hold mode 444; CLAUDE.md forbids chmod). Python: alignment OK, rag-engine OK (run separately because the Node failure stops the `&&` chain). `git diff --check` passed. New tests: `intake-extractors.test.ts` (17, on committed synthetic fixtures in `__tests__/fixtures/intake/`, regenerated by `make_fixtures.py`), `model-layer.test.ts`, `stage-contracts.test.ts`, `board-title-fallback.test.ts`.
+- **Status:** Phases 0–4 `implemented` and offline-`tested`. Docling path: mapping `tested` with synthetic items, live Docling conversion `unmeasured` (no `parse-engine/.venv` here). Live OpenRouter/TTS runs `unmeasured`: this container gets 403 from `openrouter.ai` and `huggingface.co` and has no ffmpeg. `npm run baseline:verify` still fails on the pre-existing `attentionScenes.ts` hash mismatch (since `56ccc20`); not re-frozen, needs a human-reviewed versioned correction.
+- **Next bounded task:** Phase 5 (config and template/planner registries, split `runLive.ts` stages), then Phase 6 (board density T8/T9, relation verbs, timeline gates), then Phase 7 report.
+
+## Entry — 2026-09-27, audit fixes Phases 5–7 (architecture, board quality, report)
+
+- **Phase 5 (`7bd9a9b`, `6b07410`, `14117cd`), implemented and tested:**
+  - `templates/catalog.ts` is the one template table; the type, zod enum, prompt slots, recipes, solver slot plans and typed-board gate derive from it.
+  - `config.ts` holds durations and cost caps, the scene gap, the provider timeout, the RAG threshold and the relation arrows.
+  - `planner/registry.ts` selects the S6 planner by id; scene calibration now measures the live default `board-v2`.
+  - `pipeline/sceneAudio.ts` is the one S5 implementation (lesson preparation had a literal 200 ms scene gap).
+  - `pipeline/visualChain.ts` is the one S7–S10 chain for the fixture and live runners.
+  - `pipeline/limiter.ts` replaces two semaphores.
+  - `scripts/render-strip.mjs` reads a live run's scene descriptor, not fixture scenes.
+  - The RAG index is skipped for a single text-only source under 40,000 chars (`skipReason` on the stage record; `RAG_ENGINE=always` overrides).
+  - Deferred: one shared Python worker helper, because the alignment and voice pools live in separately built packages.
+- **Phase 6 (`cc2eab4`, `7959a84`), implemented and tested; visual effect on live lessons unmeasured:**
+  - Arrows use a verb per relation type; `compares`/`opposes` are drawn without a head.
+  - Edge labels are placed clear of nodes (`edge-label-overlap` warning otherwise).
+  - Occupancy target is 0.55; below 0.30 is a hard `board-too-sparse` failure.
+  - An arrow at the scene end is pulled back so it is drawn.
+  - `reveal-invisible` is a hard failure for source-backed content never shown.
+  - A `timeline-compressed` warning reports reveals sped up to fit the narration; idle time counts the trailing window, and rings are counted as filler.
+  - Instance nodes: up to 3 per concept, each with its own mention and label.
+  - Process boards need ≥3 nodes; S4 needs 4–7 markers; few-shot `board-bank-v2` adds one abstract example.
+  - Board prompt v12 and stage `board-3` invalidate cached S6 results.
+  - The ledger concurrency test now uses a barrier instead of overlapping sleeps; it had failed once under full-suite load.
+- **Phase 7:**
+  - `docs/AUDIT-2026-09-27.md` is the developer report: failed-run root causes, per-phase changes, pipeline map, intake behaviour, extension guide, removed code, known limits and verification.
+  - `docs/ARCHITECTURE.md` gains an extension-point table and an updated stage map and models section.
+  - `.env.example` now lists only variables the code reads (19 unused ones removed).
+  - `docs/AUDIT-2026-09-23.md` is marked superseded.
+- **Commands and results (cloud container):**
+  - `npx tsc --noEmit -p tsconfig.json`: passed.
+  - `npm run test:hypothesis`: shared manifest verified; **523 pass, 1 fail** (`frozen plans are read-only on disk`: clone-mode file permissions; CLAUDE.md forbids chmod).
+  - Python alignment and rag-engine unittests: OK.
+  - `git diff --check`: passed.
+  - `npm run baseline:verify`: still fails on the `attentionScenes.ts` hash mismatch that predates this work (since `56ccc20`); not re-frozen.
+- **Unmeasured:** every live OpenRouter/TTS/MP4 result. This container gets 403 from `openrouter.ai` and `huggingface.co` and has no ffmpeg.
+- **Next bounded task (user's machine):**
+  1. `npm run video:one-shot -- --prompt="<prompt>" --url=https://www.tomzahavy.com/files/llms-cant-jump.pdf --duration=60`
+  2. The same with the DeepSeek report PDF at 300 s, then 600 s.
+  3. The plan-calibration bakeoff.
+
+  Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.

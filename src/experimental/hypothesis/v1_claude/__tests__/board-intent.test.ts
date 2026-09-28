@@ -71,7 +71,8 @@ test('S6 compiles source-derived board intent and retains it through resolve and
       { from: 'change', to: 'mixture', type: 'produces', evidenceRefs: input.teachingContext!.relations![1]!.evidenceRefs },
     ],
   });
-  assert.deepEqual(spec.edges.map((edge) => edge.label), ['feeds', 'produces']);
+  // Geometry carries the relationship; no verb label is emitted, the type itself stays in the intent.
+  assert.deepEqual(spec.edges.map((edge) => edge.label ?? null), [null, null]);
   assert.ok(safeParseSceneSpec(spec).success);
   const resolved = resolveScene(spec);
   const laidOut = layoutScene(resolved);
@@ -105,7 +106,7 @@ test('board intent roles are retained for gates but never rendered as visual bad
   const timeline: Timeline = { sceneId: scene.sceneId, events, sceneStartMs: 0, sceneEndMs: 1000 };
   const svg = renderSceneBody(scene, timeline, 1000);
   for (const role of ['INPUT', 'PROCESS', 'OUTPUT']) assert.ok(!svg.includes(`>${role}</text>`), `${role} badge must not be rendered (Simi never shows role chips)`);
-  for (const relation of ['FEEDS', 'PRODUCES']) assert.ok(svg.includes(`>${relation}</text>`), relation);
+  for (const relation of ['FEEDS INTO', 'PRODUCES']) assert.ok(!svg.includes(`>${relation}</text>`), `${relation} verb must not be rendered (geometry carries the relation)`);
 });
 
 test('comparison intent no longer draws a "VS" divider cue', () => {

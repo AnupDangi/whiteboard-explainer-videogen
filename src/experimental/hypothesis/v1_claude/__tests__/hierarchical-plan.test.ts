@@ -12,6 +12,7 @@ const syllabus = (duration: number): SyllabusModel => {
     requestedDurationSec: duration,
     plannedDurationSec: duration,
     coverageReason: 'The supplied source supports this depth.',
+    coreGoalSupported: true,
     learningObjective: 'Explain how the documented process works.',
     audienceAssumptions: ['Learner knows basic terms.'],
     concepts,

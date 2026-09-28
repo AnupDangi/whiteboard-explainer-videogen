@@ -1,4 +1,4 @@
-import type { ConceptGraph, TeachingPlan } from './schemas.js';
+import type { ConceptGraph, TeachingPlan, TeachingPlanDraft } from './schemas.js';
 
 const relationKey = (relation: { from: string; to: string; type: string }): string => `${relation.from}|${relation.type}|${relation.to}`;
 
@@ -94,4 +94,59 @@ export function teachingContractFindings(plan: TeachingPlan, graph: ConceptGraph
 /** String-only view of `teachingContractFindings`, kept for existing callers/tests that treat this as a plain message list. */
 export function teachingContractProblems(plan: TeachingPlan, graph: ConceptGraph, audience?: string): string[] {
   return teachingContractFindings(plan, graph, audience).map((finding) => finding.message);
+}
+
+/**
+ * Build the full TeachingPlan from the S3 model's draft (see
+ * TeachingPlanDraftSchema). Deterministic: every derived field is a function
+ * of the draft and the S2 graph.
+ * - contract.learningDelta = goal, targetDurationSec = budgetSec,
+ *   requiredConceptIds = conceptIds;
+ * - requiredRelations = every graph relation with both endpoints in the section;
+ * - evidenceSpanIds = the cited spans of those concepts and relations;
+ * - lessonBible: every taught graph concept gets its exact graph label as
+ *   its term; concepts taught in more than one section are persistent, so S6
+ *   must draw them with that term in every scene.
+ * Nothing is invented: an unknown concept ID is kept, so
+ * teachingContractFindings still rejects it, and a relation whose endpoints
+ * never share a section is still reported as LESSON_OMITS_SOURCE_RELATION.
+ */
+export function deriveTeachingPlan(draft: TeachingPlanDraft, graph: ConceptGraph, audience: string): TeachingPlan {
+  const concepts = new Map(graph.concepts.map((concept) => [concept.id, concept]));
+  const sectionCounts = new Map<string, number>();
+  for (const section of draft.sections) for (const conceptId of new Set(section.conceptIds)) sectionCounts.set(conceptId, (sectionCounts.get(conceptId) ?? 0) + 1);
+  const taught = [...sectionCounts.keys()].filter((conceptId) => concepts.has(conceptId));
+  const persistentConceptIds = taught.filter((conceptId) => sectionCounts.get(conceptId)! > 1);
+  return {
+    targetDurationSec: draft.targetDurationSec,
+    intro: draft.intro,
+    lessonBible: {
+      audience,
+      ...(draft.domain ? { domain: draft.domain } : {}),
+      terminology: taught.map((conceptId) => ({ conceptId, label: concepts.get(conceptId)!.label })),
+      persistentConceptIds,
+    },
+    sections: draft.sections.map(({ teachingSkill, candidateMechanisms, ...section }) => {
+      const conceptIds = [...new Set(section.conceptIds)];
+      const requiredRelations = graph.relations.filter((relation) => conceptIds.includes(relation.from) && conceptIds.includes(relation.to));
+      const evidenceSpanIds = [...new Set([
+        ...conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence.map((ref) => ref.spanId) ?? []),
+        ...requiredRelations.flatMap((relation) => relation.evidence.map((ref) => ref.spanId)),
+      ])];
+      return {
+        ...section,
+        conceptIds,
+        contract: {
+          learningDelta: section.goal,
+          targetDurationSec: section.budgetSec,
+          requiredConceptIds: conceptIds,
+          requiredRelations: requiredRelations.map(({ from, to, type }) => ({ from, to, type })),
+          evidenceSpanIds,
+          teachingSkill,
+          candidateMechanisms,
+        },
+      };
+    }),
+    recap: draft.recap,
+  };
 }

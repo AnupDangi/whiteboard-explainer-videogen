@@ -1,29 +1,16 @@
 import { z } from 'zod';
 import { anchorQuote } from './evidenceAnchor.js';
 import type { SourceDoc, SourceEvidenceRef } from './sourceDoc.js';
+import { spanExcerptPrompt } from './sourceDoc.js';
 import type { LessonRequest, StageModel } from './stages.js';
 import { structuredCall, type StructuredCallResult } from '../llm/structuredCall.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import { relationalGoalNeedsComponents, SYLLABUS_COMPONENT_GUIDANCE } from './goalShape.js';
 
-export const LESSON_DURATIONS_SEC = [60, 300, 600, 1800] as const;
-export type LessonDurationSec = typeof LESSON_DURATIONS_SEC[number];
-export const LESSON_COST_CAP_USD: Record<LessonDurationSec, number> = { 60: 0.1, 300: 0.5, 600: 0.7, 1800: 1 };
+import { LESSON_COST_CAP_USD, LESSON_DURATIONS_SEC, lessonCostCapUsd, type LessonDurationSec } from '../config.js';
+
+export { LESSON_COST_CAP_USD, LESSON_DURATIONS_SEC, lessonCostCapUsd, type LessonDurationSec };
 export const SYLLABUS_CONCEPT_LABEL_MAX_WORDS = 4;
-/**
- * P5: scales the lesson cost caps without changing defaults (unset, empty,
- * or non-positive reads = 1, i.e. today's caps exactly). Lets a bakeoff
- * raise the ceiling for a pricey model without touching code.
- */
-export function lessonCostCapMultiplier(): number {
-  const raw = Number(process.env.HYPOTHESIS_LESSON_COST_CAP_MULTIPLIER);
-  return Number.isFinite(raw) && raw > 0 ? raw : 1;
-}
-export function lessonCostCapUsd(durationSec: number): number {
-  const multiplier = lessonCostCapMultiplier();
-  if (durationSec in LESSON_COST_CAP_USD) return LESSON_COST_CAP_USD[durationSec as LessonDurationSec] * multiplier;
-  return Math.min(1, Math.max(0.1, durationSec / 60 * 0.1)) * multiplier;
-}
 const id = z.string().min(1).max(40).regex(/^[a-z0-9_]+$/);
 const EvidenceQuote = z.object({ spanId: id, quote: z.string().min(1).max(600) }).strict();
 
@@ -31,6 +18,7 @@ export const SyllabusSchema = z.object({
   requestedDurationSec: z.number().int().positive(),
   plannedDurationSec: z.number().int().positive(),
   coverageReason: z.string().min(1).max(240),
+  coreGoalSupported: z.boolean(),
   learningObjective: z.string().min(1).max(240),
   audienceAssumptions: z.array(z.string().min(1).max(120)).max(6),
   concepts: z.array(z.object({ id, label: z.string().min(1).max(80).refine((value) => value.trim().split(/\s+/).length <= SYLLABUS_CONCEPT_LABEL_MAX_WORDS), definition: z.string().min(1).max(240), evidence: z.array(EvidenceQuote).min(1).max(3) }).strict()).min(1).max(48),
@@ -98,10 +86,7 @@ export function syllabusSourcePrompt(doc: SourceDoc): string {
   // makes quote-to-span mistakes common and repeats a huge PDF on repair.
   if (doc.text.length > 12_000) {
     const textBudget = 48_000;
-    // Excerpt-bounded: source spans are split at ~500 chars (sourceDoc), so a
-    // 600-char excerpt window always carries a chunk's full text and the model
-    // quotes from displayed text only — never from a truncated middle.
-    const excerptLimit = 600;
+    const excerptLimit = 1_800;
     const selected = new Set<string>();
     const candidates: typeof doc.spans = [];
     const add = (span: typeof doc.spans[number] | undefined) => {
@@ -114,16 +99,7 @@ export function syllabusSourcePrompt(doc: SourceDoc): string {
     for (const span of substantive.slice(-3)) add(span);
     for (let i = 0; i < Math.min(36, substantive.length); i++) add(substantive[Math.floor(i * substantive.length / Math.min(36, substantive.length))]);
     for (const span of substantive) add(span);
-    let remaining = textBudget;
-    const excerpts: Array<Record<string, unknown>> = [];
-    for (const span of candidates) {
-      if (remaining < 80) break;
-      const text = span.text.slice(0, Math.min(excerptLimit, remaining));
-      if (text.trim().length < 80) continue;
-      excerpts.push({ id: span.id, kind: span.kind, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}), text, ...(text.length < span.text.length ? { excerpted: true } : {}) });
-      remaining -= text.length;
-    }
-    return JSON.stringify({ schemaVersion: doc.schemaVersion, sourceId: doc.sourceId, format: doc.format, ...(doc.title ? { title: doc.title } : {}), ...(doc.sourceUrl ? { sourceUrl: doc.sourceUrl } : {}), excerpts });
+    return spanExcerptPrompt(doc, { spans: candidates, maxChars: textBudget, perSpanChars: excerptLimit, minChars: 80 });
   }
   const spanIndex = doc.spans.map(({ id, kind, startChar, endChar, startLine, endLine, citationSourceId, sourceTitle, sourceLocation }) => ({
     id, kind, startChar, endChar, startLine, endLine,
@@ -143,7 +119,7 @@ export function syllabusSourcePrompt(doc: SourceDoc): string {
 }
 
 export function syllabusSystemPrompt(allowedDurations: readonly number[]): string {
-  return `Create a source-grounded teaching syllabus for one narrated lesson. Return a single JSON object matching the schema. Select the deepest supported duration from ${allowedDurations.join(', ')} seconds; if the sources do not support the requested depth, choose a shorter listed duration and explain why in coverageReason. If even 60 seconds cannot teach one useful, evidenced idea, validation will report it. Do not repeat concepts merely to fill time.
+  return `Create a source-grounded teaching syllabus for one narrated lesson. Return a single JSON object matching the schema. Decide coreGoalSupported against the learner's requested learning goal: true only when the source contains facts that explain its central idea, mechanism, or relationship. A title, table of contents, index, or list of topics that merely names the goal is insufficient. When the core goal is unsupported, set coreGoalSupported to false and explain the missing evidence in coverageReason; do not replace the learner's goal with a lesson about what the document lists. Select the deepest supported duration from ${allowedDurations.join(', ')} seconds; if the sources support the core goal but not the requested depth, choose a shorter listed duration and explain why in coverageReason. Do not repeat concepts merely to fill time.
 
 Use 1 module of 60 seconds for a 1-minute lesson; 1 module of 300 seconds for 5 minutes; 2 modules of 300 seconds for 10 minutes; 6 modules of 300 seconds for 30 minutes. Each module has a distinct goal and 1-8 stable global concept IDs. Use lowercase snake_case generated IDs such as concept_1 and module_1, never hyphens; copy those same IDs into every reference. Source span IDs must be copied exactly. Each concept label must contain at most ${SYLLABUS_CONCEPT_LABEL_MAX_WORDS} words; use a concise name, not a sentence. Concepts include an exact source-backed definition and 1-3 verbatim evidence quotes. Copy each quote as one contiguous substring of the cited span's text; do not paraphrase, splice, or use ellipses. When the source is supplied as labeled excerpts, cite only those displayed spans. ${SYLLABUS_COMPONENT_GUIDANCE} Prerequisites must occur in an earlier module or earlier within the same module concept list. Use recallOfModuleIds only for explicit spaced retrieval, never to pad. Module evidenceSpanIds must cover the concepts taught there. Include audience assumptions, progression, and a final synthesis module. Math lessons should reserve scenes for worked examples or derivations when supported. IDs and labels stay stable across every module. Every fact and requested depth must be supported by the provided source; a figure caption or figure metadata alone cannot justify a numerical fact.`;
 }

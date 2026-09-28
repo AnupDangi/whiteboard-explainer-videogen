@@ -120,8 +120,8 @@ const SAFE = STYLE.canvas.safe;
 const NOTE = STYLE.font.sizes.note;
 
 const labelBox = (edge: RoutedEdge): { x: number; y: number; w: number; h: number } => {
-  const width = measureTextWidth(edge.label!, NOTE);
-  return { x: edge.labelPos!.x - width / 2, y: edge.labelPos!.y - NOTE, w: width, h: NOTE + 8 };
+  assert.ok(edge.labelBox, 'expected a fitted labelBox');
+  return edge.labelBox;
 };
 
 const insideSafe = (box: { x: number; y: number; w: number; h: number }): boolean =>
@@ -132,7 +132,7 @@ test('edge label at the frame edge (observed FEED case) is fitted inside the saf
   // the frame edge, so its ink renders past it.
   const edge: RoutedEdge = { from: 'a', to: 'b', label: 'FEED', points: [{ x: W - SAFE - 10, y: H / 2 }, { x: W - SAFE - 2, y: H / 2 }] };
   const [fitted] = fitEdgeLabels([edge]);
-  assert.ok(fitted.labelPos, 'fitted edge carries a label anchor');
+  assert.ok(fitted.labelBox, 'fitted edge carries a label box');
   assert.ok(insideSafe(labelBox(fitted)), `label ink stays inside the safe area: ${JSON.stringify(labelBox(fitted))}`);
   assert.deepEqual(fitEdgeLabels([edge])[0], fitted, 'fitting is deterministic');
 });
@@ -153,7 +153,9 @@ test('an over-wide edge label is shortened to the safe width, never clipped', ()
 test('a centered edge label keeps the default anchor (no gratuitous moves)', () => {
   const edge: RoutedEdge = { from: 'a', to: 'b', label: 'OK', points: [{ x: 400, y: 500 }, { x: 800, y: 500 }] };
   const [fitted] = fitEdgeLabels([edge]);
-  assert.deepEqual(fitted.labelPos, edgeLabelAnchor(edge.points));
+  const anchor = edgeLabelAnchor(edge.points);
+  assert.ok(Math.abs(fitted.labelBox!.x + fitted.labelBox!.w / 2 - anchor.x) < 1e-9, 'centered label keeps the default anchor x');
+  assert.ok(Math.abs(fitted.labelBox!.y + NOTE - anchor.y) < 1e-9, 'centered label keeps the default anchor y');
 });
 
 test('edgeLabelAnchor on empty/single-point edges returns a safe default instead of crashing', () => {
@@ -171,10 +173,10 @@ test('fitEdgeLabels drops labels on edges with fewer than 2 points', () => {
   // leaving a label the renderer then anchored via the crashing fallback.
   const [noPoints] = fitEdgeLabels([{ from: 'a', to: 'b', label: 'FEED', points: [] }]);
   assert.equal(noPoints.label, undefined);
-  assert.equal(noPoints.labelPos, undefined);
+  assert.equal(noPoints.labelBox, undefined);
   const [onePoint] = fitEdgeLabels([{ from: 'a', to: 'b', label: 'FEED', points: [{ x: 100, y: 100 }] }]);
   assert.equal(onePoint.label, undefined);
-  assert.equal(onePoint.labelPos, undefined);
+  assert.equal(onePoint.labelBox, undefined);
 });
 
 test('laid-out edge labels land inside the safe area end to end', () => {
@@ -192,7 +194,7 @@ test('laid-out edge labels land inside the safe area end to end', () => {
   const scene = layoutScene(resolveScene(spec));
   for (const edge of scene.edges) {
     if (!edge.label) continue;
-    assert.ok(edge.labelPos, 'layout assigns every edge label an anchor');
+    assert.ok(edge.labelBox, 'layout assigns every edge label a box');
     assert.ok(insideSafe(labelBox(edge)), `${edge.from}->${edge.to} label stays inside the safe area`);
   }
 });

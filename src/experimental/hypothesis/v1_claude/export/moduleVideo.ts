@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { stableJson } from '../../shared/artifacts.js';
 import { withHostResourcePermit, type HostResourcePoolOptions } from '../../shared/hostResourcePool.js';

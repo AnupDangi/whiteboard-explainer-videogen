@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import type { RagSidecarEnv } from '../planner/env.js';
 import { resolveSourceEvidence, type EvidenceHit, type SourceBundle, type SourceDoc } from './sourceDoc.js';
+import { PIPELINE } from '../config.js';
 
 interface RagContentItem {
   type: 'text' | 'table' | 'equation' | 'image';
@@ -31,35 +32,26 @@ export interface RagIndexOutcome {
   actualUsage?: { callAttempts: number; successfulCallAttempts: number; failedCalls: number; providerReportedUsageResponses: number; promptTokens: number; completionTokens: number; totalTokens: number; costUsd: null; costStatus: string };
   artifactEstimatedCostUsd?: number;
   error?: string;
-  /** Human-readable reason when status is 'skipped'; never a failure. */
-  reason?: string;
+  /** Why the index was not built for this source (status 'skipped'). */
+  skipReason?: string;
 }
 
-function repositoryRoot(): string { return path.resolve(process.env.HYPOTHESIS_REPO_ROOT ?? process.cwd()); }function pythonPath(): string { return process.env.RAG_PYTHON ?? path.join(repositoryRoot(), 'rag-engine', '.venv', 'bin', 'python'); }
+function repositoryRoot(): string { return path.resolve(process.env.HYPOTHESIS_REPO_ROOT ?? process.cwd()); }
+function pythonPath(): string { return process.env.RAG_PYTHON ?? path.join(repositoryRoot(), 'rag-engine', '.venv', 'bin', 'python'); }
 function servicePath(): string { return path.join(repositoryRoot(), 'rag-engine', 'service.py'); }
-function enabled(): boolean { return (process.env.RAG_ENGINE ?? '').toLowerCase() === 'on' && existsSync(pythonPath()) && existsSync(servicePath()); }
-const hashJson = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+function enabled(): boolean { return ['on', 'always'].includes((process.env.RAG_ENGINE ?? '').toLowerCase()) && existsSync(pythonPath()) && existsSync(servicePath()); }
 
 /**
- * Deep-RAG indexing pays off only for sources that do not fit in context.
- * Small single-document prose sources skip it truthfully (`skipped`, never a
- * fake `completed`/`failed`); callers keep the fast local-text evidence path.
- * Word count comes from the merged source text because bundle documents carry
- * metadata only. No lesson-topic keywords: purely structural (size, document
- * count, figure/table presence).
+ * Why a source does not need the paid multimodal index, or undefined when it
+ * does: several documents, embedded figures, or at least
+ * PIPELINE.ragMinSourceChars characters. RAG_ENGINE=always overrides.
  */
-export const RAG_MIN_WORDS = 6000;
-
-export function ragWorthwhile(sourceDoc: SourceDoc, bundle: SourceBundle): { use: boolean; reason: string } {
-  if (bundle.documents.length > 1) return { use: true, reason: 'multiple documents' };
-  if (bundle.figures.length > 0 || sourceDoc.spans.some((span) => span.kind === 'table' || span.kind === 'equation')) {
-    return { use: true, reason: 'figures/tables present' };
-  }
-  const words = sourceDoc.text.split(/\s+/).filter(Boolean).length;
-  return words > RAG_MIN_WORDS
-    ? { use: true, reason: `${words} words` }
-    : { use: false, reason: `${words} words fits in context; full text is sent to S2` };
+export function ragSkipReason(sourceDoc: SourceDoc, sourceBundle: SourceBundle, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if ((env.RAG_ENGINE ?? '').toLowerCase() === 'always') return undefined;
+  if (sourceBundle.documents.length > 1 || (sourceDoc.figureAssets?.length ?? 0) > 0 || sourceDoc.text.length >= PIPELINE.ragMinSourceChars) return undefined;
+  return `one text-only document of ${sourceDoc.text.length.toLocaleString()} characters (< ${PIPELINE.ragMinSourceChars.toLocaleString()}); local exact-span ranking covers it`;
 }
+const hashJson = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 export function isReusableRagIndexManifest(value: unknown, digest: string, itemCount: number, expectedMultimodalCount: number): boolean {
   if (!value || typeof value !== 'object') return false;
@@ -242,8 +234,8 @@ export function mapRagChunksToEvidence(data: unknown, sourceDoc: SourceDoc, sour
     const content = typeof chunk.content === 'string' ? chunk.content : typeof chunk.text === 'string' ? chunk.text : '';
     if (!content.trim()) continue;
     for (const span of sourceDoc.spans) {
-      const quote = span.text.trim();
-      if (!quote || !sourceTextMatchesChunk(quote, content)) continue;
+      const quote = chunkQuote(span.text, content);
+      if (!quote) continue;
       const citation = resolveSourceEvidence(sourceDoc, span.id, quote);
       if (!citation || found.has(span.id)) continue;
       const existing = localBySpan.get(span.id);
@@ -264,10 +256,36 @@ export function mapRagChunksToEvidence(data: unknown, sourceDoc: SourceDoc, sour
   return [...found.values()].sort((a, b) => a.rank - b.rank).map(({ hit }, index) => ({ ...hit, rank: index + 1 }));
 }
 
-function sourceTextMatchesChunk(sourceQuote: string, retrievedChunk: string): boolean {
-  if (retrievedChunk.includes(sourceQuote)) return true;
-  const normalizeWhitespace = (value: string) => value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
-  return normalizeWhitespace(retrievedChunk).includes(normalizeWhitespace(sourceQuote));
+const normalizeWhitespace = (value: string) => value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+/** Sentences shorter than this are too generic to prove a chunk came from a span. */
+const MIN_CHUNK_SENTENCE_CHARS = 40;
+
+/**
+ * The exact span text a retrieved chunk reproduces: the whole span when the
+ * chunk contains it, otherwise the longest run of consecutive span sentences
+ * (each at least 40 characters) that the chunk contains. Retrieval chunk
+ * boundaries rarely align with source spans, so requiring the whole span
+ * made every long PDF span a miss.
+ */
+export function chunkQuote(spanText: string, retrievedChunk: string): string | undefined {
+  const whole = spanText.trim();
+  if (!whole) return undefined;
+  const chunk = normalizeWhitespace(retrievedChunk);
+  if (retrievedChunk.includes(whole) || chunk.includes(normalizeWhitespace(whole))) return whole;
+  const sentences: Array<{ start: number; end: number; hit: boolean }> = [];
+  for (const match of spanText.matchAll(/[^\s][\s\S]*?(?:[.!?]["')\]\u201d\u2019]*(?=\s|$)|$)/gu)) {
+    const text = match[0].trim();
+    sentences.push({ start: match.index, end: match.index + match[0].length, hit: text.length >= MIN_CHUNK_SENTENCE_CHARS && chunk.includes(normalizeWhitespace(text)) });
+  }
+  let best: { start: number; end: number } | undefined;
+  for (let i = 0; i < sentences.length; i += 1) {
+    if (!sentences[i]!.hit) continue;
+    let j = i;
+    while (j + 1 < sentences.length && sentences[j + 1]!.hit) j += 1;
+    if (!best || sentences[j]!.end - sentences[i]!.start > best.end - best.start) best = { start: sentences[i]!.start, end: sentences[j]!.end };
+    i = j;
+  }
+  return best ? spanText.slice(best.start, best.end).trim() : undefined;
 }
 
 /** Optional multimodal index. Lesson evidence remains exact local spans with citations; the sidecar indexes those same blocks and images. */
@@ -282,8 +300,8 @@ export async function indexSourceBundleWithRag(input: {
 }): Promise<RagIndexOutcome> {
   const startedAtMs = Date.now();
   if (!enabled()) return { enabled: false, status: 'disabled', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0 };
-  const gate = ragWorthwhile(input.sourceDoc, input.sourceBundle);
-  if (!gate.use) return { enabled: true, status: 'skipped', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0, reason: gate.reason };
+  const skipReason = ragSkipReason(input.sourceDoc, input.sourceBundle);
+  if (skipReason) return { enabled: true, status: 'skipped', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0, skipReason };
   const items = contentListForRag(input.sourceDoc, input.sourceBundle, input.query);
   if (!items.length) return { enabled: true, status: 'failed', retrievalStatus: 'not-run', indexed: false, cacheHit: false, itemCount: 0, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: 0, error: 'Source bundle contains no indexable blocks.' };
   const digest = hashJson({ contentVersion: 'rag-index-content/v2', bundleId: input.sourceBundle.bundleId, items });

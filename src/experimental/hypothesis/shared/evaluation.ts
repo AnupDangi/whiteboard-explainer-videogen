@@ -1,4 +1,4 @@
-import {EXPERIMENT,type EvaluationBundle,type GoldenCase,type NeutralElement,type NeutralTimelineEvent,type RunFailure,type RunStatus} from './contracts.js';
+import {EXPERIMENT,type GoldenCase,type NeutralElement,type NeutralTimelineEvent,type RunFailure,type RunStatus} from './contracts.js';
 import {withFailureClass} from './failure-taxonomy.js';
 
 const intersects=(a:NeutralElement['bbox'],b:NeutralElement['bbox']):boolean=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
@@ -20,7 +20,6 @@ export function deterministicGates(input:{golden?:GoldenCase;elements:NeutralEle
   if(input.golden&&Math.abs(input.durationMs-input.golden.targetDurationMs)>200)failures.push({code:'av-sync',stage:'timeline',message:`Duration ${input.durationMs}ms differs from ${input.golden.targetDurationMs}ms`,hard:true});
   if(/<script\b|on\w+\s*=|javascript:/i.test(input.svg))failures.push({code:'unsafe-svg',stage:'render',message:'Rendered SVG contains executable content',hard:true});
   if(input.licenses?.some(item=>!['MIT','ISC','Apache-2.0','CC0-1.0','CC-BY-4.0','manual'].includes(item)))failures.push({code:'license',stage:'resolve',message:'Asset license is not allowlisted',hard:true});
-  // P1 taxonomy: pure label attached at the boundary; hard/soft unchanged.
   return failures.map(withFailureClass);
 }
 
@@ -33,9 +32,3 @@ export function deriveRunStatus(hardFailures:number,judgePassed=false,evidence:P
   return evidence.factualEvidenceComplete&&evidence.alignmentComplete?'passed':'draft';
 }
 
-export function mechanismCoverage(golden:GoldenCase,bundle:Pick<EvaluationBundle,'claims'|'relations'>):Record<string,number|string>{
-  const claimHits=golden.requiredClaims.filter(claim=>bundle.claims.some(item=>item.toLocaleLowerCase().includes(claim.toLocaleLowerCase()))).length;
-  const relationHits=golden.requiredRelations.filter(expected=>bundle.relations.some(found=>found.from===expected.from&&found.to===expected.to&&found.type===expected.type)).length;
-  const claimCoverage=claimHits/Math.max(1,golden.requiredClaims.length),relationCoverage=relationHits/Math.max(1,golden.requiredRelations.length);
-  return {claimCoverage,relationCoverage,mechanismVsList:relationCoverage>=.75?'mechanism':relationCoverage>=.4?'mixed':'list'};
-}

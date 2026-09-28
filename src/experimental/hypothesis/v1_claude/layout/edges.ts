@@ -108,28 +108,77 @@ function shortenEdgeLabel(label: string, maxWidth: number, fontSize: number): st
  * Fit every edge label inside the canvas safe area: clamp the anchor into
  * the safe rect, shorten an over-wide label to the safe width, and drop a
  * label that cannot fit at all — so no label ever renders past the frame
- * edge. The fitted anchor is stored as `labelPos`, which the renderer draws.
+ * edge. The fitted box is stored as `labelBox`, which the renderer draws
+ * (centered text at the box center).
+ *
+ * When node boxes are supplied (the solver passes them), each label is
+ * placed beside its middle segment — above then below a horizontal segment,
+ * left then right of a vertical one, falling back to above/below both end
+ * nodes — at the first position clear of nodes and earlier labels. When no
+ * position is clear the label keeps the default anchor and
+ * `labelOverlapsNode` is set, so the gate reports it instead of the label
+ * silently covering a node. Without boxes the default anchor is kept
+ * (deterministic single-edge fitting).
  */
-export function fitEdgeLabels(edges: RoutedEdge[]): RoutedEdge[] {
+const LABEL_GAP = 16;
+const overlaps = (a: BBox, b: BBox) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+export function fitEdgeLabels(edges: RoutedEdge[], boxes?: Map<string, BBox>): RoutedEdge[] {
   const safe = STYLE.canvas.safe;
   const size = STYLE.font.sizes.note;
   const maxWidth = STYLE.canvas.w - 2 * safe;
+  const taken: BBox[] = boxes ? [...boxes.values()] : [];
   return edges.map((edge) => {
     if (edge.points.length < 2) {
       if (!edge.label) return edge;
-      return { ...edge, label: undefined, labelPos: undefined };
+      return { ...edge, label: undefined, labelBox: undefined };
     }
     if (!edge.label) return edge;
     let label = edge.label;
     let width = measureTextWidth(label, size);
     if (width > maxWidth) {
       label = shortenEdgeLabel(label, maxWidth, size);
-      if (!label) return { ...edge, label: undefined, labelPos: undefined };
+      if (!label) return { ...edge, label: undefined, labelBox: undefined };
       width = measureTextWidth(label, size);
     }
     const anchor = edgeLabelAnchor(edge.points);
-    const x = Math.min(Math.max(anchor.x, safe + width / 2), STYLE.canvas.w - safe - width / 2);
-    const y = Math.min(Math.max(anchor.y, safe + size), STYLE.canvas.h - safe);
-    return { ...edge, label, labelPos: { x, y } };
+    const defaultBox = (() => {
+      const cx = Math.min(Math.max(anchor.x, safe + width / 2), STYLE.canvas.w - safe - width / 2);
+      const cy = Math.min(Math.max(anchor.y, safe + size), STYLE.canvas.h - safe);
+      return { x: cx - width / 2, y: cy - size, w: width, h: size + 8 };
+    })();
+    if (!boxes) return { ...edge, label, labelBox: defaultBox };
+    const w = width + 8;
+    const h = size * 1.2;
+    const segments = edge.points.slice(1).map((end, i) => ({ start: edge.points[i]!, end }));
+    const middle = Math.floor((segments.length - 1) / 2);
+    const order = [middle, ...segments.map((_, i) => i).filter((i) => i !== middle)];
+    const candidates: BBox[] = [];
+    for (const index of order) {
+      const { start, end } = segments[index]!;
+      const cx = (start.x + end.x) / 2;
+      const cy = (start.y + end.y) / 2;
+      const vertical = Math.abs(end.y - start.y) > Math.abs(end.x - start.x);
+      const offsets = vertical ? [[-(w / 2 + LABEL_GAP), 0], [w / 2 + LABEL_GAP, 0]] : [[0, -(h / 2 + LABEL_GAP)], [0, h / 2 + LABEL_GAP]];
+      for (const [dx, dy] of offsets) {
+        const bx = Math.min(Math.max(cx + dx! - w / 2, safe), STYLE.canvas.w - safe - w);
+        const by = Math.min(Math.max(cy + dy! - h / 2, safe), STYLE.canvas.h - safe - h);
+        candidates.push({ x: bx, y: by, w, h });
+      }
+    }
+    // A gap narrower than the label: put it above, then below, both end nodes.
+    const ends = [boxes.get(edge.from), boxes.get(edge.to)].filter((box): box is BBox => Boolean(box));
+    if (ends.length) {
+      const { start, end } = segments[middle]!;
+      const cx = Math.min(Math.max((start.x + end.x) / 2, safe + w / 2), STYLE.canvas.w - safe - w / 2);
+      const above = Math.min(...ends.map((box) => box.y)) - LABEL_GAP - h;
+      const below = Math.max(...ends.map((box) => box.y + box.h)) + LABEL_GAP;
+      candidates.push({ x: cx - w / 2, y: Math.min(Math.max(above, safe), STYLE.canvas.h - safe - h), w, h });
+      candidates.push({ x: cx - w / 2, y: Math.min(Math.max(below, safe), STYLE.canvas.h - safe - h), w, h });
+    }
+    const clear = candidates.find((box) => !taken.some((other) => overlaps(box, other)));
+    const labelBox = clear ?? defaultBox;
+    taken.push(labelBox);
+    return { ...edge, label, labelBox, ...(clear ? {} : { labelOverlapsNode: true }) };
   });
 }

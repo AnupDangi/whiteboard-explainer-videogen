@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { deriveRunStatus, deterministicGates } from '../../shared/evaluation.js';
 import { loadAlignmentCalibration } from '../../shared/alignment/calibration.js';
 import { assertCommonRunOptions, type HypothesisRunOptions } from '../../shared/contracts.js';
-import { goldenForRun } from '../pipeline/runLive.js';
+import { goldenForRun } from '../pipeline/golden.js';
 
 test('clean runs are draft until judge + evidence + calibration all pass', () => {
   assert.equal(deriveRunStatus(0), 'draft');

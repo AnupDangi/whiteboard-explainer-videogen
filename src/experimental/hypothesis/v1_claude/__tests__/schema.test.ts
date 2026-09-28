@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { loadSourceDoc } from '../plan/sourceIntake.js';
+import { resolveSourceEvidence } from '../plan/sourceDoc.js';
 import { safeParseSceneSpec, validateSceneSpecStructure } from '../schema.js';
 import type { SceneSpec } from '../types.js';
 
@@ -21,6 +26,31 @@ function baseSpec(overrides: Partial<SceneSpec> = {}): SceneSpec {
 test('schema: a well-formed hand-authored scene passes', () => {
   const result = safeParseSceneSpec(baseSpec());
   assert.equal(result.success, true);
+});
+
+test('schema: accepts HTTPS source citations from HTML and rejects malformed URL locations', () => {
+  const evidence = { sourceId: 'src_web', spanId: 'span_1', startChar: 0, endChar: 13, startLine: 1, endLine: 1, quote: 'Cash flows in', sourceLocation: { kind: 'web-url' as const, url: 'https://example.org/cash-flow', selector: 'p' } };
+  const spec = baseSpec({ titleEvidenceRefs: [evidence], elements: [{ id: 'a', anchor: 'sceneStart', prim: 'box', text: 'CASH', evidenceRefs: [evidence] }], edges: [] });
+  assert.equal(safeParseSceneSpec(spec).success, true);
+  const invalid = structuredClone(spec);
+  invalid.elements[0].evidenceRefs![0].sourceLocation = { kind: 'web-url', url: 'http://example.org/cash-flow', selector: 'p' };
+  assert.equal(safeParseSceneSpec(invalid).success, false);
+});
+
+test('schema: local HTML parser citations survive SceneSpec validation', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hyp-local-html-'));
+  try {
+    const path = join(dir, 'cash-flow.html');
+    await writeFile(path, '<html><main><h1>Cash Flow</h1><p>Cash flows in through customer payments.</p></main></html>');
+    const doc = await loadSourceDoc(path);
+    const span = doc.spans.find((item) => item.text.includes('Cash flows in'))!;
+    const ref = resolveSourceEvidence(doc, span.id, 'Cash flows in')!;
+    assert.deepEqual(ref.sourceLocation, { kind: 'web-url', url: `file:${path}`, selector: 'p' });
+    const spec = baseSpec({ titleEvidenceRefs: [ref], elements: [{ id: 'a', anchor: 'sceneStart', prim: 'box', text: 'CASH', evidenceRefs: [ref] }], edges: [] });
+    assert.equal(safeParseSceneSpec(spec).success, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('schema: rejects raw markup/code smuggled into text fields', () => {

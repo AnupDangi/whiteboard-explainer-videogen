@@ -4,6 +4,7 @@ import path from 'node:path';
 import { loadOpenRouterEnv } from '../planner/env.js';
 import { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import { runReliability } from './reliability.js';
+import { argValue } from '../cli/args.js';
 
 const DEFAULT_SOURCES = [
   'ocean-tides', 'bicycle-balance', 'composting', 'rainbow-formation', 'mirror-images',
@@ -11,7 +12,7 @@ const DEFAULT_SOURCES = [
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (key: string) => args.find((value) => value.startsWith(`--${key}=`))?.slice(key.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const sourceArg = arg('sources');
   const sources = sourceArg
     ? sourceArg.split(',').map((value) => {

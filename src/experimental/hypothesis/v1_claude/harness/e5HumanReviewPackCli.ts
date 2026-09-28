@@ -9,6 +9,7 @@ import { buildE5BlindPackages, sumSuccessfulVideoApiCost, type E5BlindPairInput,
 import { writeE5ParticipantPack } from './e5HumanReviewPack.js';
 import { e5ComparisonProblems, e5HeldOutSourceProblems, type E5RunCandidate, type E5Contrast, type E5HeldOutSet } from './e5Comparison.js';
 import { resolveLocalRunArtifact, sourceDocMatchesRecordedHash, type JudgeNarration } from './judgeEligibility.js';
+import { argValue } from '../cli/args.js';
 
 const PairListSchema = z.object({
   schemaVersion: z.literal('e5-pair-list/v1'),
@@ -54,7 +55,7 @@ async function loadRun(runDir: string): Promise<LoadedRun> {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (name: string) => args.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const pairsPath = arg('pairs');
   const datasetPath = arg('dataset');
   if (!pairsPath || !datasetPath) throw new Error('Usage: e5HumanReviewPackCli.js --pairs=<e5-pair-list.json> --dataset=<versioned-heldout-set.json> [--out=<pack-root>] [--key-out=<sealed-key.json>] [--organizer-out=<organizer.json>]');

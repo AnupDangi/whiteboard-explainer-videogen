@@ -50,7 +50,6 @@ let lastTick = 0;
 let raf = 0;
 let durationMs = 0;
 let lastEventSequence = 0;
-let refreshTimer = 0;
 let activeProgressiveAudio: SceneAudioReference | undefined;
 
 function draw(t: number): void {
@@ -232,7 +231,7 @@ async function refreshRunState(): Promise<boolean> {
 }
 
 function scheduleRefresh(): void {
-  refreshTimer = window.setTimeout(() => {
+  window.setTimeout(() => {
     void refreshRunState().then((keepGoing) => { if (keepGoing) scheduleRefresh(); }).catch(() => scheduleRefresh());
   }, 750);
 }

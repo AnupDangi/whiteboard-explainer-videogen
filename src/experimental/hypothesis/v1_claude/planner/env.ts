@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { setOpenRouterBaseUrl } from '../llm/openrouter.js';
+import type { ContentStage } from '../pipeline/lesson.js';
 
 /**
  * Runtime source for OpenRouter credentials and model routing. Keys and model
@@ -10,16 +12,26 @@ import { resolve } from 'node:path';
  * Every model id is configuration. There is no model default in code: a
  * missing stage model is a startup error, so a run can never silently use a
  * model nobody chose.
+ *
+ * Model keys:
+ * - OPENROUTER_CONTENT_MODEL: S1b syllabus, S2 concepts, S3 plan, S4 script
+ *   (OPENROUTER_DIRECTOR_MODEL is accepted as a legacy name for it);
+ * - OPENROUTER_SYLLABUS_MODEL / _CONCEPTS_MODEL / _PLAN_MODEL / _SCRIPT_MODEL:
+ *   optional per-stage overrides of the content model;
+ * - OPENROUTER_SCENE_MODEL: S6 board planner (required);
+ * - OPENROUTER_VISION_MODEL: vision judge (optional).
+ * OPENROUTER_BASE_URL (optional) points every call at another compatible endpoint.
  */
 export const ENV_FILE_VARIABLE = 'HYPOTHESIS_ENV_FILE';
 
 export interface OpenRouterEnv {
   apiKey: string;
-  directorModel: string;
   /** S6 board planner. OPENROUTER_SCENE_MODEL. */
   sceneModel: string;
-  /** S2-S4 content stages. OPENROUTER_CONTENT_MODEL, else OPENROUTER_DIRECTOR_MODEL. */
+  /** S1b-S4 content stages. OPENROUTER_CONTENT_MODEL, else the legacy OPENROUTER_DIRECTOR_MODEL. */
   contentModel: string;
+  /** Per-stage content overrides (OPENROUTER_<STAGE>_MODEL); missing stages use contentModel. */
+  stageModels: Partial<Record<ContentStage, string>>;
   /** Vision judge. OPENROUTER_VISION_MODEL; undefined when not configured. */
   visionModel?: string;
   /** Explicit provider settings needed by the Python RAG sidecar. */
@@ -76,10 +88,16 @@ export async function loadOpenRouterEnv(envPath: string = defaultEnvPath(), envi
     return found;
   };
   const apiKey = required('OPENROUTER_API_KEY');
-  const directorModel = required('OPENROUTER_DIRECTOR_MODEL');
   const sceneModel = required('OPENROUTER_SCENE_MODEL');
   const contentModel = required('OPENROUTER_CONTENT_MODEL', 'OPENROUTER_DIRECTOR_MODEL');
   const visionModel = value('OPENROUTER_VISION_MODEL');
+  const stageModels: OpenRouterEnv['stageModels'] = {};
+  for (const stage of ['syllabus', 'concepts', 'plan', 'script'] as const) {
+    const configured = value(`OPENROUTER_${stage.toUpperCase()}_MODEL`);
+    if (configured) stageModels[stage] = configured;
+  }
+  const baseUrl = value('OPENROUTER_BASE_URL');
+  if (baseUrl) setOpenRouterBaseUrl(baseUrl);
   const ragSidecarKeys = [
     'OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL', 'OPENROUTER_MODEL', 'OPENROUTER_VISION_MODEL',
     'RAG_LLM_MODEL', 'RAG_VISION_MODEL', 'EMBEDDINGS_API_KEY', 'EMBEDDINGS_BASE_URL',
@@ -91,5 +109,5 @@ export async function loadOpenRouterEnv(envPath: string = defaultEnvPath(), envi
       return configured ? [[key, configured]] : [];
     }),
   );
-  return { apiKey, directorModel, sceneModel, contentModel, ...(visionModel ? { visionModel } : {}), ragSidecarEnv };
+  return { apiKey, sceneModel, contentModel, stageModels, ...(visionModel ? { visionModel } : {}), ragSidecarEnv };
 }

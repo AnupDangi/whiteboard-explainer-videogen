@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TEMPLATE_IDS } from './templates/catalog.js';
 import type { SceneSpec } from './types.js';
 import { MAX_ELEMENTS_PER_SCENE, MAX_LABEL_WORDS, MAX_TITLE_WORDS } from './style.js';
 import { RELATION_TYPES } from './plan/schemas.js';
@@ -35,6 +36,12 @@ const NativeSourceLocationSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('pptx-slide'), slide: z.number().int().positive() }),
   z.object({ kind: z.literal('docx-paragraph'), bodyBlock: z.number().int().positive(), paragraph: z.number().int().positive() }),
   z.object({ kind: z.literal('docx-table'), bodyBlock: z.number().int().positive(), table: z.number().int().positive() }),
+  z.object({
+    kind: z.literal('web-url'),
+    // Local HTML uses file:<path> as its parser-authored locator; URL fetches still require HTTPS.
+    url: z.string().url().refine((url) => url.startsWith('https://') || url.startsWith('file:'), 'source location must be HTTPS or a local file'),
+    selector: z.string().min(1).optional(),
+  }).strict(),
 ]);
 const EvidenceReferenceSchema = z.object({
   sourceId: z.string().min(1),
@@ -174,6 +181,7 @@ const EdgeSchema = z
     to: z.string().min(1),
     label: noRawMarkup().max(40).optional(),
     style: z.enum(['solid', 'dashed']).optional(),
+    head: z.enum(['forward', 'none']).optional(),
     anchor: AnchorSchema.optional(),
     evidenceRefs,
     origin,
@@ -197,21 +205,7 @@ const BoardIntentSchema = z.object({
   }).strict()).max(24),
 }).strict();
 
-const TemplateIdSchema = z.enum([
-  'title_card',
-  'hub_spoke',
-  'chain',
-  'convergence',
-  'fan_out',
-  'list_icon',
-  'compare_2',
-  'threshold',
-  'weighted_blend',
-  'layered_stack',
-  'cycle',
-  'formula_focus',
-  'plot_focus',
-]);
+const TemplateIdSchema = z.enum(TEMPLATE_IDS);
 
 export const SceneSpecSchema = z
   .object({
@@ -364,7 +358,6 @@ function mathIssues(el: SceneSpec['elements'][number]): SceneSpecStructuralIssue
   return out;
 }
 
-export type SceneSpecInput = z.infer<typeof SceneSpecSchema>;
 
 /**
  * zod's static inference widens regex-validated strings (e.g. `anchor`) back

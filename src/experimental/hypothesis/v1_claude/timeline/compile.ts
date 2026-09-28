@@ -32,6 +32,9 @@ export function revealPhases(el: LaidOutElement): { track: TimelineEvent['track'
 
 const phaseTotal = (p: RevealPhases) => p.strokeMs + p.fillMs + p.textMs;
 
+/** An element's reveal time at nominal drawing speed, before any fit to the scene audio. */
+export const nominalRevealMs = (el: LaidOutElement): number => phaseTotal(revealPhases(el).phases);
+
 /**
  * S9 — mention-anchored timeline compiler (claude_pipeline.md §15).
  *
@@ -138,7 +141,9 @@ function scheduleEdges(
     const dst = scheduled.get(edge.to);
     if (!src || !dst || edge.points.length < 2) return;
     const explicit = edge.anchor ? anchorTime(edge.anchor) : null;
-    const t0 = Math.min(Math.max(src.t1, dst.t0 - STYLE.motion.arrowMs, explicit ?? -Infinity), sceneEndMs);
+    // An arrow that would start at the very end of the scene is pulled back so it is drawn at all.
+    const desired = Math.max(src.t1, dst.t0 - STYLE.motion.arrowMs, explicit ?? -Infinity);
+    const t0 = Math.min(sceneEndMs, Math.max(Math.min(src.t0, dst.t0), Math.min(desired, sceneEndMs - STYLE.motion.arrowMs)));
     const t1 = Math.min(t0 + STYLE.motion.arrowMs, sceneEndMs);
     out.push({ elementId: `${edge.from}->${edge.to}`, track: 'edge', t0, t1, edgeIndex });
   });
@@ -247,14 +252,18 @@ export function compileTimelineFull(scene: LaidOutScene, mentions: ResolvedMenti
   return { sceneId: base.sceneId, events, sceneStartMs, sceneEndMs };
 }
 
-/** Longest window inside the scene with no reveal/edge/emphasis activity (gate G9). */
-export function maxIdleWindowMs(timeline: Timeline): number {
-  const active = timeline.events.filter((e) => e.track !== 'hold').sort((a, b) => a.t0 - b.t0);
+/**
+ * Longest window inside the scene, including the stretch after the last
+ * event, in which nothing new is drawn (gate G9). Emphasis rings count only
+ * when `countEmphasis` is set: they are filler, not new content.
+ */
+export function maxIdleWindowMs(timeline: Timeline, options: { countEmphasis?: boolean } = {}): number {
+  const active = timeline.events.filter((e) => e.track !== 'hold' && (options.countEmphasis || e.track !== 'emphasis')).sort((a, b) => a.t0 - b.t0);
   let cursor = timeline.sceneStartMs;
   let worst = 0;
   for (const ev of active) {
     worst = Math.max(worst, ev.t0 - cursor);
     cursor = Math.max(cursor, ev.t1);
   }
-  return worst;
+  return Math.max(worst, timeline.sceneEndMs - cursor);
 }

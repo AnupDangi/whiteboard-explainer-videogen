@@ -172,7 +172,7 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
     bbox: boxes.get(e.element.id) ?? { x: rect.x, y: rect.y, w: e.intrinsicSize.w, h: e.intrinsicSize.h },
   }));
 
-  const edges = fitEdgeLabels(routeEdges(scene.edges, boxes));
+  const edges = fitEdgeLabels(routeEdges(scene.edges, boxes), boxes);
 
   return { sceneId: scene.sceneId, title: scene.title, template: scene.template, elements, edges, occupancy, carryOver: scene.carryOver, focus: scene.focus, ...(scene.boardIntent ? { boardIntent: scene.boardIntent } : {}) };
 }

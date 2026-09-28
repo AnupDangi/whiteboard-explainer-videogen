@@ -29,8 +29,14 @@ export interface CalibrationAttemptResult {
   repairs: number;
   costUsd: number;
   durationMs: number;
-  /** Contract codes (`plan/contracts.ts`'s `CONTRACT_CODES`) plus `F-PED:<check>` tags from `analyzeTeachingPlan`. */
+  /**
+   * Contract codes (`plan/contracts.ts`'s `CONTRACT_CODES`), `F-PED:<check>` tags from
+   * `analyzeTeachingPlan`, and, when no plan came back, the stage's own failure codes as
+   * `S3:<code>` (e.g. `S3:plan-repair-failed`, `S3:plan-call-failed`, `S3:plan-truncated`).
+   */
   failureCodes: string[];
+  /** Provider finish reason of each call ("length" = output cut off at maxTokens). */
+  finishReasons: string[];
 }
 
 export interface CalibrationVariantSummary {
@@ -63,8 +69,6 @@ export interface CalibrationOptions {
   perCallBudgetUsd?: number;
   fetcher?: typeof fetch;
 }
-
-const CALL_FAILED_CODE = 'S3_CALL_FAILED';
 
 export async function runPlanCalibration(opts: CalibrationOptions): Promise<CalibrationReport> {
   const perCallBudgetUsd = opts.perCallBudgetUsd ?? 0.05;
@@ -111,9 +115,11 @@ export async function runPlanCalibration(opts: CalibrationOptions): Promise<Cali
           for (const finding of contractFindings) failureCodes.push(finding.code);
           passed = analysis.ok && contractFindings.length === 0;
         } else {
-          failureCodes.push(CALL_FAILED_CODE);
+          // Keep the real cause (repair failed, timeout, truncation, cost ceiling, no endpoint), not one opaque label.
+          const stageCodes = [...new Set(pRes.failures.map((failure) => `S3:${failure.code}`))];
+          failureCodes.push(...(stageCodes.length ? stageCodes : ['S3:no-plan']));
         }
-        attempts.push({ sourceId: source.id, variant, attempt, passed, repairs: pRes.usage.repairs, costUsd: pRes.usage.costUsd, durationMs, failureCodes });
+        attempts.push({ sourceId: source.id, variant, attempt, passed, repairs: pRes.usage.repairs, costUsd: pRes.usage.costUsd, durationMs, failureCodes, finishReasons: pRes.rawResponses.map((response) => response.finishReason ?? 'unknown') });
       }
     }
   }

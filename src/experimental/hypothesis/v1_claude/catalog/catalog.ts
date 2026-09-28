@@ -140,4 +140,3 @@ export const CATALOG: CatalogEntry[] = [
   }, 2),
 ];
 
-export const catalogById = (id: string): CatalogEntry | undefined => CATALOG.find((c) => c.id === id);

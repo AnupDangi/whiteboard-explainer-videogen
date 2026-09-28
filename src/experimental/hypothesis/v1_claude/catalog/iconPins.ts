@@ -1,6 +1,6 @@
 import type { ResolvedScene } from '../types.js';
 
-/** Lesson-level icon consistency: the first confident icon for a concept is reused in later scenes. */
+/** Lesson-level icon consistency: reuse an icon for the same depicted referent. */
 export interface IconPin {
   assetId: string;
   rung: 2 | 3;
@@ -8,8 +8,11 @@ export interface IconPin {
 }
 
 export function iconPinKey(element: { concept: string; conceptIds?: string[] }): string {
-  if (element.conceptIds?.length) return `concepts:${[...element.conceptIds].sort().join(',')}`;
-  return `concept:${element.concept.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')}`;
+  const referent = element.concept.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+  // One teaching concept can contain several depicted objects. Source concept IDs
+  // alone would pin all of them to the first object's icon.
+  if (element.conceptIds?.length) return `concepts:${[...element.conceptIds].sort().join(',')}|referent:${referent}`;
+  return `concept:${referent}`;
 }
 
 export function collectPins(resolved: ResolvedScene, into: ReadonlyMap<string, IconPin>): Map<string, IconPin> {

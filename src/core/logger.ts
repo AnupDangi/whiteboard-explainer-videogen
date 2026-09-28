@@ -1,6 +1,6 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID} from 'node:crypto';
-import {appendFileSync,mkdirSync,statSync,renameSync} from 'node:fs';
+import {appendFileSync,statSync,renameSync} from 'node:fs';
 import {join} from 'node:path';
 
 export const logContext=new AsyncLocalStorage<Record<string,unknown>>();

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { planScene } from '../planner/plan.js';
+import { scenePlanner } from '../planner/registry.js';
 import type { PlannerSceneInput } from '../planner/prompt.js';
 import { compileScenePlanningContext } from '../planner/context.js';
 import type { PromptArm } from '../planner/exemplars.js';
@@ -39,6 +39,8 @@ export interface SceneCalibrationReport {
   resultClass: 'diagnostic-calibration';
   generatedAt: string;
   model: string;
+  /** S6 planner measured (planner/registry.ts); the production default unless overridden. */
+  planner: string;
   arms: Array<{
     arm: PromptArm;
     attempts: number;
@@ -56,11 +58,14 @@ export async function runSceneCalibration(opts: {
   arms: PromptArm[];
   repeats: number;
   model: string;
+  /** Planner id; defaults to the one live runs use. */
+  planner?: string;
   apiKey: string;
   budgetLedger?: PersistentBudgetLedger;
   perSceneBudgetUsd?: number;
   fetcher?: typeof fetch;
 }): Promise<SceneCalibrationReport> {
+  const planner = scenePlanner(opts.planner);
   const attempts: SceneCalibrationAttempt[] = [];
   for (const arm of opts.arms) {
     for (let attempt = 1; attempt <= opts.repeats; attempt++) {
@@ -80,7 +85,7 @@ export async function runSceneCalibration(opts: {
           continue;
         }
 
-        const result = await planScene(input, {
+        const result = await planner.plan(input, {
           model: opts.model,
           apiKey: opts.apiKey,
           remainingBudgetUsd: opts.perSceneBudgetUsd ?? 0.05,
@@ -125,7 +130,7 @@ export async function runSceneCalibration(opts: {
       totalCostUsd: rows.reduce((sum, row) => sum + row.costUsd, 0),
     };
   });
-  return { resultClass: 'diagnostic-calibration', generatedAt: new Date().toISOString(), model: opts.model, arms, attempts };
+  return { resultClass: 'diagnostic-calibration', generatedAt: new Date().toISOString(), model: opts.model, planner: planner.id, arms, attempts };
 }
 
 interface NarrationFile {

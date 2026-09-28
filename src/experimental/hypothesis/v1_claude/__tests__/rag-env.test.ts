@@ -4,7 +4,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadOpenRouterEnv } from '../planner/env.js';
-import { buildRagSidecarProcessEnv, indexSourceBundleWithRag, RAG_MIN_WORDS, ragWorthwhile } from '../plan/ragSidecar.js';
+import { buildRagSidecarProcessEnv, indexSourceBundleWithRag, ragSkipReason } from '../plan/ragSidecar.js';
+import { PIPELINE } from '../config.js';
 import { buildSourceBundle } from '../plan/sourceBundle.js';
 import { sourceDocFromText } from '../plan/sourceDoc.js';
 import { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
@@ -50,32 +51,38 @@ test('OpenRouter .env credentials and RAG settings reach the Python child withou
 });
 
 test('short single-document text sources skip RAG; large, multi-doc or figure sources use it', () => {
-  assert.equal(RAG_MIN_WORDS, 6000);
+  // Donor skip rule (replaces the old RAG_MIN_WORDS word gate): a single
+  // text-only document under PIPELINE.ragMinSourceChars skips; anything bigger,
+  // multi-doc, or figure-bearing does not. ragSkipReason returns undefined when
+  // the index is worthwhile, else a human-readable skip reason.
   const small = sourceDocFromText(`# Notes\n\n${'word '.repeat(250)}`, 'markdown');
   const smallBundle = buildSourceBundle([small], 'notes').sourceBundle;
-  assert.equal(ragWorthwhile(small, smallBundle).use, false);
+  assert.ok(typeof ragSkipReason(small, smallBundle) === 'string');
 
-  const large = sourceDocFromText(`# Notes\n\n${'word '.repeat(RAG_MIN_WORDS + 1)}`, 'markdown');
+  const large = sourceDocFromText(`# Notes\n\n${'word '.repeat(8200)}`, 'markdown');
   const largeBundle = buildSourceBundle([large], 'notes').sourceBundle;
-  assert.equal(ragWorthwhile(large, largeBundle).use, true);
+  assert.ok(large.text.length >= PIPELINE.ragMinSourceChars);
+  assert.equal(ragSkipReason(large, largeBundle), undefined);
 
   const first = sourceDocFromText('# First\n\nSome text here.', 'markdown');
   const second = sourceDocFromText('# Second\n\nOther text here.', 'markdown');
   const multi = buildSourceBundle([first, second], 'text');
-  assert.equal(ragWorthwhile(multi.sourceDoc, multi.sourceBundle).use, true);
+  assert.equal(ragSkipReason(multi.sourceDoc, multi.sourceBundle), undefined);
 
   const figDoc = sourceDocFromText('# Notes\n\nShort text.', 'markdown');
+  figDoc.figureAssets = [{ sourceId: figDoc.sourceId, sha256: 'b'.repeat(64), mediaType: 'image/png', assetPath: '/tmp/fig.png', derivationStatus: 'embedded-image-crop', indexStatus: 'not-indexed' }];
   const figBundle = buildSourceBundle([figDoc], 'notes').sourceBundle;
-  figBundle.figures.push({ sourceId: figDoc.sourceId, sha256: 'b'.repeat(64), mediaType: 'image/png', assetPath: '/tmp/fig.png', derivationStatus: 'embedded-image-crop', indexStatus: 'not-indexed' });
-  assert.equal(ragWorthwhile(figDoc, figBundle).use, true);
+  assert.equal(ragSkipReason(figDoc, figBundle), undefined);
 
+  // Tables in a small single doc no longer force indexing on their own; the
+  // char-count rule governs (donor Phase 5 generalization).
   const tableDoc = sourceDocFromText('## Data\n\n| x | y |\n|---|---|\n| 1 | 2 |', 'markdown');
   const tableBundle = buildSourceBundle([tableDoc], 'data').sourceBundle;
-  assert.equal(ragWorthwhile(tableDoc, tableBundle).use, true);
+  assert.ok(typeof ragSkipReason(tableDoc, tableBundle) === 'string');
 
-  const boundary = sourceDocFromText(`# Notes\n\n${'word '.repeat(RAG_MIN_WORDS - 10)}`, 'markdown');
+  const boundary = sourceDocFromText(`# Notes\n\n${'x'.repeat(PIPELINE.ragMinSourceChars - 10)}`, 'markdown');
   const boundaryBundle = buildSourceBundle([boundary], 'notes').sourceBundle;
-  assert.equal(ragWorthwhile(boundary, boundaryBundle).use, false);
+  assert.ok(typeof ragSkipReason(boundary, boundaryBundle) === 'string');
 });
 
 test('small sources skip deep RAG indexing truthfully without spending budget', async () => {
@@ -99,7 +106,7 @@ test('small sources skip deep RAG indexing truthfully without spending budget', 
     assert.equal(outcome.indexed, false);
     assert.equal(outcome.estimatedCostUsd, 0);
     assert.equal(outcome.cacheHit, false);
-    assert.ok(outcome.reason?.length);
+    assert.ok(outcome.skipReason?.length);
     assert.equal(sourceBundle.retrievalMode, 'local-text');
     assert.equal(sourceBundle.evidenceHits.length, hitsBefore);
     assert.equal((await new PersistentBudgetLedger(join(root, 'ledger.json'), 0.1).snapshot()).spentUsd, 0);

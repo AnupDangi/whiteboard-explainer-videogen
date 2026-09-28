@@ -126,9 +126,11 @@ const instanceBoard = (count: number): Board => ({
   schemaVersion: BOARD_SCHEMA_VERSION,
   title: 'Alpha Items',
   layout: 'list',
-  visual: { kind: 'plain' },
+  // Merged semantics: boardSchema admits no 'plain' visual (test-only kind, the
+  // planner never emits it), so schema-gated checks use the process form.
+  visual: { kind: 'process' },
   nodes: ([
-    { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Alpha', role: 'item' },
+    { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Alpha', role: 'process' },
     { id: 'n2', mention: 'm2', concept: 'c1', icon: 'label', label: 'red Alpha', role: 'item' },
     { id: 'n3', mention: 'm3', concept: 'c1', icon: 'label', label: 'tall Alpha', role: 'item' },
     { id: 'n4', mention: 'm4', concept: 'c1', icon: 'label', label: 'wide Alpha', role: 'item' },
@@ -147,9 +149,11 @@ test('dropping the excess instance passes with coverage intact', () => {
   assert.deepEqual(validateBoard(instanceBoard(3), input).problems, []);
 });
 
-// Fight 3: mention-once vs recap fan-in coverage. One mention may reveal a
-// second node only when that node alone shows an otherwise-omitted required
-// concept; every other reuse stays rejected.
+// Fight 3: shared mentions vs coverage. Merged semantics (donor planner) allow
+// two nodes on one spoken mention (board.test.ts: 'two nodes may appear on the
+// same spoken mention'), so reuse passes whenever coverage holds; the twin rule
+// still rejects a repeated concept that reuses both mention and label, and
+// coverage still rejects an omitted required concept.
 function scarceScene(extraConcept: string | null): PlannerSceneInput {
   const quotes = { c1: 'Idea One stated', c2: 'Idea Two stated', c3: 'Idea Three stated', r1: 'Idea One leads to Idea Two', r2: 'Idea Two leads to Idea Three' };
   const refs = { c1: ref('c1', quotes.c1, 0), c2: ref('c2', quotes.c2, 30), c3: ref('c3', quotes.c3, 60), r1: ref('r1', quotes.r1, 90), r2: ref('r2', quotes.r2, 130) };
@@ -184,9 +188,9 @@ function scarceScene(extraConcept: string | null): PlannerSceneInput {
 
 test('mention reuse covering an otherwise-omitted required concept passes', () => {
   const board: Board = {
-    schemaVersion: BOARD_SCHEMA_VERSION, title: 'Ideas Connect', layout: 'list', visual: { kind: 'plain' },
+    schemaVersion: BOARD_SCHEMA_VERSION, title: 'Ideas Connect', layout: 'list', visual: { kind: 'process' },
     nodes: [
-      { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Idea One', role: 'item' },
+      { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Idea One', role: 'process' },
       { id: 'n2', mention: 'm1', concept: 'c2', icon: 'label', label: 'Idea Two', role: 'item' },
       { id: 'n3', mention: 'm2', concept: 'c3', icon: 'label', label: 'Idea Three', role: 'item' },
     ],
@@ -194,39 +198,39 @@ test('mention reuse covering an otherwise-omitted required concept passes', () =
   assert.deepEqual(validateBoard(board, scarceScene(null)).problems, []);
 });
 
-test('mention reuse stays rejected when a free mention could carry the node', () => {
+test('mention reuse passes when a free mention could carry the node (merged semantics: shared mentions allowed)', () => {
   const input = scarceScene(null);
   input.mentions = [...input.mentions, { id: 'm3', phrase: 'Idea Two spoken' }];
   const board: Board = {
-    schemaVersion: BOARD_SCHEMA_VERSION, title: 'Ideas Connect', layout: 'list', visual: { kind: 'plain' },
+    schemaVersion: BOARD_SCHEMA_VERSION, title: 'Ideas Connect', layout: 'list', visual: { kind: 'process' },
     nodes: [
-      { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Idea One', role: 'item' },
+      { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Idea One', role: 'process' },
       { id: 'n2', mention: 'm1', concept: 'c2', icon: 'label', label: 'Idea Two', role: 'item' },
       { id: 'n3', mention: 'm2', concept: 'c3', icon: 'label', label: 'Idea Three', role: 'item' },
     ],
   };
-  // Three mentions for three required concepts: no scarcity, so the reuse is
-  // unjustified even though n2 alone shows required c2.
-  assert.match(validateBoard(board, input).problems.join(' | '), /mention m1 is used twice/);
+  // Three mentions for three required concepts: the reuse is still admissible
+  // under merged semantics, and coverage holds, so every gate agrees it passes.
+  assert.deepEqual(validateBoard(board, input).problems, []);
 });
 
-test('mention reuse for a non-required concept stays rejected', () => {
+test('mention reuse for a non-required concept fails coverage for the omitted required concept', () => {
   const board: Board = {
-    schemaVersion: BOARD_SCHEMA_VERSION, title: 'Ideas Connect', layout: 'list', visual: { kind: 'plain' },
+    schemaVersion: BOARD_SCHEMA_VERSION, title: 'Ideas Connect', layout: 'list', visual: { kind: 'process' },
     nodes: [
-      { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Idea One', role: 'item' },
+      { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Idea One', role: 'process' },
       { id: 'n2', mention: 'm1', concept: 'cx', icon: 'label', label: 'Side Note', role: 'item' },
       { id: 'n3', mention: 'm2', concept: 'c3', icon: 'label', label: 'Idea Three', role: 'item' },
     ],
   };
-  assert.match(validateBoard(board, scarceScene('Side Note')).problems.join(' | '), /mention m1 is used twice/);
+  assert.match(validateBoard(board, scarceScene('Side Note')).problems.join(' | '), /required concept c2 has no node/);
 });
 
-test('mention reuse for an already-shown required concept stays rejected', () => {
+test('mention reuse for an already-shown required concept fails the twin rule', () => {
   const board: Board = {
-    schemaVersion: BOARD_SCHEMA_VERSION, title: 'Ideas Connect', layout: 'list', visual: { kind: 'plain' },
+    schemaVersion: BOARD_SCHEMA_VERSION, title: 'Ideas Connect', layout: 'list', visual: { kind: 'process' },
     nodes: [
-      { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Idea One', role: 'item' },
+      { id: 'n1', mention: 'm1', concept: 'c1', icon: 'label', label: 'Idea One', role: 'process' },
       { id: 'n2', mention: 'm1', concept: 'c2', icon: 'label', label: 'Idea Two', role: 'item' },
       { id: 'n3', mention: 'm2', concept: 'c3', icon: 'label', label: 'Idea Three', role: 'item' },
       { id: 'n4', mention: 'm1', concept: 'c2', icon: 'label', label: 'Idea Two', role: 'item' },
@@ -234,11 +238,12 @@ test('mention reuse for an already-shown required concept stays rejected', () =>
   };
   // n4 duplicates n2's mention AND label for the same concept: the twin rule
   // still demands distinct mentions/labels per instance.
-  assert.match(validateBoard(board, scarceScene(null)).problems.join(' | '), /distinct mention/);
+  assert.match(validateBoard(board, scarceScene(null)).problems.join(' | '), /duplicate concept c2/);
 });
 
-// Fight 4: fallback item-roles vs process visual. A role-less fallback must
-// downgrade to the plain visual, not claim a process it cannot satisfy.
+// Fight 4: fallback roles vs process visual. Merged semantics: the planner
+// never emits 'plain' (boardSchema admits no plain visual), so the fallback
+// assigns the busiest node a process role and keeps the process form.
 function looseScene(): PlannerSceneInput {
   const quotes = { c1: 'Alpha noted', c2: 'Beta noted', c3: 'Gamma noted' };
   const refs = { c1: ref('c1', quotes.c1, 0), c2: ref('c2', quotes.c2, 20), c3: ref('c3', quotes.c3, 40) };
@@ -262,11 +267,12 @@ function looseScene(): PlannerSceneInput {
   return input;
 }
 
-test('role-less fallback downgrades to the plain visual and passes its own gates', () => {
+test('fallback assigns a process role and keeps the process visual (planner never emits plain)', () => {
   const input = looseScene();
   const board = fallbackBoard(input);
-  assert.ok(board.nodes.length >= 3 && board.nodes.every((node) => node.role === 'item'));
-  assert.equal(board.visual.kind, 'plain');
+  assert.ok(board.nodes.length >= 3);
+  assert.ok(board.nodes.some((node) => node.role === 'process'));
+  assert.equal(board.visual.kind, 'process');
   const problems = [...boardProblems(board, input, boardEnums(input)), ...compileBoard(board, input).problems];
   assert.ok(!problems.some((problem) => problem.includes('process form needs')), problems.join(' | '));
   assert.deepEqual(validateBoard(board, input).problems, []);
@@ -274,10 +280,19 @@ test('role-less fallback downgrades to the plain visual and passes its own gates
 
 test('plain visual compiles to the layout template with no role requirement', () => {
   const input = looseScene();
-  const { spec, problems } = compileBoard(fallbackBoard(input), input);
+  // 'plain' is test-only: built literally (never via the planner or the zod
+  // schema) and compiled directly. No relation shape and no structure cue, so
+  // the list layout projects to its own template.
+  const fallback = fallbackBoard(input);
+  const plainBoard: Board = {
+    ...fallback,
+    layout: 'list',
+    visual: { kind: 'plain' },
+    nodes: fallback.nodes.map((node) => ({ ...node, role: 'item' as const })),
+  };
+  const { spec, problems } = compileBoard(plainBoard, input);
   assert.deepEqual(problems, []);
-  // No relation shape and no structure cue: sequence projects to flow.
-  assert.equal(spec.template, 'chain');
+  assert.equal(spec.template, 'list_icon');
   assert.equal(spec.boardIntent?.visualKind, 'plain');
   assert.ok(safeParseSceneSpec(spec).success);
   const laidOut = {
@@ -300,7 +315,9 @@ test('process visual without a process role stays strictly rejected', () => {
 
 test('compare layout with a plain visual stays strictly rejected', () => {
   const board: Board = { ...fullListBoard(), layout: 'compare', visual: { kind: 'plain' }, nodes: fullListBoard().nodes.slice(0, 2) };
-  assert.match(validateBoard(board, chainScene()).problems.join(' | '), /compare layout requires comparison form/);
+  // Merged semantics: 'plain' never reaches the layout/visual coherence rule —
+  // the zod schema (which the planner path also uses) rejects it first.
+  assert.match(validateBoard(board, chainScene()).problems.join(' | '), /visual\.kind: Invalid discriminator value/);
 });
 
 test('fallback keeps the process visual when the relation graph assigns a process role', () => {
@@ -320,10 +337,11 @@ test('fallback keeps the process visual when the relation graph assigns a proces
   assert.equal(board.visual.kind, 'process');
 });
 
-test('fallback chain without roles downgrades to plain (no behaviour change beyond the visual)', () => {
+test('fallback chain keeps the process visual (no behaviour change beyond roles)', () => {
   const input = chainScene();
-  // Cause structure with a linear chain projects to flow; roles stay item.
+  // Linear chain projects to flow; the busiest node takes the process role.
   const flow = fallbackBoard(input);
   assert.equal(flow.layout, 'flow');
-  assert.equal(flow.visual.kind, 'plain');
+  assert.equal(flow.visual.kind, 'process');
+  assert.ok(flow.nodes.some((node) => node.role === 'process'));
 });

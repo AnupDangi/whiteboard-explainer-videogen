@@ -30,7 +30,7 @@ export interface BoardSceneMetrics {
   carryOverCount: number;
   repeatedAssetCount: number;
   belowOccupancyMin: boolean;
-  belowHardMin: boolean;
+  belowSparse: boolean;
   boardTooSparse: boolean;
   minReadableTextViolation: boolean;
   tinyElementCount: number;
@@ -40,8 +40,6 @@ export interface BoardSceneMetrics {
 const isPrimaryReveal = (track: string): boolean =>
   track !== 'hold' && track !== 'emphasis' && track !== 'edge' && track !== 'term';
 
-const STRUCTURAL_PRIMS: ReadonlySet<string> = new Set(['formula', 'plot', 'matrix', 'numberLine']);
-const STRUCTURAL_VISUAL_KINDS: ReadonlySet<string> = new Set(['formula', 'plot', 'matrix', 'number-line', 'worked-example']);
 
 export function measureBoardScene(scene: LaidOutScene, timeline: Timeline): BoardSceneMetrics {
   const elementCount = scene.elements.length;
@@ -80,14 +78,10 @@ export function measureBoardScene(scene: LaidOutScene, timeline: Timeline): Boar
 
   const carryOverCount = scene.carryOver?.length ?? 0;
   const belowOccupancyMin = scene.occupancy < STYLE.occupancy.min;
-  const belowHardMin = scene.occupancy < STYLE.occupancy.hardMin;
+  const belowSparse = scene.occupancy < STYLE.occupancy.sparse;
 
-  const structured =
-    scene.elements.some((e) => STRUCTURAL_PRIMS.has(e.element.prim)) ||
-    (scene.boardIntent ? STRUCTURAL_VISUAL_KINDS.has(scene.boardIntent.visualKind) : false);
-  const compare = scene.boardIntent?.layout === 'compare' || scene.template === 'compare_2';
   const boardTooSparse =
-    !structured && !compare && (scene.occupancy < STYLE.occupancy.hardMin || elementCount < 2);
+    scene.occupancy < STYLE.occupancy.sparse && elementCount > 0;
 
   const minReadableTextViolation =
     minRenderedTextPx !== null && minRenderedTextPx < MIN_READABLE_FONT_PX - 1e-9;
@@ -137,7 +131,7 @@ export function measureBoardScene(scene: LaidOutScene, timeline: Timeline): Boar
     carryOverCount,
     repeatedAssetCount,
     belowOccupancyMin,
-    belowHardMin,
+    belowSparse,
     boardTooSparse,
     minReadableTextViolation,
     tinyElementCount,

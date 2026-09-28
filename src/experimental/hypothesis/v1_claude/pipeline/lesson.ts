@@ -1,6 +1,7 @@
-import { readFile } from 'node:fs/promises';
 import { sha256, stableJson } from '../../shared/artifacts.js';
-import { synthesizeAndAlign } from '../../shared/alignment/align.js';
+import type { synthesizeAndAlign } from '../../shared/alignment/align.js';
+import { PIPELINE } from '../config.js';
+import { sceneAudioStage, synthesizeSceneAudio } from './sceneAudio.js';
 import type { StageFailure } from '../types.js';
 import { addUsage, emptyUsage, type CallUsage, type StructuredCallAttemptRecord } from '../llm/structuredCall.js';
 import { analyzeTeachingPlan, type PlanAnalysis } from '../plan/analyze.js';
@@ -12,17 +13,15 @@ import type { HypothesisLiveInput, LiveSceneInput } from './runLive.js';
 import type { PersistentBudgetLedger } from './budgetLedger.js';
 import { ContentAddressedArtifactStore } from '../artifactCache.js';
 import type { StageRunRecord } from '../../shared/contracts.js';
-import { loadSourceDoc, loadSourceDocFromUrl } from '../plan/sourceIntake.js';
+import { intakeWarningFailures, loadSourceDoc, loadSourceDocFromUrl } from '../plan/sourceIntake.js';
 import { buildSourceBundle } from '../plan/sourceBundle.js';
 import { buildSyllabus, lessonCostCapUsd, rebudgetUnwrittenModules, type ModulePlan, type Syllabus } from '../plan/hierarchical.js';
 import { parseMarkers } from '../narration/markers.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
-import { S5_STAGE_VERSION, S5_MODEL_ID } from './versions.js';
 
 /**
  * S2 -> S3 -> plan analysis -> S4 for a free-form lesson request. Stops at
- * the first stage that fails validation (after its repairs: one per stage,
- * two phased repairs for S3) or when the
+ * the first stage that fails validation (after its one repair) or when the
  * teaching-plan analyser finds a blocking F-PED error: a bad plan is never
  * narrated. Every call's usage and raw output is kept for the run log.
  */
@@ -46,24 +45,11 @@ export interface PreparedLesson {
   stageRuns: StageRunRecord[];
 }
 
-/** Assembled section ids must satisfy the same 40-char snake_case contract as generated ones. */
-export const SCOPED_SECTION_ID_MAX = 40;
-const SCOPED_SECTION_ID_PATTERN = /^[a-z0-9_]+$/;
+/** Content stages whose model can be chosen independently (OPENROUTER_<STAGE>_MODEL). */
+export type ContentStage = 'syllabus' | 'concepts' | 'plan' | 'script';
+const CONTENT_STAGE_FOR: Array<[prefix: string, stage: ContentStage]> = [['S1-syllabus', 'syllabus'], ['S2-concepts', 'concepts'], ['S3-teaching-plan', 'plan'], ['S4-narration-script', 'script']];
 
-/**
- * Module-scoped section id: the `moduleTag_sectionId` join, normalized to
- * the id contract. Short joins pass through unchanged; long joins keep a
- * readable prefix plus a hash of the full join, so assembled ids stay valid
- * and distinct across modules.
- */
-export function scopedSectionId(moduleTag: string, sectionId: string): string {
-  const raw = `${moduleTag}_${sectionId}`.replaceAll('-', '_');
-  if (raw.length <= SCOPED_SECTION_ID_MAX && SCOPED_SECTION_ID_PATTERN.test(raw)) return raw;
-  const hash = sha256(raw).slice(0, 8);
-  return `${raw.slice(0, SCOPED_SECTION_ID_MAX - 9)}_${hash}`;
-}
-
-export async function prepareLesson(req: LessonRequest, m: { model: string; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number }): Promise<PreparedLesson> {
+export async function prepareLesson(req: LessonRequest, m: { model: string; stageModels?: Partial<Record<ContentStage, string>>; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number }): Promise<PreparedLesson> {
   const sourceStartedAtMs = Date.now();
   const sourceDocs = !req.sourceDoc && req.sources?.length ? await Promise.all(req.sources.map(async (source) => {
     if (source.kind === 'document') return loadSourceDoc(source.path);
@@ -83,15 +69,18 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
   const rawResponses: PreparedLesson['rawResponses'] = {};
   const cacheHits: string[] = [];
   const stageArtifacts: PreparedLesson['stageArtifacts'] = {};
-  const stageRuns: StageRunRecord[] = [{ stage: 'S1-source-intake', kind: 'local', status: 'completed', durationMs: req.sourceDoc ? 0 : sourceDurationMs, startedAt: new Date(sourceStartedAtMs).toISOString(), completedAt: new Date(sourceStartedAtMs + sourceDurationMs).toISOString(), timingKnown: !req.sourceDoc, apiCostUsd: 0, cacheHit: false, fallbackCount: 0, failures: [] }];
+  const stageRuns: StageRunRecord[] = [{ stage: 'S1-source-intake', kind: 'local', status: 'completed', durationMs: req.sourceDoc ? 0 : sourceDurationMs, startedAt: new Date(sourceStartedAtMs).toISOString(), completedAt: new Date(sourceStartedAtMs + sourceDurationMs).toISOString(), timingKnown: !req.sourceDoc, apiCostUsd: 0, cacheHit: false, fallbackCount: 0, failures: (sourceDocs ?? []).flatMap(intakeWarningFailures) }];
   if (sourceBundle) stageRuns.push({ stage: 'S1-evidence-retrieval', kind: 'local', status: sourceBundle.evidenceHits.length ? 'completed' : 'failed', durationMs: sourceBundle.retrievalCost.elapsedMs, apiCostUsd: sourceBundle.retrievalCost.apiCostUsd, costEstimated: sourceBundle.retrievalCost.estimated || undefined, cacheHit: false, fallbackCount: 0, failures: sourceBundle.evidenceHits.length ? [] : [{ code: 'no-source-evidence-hit', stage: 'S1-evidence-retrieval', message: 'No source spans matched the lesson instruction; source coverage must be checked before planning.', hard: true }] });
   if (sourceBundle && sourceBundle.evidenceHits.length === 0) failures.push({ code: 'no-source-evidence-hit', stage: 'source', message: 'No source spans matched the lesson instruction; source coverage must be checked before planning.', hard: true });
   const budget = () => Math.max(0, effectiveBudgetUsd - usage.costUsd);
+  const modelFor = (stage: ContentStage): string => m.stageModels?.[stage] ?? m.model;
+  const modelForStage = (stageName: string): string => modelFor(CONTENT_STAGE_FOR.find(([prefix]) => stageName.startsWith(prefix))?.[1] ?? 'concepts');
   const runCached = async <T extends { usage: CallUsage; failures: StageFailure[] }>(stage: string, input: unknown, schemaVersion: string, stageVersion: string, produce: () => Promise<T>, promptVersion = `${stage}-prompt-v1`) => {
     const startedAtMs = Date.now();
     try {
       const cached = m.artifactStore
-        ? await m.artifactStore.run(stage, input, { schemaVersion, stageVersion, promptVersion, modelId: m.model }, produce)
+        // Only complete results are stored: a failed or rejected call is retried on the next warm run.
+        ? await m.artifactStore.run(stage, input, { schemaVersion, stageVersion, promptVersion, modelId: modelForStage(stage) }, produce, { cacheable: (result) => !result.failures.some((failure) => failure.hard) })
         : undefined;
       if (cached) stageArtifacts[stage] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
       const artifactResult = cached?.artifact.payload ?? await produce();
@@ -102,7 +91,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
         ? artifactResult.sceneStageRuns as StageRunRecord[]
         : undefined;
       stageRuns.push({
-        stage, kind: 'provider', status: artifactResult.failures.some((failure) => failure.hard) ? 'failed' : 'completed',
+        stage, kind: 'provider', modelId: modelForStage(stage), status: artifactResult.failures.some((failure) => failure.hard) ? 'failed' : 'completed',
         durationMs: Date.now() - startedAtMs, startedAt: new Date(startedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: measuredUsage.costUsd,
         ...(nestedSceneRuns ? { accountingRole: 'aggregate' as const } : {}),
         ...(isCacheHit ? { artifactApiCostUsd: artifactResult.usage.costUsd } : {}),
@@ -137,11 +126,22 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
 
   if ([60, 300, 600, 1800].includes(groundedRequest.targetDurationSec)) {
     const requestedDurationSec = groundedRequest.targetDurationSec;
-    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v3', 'hierarchical-syllabus-v4-bounded-span-excerpts-id-normalization', () => buildSyllabus(groundedRequest, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v4', 'hierarchical-syllabus-v5-core-goal-support', () => buildSyllabus(groundedRequest, { model: modelFor('syllabus'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
     const syllabusResult = syllabusRun.result;
     addUsage(usage, syllabusResult.usage); failures.push(...syllabusResult.failures); rawResponses.syllabus = syllabusResult.rawResponses;
     if (!syllabusResult.value) return preparedResult({ requestedDurationSec });
     const syllabus = syllabusResult.value;
+    const sufficiencyCheckedAt = new Date().toISOString();
+    const sufficiencyFailure: StageFailure | undefined = syllabus.coreGoalSupported ? undefined : {
+      code: 'source-insufficient-for-goal', stage: 'source',
+      message: `Source cannot teach the requested core learning goal: ${syllabus.coverageReason}`,
+      hard: true,
+    };
+    stageRuns.push({ stage: 'S1-goal-sufficiency', kind: 'local', status: sufficiencyFailure ? 'failed' : 'completed', durationMs: 0, startedAt: sufficiencyCheckedAt, completedAt: sufficiencyCheckedAt, apiCostUsd: 0, cacheHit: false, fallbackCount: 0, failures: sufficiencyFailure ? [sufficiencyFailure] : [] });
+    if (sufficiencyFailure) {
+      failures.push(sufficiencyFailure);
+      return preparedResult({ syllabus, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
+    }
     if (m.budgetLedger) {
       const ledgerSpendBeforeSyllabus = Math.max(0, (await m.budgetLedger.snapshot()).spentUsd - usage.costUsd);
       effectiveBudgetUsd = Math.max(0, lessonCostCapUsd(syllabus.plannedDurationSec) - ledgerSpendBeforeSyllabus);
@@ -155,6 +155,8 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
       const selected = sourceDoc.spans.filter((span) => spanIds.includes(span.id));
       const text = selected.map((span) => span.text.trimEnd()).join('\n\n');
       return { ...sourceDoc, text, spans: selected, contentSha256: sha256(text), retrievalEvidence: sourceDoc.retrievalEvidence?.filter((hit) => spanIds.includes(hit.citation.spanId)), figureAssets: sourceDoc.figureAssets?.filter((figure) => selected.some((span) => {
+        // A figure belongs to a module only when it comes from the same document as one of its spans.
+        if ((span.citationSourceId ?? sourceDoc.sourceId) !== figure.sourceId) return false;
         if (figure.sourceLocation && JSON.stringify(span.sourceLocation) === JSON.stringify(figure.sourceLocation)) return true;
         if (figure.page && span.sourceLocation?.kind === 'pdf-page') return figure.page === span.sourceLocation.page;
         return span.sourceLocation?.kind === 'pptx-slide' && figure.page === span.sourceLocation.slide;
@@ -169,7 +171,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
       const moduleLabels = remainingModules.map((candidate, index) => `${index + 1}. ${candidate.title}: ${candidate.goal} (${candidate.budgetSec}s)`).join('\n');
       const moduleRequest: LessonRequest = { ...groundedRequest, source: scopedSource.text, sourceDoc: scopedSource, sourceBundle: undefined, targetDurationSec: effectiveModule.budgetSec, instruction: `Course objective: ${syllabus.learningObjective}\nFull course modules:\n${moduleLabels}\n\nCurrent module ${moduleIndex + 1}: ${module.title}. ${module.goal}\nEffective time budget: ${effectiveModule.budgetSec} seconds. Write narration with enough explanation to teach this module inside that budget; do not repeat or pad.\nUse only this module's assigned concepts; preserve global IDs and labels.`, conceptScope: scopedConcepts.map(({ id, label, definition }) => ({ id, label, definition })) };
       const moduleTag = `${String(moduleIndex + 1).padStart(2, '0')}-${module.id}`;
-      const graphRun = await runCached(`S2-concepts:${moduleTag}`, { request: moduleRequest, syllabusConcepts: scopedConcepts }, 'claude-concept-graph/v1', 'S2-module-concept-graph-v2-relational-components', () => buildConceptGraph(moduleRequest, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const graphRun = await runCached(`S2-concepts:${moduleTag}`, { request: moduleRequest, syllabusConcepts: scopedConcepts }, 'claude-concept-graph/v1', 'S2-module-concept-graph-v3-scoped-span-excerpts', () => buildConceptGraph(moduleRequest, { model: modelFor('concepts'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, graphRun.result.usage); failures.push(...graphRun.result.failures); rawResponses[`concepts:${moduleTag}`] = graphRun.result.rawResponses;
       if (!graphRun.result.value) return preparedResult({ syllabus, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const rawGraph = graphRun.result.value;
@@ -177,7 +179,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
         const syllabusConcept = allConcepts.get(concept.id);
         return syllabusConcept ? { ...concept, label: syllabusConcept.label, definition: syllabusConcept.definition, evidence: syllabusConcept.evidence } : concept;
       }) };
-      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v4', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v8-two-phase-repair`, () => buildTeachingPlan(moduleRequest, graph, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v4', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v6-short-outline`, () => buildTeachingPlan(moduleRequest, graph, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, planRun.result.usage); failures.push(...planRun.result.failures); rawResponses[`plan:${moduleTag}`] = planRun.result.rawResponses;
       if (!planRun.result.value) return preparedResult({ syllabus, graph, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const modulePlan = planRun.result.value;
@@ -186,11 +188,12 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
       for (const finding of contractFindings) failures.push({ code: finding.code, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: true });
       for (const finding of analysis.findings) failures.push({ code: `${finding.code}:${finding.check}`, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: finding.severity === 'error' });
       if (!analysis.ok || contractFindings.length) return preparedResult({ syllabus, graph, plan: modulePlan, analysis, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
-      const scriptRun = await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-script/v1', 'S4-module-script-v4-mentions-4-7', () => writeScript(moduleRequest, graph, modulePlan, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const scriptRun = await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-script/v1', 'S4-module-script-v6-spoken-only', () => writeScript(moduleRequest, graph, modulePlan, { model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, scriptRun.result.usage); failures.push(...scriptRun.result.failures); rawResponses[`script:${moduleTag}`] = scriptRun.result.rawResponses;
       if (!scriptRun.result.value) return preparedResult({ syllabus, graph, plan: modulePlan, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
-      const prefixedSections = modulePlan.sections.map((section) => ({ ...section, id: scopedSectionId(moduleTag, section.id) }));
-      const prefixedScenes = scriptRun.result.value.scenes.map((scene) => ({ ...scene, sectionId: scopedSectionId(moduleTag, scene.sectionId) }));
+      const sectionPrefix = `${moduleTag}_`;
+      const prefixedSections = modulePlan.sections.map((section) => ({ ...section, id: `${sectionPrefix}${section.id}` }));
+      const prefixedScenes = scriptRun.result.value.scenes.map((scene) => ({ ...scene, sectionId: `${sectionPrefix}${scene.sectionId}` }));
       allSections.push(...prefixedSections);
       allScenes.push(...prefixedScenes);
       moduleGraphs.push(graph);
@@ -198,25 +201,11 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
       if (m.speechAligner) {
         const alignStartedAtMs = Date.now();
         const alignmentResults = await Promise.allSettled(prefixedScenes.map(async (scene) => {
-          const plainText = parseMarkers(scene.text).plainText;
           const sceneId = scene.sectionId;
-          const alignmentInput = { text: plainText, language: m.speechLanguage ?? 'en', voice: m.speechVoice, provider: 'auto', model: 'base', calibrationMedianErrorMs: m.alignmentCalibrationMedianErrorMs };
-          const generate = async () => {
-            const generated = await m.speechAligner!(plainText, { language: m.speechLanguage ?? 'en', voice: m.speechVoice, provider: 'auto', model: 'base' });
-            return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
-          };
-          if (!m.artifactStore) return { sceneId, ...(await generate()), cacheHit: false };
-          const cached = await m.artifactStore.run(`S5-tts-alignment:${sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, generate);
-          m.artifactStore.reuseWithinRun(`S5-tts-alignment:${sceneId}`, alignmentInput, { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID }, cached.artifact);
-          if (cached.cacheHit) cacheHits.push(`S5-tts-alignment:${sceneId}`);
-          stageArtifacts[`S5-tts-alignment:${sceneId}`] = { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit };
-          return {
-            sceneId,
-            ...cached.artifact.payload,
-            aligner: cached.artifact.payload.aligner ?? 'stable-ts',
-            repairedWordIndexes: cached.artifact.payload.repairedWordIndexes ?? [],
-            cacheHit: cached.cacheHit,
-          };
+          const audio = await synthesizeSceneAudio({ sceneId, text: parseMarkers(scene.text).plainText, language: m.speechLanguage ?? 'en', voice: m.speechVoice, calibrationMedianErrorMs: m.alignmentCalibrationMedianErrorMs }, { aligner: m.speechAligner, artifactStore: m.artifactStore });
+          if (audio.artifact) stageArtifacts[sceneAudioStage(sceneId)] = audio.artifact;
+          if (audio.cacheHit) cacheHits.push(sceneAudioStage(sceneId));
+          return { sceneId, ...audio };
         }));
         const alignmentErrors = alignmentResults.flatMap((result, index) => result.status === 'rejected' ? [`${prefixedScenes[index]!.sectionId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`] : []);
         if (alignmentErrors.length) {
@@ -234,7 +223,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
           const actualTokens = alignedScene.words.flatMap((word) => tokenizeWords(word.word));
           if (expectedTokens.join('\u0000') !== actualTokens.join('\u0000')) timingProblems.push(`${alignedScene.sceneId}: aligned words do not match narration token sequence`);
           timingProblems.push(...alignedWordTimingProblems(alignedScene.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })), alignedScene.durationMs).map((problem) => `${alignedScene.sceneId}: ${problem}`));
-          moduleAudioDurationMs += alignedScene.durationMs + (sceneIndex < aligned.length - 1 ? 200 : 0);
+          moduleAudioDurationMs += alignedScene.durationMs + (sceneIndex < aligned.length - 1 ? PIPELINE.sceneGapMs : 0);
         }
         completed.actualAudioDurationMs = moduleAudioDurationMs;
         stageRuns.push({ stage: `S5-module-audio:${moduleTag}`, kind: 'local', status: timingProblems.length ? 'failed' : 'completed', durationMs: Date.now() - alignStartedAtMs, startedAt: new Date(alignStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: 0, cacheHit: aligned.length > 0 && aligned.every((scene) => scene.cacheHit), fallbackCount: 0, failures: timingProblems.map((message) => ({ code: 'invalid-module-audio-timing', stage: 'align', message, hard: true })) });
@@ -245,7 +234,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
           completedModules.push(completed);
           return preparedResult({ syllabus, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
         }
-        committedAudioDurationMs += moduleAudioDurationMs + (moduleIndex > 0 ? 200 : 0);
+        committedAudioDurationMs += moduleAudioDurationMs + (moduleIndex > 0 ? PIPELINE.sceneGapMs : 0);
         if (moduleIndex < syllabus.modules.length - 1) {
           remainingModules = [
             ...remainingModules.slice(0, moduleIndex + 1),
@@ -264,12 +253,12 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
     return preparedResult({ syllabus, modules: completedModules, graph: globalGraph, plan, script: { scenes: allScenes }, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
   }
 
-  const gRun = await runCached('S2-concepts', groundedRequest, 'claude-concept-graph/v1', 'S2-concept-graph-v5-relational-components', () => buildConceptGraph(groundedRequest, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+  const gRun = await runCached('S2-concepts', groundedRequest, 'claude-concept-graph/v1', 'S2-concept-graph-v6-span-excerpts', () => buildConceptGraph(groundedRequest, { model: modelFor('concepts'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
   const g = gRun.result;
   addUsage(usage, g.usage); failures.push(...g.failures); rawResponses.concepts = g.rawResponses;
   if (!g.value) return preparedResult({});
 
-  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v4', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v8-two-phase-repair`, () => buildTeachingPlan(groundedRequest, g.value!, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v7-two-phase-repair`);
+  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v4', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v6-short-outline`, () => buildTeachingPlan(groundedRequest, g.value!, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v6-short-outline`);
   const p = pRun.result;
   addUsage(usage, p.usage); failures.push(...p.failures); rawResponses.plan = p.rawResponses;
   if (!p.value) return preparedResult({ graph: g.value });
@@ -286,7 +275,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; apiK
   }
   if (!analysis.ok || contractFindings.length) return preparedResult({ graph: g.value, plan: p.value, analysis });
 
-  const sRun = await runCached('S4-narration-script', { request: groundedRequest, graph: g.value, plan: p.value }, 'claude-script/v1', 'S4-script-v5-mentions-4-7', () => writeScript(groundedRequest, g.value!, p.value!, { model: m.model, apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+  const sRun = await runCached('S4-narration-script', { request: groundedRequest, graph: g.value, plan: p.value }, 'claude-script/v1', 'S4-script-v6-mentions-4-7', () => writeScript(groundedRequest, g.value!, p.value!, { model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
   const s = sRun.result;
   addUsage(usage, s.usage); failures.push(...s.failures); rawResponses.script = s.rawResponses;
   return preparedResult({ graph: g.value, plan: p.value, analysis, script: s.value });

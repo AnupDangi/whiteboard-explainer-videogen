@@ -251,13 +251,12 @@ test('a three-node board fills toward the occupancy target and keeps labels read
   // union bbox already spans the working rect after growth, so occupancy caps
   // near ~0.31 for three nodes (measured 0.3077), below the 0.45 Simi warn
   // band. The solver still grows every box beyond intrinsic size toward
-  // STYLE.occupancy.target (0.55); the hard sparse floor sits at the
-  // measured-attainable value documented in style.ts, never the Simi band.
+  // STYLE.occupancy.sparse, never the Simi band.
   const ids = ['alpha', 'beta', 'gamma'];
   const { spec, problems } = compileBoard(makeFillBoard(ids), makeFillInput(ids));
   assert.deepEqual(problems, []);
   const laid = layoutScene(resolveScene(spec));
-  assert.ok(laid.occupancy >= STYLE.occupancy.hardMin, `occupancy ${laid.occupancy} below hard floor ${STYLE.occupancy.hardMin}`);
+  assert.ok(laid.occupancy >= STYLE.occupancy.sparse, `occupancy ${laid.occupancy} below sparse floor ${STYLE.occupancy.sparse}`);
   assert.ok(laid.occupancy >= 0.25, `single-row 3-node fill regressed: occupancy ${laid.occupancy} (measured 0.31 at implementation)`);
   for (const el of laid.elements) {
     assert.ok(el.bbox.w >= el.intrinsicSize.w && el.bbox.h >= el.intrinsicSize.h, `${el.id} must grow, never shrink, when the board fits`);

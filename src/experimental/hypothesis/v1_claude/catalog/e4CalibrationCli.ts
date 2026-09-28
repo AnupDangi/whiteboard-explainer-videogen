@@ -2,10 +2,11 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { calibrateE4Thresholds } from './e4Calibration.js';
+import { argValue } from '../cli/args.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (name: string) => args.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const inputPath = arg('input');
   if (!inputPath) throw new Error('Usage: e4CalibrationCli.js --input=<e4-labeled-pairs.json> [--out=<report.json>]');
   const input = JSON.parse(await readFile(inputPath, 'utf8')) as unknown;

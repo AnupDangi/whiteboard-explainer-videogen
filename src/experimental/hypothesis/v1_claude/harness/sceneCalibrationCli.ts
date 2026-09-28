@@ -5,12 +5,13 @@ import { loadOpenRouterEnv } from '../planner/env.js';
 import type { PromptArm } from '../planner/exemplars.js';
 import { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import { loadSceneCalibrationItems, runSceneCalibration } from './sceneCalibration.js';
+import { argValue } from '../cli/args.js';
 
 const VALID_ARMS: PromptArm[] = ['zero', 'text', 'mechanism', 'diverse'];
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (key: string) => args.find((value) => value.startsWith(`--${key}=`))?.slice(key.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const runDirs = (arg('runs') ?? '').split(',').map((value) => value.trim()).filter(Boolean);
   if (!runDirs.length) throw new Error('--runs=<dir1,dir2,...> is required');
 
@@ -33,7 +34,7 @@ async function main(): Promise<void> {
   const items = await loadSceneCalibrationItems(runDirs.map((dir) => path.resolve(dir)));
   if (!items.length) throw new Error('no calibration scenes found in the supplied run directories');
 
-  const report = await runSceneCalibration({ items, arms, repeats, model, apiKey: env.apiKey, budgetLedger });
+  const report = await runSceneCalibration({ items, arms, repeats, model, apiKey: env.apiKey, budgetLedger, ...(arg('scene-planner') ? { planner: arg('scene-planner') } : {}) });
   await mkdir('harness/reports', { recursive: true });
   const jsonPath = path.join('harness/reports', `${stamp}-scene-calibration.json`);
   const mdPath = path.join('harness/reports', `${stamp}-scene-calibration.md`);

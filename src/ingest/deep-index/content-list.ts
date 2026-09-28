@@ -1,4 +1,20 @@
-import type {SourceBlock} from '../../types/contracts.js';
+/** Local block union (mirrors the retired src/types SourceBlock union; kept here
+ *  because that file is frozen legacy — do not re-add types there). */
+export interface ContentSourceLocation { page?: number; sectionId?: string; start?: number; end?: number }
+interface SourceBlockBase { id: string; sourceId: string; type: SourceBlockType; location: ContentSourceLocation }
+interface HeadingBlock extends SourceBlockBase { type: 'heading'; text: string; level: number }
+interface ParagraphBlock extends SourceBlockBase { type: 'paragraph'; text: string }
+interface ListBlock extends SourceBlockBase { type: 'list'; ordered: boolean; items: string[] }
+interface TableBlock extends SourceBlockBase { type: 'table'; caption?: string; columns: string[]; rows: string[][] }
+interface EquationBlock extends SourceBlockBase { type: 'equation'; text: string; latex?: string }
+interface FigureBlock extends SourceBlockBase { type: 'figure'; imageRef?: string; caption?: string; nearbyText: string[]; description?: string; semanticTags?: string[] }
+interface CaptionBlock extends SourceBlockBase { type: 'caption'; text: string; targetBlockId?: string }
+interface CodeBlock extends SourceBlockBase { type: 'code'; text: string; language: string }
+interface DiagramBlock extends SourceBlockBase { type: 'diagram'; text: string; diagramKind?: string; imageRef?: string }
+interface CitationBlock extends SourceBlockBase { type: 'citation'; text: string; target?: string }
+interface MetadataBlock extends SourceBlockBase { type: 'metadata'; key: string; value: string }
+export type SourceBlockType = 'heading' | 'paragraph' | 'list' | 'table' | 'equation' | 'figure' | 'caption' | 'code' | 'diagram' | 'citation' | 'metadata';
+export type SourceBlock = HeadingBlock | ParagraphBlock | ListBlock | TableBlock | EquationBlock | FigureBlock | CaptionBlock | CodeBlock | DiagramBlock | CitationBlock | MetadataBlock;
 
 /** Bridge our SourceBlock[] into RAG-Anything's `insert_content_list` schema. Pure and
  *  deterministic — this is what makes "one parse only" work: Docling parses, we hand the

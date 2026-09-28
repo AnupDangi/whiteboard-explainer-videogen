@@ -126,6 +126,11 @@ test('script validator: correct length and 4-7 unique markers per scene pass', (
   assert.deepEqual(validateScript(script, plan), []);
 });
 
+test('script validator rejects visual directions spoken to the learner', () => {
+  const script = { scenes: plan.sections.map((s) => ({ sectionId: s.id, text: `Show ${words(Math.round(s.budgetSec * WORDS_PER_SEC), ['a', 'b', 'c', 'd'])}` })) };
+  assert.match(validateScript(script, plan).join(' | '), /visual stage direction/);
+});
+
 test('script validator: too-short narration (the old 3 s-per-scene problem) is rejected', () => {
   const script = { scenes: plan.sections.map((s) => ({ sectionId: s.id, text: words(10, ['a', 'b', 'c']) })) };
   assert.ok(validateScript(script, plan).some((p) => /spoken words/.test(p)));

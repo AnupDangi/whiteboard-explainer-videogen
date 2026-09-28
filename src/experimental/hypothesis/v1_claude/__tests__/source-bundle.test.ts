@@ -3,7 +3,7 @@ import test from 'node:test';
 import { buildSourceBundle } from '../plan/sourceBundle.js';
 import { extractHtmlSource } from '../plan/sourceIntake.js';
 import { resolveSourceEvidence, sourceDocFromText } from '../plan/sourceDoc.js';
-import { contentListForRag, indexSourceBundleWithRag, isReusableRagIndexManifest, mapRagChunksToEvidence, ragIndexCompletionProblems, ragQueryCompletionProblems, ragRetrievalStatus, ragWorkingDirectoryNeedsReset } from '../plan/ragSidecar.js';
+import { chunkQuote, ragSkipReason, contentListForRag, indexSourceBundleWithRag, isReusableRagIndexManifest, mapRagChunksToEvidence, ragIndexCompletionProblems, ragQueryCompletionProblems, ragRetrievalStatus, ragWorkingDirectoryNeedsReset } from '../plan/ragSidecar.js';
 import { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -143,4 +143,24 @@ test('HTML extraction retains structural text and stable URL selectors for evide
   assert.equal(figureSpan.kind, 'figure');
   const { sourceBundle } = buildSourceBundle([doc], 'distance over time plot');
   assert.ok(sourceBundle.evidenceHits.some((hit) => hit.modality === 'figure-metadata' && hit.citation.sourceLocation?.kind === 'web-url'));
+});
+
+test('a retrieval chunk that cuts a long span maps to the exact sentences it reproduces', () => {
+  const span = 'Short intro. The first long sentence explains how the pump raises line pressure. The second long sentence explains why the valve closes at low flow. A closing remark.';
+  assert.equal(chunkQuote(span, '...pressure. The second long sentence explains why the valve closes at low flow. A closing'), 'The second long sentence explains why the valve closes at low flow.');
+  assert.equal(chunkQuote(span, 'The first long sentence explains how the pump raises line pressure.  The second long sentence explains why the valve closes at low flow.'), 'The first long sentence explains how the pump raises line pressure. The second long sentence explains why the valve closes at low flow.');
+  assert.equal(chunkQuote(span, 'Short intro. A closing remark.'), undefined, 'short generic sentences never establish a match');
+});
+
+test('the paid RAG index is skipped for one short text-only source and runs for long, figure or multi-document sources', () => {
+  const short = sourceDocFromText('# Notes\n\nA short synthetic source about valves.', 'markdown');
+  const single = buildSourceBundle([short], 'valves');
+  assert.match(ragSkipReason(single.sourceDoc, single.sourceBundle, {}) ?? '', /one text-only document/);
+  assert.equal(ragSkipReason(single.sourceDoc, single.sourceBundle, { RAG_ENGINE: 'always' }), undefined);
+  const other = sourceDocFromText('# Other\n\nA second synthetic source about pumps.', 'markdown');
+  const pair = buildSourceBundle([short, other], 'valves pumps');
+  assert.equal(ragSkipReason(pair.sourceDoc, pair.sourceBundle, {}), undefined);
+  const long = sourceDocFromText(`# Long\n\n${'A sentence about flow. '.repeat(2000)}`, 'markdown');
+  const longBundle = buildSourceBundle([long], 'flow');
+  assert.equal(ragSkipReason(longBundle.sourceDoc, longBundle.sourceBundle, {}), undefined);
 });

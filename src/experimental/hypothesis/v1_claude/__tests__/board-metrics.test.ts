@@ -75,8 +75,10 @@ test('empty board reports zeros and the sparse floor, never NaN', () => {
   assert.equal(m.elementCount, 0);
   assert.equal(m.revealCount, 0);
   assert.equal(m.minRenderedTextPx, null);
-  assert.equal(m.boardTooSparse, true);
-  assert.equal(m.belowHardMin, true);
+  // Donor gate is occupancy < sparse && elements > 0, so an empty board is
+  // not "too sparse" (nothing to fix) while the belowSparse floor still fires.
+  assert.equal(m.boardTooSparse, false);
+  assert.equal(m.belowSparse, true);
   const summary = summarizeBoardMetrics([m]);
   assert.equal(summary.scenes, 1);
   for (const v of [summary.meanElements, summary.meanReveals, summary.meanOccupancy]) assert.ok(Number.isFinite(v));

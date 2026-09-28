@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
-import { isTransportError, ProviderNotDispatchedError, chatStructured } from '../llm/openrouter.js';
+import { ProviderNotDispatchedError, RETRYABLE_NOT_DISPATCHED, chatStructured } from '../llm/openrouter.js';
 import { structuredCall } from '../llm/structuredCall.js';
 
 const okBody = (content: string) => JSON.stringify({ id: 'gen-t', model: 'test/model', choices: [{ message: { content }, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 3, cost: 0.0001 } });
@@ -26,11 +26,18 @@ test('chatStructured keeps other HTTP errors as plain errors', async () => {
   );
 });
 
-test('transport classifier recognizes fetch failures and sidecar 429s but excludes uncertain timeouts', () => {
-  assert.equal(isTransportError(new TypeError('fetch failed')), true);
-  assert.equal(isTransportError(new Error('RateLimitError: HTTP 429 Too Many Requests')), true);
-  assert.equal(isTransportError(Object.assign(new Error('request timed out'), { name: 'TimeoutError' })), false);
-  assert.equal(isTransportError(Object.assign(new Error('operation aborted'), { name: 'AbortError' })), false);
+test('not-dispatched retry set covers no-endpoint and rate-limit rejections only', () => {
+  // Donor retry vocabulary (replaces the old isTransportError classifier):
+  // PROVIDER_NO_ENDPOINT and PROVIDER_RATE_LIMITED retry as transport;
+  // PROVIDER_REJECTED and PROVIDER_NOT_SENT never retry.
+  assert.deepEqual([...RETRYABLE_NOT_DISPATCHED], ['PROVIDER_NO_ENDPOINT', 'PROVIDER_RATE_LIMITED']);
+  for (const code of ['PROVIDER_NO_ENDPOINT', 'PROVIDER_RATE_LIMITED'] as const) {
+    assert.ok(RETRYABLE_NOT_DISPATCHED.includes(code), `${code} must retry`);
+    assert.ok(new ProviderNotDispatchedError(404, code, 'd') instanceof Error);
+  }
+  for (const code of ['PROVIDER_REJECTED', 'PROVIDER_NOT_SENT'] as const) {
+    assert.ok(!RETRYABLE_NOT_DISPATCHED.includes(code), `${code} must not retry`);
+  }
 });
 
 test('route rejection is retried as transport, not as the one repair, and the ledger stays unblocked', async () => {

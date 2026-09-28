@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fallbackPlanResult, fallbackScene, genericRelationWordingSupported, plannerProblems, skipPlanAfterAlignmentFailure } from '../planner/plan.js';
+import { fallbackPlanResult, fallbackScene, plannerProblems, skipPlanAfterAlignmentFailure } from '../planner/plan.js';
 import { buildSystemPrompt, buildUserPrompt, type PlannerSceneInput } from '../planner/prompt.js';
 import { safeParseSceneSpec } from '../schema.js';
 import type { SceneSpec } from '../types.js';
@@ -80,6 +80,37 @@ test('planner: generated factual visuals require references from the exact sourc
   assert.ok(plannerProblems(fixtureMarked, generatedInput).some((problem) => /cannot use fixture provenance/.test(problem)));
 });
 
+test('planner: remote and local HTML evidence require the exact source URL and selector', () => {
+  for (const url of ['https://example.org/cash-flow', 'file:/tmp/cash-flow.html']) {
+    const ref = { sourceId: 'src_web', spanId: 'span_cash', startChar: 0, endChar: 13, startLine: 1, endLine: 1, quote: 'Cash flows in', sourceLocation: { kind: 'web-url' as const, url, selector: 'p' } };
+    const generatedInput: PlannerSceneInput = {
+      ...input,
+      teachingContext: {
+        displayText: 'Cash Flow', requireEvidence: true, sourceId: ref.sourceId,
+        sourceEvidenceRefs: [ref],
+        concepts: [{ id: 'cash', label: 'Cash', kind: 'quantity', definition: 'Cash flows in.', evidenceRefs: [ref] }],
+        relations: [],
+      },
+    };
+    const spec: SceneSpec = {
+      schemaVersion: 'claude-scene-spec/v1', sceneId: generatedInput.sceneId, title: 'Cash Flow',
+      titleConceptIds: ['cash'], titleEvidenceRefs: [ref], template: 'list_icon',
+      elements: [{ id: 'cash', anchor: 'sceneStart', prim: 'text', text: 'CASH', size: 'body', conceptIds: ['cash'], evidenceRefs: [ref] }],
+      edges: [],
+    };
+    assert.ok(safeParseSceneSpec(spec).success);
+    assert.deepEqual(plannerProblems(spec, generatedInput), []);
+    for (const sourceLocation of [
+      { kind: 'web-url' as const, url: url.replace('cash-flow', 'other'), selector: 'p' },
+      { kind: 'web-url' as const, url, selector: 'h1' },
+    ]) {
+      const altered = structuredClone(spec);
+      altered.elements[0].evidenceRefs![0].sourceLocation = sourceLocation;
+      assert.ok(plannerProblems(altered, generatedInput).some((problem) => /element cash lacks valid source evidence/.test(problem)));
+    }
+  }
+});
+
 test('planner: a multi-concept title or element may cite separate supporting source spans', () => {
   const heatRef = { sourceId: 'src_test', spanId: 'span_heat', startChar: 0, endChar: 14, startLine: 1, endLine: 1, quote: 'Heat increases.' };
   const pressureRef = { sourceId: 'src_test', spanId: 'span_pressure', startChar: 15, endChar: 34, startLine: 2, endLine: 2, quote: 'Pressure rises too.' };
@@ -153,7 +184,7 @@ test('planner: typed factual relations must match the source-grounded relation g
   assert.ok(plannerProblems(mismatchedEvidence, withUnrelated).some((problem) => /mismatched relation evidence/.test(problem)));
 });
 
-test('planner: generic relation labels must be stated by their cited source span (S1/S3)', () => {
+test('planner: edge relation types must match the source-grounded relation graph (donor: generic-verb stop-list removed)', () => {
   const ref = { sourceId: 'src_test', spanId: 'span_generic', startChar: 0, endChar: 20, startLine: 1, endLine: 1, quote: 'heat raises pressure' };
   const genericInput: PlannerSceneInput = {
     ...input,
@@ -175,7 +206,10 @@ test('planner: generic relation labels must be stated by their cited source span
     ],
     edges: [{ from: 'heat', to: 'pressure', label: 'compares', evidenceRefs: [ref], factualRelation: { fromConceptId: 'heat', toConceptId: 'pressure', type: 'compares', evidenceRefs: [ref] } }],
   };
-  assert.ok(plannerProblems(spec, genericInput).some((problem) => problem.includes('generic relation "compares"')), 'a labelled unstated COMPARES must not pass as teaching explanation');
+  // Donor dropped the generic-verb stop-list: a source-matching type passes
+  // even when the word is generic. The stricter check is an exact type match
+  // against the S2 relation graph (plan.ts: unsupported factual relation).
+  assert.deepEqual(plannerProblems(spec, genericInput), [], 'a source-matching generic word is no longer a "generic relation" rejection');
   const statedRef = { ...ref, quote: 'heat compares with pressure' };
   const statedInput: PlannerSceneInput = {
     ...genericInput,
@@ -191,17 +225,17 @@ test('planner: generic relation labels must be stated by their cited source span
   for (const element of stated.elements) element.evidenceRefs = [statedRef];
   stated.edges[0].evidenceRefs = [statedRef];
   stated.edges[0].factualRelation!.evidenceRefs = [statedRef];
-  assert.ok(!plannerProblems(stated, statedInput).some((problem) => problem.includes('generic relation')), 'a source-stated generic relation stays admissible');
+  assert.deepEqual(plannerProblems(stated, statedInput), [], 'a source-stated generic relation stays admissible');
   const requires = structuredClone(spec);
   requires.edges[0].factualRelation!.type = 'requires';
   requires.edges[0].label = 'requires';
-  assert.ok(plannerProblems(requires, genericInput).some((problem) => problem.includes('generic relation "requires"')));
+  assert.ok(plannerProblems(requires, genericInput).some((problem) => problem.includes('unsupported factual relation')), 'a type outside the source graph is rejected as unsupported, not as generic');
   const specific = structuredClone(spec);
   specific.edges[0].factualRelation!.type = 'causes';
-  assert.ok(!plannerProblems(specific, genericInput).some((problem) => problem.includes('generic relation')), 'specific mechanism verbs are unaffected');
+  assert.ok(plannerProblems(specific, genericInput).some((problem) => problem.includes('unsupported factual relation')), 'even a specific mechanism verb must match the source graph');
 });
 
-test('planner: an unlabeled arrow carries a generic relation without a verb label (P2d)', () => {
+test('planner: a relation-carrying arrow needs no verb label; matching is on the source-grounded type (donor: P2d gate removed)', () => {
   const ref = { sourceId: 'src_test', spanId: 'span_generic', startChar: 0, endChar: 20, startLine: 1, endLine: 1, quote: 'heat raises pressure' };
   const genericInput: PlannerSceneInput = {
     ...input,
@@ -223,7 +257,7 @@ test('planner: an unlabeled arrow carries a generic relation without a verb labe
     ],
     edges: [{ from: 'heat', to: 'pressure', evidenceRefs: [ref], factualRelation: { fromConceptId: 'heat', toConceptId: 'pressure', type: 'compares', evidenceRefs: [ref] } }],
   };
-  assert.ok(!plannerProblems(base, genericInput).some((problem) => problem.includes('generic relation')), 'an unlabeled drawn edge passes the generic-verb gate');
+  assert.ok(!plannerProblems(base, genericInput).some((problem) => problem.includes('generic relation')), 'an unlabeled drawn edge passes: the P2d generic-verb gate was removed');
   assert.ok(!plannerProblems(base, genericInput).some((problem) => /omits source-grounded relation/.test(problem)), 'an unlabeled drawn edge still satisfies the relation-transfer requirement');
   const blank = structuredClone(base);
   blank.edges[0].label = '   ';
@@ -231,13 +265,16 @@ test('planner: an unlabeled arrow carries a generic relation without a verb labe
   assert.ok(safeParseSceneSpec(base).success, 'the schema accepts a relation-carrying edge with no label');
   const labelled = structuredClone(base);
   labelled.edges[0].label = 'compares';
-  assert.ok(plannerProblems(labelled, genericInput).some((problem) => problem.includes('generic relation "compares"')), 'a labelled generic verb is still rejected');
+  assert.deepEqual(plannerProblems(labelled, genericInput), [], 'donor ignores edge labels: a source-matching type passes labelled or not');
+  const mistyped = structuredClone(base);
+  mistyped.edges[0].factualRelation!.type = 'feeds';
+  assert.ok(plannerProblems(mistyped, genericInput).some((problem) => /unsupported factual relation/.test(problem)), 'a mistyped relation fails even without a label');
   const dropped = structuredClone(base);
   dropped.edges = [];
   assert.ok(plannerProblems(dropped, genericInput).some((problem) => /omits source-grounded relation heat->pressure/.test(problem)), 'a dropped arrow still fails the omitted-relation requirement');
 });
 
-test('planner: generic-relation and title-numeric rejections instruct a source-stated, otherwise-minimal repair', () => {
+test('planner: title-numeric rejections instruct a source-stated repair (donor: generic-relation gate removed)', () => {
   const ref = { sourceId: 'src_test', spanId: 'span_generic', startChar: 0, endChar: 20, startLine: 1, endLine: 1, quote: 'heat raises pressure' };
   const genericInput: PlannerSceneInput = {
     ...input,
@@ -260,15 +297,14 @@ test('planner: generic-relation and title-numeric rejections instruct a source-s
     edges: [{ from: 'heat', to: 'pressure', label: 'compares', evidenceRefs: [ref], factualRelation: { fromConceptId: 'heat', toConceptId: 'pressure', type: 'compares', evidenceRefs: [ref] } }],
   };
   const genericProblem = plannerProblems(spec, genericInput).find((problem) => problem.includes('generic relation "compares"'));
-  assert.ok(genericProblem, 'a labelled unstated generic relation is still strictly rejected');
-  assert.match(genericProblem, /specific relation stated in a cited source span/);
-  assert.match(genericProblem, /drop the edge label and let the arrow carry the relation/);
-  assert.match(genericProblem, /every other field unchanged/);
+  assert.equal(genericProblem, undefined, 'donor removed the generic-relation rejection: a source-matching type passes');
+  assert.deepEqual(plannerProblems(spec, genericInput), [], 'no repair is instructed for a source-matching relation');
   const numeric = structuredClone(spec);
   numeric.title = 'Three Heat Facts';
   const numericProblem = plannerProblems(numeric, genericInput).find((problem) => problem.includes('scene title numeric value'));
   assert.ok(numericProblem, 'unsupported title number is still strictly rejected');
-  assert.match(numericProblem, /replacement title words must come from the section heading, narration, or concept labels/);
+  assert.match(numericProblem, /remove it or cite an exact source span/);
+  assert.doesNotMatch(numericProblem, /replacement title words must come from/, 'donor dropped the replacement-words clause; title ownership lives in boardTitle/compileBoard');
 });
 
 test('planner: the §9 fallback is a valid list_icon scene built only from the scene\'s own mentions', () => {
@@ -340,14 +376,6 @@ test('planner contract: prompt contains only retrieved structure examples plus c
   assert.match(user, /<target_scene scene_id="sample_scene">[\s\S]*<narration markers="intact">[\s\S]*<\/target_scene>/);
 });
 
-test('genericRelationWordingSupported: inflected verb forms match their source wording (strip trailing s only)', () => {
-  // Fail-pre: the old (ies|es|s)$ stemmer mapped compares->compar != compare
-  // and requires->requir != require, so only contains passed.
-  assert.ok(genericRelationWordingSupported('compares', ['the two compare well']));
-  assert.ok(genericRelationWordingSupported('requires', ['each step require care']));
-  assert.ok(genericRelationWordingSupported('contains', ['the box contain tools']));
-  assert.ok(!genericRelationWordingSupported('compares', ['totally unrelated wording']));
-});
 
 test('planner: dynamic target text is escaped so it cannot close prompt data sections', () => {
   const user = buildUserPrompt({

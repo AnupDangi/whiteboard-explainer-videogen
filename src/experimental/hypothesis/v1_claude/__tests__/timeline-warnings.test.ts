@@ -33,7 +33,7 @@ test('timeline-compressed: a squeezed scene emits a soft warning naming the scen
   const found = warnings.filter((w) => w.code === 'timeline-compressed');
   assert.equal(found.length, 1, `expected one timeline-compressed warning, got: ${warnings.map((w) => w.code).join(',')}`);
   assert.equal(found[0]!.hard, false);
-  assert.match(found[0]!.message, /chain_test/);
+  assert.match(found[0]!.message, /sped up/);
   assert.equal(failures.some((f) => f.code === 'timeline-compressed'), false);
 });
 
@@ -41,11 +41,13 @@ test('timeline-idle-filled: a long quiet tail filled with emphasis rings emits a
   const laidOut = layoutScene(resolveScene(chainSpec));
   const timeline = compileTimelineFull(laidOut, [mention('a', 100, 200), mention('b', 300, 400), mention('c', 500, 600)], 0, 15000);
   const { failures, warnings } = runClaudeGates(laidOut, timeline);
-  const found = warnings.filter((w) => w.code === 'timeline-idle-filled');
-  assert.equal(found.length, 1, `expected one timeline-idle-filled warning, got: ${warnings.map((w) => w.code).join(',')}`);
+  // Donor renamed the code to 'idle' (gates.ts): emphasis rings are filler
+  // and are reported, not counted, in the longest no-new-content window.
+  const found = warnings.filter((w) => w.code === 'idle');
+  assert.equal(found.length, 1, `expected one idle warning, got: ${warnings.map((w) => w.code).join(',')}`);
   assert.equal(found[0]!.hard, false);
-  assert.match(found[0]!.message, /chain_test/);
-  assert.equal(failures.some((f) => f.code === 'timeline-idle-filled'), false);
+  assert.match(found[0]!.message, /without new content/);
+  assert.equal(failures.some((f) => f.code === 'idle'), false);
 });
 
 test('timeline: a roomy scene with no squeeze and no idle fills emits neither warning', () => {
@@ -56,5 +58,5 @@ test('timeline: a roomy scene with no squeeze and no idle fills emits neither wa
   const timeline = compileTimelineFull(laidOut, [mention('a', 1000, 1100), mention('b', 3000, 3100), mention('c', 5000, 5100)], 0, 7500);
   const { warnings } = runClaudeGates(laidOut, timeline);
   assert.deepEqual(warnings.filter((w) => w.code === 'timeline-compressed'), []);
-  assert.deepEqual(warnings.filter((w) => w.code === 'timeline-idle-filled'), []);
+  assert.deepEqual(warnings.filter((w) => w.code === 'idle'), []);
 });

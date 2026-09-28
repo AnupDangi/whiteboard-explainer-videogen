@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
-import { plannerSceneBudgetUsd } from '../pipeline/runLive.js';
 import { maxPriceForCallBudget } from '../llm/openrouter.js';
 import { structuredCall } from '../llm/structuredCall.js';
 
@@ -70,15 +69,6 @@ test('missing provider billing usage blocks the persistent ledger instead of sil
   }
 });
 
-test('planner scene budget probes prep spend once: total cap minus prep minus used, no double subtraction', async () => {
-  // Long-lesson probe with no live calls: $0.05 total cap, $0.02 of ledger
-  // prep spend, $0.005 already used by earlier planner scenes, 5 scenes.
-  const pooled = plannerSceneBudgetUsd({ maxCostUsd: 0.05, prepProviderSpendUsd: 0.02, usedUsd: 0.005, sceneCount: 5, pooled: true });
-  assert.ok(Math.abs(pooled - 0.025) < 1e-9, `pooled remainder must be 0.05 - 0.02 - 0.005 = 0.025, got ${pooled}`);
-  // Subtracting the $0.02 prep again (the old double-count) would starve the
-  // planner with $0.005 here instead.
-  const shared = plannerSceneBudgetUsd({ maxCostUsd: 0.05, prepProviderSpendUsd: 0.02, usedUsd: 0.005, sceneCount: 5, pooled: false });
-  assert.ok(Math.abs(shared - 0.006) < 1e-9, `unpooled remainder must be min(0.03 / 5, 0.025) = 0.006, got ${shared}`);
-  const exhausted = plannerSceneBudgetUsd({ maxCostUsd: 0.05, prepProviderSpendUsd: 0.048, usedUsd: 0.002, sceneCount: 5, pooled: true });
-  assert.ok(exhausted <= 1e-9, `spend at the cap leaves no planner remainder, never a negative one (got ${exhausted})`);
-});
+// NOTE (teaching-compiler-v1 merge): the plannerSceneBudgetUsd probe helper was
+// removed when budgeting moved to ledger permits + model-price ceilings (see
+// model-layer.test.ts). This scenario is covered there; the helper test is dropped.

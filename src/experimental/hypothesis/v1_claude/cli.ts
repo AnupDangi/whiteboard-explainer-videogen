@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import type { HypothesisRunOptions } from '../shared/contracts.js';
 import { ATTENTION_SCENES_C6 } from './fixtures/attentionScenes.c6.js';
 import { runHypothesis } from './pipeline/run.js';
+import { PIPELINE } from './config.js';
 
 /**
  * CLI entrypoint (cross-cutting requirement: "a CLI accepting the same
@@ -51,7 +52,7 @@ function defaultOptions(outputDir: string): HypothesisRunOptions {
     render: { width: 1920, height: 1080, fps: 30 },
     maxRepairs: 1,
     cache: 'cold',
-    maxCostUsd: 0.1,
+    maxCostUsd: PIPELINE.clipCostCapUsd,
   };
 }
 

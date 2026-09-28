@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { indexSourceBundleWithRag, RAG_MIN_WORDS } from '../plan/ragSidecar.js';
+import { indexSourceBundleWithRag } from '../plan/ragSidecar.js';
 import { buildSourceBundle } from '../plan/sourceBundle.js';
 import { sourceDocFromText } from '../plan/sourceDoc.js';
 import { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
@@ -93,7 +93,9 @@ function rig(): Rig {
 }
 
 function bigDoc(): ReturnType<typeof sourceDocFromText> {
-  return sourceDocFromText(`# Qzxw Notes\n\nQzxw braided river channels shift course. ${'word '.repeat(RAG_MIN_WORDS + 1)}`, 'markdown');
+  // Must clear the donor 40k-char RAG skip threshold or the source skips
+  // indexing before the stub ever runs (9000 words ≈ 45k chars).
+  return sourceDocFromText(`# Qzxw Notes\n\nQzxw braided river channels shift course. ${'word '.repeat(9000)}`, 'markdown');
 }
 
 async function spentUsd(ledgerPath: string, budget: number): Promise<number> {

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { EvidenceReference, NativeSourceLocation } from '../../shared/contracts.js';
+import type { IntakeRecord } from './intake/types.js';
 
 export type SourceSpanKind = 'heading' | 'paragraph' | 'list' | 'table' | 'equation' | 'figure-reference' | 'figure';
 
@@ -29,6 +30,8 @@ export interface SourceDoc {
   spans: SourceSpan[];
   retrievalEvidence?: EvidenceHit[];
   figureAssets?: SourceFigureAsset[];
+  /** Which reader produced the text, and what it could not read cleanly. */
+  intake?: IntakeRecord;
 }
 
 /** Auto-spans longer than this are split at sentence/paragraph boundaries (see splitLongSourceSpans). */
@@ -149,6 +152,31 @@ export interface NativeSourceLocationRange {
   documentStartLine?: number;
 }
 
+/**
+ * The source as exact span texts, each printed under its span ID, with no
+ * character offsets. A model cites evidence by copying words from the text
+ * shown under the ID it cites, so quote-to-span mistakes cannot come from
+ * mismatched offsets (a joined module excerpt keeps full-document offsets).
+ * Spans are rendered in the given order until `maxChars`; a span cut by
+ * `perSpanChars` or the total is marked `excerpted`, and `omittedSpans`
+ * counts spans that did not fit.
+ */
+export function spanExcerptPrompt(doc: SourceDoc, options: { spans?: readonly SourceSpan[]; maxChars?: number; perSpanChars?: number; minChars?: number } = {}): string {
+  const spans = options.spans ?? doc.spans;
+  const minChars = options.minChars ?? 1;
+  let remaining = options.maxChars ?? Number.POSITIVE_INFINITY;
+  const excerpts: Array<Record<string, unknown>> = [];
+  let omittedSpans = 0;
+  for (const span of spans) {
+    if (remaining < minChars) { omittedSpans++; continue; }
+    const text = span.text.slice(0, Math.min(options.perSpanChars ?? Number.POSITIVE_INFINITY, remaining));
+    if (text.trim().length < minChars) { omittedSpans++; continue; }
+    excerpts.push({ id: span.id, kind: span.kind, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}), ...(span.sourceTitle ? { sourceTitle: span.sourceTitle } : {}), text, ...(text.length < span.text.length ? { excerpted: true } : {}) });
+    remaining -= text.length;
+  }
+  return JSON.stringify({ schemaVersion: doc.schemaVersion, sourceId: doc.sourceId, format: doc.format, ...(doc.title ? { title: doc.title } : {}), ...(doc.sourceUrl ? { sourceUrl: doc.sourceUrl } : {}), excerpts, ...(omittedSpans ? { omittedSpans } : {}) });
+}
+
 /** Keep the exact source once in model prompts, with a compact structural/location index. */
 export function sourcePrompt(doc: SourceDoc): string {
   const index = doc.spans.map(({ id, kind, startChar, endChar, startLine, endLine, sourceLocation, citationSourceId, sourceTitle }) => ({ id, kind, startChar, endChar, startLine, endLine, ...(sourceLocation ? { sourceLocation } : {}), ...(citationSourceId ? { citationSourceId } : {}), ...(sourceTitle ? { sourceTitle } : {}) }));
@@ -158,13 +186,25 @@ export function sourcePrompt(doc: SourceDoc): string {
 
 const hash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
+/**
+ * A paragraph or list span is closed at the first sentence-ending line after
+ * this many characters, so a PDF page without blank lines never becomes one
+ * page-sized span. A single longer line is kept whole.
+ */
+export const MAX_SPAN_CHARS = 1500;
+
+/** A caption line (`Figure 2. ...`, `Table 1: ...`) or an extractor-written figure reference. */
+const CAPTION_LINE = /^\s*(?:\[Figure reference:|(?:Fig\.|Figure|Table|Diagram)\s+(?:\d+|[A-Z])\s*(?:[.:|\u2013\u2014-]|$))/;
+/** A specific, singular figure mention; case-sensitive so prose like "the tables below" is not one. */
+const FIGURE_MENTION = /\b(?:Fig\.|Figure|Table|Diagram)\s*(?:\d+|[A-Z])\b/;
+
 function kindFor(line: string): SourceSpanKind {
   if (/^\s{0,3}#{1,6}\s/.test(line)) return 'heading';
   if (/^\s*\|.*\|\s*$/.test(line)) return 'table';
   if (/^\s*(\$\$|\\\[|\\\()/.test(line)) return 'equation';
   if (/^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(line)) return 'list';
-  if (/^\s*\[Figure metadata:/i.test(line)) return 'figure';
-  if (/\[Figure reference:/i.test(line) || /\b(?:fig(?:ure)?|diagram|table)\s*(?:\d+|[A-Z])\b/i.test(line)) return 'figure-reference';
+  if (/^\s*\[Figure metadata:/.test(line)) return 'figure';
+  if (CAPTION_LINE.test(line) || FIGURE_MENTION.test(line)) return 'figure-reference';
   return 'paragraph';
 }
 
@@ -178,10 +218,11 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
   let lineNumber = 1;
   let insideDisplayEquation = false;
   let nativeLocationIndex = 0;
+  let previousLocationKey: string | undefined;
   let currentSourceLocation: NativeSourceLocation | undefined;
   let currentCitationSourceId: string | undefined;
   let currentSourceTitle: string | undefined;
-  let active: { kind: SourceSpanKind; startChar: number; startLine: number; sourceLocation?: NativeSourceLocation; citationSourceId?: string; sourceTitle?: string; documentStartChar?: number; documentStartLine?: number; text: string } | undefined;
+  let active: { kind: SourceSpanKind; rangeIndex: number; startChar: number; startLine: number; sourceLocation?: NativeSourceLocation; citationSourceId?: string; sourceTitle?: string; documentStartChar?: number; documentStartLine?: number; text: string } | undefined;
   const flush = (endChar: number, endLine: number) => {
     if (!active) return;
     const body = active.text;
@@ -202,17 +243,26 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
     currentSourceLocation = rangeLocation;
     currentCitationSourceId = rangeMatches ? range!.citationSourceId : undefined;
     currentSourceTitle = rangeMatches ? range!.sourceTitle : undefined;
+    const rangeIndex = rangeMatches ? nativeLocationIndex : -1;
+    // Display-math state never leaks across a page, slide or document boundary.
+    const locationKey = JSON.stringify([currentSourceLocation ?? null, currentCitationSourceId ?? null]);
+    if (!blank && previousLocationKey !== undefined && locationKey !== previousLocationKey) insideDisplayEquation = false;
+    if (!blank) previousLocationKey = locationKey;
     const startsDisplayEquation = !insideDisplayEquation && /^(?:\$\$|\\\[)/.test(trimmed);
     const closesOnSameLine = startsDisplayEquation && trimmed.length > 2 && /(?:\$\$|\\\])$/.test(trimmed);
     const endsDisplayEquation = insideDisplayEquation && /^(?:\$\$|\\\])$/.test(trimmed);
-    const kind = blank ? undefined : (insideDisplayEquation || startsDisplayEquation ? 'equation' : kindFor(line));
-    const contiguous = active && kind === active.kind && kind !== 'heading' && kind !== 'figure-reference' && JSON.stringify(active.sourceLocation ?? null) === JSON.stringify(currentSourceLocation ?? null) && active.citationSourceId === currentCitationSourceId;
+    let kind: SourceSpanKind | undefined = blank ? undefined : (insideDisplayEquation || startsDisplayEquation ? 'equation' : kindFor(line));
+    // A figure mentioned inside running prose stays part of that paragraph; a caption line starts its own span.
+    if (kind === 'figure-reference' && active?.kind === 'paragraph' && active.rangeIndex === rangeIndex && !CAPTION_LINE.test(line)) kind = 'paragraph';
+    const contiguous = active && kind === active.kind && kind !== 'heading' && kind !== 'figure-reference' && active.rangeIndex === rangeIndex && JSON.stringify(active.sourceLocation ?? null) === JSON.stringify(currentSourceLocation ?? null) && active.citationSourceId === currentCitationSourceId;
     if (!contiguous) flush(offset, lineNumber - 1);
     if (kind) {
       const rangeLineOffset = rangeMatches ? text.slice(range!.startChar, offset).split('\n').length - 1 : 0;
-      if (!active) active = { kind, startChar: offset, startLine: lineNumber, ...(currentSourceLocation ? { sourceLocation: currentSourceLocation } : {}), ...(currentCitationSourceId ? { citationSourceId: currentCitationSourceId } : {}), ...(currentSourceTitle ? { sourceTitle: currentSourceTitle } : {}), ...(rangeMatches && range!.documentStartChar !== undefined ? { documentStartChar: range!.documentStartChar + offset - range!.startChar } : {}), ...(rangeMatches && range!.documentStartLine !== undefined ? { documentStartLine: range!.documentStartLine + rangeLineOffset } : {}), text: '' };
+      if (!active) active = { kind, rangeIndex, startChar: offset, startLine: lineNumber, ...(currentSourceLocation ? { sourceLocation: currentSourceLocation } : {}), ...(currentCitationSourceId ? { citationSourceId: currentCitationSourceId } : {}), ...(currentSourceTitle ? { sourceTitle: currentSourceTitle } : {}), ...(rangeMatches && range!.documentStartChar !== undefined ? { documentStartChar: range!.documentStartChar + offset - range!.startChar } : {}), ...(rangeMatches && range!.documentStartLine !== undefined ? { documentStartLine: range!.documentStartLine + rangeLineOffset } : {}), text: '' };
       active.text += line;
     }
+    const sentenceEnds = /[.!?][\]"')\u201d\u2019]*\s*$/.test(line);
+    if (active && (active.kind === 'paragraph' || active.kind === 'list') && active.text.length >= MAX_SPAN_CHARS && sentenceEnds) flush(offset + line.length, lineNumber);
     if (startsDisplayEquation && !closesOnSameLine) insideDisplayEquation = true;
     else if (endsDisplayEquation) insideDisplayEquation = false;
     offset += line.length;

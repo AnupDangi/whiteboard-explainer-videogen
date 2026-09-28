@@ -2,61 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { z } from 'zod';
 import type { PlannerSceneInput } from '../planner/prompt.js';
-import type { ScenePlanningContext } from '../planner/context.js';
-import { BOARD_SCHEMA_VERSION, boardEnums, boardProblems, boardRepairLossProblems, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
-import { safeParseSceneSpec } from '../schema.js';
+import { goodBoard, makeScene, WORDS } from './support/boardScene.js';
+import { boardEnums, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
 
-// Synthetic, topic-neutral scene: two inputs combine through a process into an output.
-function makeScene(words: { a: string; b: string; p: string; o: string }, prefix = 'src'): PlannerSceneInput {
-  const ref = (id: string, quote: string, start: number) => ({ sourceId: `${prefix}_doc`, spanId: `${prefix}_${id}`, startChar: start, endChar: start + quote.length, startLine: 1, endLine: 1, quote });
-  const refs = { a: ref('a', `${words.a} enters`, 0), b: ref('b', `${words.b} enters`, 20), p: ref('p', `${words.p} combines them`, 40), o: ref('o', `${words.o} results`, 70), ap: ref('ap', `${words.a} feeds ${words.p}`, 90), bp: ref('bp', `${words.b} feeds ${words.p}`, 120), po: ref('po', `${words.p} produces ${words.o}`, 150) };
-  const concept = (id: 'a' | 'b' | 'p' | 'o') => ({ id: `${prefix}_${id}`, label: words[id], kind: 'entity', definition: `${words[id]} definition`, evidenceRefs: [refs[id]] });
-  const input: PlannerSceneInput = {
-    sceneId: `${prefix}_scene`,
-    raw: '',
-    plainText: `${words.a} and ${words.b} go into ${words.p}, which makes ${words.o}.`,
-    mentions: [{ id: 'm_a', phrase: words.a }, { id: 'm_b', phrase: words.b }, { id: 'm_p', phrase: words.p }, { id: 'm_o', phrase: words.o }],
-    teachingContext: {
-      requireEvidence: true,
-      sourceId: `${prefix}_doc`,
-      displayText: `${words.p} Makes ${words.o}`,
-      sourceEvidenceRefs: Object.values(refs),
-      concepts: (['a', 'b', 'p', 'o'] as const).map(concept),
-      relations: [
-        { from: `${prefix}_a`, to: `${prefix}_p`, type: 'feeds', evidenceRefs: [refs.ap] },
-        { from: `${prefix}_b`, to: `${prefix}_p`, type: 'feeds', evidenceRefs: [refs.bp] },
-        { from: `${prefix}_p`, to: `${prefix}_o`, type: 'produces', evidenceRefs: [refs.po] },
-      ],
-    },
-    candidates: {
-      m_a: [{ id: `lib:${words.a}`, name: words.a, score: 0.9 }, { id: 'lib:weak', name: 'weak', score: 0.2 }],
-      m_b: [{ id: `lib:${words.b}`, name: words.b, score: 0.55 }],
-      m_p: [],
-      m_o: [{ id: `lib:${words.o}`, name: words.o, score: 0.8 }],
-    },
-  };
-  input.planningContext = {
-    lessonBible: { audience: 'general learner', terminology: [{ conceptId: `${prefix}_p`, label: words.p }], persistentConceptIds: [`${prefix}_p`] },
-    sceneContract: { learningDelta: 'x', targetDurationSec: 20, requiredConceptIds: [`${prefix}_p`, `${prefix}_o`], requiredRelations: [], evidenceSpanIds: ['x'], teachingSkill: 'mechanism', candidateMechanisms: ['convergence'] },
-    examples: [],
-  } as unknown as ScenePlanningContext;
-  return input;
-}
-
-const WORDS = { a: 'flour', b: 'water', p: 'mixing', o: 'dough' };
 const scene = makeScene(WORDS);
-const goodBoard = (w = WORDS, prefix = 'src'): Board => ({
-  schemaVersion: BOARD_SCHEMA_VERSION,
-  title: 'ignored when the heading fits',
-  layout: 'convergence',
-  visual: { kind: 'process' },
-  nodes: [
-    { id: 'n1', mention: 'm_a', concept: `${prefix}_a`, icon: w.a, label: w.a, role: 'input' },
-    { id: 'n2', mention: 'm_b', concept: `${prefix}_b`, icon: w.b, label: w.b, role: 'input' },
-    { id: 'n3', mention: 'm_p', concept: `${prefix}_p`, icon: 'label', label: w.p, role: 'process' },
-    { id: 'n4', mention: 'm_o', concept: `${prefix}_o`, icon: w.o, label: w.o, role: 'output' },
-  ],
-});
 
 test('board enums come only from the scene: mentions, concepts, and candidates above the hint floor', () => {
   const enums = boardEnums(scene);
@@ -79,36 +28,11 @@ test('a valid board compiles to a gated SceneSpec with data-derived evidence, ar
     ['n1', 'object', 'input', 'mention:m_a'], ['n2', 'object', 'input', 'mention:m_b'], ['n3', 'box', 'operator', 'mention:m_p'], ['n4', 'object', 'output', 'mention:m_o'],
   ]);
   assert.deepEqual(spec.edges.map((edge) => [edge.from, edge.to, edge.factualRelation?.type]), [['n1', 'n3', 'feeds'], ['n2', 'n3', 'feeds'], ['n3', 'n4', 'produces']]);
+  assert.deepEqual(spec.edges.map((edge) => edge.label ?? null), [null, null, null], 'geometry carries the relation; no verb label is emitted');
   assert.deepEqual(checked.iconAssets, { n1: 'lib:flour', n2: 'lib:water', n4: 'lib:dough' });
 });
 
-test('compileBoard draws unstated generic relations as verb-less arrows but keeps stated and specific word labels (P2d)', () => {
-  const cmpRef = { sourceId: 'src_doc', spanId: 'src_cmp', startChar: 300, endChar: 331, startLine: 5, endLine: 5, quote: 'flour differs from water in use' };
-  const statedRef = { sourceId: 'src_doc', spanId: 'src_req', startChar: 340, endChar: 378, startLine: 6, endLine: 6, quote: 'mixing requires steady dough handling' };
-  const genericScene: PlannerSceneInput = {
-    ...scene,
-    teachingContext: {
-      ...scene.teachingContext!,
-      sourceEvidenceRefs: [...scene.teachingContext!.sourceEvidenceRefs!, cmpRef, statedRef],
-      relations: [
-        { from: 'src_a', to: 'src_b', type: 'compares', evidenceRefs: [cmpRef] },
-        { from: 'src_p', to: 'src_o', type: 'requires', evidenceRefs: [statedRef] },
-      ],
-    },
-  };
-  const { spec } = compileBoard(goodBoard(), genericScene);
-  const byPair = new Map(spec.edges.map((edge) => [`${edge.from}->${edge.to}`, edge]));
-  const verbLess = byPair.get('n1->n2')!;
-  assert.ok(!('label' in verbLess), 'an unstated generic relation draws with no word label — the arrow carries it');
-  assert.equal(verbLess.factualRelation?.type, 'compares');
-  const stated = byPair.get('n3->n4')!;
-  assert.equal(stated.label, 'requires', 'a source-stated generic keeps its word label');
-  assert.ok(spec.edges.every((edge) => edge.factualRelation && edge.evidenceRefs?.length), 'every drawn arrow retains its relation and citation');
-  assert.ok(safeParseSceneSpec(spec).success);
-  assert.deepEqual(validateBoard(goodBoard(), genericScene).problems, [], 'planner and adequacy gates agree on the verb-less board');
-});
-
-test('board rules reject invented content words, missing relation concepts, and shared mentions; another mention\'s icon is a metaphor', () => {
+test('board rules reject invented content words and missing relation concepts; another mention\'s icon is a metaphor; a shared mention is allowed', () => {
   const bad = goodBoard();
   bad.nodes[0].icon = 'dough';
   bad.nodes[1].label = 'cold water tank';
@@ -118,7 +42,7 @@ test('board rules reject invented content words, missing relation concepts, and 
   const shared = goodBoard();
   shared.nodes[3].mention = 'm_p';
   shared.nodes[3].icon = 'label';
-  assert.ok(validateBoard(shared, scene).problems.some((p) => p.includes('at most one node')), 'two nodes may not share one spoken mention');
+  assert.deepEqual(validateBoard(shared, scene).problems, [], 'two nodes may appear on the same spoken mention');
   const functionWord = goodBoard();
   functionWord.nodes[3].label = 'dough for';
   assert.deepEqual(validateBoard(functionWord, scene).problems, [], 'short function words may join source words');
@@ -158,35 +82,26 @@ test('fallback board is built from data: concept-matched mentions, confident ico
   assert.equal(compileBoard(board, scene).spec.edges.length, 3);
 });
 
-test('a concept may appear as up to three labelled instances with distinct mentions', () => {
-  const input = makeScene(WORDS);
-  input.mentions.push({ id: 'm_a2', phrase: 'more flour' });
-  const board = goodBoard();
-  board.nodes.push({ id: 'n5', mention: 'm_a2', concept: 'src_a', icon: 'flour', label: 'more flour', role: 'input' });
-  const { problems, spec } = validateBoard(board, input);
-  assert.deepEqual(problems, []);
-  const fromA = spec!.edges.filter((e) => e.factualRelation?.fromConceptId === 'src_a');
-  assert.equal(fromA.length, 1);
-  assert.equal(fromA[0].from, 'n1');
+test('board rejects duplicate source-concept nodes even when node ids differ', () => {
+  const duplicate = goodBoard();
+  duplicate.nodes[1] = { ...duplicate.nodes[1]!, concept: duplicate.nodes[0]!.concept, mention: duplicate.nodes[0]!.mention };
+  assert.match(validateBoard(duplicate, scene).problems.join(' | '), /duplicate concept src_a/);
 });
 
-test('instances must use distinct mentions and labels, and at most three per concept', () => {
-  const board = goodBoard();
-  board.nodes.push({ id: 'n5', mention: 'm_a', concept: 'src_a', icon: 'flour', label: 'flour', role: 'input' });
-  assert.ok(validateBoard(board, scene).problems.some((p) => p.includes('distinct mention')));
-  const crowded = makeScene(WORDS);
-  const extra: Array<[string, string]> = [['m_a2', 'more flour'], ['m_a3', 'fine flour'], ['m_a4', 'warm flour']];
-  for (const [id, phrase] of extra) crowded.mentions.push({ id, phrase });
-  const many = goodBoard();
-  (['n5', 'n6', 'n7'] as const).forEach((id, i) => many.nodes.push({ id, mention: extra[i]![0], concept: 'src_a', icon: 'flour', label: extra[i]![1], role: 'input' }));
-  assert.ok(validateBoard(many, crowded).problems.some((p) => p.includes('at most 3 instances')));
-});
-
-test('a process board with fewer than three nodes is rejected with a fix hint', () => {
-  const board = { ...goodBoard(), layout: 'flow' as const, nodes: goodBoard().nodes.slice(2) };
-  const problems = validateBoard(board, scene).problems;
-  assert.ok(problems.some((p) => p.includes('at least 3 nodes')));
-});
+// Two unrelated vocabularies through the same rules (topic-swap).
+for (const words of [WORDS, { a: 'coal', b: 'petrol', p: 'burning', o: 'heat' }]) {
+  test(`a concept may appear as distinct concrete examples, and each example gets the relation arrow (${words.a})`, () => {
+    // One source concept (src_a) that the narration names through two different mentions.
+    const base = makeScene(words);
+    const input: PlannerSceneInput = { ...base, teachingContext: { ...base.teachingContext!, concepts: base.teachingContext!.concepts!.filter((concept) => concept.id !== 'src_b'), relations: base.teachingContext!.relations!.filter((relation) => relation.from !== 'src_b') } };
+    const board: Board = { ...goodBoard(words), nodes: goodBoard(words).nodes.map((node) => (node.id === 'n2' ? { ...node, concept: 'src_a', icon: 'label' } : node)) };
+    const checked = validateBoard(board, input);
+    assert.deepEqual(checked.problems, []);
+    assert.deepEqual(checked.spec!.edges.map((edge) => [edge.from, edge.to, edge.label]), [['n1', 'n3', undefined], ['n2', 'n3', undefined], ['n3', 'n4', undefined]]);
+    const sameExample = { ...board, nodes: board.nodes.map((node) => (node.id === 'n2' ? { ...node, mention: 'm_a', label: words.a } : node)) };
+    assert.match(validateBoard(sameExample, input).problems.join(' | '), /duplicate concept src_a/);
+  });
+}
 
 test('typed visual forms compile into the existing deterministic SceneSpec primitives', () => {
   const cases: Array<[Board['visual'], string, string]> = [
@@ -203,6 +118,26 @@ test('typed visual forms compile into the existing deterministic SceneSpec primi
     assert.ok(compiled.spec.elements.find((element) => element.prim === prim)?.evidenceRefs?.length, `${prim} inherits source evidence from its linked concepts`);
   }
 });
+
+for (const [words, prefix] of [[WORDS, 'src'], [{ a: 'sand', b: 'lime', p: 'heating', o: 'glass' }, 'alt']] as const) {
+  test(`neutral diagram shapes compile with concept evidence and cited arrows (${prefix})`, () => {
+    const input = makeScene(words, prefix);
+    const board = goodBoard(words, prefix);
+    board.nodes[0]!.icon = 'diagram:circle';
+    board.nodes[3]!.icon = 'diagram:rectangle';
+    const checked = validateBoard(board, input);
+    assert.deepEqual(checked.problems, []);
+    const first = checked.spec!.elements.find((element) => element.id === 'n1')!;
+    const last = checked.spec!.elements.find((element) => element.id === 'n4')!;
+    assert.equal(first.prim, 'shape');
+    assert.equal(last.prim, 'shape');
+    assert.equal(first.prim === 'shape' ? first.kind : '', 'circle');
+    assert.equal(last.prim === 'shape' ? last.kind : '', 'rectangle');
+    assert.ok(first.evidenceRefs?.length);
+    assert.ok(checked.spec!.edges.every((edge) => edge.factualRelation?.evidenceRefs.length));
+    assert.deepEqual(checked.iconAssets, { n2: `lib:${words.b}` });
+  });
+}
 
 test('typed visual lexical claims must occur in the scene source quotes', () => {
   const unsupportedMatrix: Board = { ...goodBoard(), visual: { kind: 'matrix', rows: [['invented', 'value']] } };
@@ -228,22 +163,19 @@ test('source-backed plot and number-line values accept decimal and scientific no
       concepts: scene.teachingContext!.concepts!.map((concept) => ({ ...concept, evidenceRefs: [...concept.evidenceRefs!, numericRef] })),
     },
   };
-  // Structured visuals pair with a non-convergence layout: convergence
-  // forces callout slots at compile time and can never satisfy the gate.
-  const plot: Board = { ...goodBoard(), layout: 'list', visual: { kind: 'plot', fn: 'linear', params: [1000, 0.5], domain: [-2, 1] } };
+  const plot: Board = { ...goodBoard(), visual: { kind: 'plot', fn: 'linear', params: [1000, 0.5], domain: [-2, 1] } };
   assert.deepEqual(validateBoard(plot, numericScene).problems, []);
-  const line: Board = { ...goodBoard(), layout: 'list', visual: { kind: 'number-line', min: -2, max: 1000, ticks: 6, points: [{ x: 0.5 }], interval: [-2, 1] } };
+  const line: Board = { ...goodBoard(), visual: { kind: 'number-line', min: -2, max: 1000, ticks: 6, points: [{ x: 0.5 }], interval: [-2, 1] } };
   assert.deepEqual(validateBoard(line, numericScene).problems, []);
 });
 
 test('board rejects an exact consecutive visual repeat', () => {
-  const previousElements = goodBoard().nodes.map((node) => ({ id: node.id, prim: node.icon === 'label' ? 'box' : 'object', label: node.label, conceptIds: [node.concept], anchor: `mention:${node.mention}` }));
+  const previousElements = goodBoard().nodes.map((node) => ({ id: node.id, prim: node.icon === 'label' ? 'box' : 'object', label: node.label, conceptIds: [node.concept] }));
   assert.match(validateBoard(goodBoard(), { ...scene, previousElements }).problems.join(' | '), /repeats the immediately previous board/);
 });
 
 test('worked examples are arithmetically checked and visibly marked illustrative', () => {
-  // Worked examples pair with a non-convergence layout for the same reason.
-  const example: Board = { ...goodBoard(), layout: 'list', visual: { kind: 'worked-example', steps: [{ operands: [6, 7], operator: '×', result: 42 }] } };
+  const example: Board = { ...goodBoard(), visual: { kind: 'worked-example', steps: [{ operands: [6, 7], operator: '×', result: 42 }] } };
   const compiled = compileBoard(example, scene);
   assert.deepEqual(validateBoard(example, scene).problems, []);
   assert.ok(compiled.spec.elements.some((element) => element.prim === 'text' && element.text === 'Illustrative example' && element.origin === 'illustrative-example'));
@@ -307,7 +239,7 @@ test('rainbow arc prompt handles many mentions for one source concept and retain
   };
   const prompt = buildBoardPrompt(rainbowScene);
   assert.match(prompt.user, /"mustShow": \[\s*"colored_arc"\s*\]/);
-  assert.match(prompt.system, /up to 3 nodes when the narration names distinct instances/);
+  assert.match(prompt.system, /Normally one node per concept\. When the narration names different concrete examples of one concept/);
   assert.match(prompt.system, /visual\.kind "process" must include at least one node whose role is "process"/);
 });
 
@@ -354,8 +286,12 @@ test('prompt lists the catalog once and permits teacher metaphors', () => {
   assert.match(system, /visual metaphor a teacher would sketch/);
   assert.doesNotMatch(system, /Never invent a metaphor/);
   assert.match(user, /"key"/);
-  const catalogBlock = user.match(/<icon_catalog[^>]*>([\s\S]*)<\/icon_catalog>/)?.[1] ?? '';
-  assert.equal(catalogBlock.split('"key"').length - 1, 1, 'the cacheable catalog block lists each name once (few-shot boards may reuse the name)');
+  // Donor boardBank.v2 demonstrates the key-as-lookup metaphor inside the
+  // illustrative structure examples, so a raw name count spans examples too.
+  // The cacheable contract is the catalog block: exactly one <icon_catalog>
+  // ahead of the per-scene data, carrying every enabled name.
+  assert.equal(user.split('<icon_catalog').length - 1, 1, 'the catalog block appears once ahead of the per-scene data');
+  assert.match(user, /<icon_catalog count="2"[\s\S]*"key"[\s\S]*"flour"[\s\S]*<\/icon_catalog>/);
 });
 
 test('a large catalog is admissible in full, checked in code rather than a provider enum', () => {
@@ -399,66 +335,6 @@ test('a heading with an unsupported number falls back to the checked model title
   assert.deepEqual(checked.problems, []);
 });
 
-test('a heading with an unsupported number WORD falls back to the repairable model title (F1)', () => {
-  const numbered: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: 'Three mixing steps' } };
-  const board = { ...goodBoard(), title: 'Mixing makes dough' };
-  const checked = validateBoard(board, numbered);
-  assert.equal(checked.spec?.title, 'Mixing makes dough', 'unsupported heading number must not become a code-owned title the repair loop cannot edit');
-  assert.deepEqual(checked.problems, []);
-  // A supported heading number stays code-owned.
-  const supportedRef = { sourceId: 'src_doc', spanId: 'src_count', startChar: 300, endChar: 320, startLine: 3, endLine: 3, quote: 'the three mixing steps' };
-  const supported: PlannerSceneInput = {
-    ...scene,
-    teachingContext: {
-      ...scene.teachingContext!,
-      displayText: 'Three mixing steps',
-      sourceEvidenceRefs: [...scene.teachingContext!.sourceEvidenceRefs!, supportedRef],
-    },
-  };
-  assert.equal(validateBoard(board, supported).spec?.title, 'Three mixing steps');
-  // A numeric model title that lacks evidence is still strictly rejected, so the repair has a signal to fix.
-  const numericBoard = { ...goodBoard(), title: 'Three mixing steps' };
-  assert.match(validateBoard(numericBoard, numbered).problems.join(' | '), /numeric value "Three"/);
-});
-
-test('fallback with converging inputs but no output refuses the convergence layout (F2)', () => {
-  const noOutput: PlannerSceneInput = {
-    ...scene,
-    teachingContext: { ...scene.teachingContext!, relations: scene.teachingContext!.relations!.slice(0, 2) },
-  };
-  const board = fallbackBoard(noOutput);
-  assert.notEqual(board.layout, 'convergence', 'inputs+operator with no output must not claim convergence topology');
-  assert.equal(board.layout, 'list');
-  assert.equal(compileBoard(board, noOutput).spec.template, 'list_icon');
-});
-
-test('P2e: planned convergence without an output role downgrades to list (same rule as fallback)', async () => {
-  const { resolveBoardLayout } = await import('../planner/board.js');
-  const { typedBoardAdequacyFailures } = await import('../validation/gates.js');
-  const planned = goodBoard();
-  planned.layout = 'convergence';
-  planned.nodes = planned.nodes.map((node) => (node.role === 'output' ? { ...node, role: 'input' as const } : node));
-  assert.equal(resolveBoardLayout('convergence', planned.nodes), 'list');
-  assert.equal(resolveBoardLayout('convergence', goodBoard().nodes), 'convergence');
-  const compiled = compileBoard(planned, scene);
-  assert.equal(compiled.spec.template, 'list_icon');
-  assert.equal(compiled.spec.boardIntent?.layout, 'list');
-  const laidOut = {
-    sceneId: compiled.spec.sceneId,
-    template: compiled.spec.template,
-    elements: compiled.spec.elements.map((element, index) => ({
-      id: element.id, element, visual: { paths: [], fills: [], texts: [] },
-      intrinsicSize: { w: 20, h: 20 }, strokeLength: 0, bbox: { x: index * 30, y: 0, w: 20, h: 20 },
-    })),
-    edges: compiled.spec.edges.map((edge) => ({ ...edge, points: [] })),
-    occupancy: 0.5, carryOver: [], focus: [], boardIntent: compiled.spec.boardIntent,
-  };
-  assert.deepEqual(typedBoardAdequacyFailures(laidOut as never), [], 'downgraded planned board must not hit board-role-incomplete');
-  const withOutput = validateBoard(goodBoard(), scene);
-  assert.deepEqual(withOutput.problems, []);
-  assert.equal(withOutput.spec?.template, 'convergence');
-});
-
 test('label-only nodes compile to deterministic pastel boxes, not bare text', () => {
   const r1 = compileBoard(goodBoard(), scene);
   const n3 = r1.spec.elements.find((e) => e.id === 'n3')!;
@@ -496,84 +372,4 @@ test('duplicate catalog names: a retrieval hint for the non-kept id still record
   const result = validateBoard(board, input);
   assert.deepEqual(result.problems, []);
   assert.equal(result.spec!.elements.find((e) => e.id === 'n3')!.iconBasis, 'retrieval');
-});
-
-test('fallback title routes through the same unsupported-number rule, never reintroducing a gate-rejected numeric (regen F1)', () => {
-  const numbered: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: 'Three mixing steps' } };
-  const board = fallbackBoard(numbered);
-  assert.doesNotMatch(board.title, /\bthree\b/i, `fallback title must not carry the unsupported number word: "${board.title}"`);
-  const problems = validateBoard(board, numbered).problems.join(' | ');
-  assert.doesNotMatch(problems, /numeric value/, 'fallback must not reintroduce a numeric violation the gate will reject');
-  assert.equal(compileBoard(board, numbered).spec.title, board.title);
-  // A digit heading is repaired the same way.
-  const digit: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: '3 mixing steps' } };
-  assert.doesNotMatch(validateBoard(fallbackBoard(digit), digit).problems.join(' | '), /numeric value/);
-});
-
-test('validator messages instruct a minimal repair: grounded title words and a kept process role (regen repair drift)', () => {
-  // Numbered heading so the model title (not the code-owned heading) is the checked field — the regen repair shape.
-  const numbered: PlannerSceneInput = { ...scene, teachingContext: { ...scene.teachingContext!, displayText: 'Three mixing steps' } };
-  const drift: Board = {
-    ...goodBoard(),
-    title: 'Mixing differs',
-    layout: 'list',
-    visual: { kind: 'process' },
-    nodes: goodBoard().nodes.map((node) => ({ ...node, role: 'item' as const })),
-  };
-  const problems = validateBoard(drift, numbered).problems;
-  const titleProblem = problems.find((problem) => problem.includes('title words'));
-  assert.ok(titleProblem, `expected a title-grounding problem, got: ${problems.join(' | ')}`);
-  assert.match(titleProblem, /replace them with words from those sources/);
-  const roleProblem = problems.find((problem) => problem.includes('process-role node'));
-  assert.ok(roleProblem, `expected a process-role problem, got: ${problems.join(' | ')}`);
-  assert.match(roleProblem, /keep at least one process-role node/);
-});
-
-test('structured visual with convergence layout is rejected as repairable, never passing silently (audit Batch 3)', () => {
-  const input = makeScene(WORDS);
-  const board: Board = { ...goodBoard(), visual: { kind: 'formula', latex: 'mixing' } };
-  const problems = boardProblems(board, input, boardEnums(input));
-  const combo = problems.find((problem) => problem.includes('convergence') && problem.includes('callout'));
-  assert.ok(combo, `expected a repairable convergence+structured problem, got: ${problems.join(' | ')}`);
-  assert.match(combo!, /process or comparison visual|change the layout/);
-  // The compiled shape proves the rejection is load-bearing: every concept node lands in callout.
-  const compiled = compileBoard(board, input);
-  const nodeSlots = compiled.spec.elements.filter((element) => element.id !== 'visual' && (element.conceptIds?.length ?? 0) > 0).map((element) => element.slot);
-  assert.ok(nodeSlots.length > 0 && nodeSlots.every((slot) => slot === 'callout'));
-});
-
-test('process and comparison visuals with convergence layout are not rejected by the structured+convergence rule (audit Batch 3)', () => {
-  const input = makeScene(WORDS);
-  for (const visual of [{ kind: 'process' }, { kind: 'comparison' }] as Board['visual'][] ) {
-    const board: Board = { ...goodBoard(), layout: visual.kind === 'comparison' ? 'compare' : 'convergence', visual };
-    const problems = boardProblems(board, input, boardEnums(input));
-    assert.ok(!problems.some((problem) => problem.includes('callout slots')), `visual ${visual.kind} must not hit the structured+convergence rule, got: ${problems.join(' | ')}`);
-  }
-});
-
-test('repair that drops a previously-shown relation is rejected with a named message (recap repair loss)', () => {
-  const input = makeScene(WORDS);
-  const previous = goodBoard();
-  const dropped = goodBoard();
-  dropped.nodes = dropped.nodes.filter((node) => node.concept !== 'src_o');
-  const problems = validateBoard(dropped, input, previous).problems.join(' | ');
-  assert.match(problems, /repair dropped source relation src_p -\[produces\]-> src_o/, `expected a named relation-loss rejection, got: ${problems}`);
-});
-
-test('repair that loses the process-role node is rejected with a named message (recap role loss)', () => {
-  const input = makeScene(WORDS);
-  const previous = goodBoard();
-  const dropped = goodBoard();
-  dropped.nodes = dropped.nodes.map((node) => ({ ...node, role: 'item' as const }));
-  const problems = validateBoard(dropped, input, previous).problems.join(' | ');
-  assert.match(problems, /repair lost the process-role node/, `expected a named role-loss rejection, got: ${problems}`);
-});
-
-test('additive repair that keeps every shown relation and role passes preservation', () => {
-  const input = makeScene(WORDS);
-  const previous = goodBoard();
-  previous.nodes[1] = { ...previous.nodes[1], label: 'cold water tank' };
-  assert.ok(validateBoard(previous, input).problems.some((problem) => problem.includes('label words')), 'fixture previous board must carry the flagged label defect');
-  assert.deepEqual(boardRepairLossProblems(previous, goodBoard(), input), [], 'an additive fix must report no preservation loss');
-  assert.deepEqual(validateBoard(goodBoard(), input, previous).problems, [], 'an additive fix must validate clean');
 });

@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "voice-engine:setup": "sh -c 'cd voice-engine && npm run setup'",
     "typecheck:hypothesis": "tsc --noEmit -p tsconfig.json",
-    "test:hypothesis": "npm run build && node --test dist/src/experimental/hypothesis/v1_claude/__tests__/*.test.js && python3 -m unittest discover -s src/experimental/hypothesis/shared/alignment -p 'test_*.py' && python3 -m unittest discover -s rag-engine -p 'test_*.py'",
+    "test:hypothesis": "npm run build && node scripts/shared-manifest.mjs --check && node --test dist/src/experimental/hypothesis/v1_claude/__tests__/*.test.js && python3 -m unittest discover -s src/experimental/hypothesis/shared/alignment -p 'test_*.py' && python3 -m unittest discover -s rag-engine -p 'test_*.py'",
     "fixture:hypothesis": "npm run test:hypothesis",
     "run:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/cli.js",
     "preview:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/player/previewCli.js",
@@ -36,14 +36,12 @@
     "baseline:freeze": "node scripts/baselines.mjs --freeze",
     "baseline:verify": "node scripts/baselines.mjs",
     "metrics:boards": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/boardMetricsCli.js",
-    "validate:batch": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/validationBatchCli.js"
-  },
-  "optionalDependencies": {
-    "pg": "^8.23.0",
-    "sharp": "0.35.4"
+    "validate:batch": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/validationBatchCli.js",
+    "manifest:shared": "node scripts/shared-manifest.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
+    "domhandler": "^5.0.3",
     "typescript": "^7.0.2"
   },
   "dependencies": {
@@ -52,8 +50,6 @@
     "cheerio": "^1.2.0",
     "ipaddr.js": "^2.5.0",
     "mathjax-full": "^3.2.1",
-    "perfect-freehand": "^1.2.3",
-    "roughjs": "^4.6.6",
     "svg-path-properties": "^2.1.0",
     "zod": "^4.6.5"
   }

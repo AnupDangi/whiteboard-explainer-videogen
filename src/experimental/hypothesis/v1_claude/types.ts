@@ -1,3 +1,4 @@
+import type { TemplateId } from './templates/catalog.js';
 /**
  * Claude-track pipeline types (claude_pipeline.md).
  *
@@ -102,20 +103,7 @@ export type Glyph = '?' | '!' | '✓' | '✗' | '$' | 'Σ';
 
 export type OperatorSymbol = '×' | '+' | '−' | '÷' | 'Σ' | '∫' | '=' | '→' | 'softmax';
 
-export type TemplateId =
-  | 'title_card'
-  | 'hub_spoke'
-  | 'chain'
-  | 'convergence'
-  | 'fan_out'
-  | 'list_icon'
-  | 'compare_2'
-  | 'threshold'
-  | 'weighted_blend'
-  | 'layered_stack'
-  | 'cycle'
-  | 'formula_focus'
-  | 'plot_focus';
+export type { TemplateId };
 
 interface ElementBase {
   id: string;
@@ -207,6 +195,8 @@ export interface Edge {
   to: string;
   label?: string;
   style?: 'solid' | 'dashed';
+  /** 'none' draws no arrowhead (symmetric relations such as comparison). Default: one head at `to`. */
+  head?: 'forward' | 'none';
   anchor?: Anchor;
   evidenceRefs?: EvidenceReference[];
   origin?: 'illustrative-example' | 'fixture';
@@ -370,8 +360,10 @@ export interface LaidOutElement {
 export interface RoutedEdge extends Edge {
   /** Straight or single-bend polyline points, from boundary to boundary (never centers). */
   points: Array<{ x: number; y: number }>;
-  /** Label anchor fitted inside the safe area by layout (edge-label clipping fix); the renderer draws the label here. */
-  labelPos?: { x: number; y: number };
+  /** Where the edge label is drawn, chosen by layout to stay clear of nodes. */
+  labelBox?: BBox;
+  /** No clear position existed; the label overlaps a node (reported by the gates). */
+  labelOverlapsNode?: boolean;
 }
 
 export interface LaidOutScene {
@@ -435,7 +427,6 @@ export interface StageFailure {
   stage: string;
   message: string;
   hard: boolean;
-  /** P1 taxonomy label (P/S/C/T/R/A). Pure mapping; never changes hard/soft. */
   failureClass?: 'P' | 'S' | 'C' | 'T' | 'R' | 'A';
 }
 import type { EvidenceReference } from '../shared/contracts.js';

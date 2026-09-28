@@ -6,6 +6,7 @@ import { loadOpenRouterEnv } from '../planner/env.js';
 import { frameAt, judgeRun, JUDGE_PROMPT_VERSION, type SceneJudgement } from './judge.js';
 import { judgeRunEligibility, resolveLocalRunArtifact, sourceDocMatchesRecordedHash, type JudgeNarration } from './judgeEligibility.js';
 import { sha256 } from '../../shared/artifacts.js';
+import { argValue } from '../cli/args.js';
 
 /**
  * Judge rendered runs against the Lamina reference pack and write a report
@@ -14,7 +15,7 @@ import { sha256 } from '../../shared/artifacts.js';
  */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const arg = (k: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
+  const arg = (key: string) => argValue(args, key);
   const runsRoot = arg('runs') ?? '.data/hypothesis-runs/claude/lessons';
   const topic = arg('topic')?.trim().toLowerCase();
   const env = await loadOpenRouterEnv();
