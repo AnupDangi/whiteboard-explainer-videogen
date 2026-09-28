@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { availableParallelism } from 'node:os';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { Resvg } from '@resvg/resvg-js';
 import type { Timeline } from '../types.js';
 import { STYLE } from '../style.js';
@@ -9,6 +10,7 @@ import { spawnFrameEncoder } from './ffmpeg.js';
 import { RasterPool } from './rasterPool.js';
 import { frameSvgAt, type VideoScene } from './frame.js';
 import { RESVG_FONT_OPTIONS } from '../render/fonts.js';
+import { KALAM_BOLD_FILE, KALAM_FONT_FAMILY } from '../render/fonts.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { VISUAL_STAGE_VERSIONS } from '../pipeline/versions.js';
 import { stableJson } from '../../shared/artifacts.js';
@@ -188,4 +190,54 @@ export async function encodeVideoAtomically(
 export function rasterizePng(svg: string, width: number): Buffer {
   // Contact sheets are one-off images; keep their synchronous helper separate from frame workers.
   return new Resvg(svg, { ...RESVG_FONT_OPTIONS, fitTo: { mode: 'width', value: width } }).render().asPng();
+}
+
+/**
+ * Contact-sheet rasterize isolated in a CHILD PROCESS.
+ *
+ * Worker threads share the host process, so a resvg native abort
+ * (`failed to initiate panic`) kills the whole run: contact-sheet.svg
+ * exists, .png absent, no summary written (one-shot `no-summary`), and the
+ * try/catch in runLive.ts cannot catch it. A child process turns that abort
+ * into a detectable exit code / signal, which surfaces here as an ordinary
+ * catchable Error -> soft `contact-sheet-png-failed`, and the run continues
+ * to summary/manifest/provenance writes. Contact-sheet-only; the frame
+ * pipeline keeps its worker pool.
+ *
+ * The child is an inline ESM script (bare `@resvg/resvg-js` import resolves
+ * from cwd; the absolute bundled font path travels as argv) reading SVG from
+ * stdin and writing PNG to stdout, so arbitrarily large sheets never touch
+ * argv/env limits.
+ */
+const CONTACT_SHEET_CHILD_SCRIPT = `import fs from 'node:fs';
+import { Resvg } from '@resvg/resvg-js';
+const width = Number(process.argv[1]);
+const fontFile = process.argv[2];
+const svg = fs.readFileSync(0, 'utf8');
+const png = new Resvg(svg, { font: { loadSystemFonts: false, fontFiles: [fontFile], defaultFontFamily: ${JSON.stringify(KALAM_FONT_FAMILY)}, sansSerifFamily: ${JSON.stringify(KALAM_FONT_FAMILY)} }, fitTo: { mode: 'width', value: width } }).render().asPng();
+fs.writeFileSync(1, png);
+`;
+
+export type ContactSheetSpawner = (
+  command: string,
+  args: string[],
+  options: { input: string; maxBuffer: number; timeout: number },
+) => Pick<SpawnSyncReturns<Buffer>, 'status' | 'signal' | 'stdout' | 'stderr' | 'error'>;
+
+export function rasterizeContactSheetPng(svg: string, width: number, spawn: ContactSheetSpawner = spawnSync): Buffer {
+  if (!Number.isInteger(width) || width < 1) throw new Error('Contact-sheet raster width must be a positive integer');
+  // No `encoding` option: stdout/stderr stay Buffers (binary-safe PNG on stdout).
+  const child = spawn(process.execPath, ['--input-type=module', '-e', CONTACT_SHEET_CHILD_SCRIPT, String(width), KALAM_BOLD_FILE], {
+    input: svg,
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 120_000,
+  });
+  if (child.error) throw new Error(`contact-sheet child raster failed to spawn: ${child.error instanceof Error ? child.error.message : String(child.error)}`);
+  const stdout = child.stdout as Buffer | undefined;
+  if (child.status !== 0 || !stdout || stdout.length === 0) {
+    const stderr = Buffer.isBuffer(child.stderr) ? child.stderr.toString('utf8').slice(-500) : String(child.stderr ?? '');
+    throw new Error(`contact-sheet child raster failed${child.signal ? ` (signal ${child.signal})` : ''}: exit ${String(child.status)}${stderr ? `: ${stderr}` : ''}`);
+  }
+  if (!stdout.subarray(0, 8).equals(pngSignature)) throw new Error('contact-sheet child raster returned invalid PNG data');
+  return stdout;
 }

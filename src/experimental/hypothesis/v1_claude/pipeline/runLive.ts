@@ -27,7 +27,7 @@ import type { PlannerSceneInput, PlannerTeachingContext } from '../planner/promp
 import { VISUAL_STAGE_VERSIONS, S5_STAGE_VERSION, S5_MODEL_ID } from './versions.js';
 import { KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
-import { encodeVideoAtomically, rasterizePng, type VideoScene } from '../export/videoEncode.js';
+import { encodeVideoAtomically, rasterizeContactSheetPng, type VideoScene } from '../export/videoEncode.js';
 import { assembleModuleVideos, encodeModuleVideos, type ModuleVideoArtifact, type ModuleVideoInput } from '../export/moduleVideo.js';
 import { attributionForSources, loadCatalogLibraries } from '../catalog/streamline.js';
 import { buildWebVtt, buildWebVttForRun } from '../export/captions.js';
@@ -865,7 +865,10 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   let contactSheetPngPath: string | undefined;
   try {
     contactSheetPngPath = path.join(outputDir, 'contact-sheet.png');
-    await writeFile(contactSheetPngPath, rasterizePng(contactSheetSvg, EXPERIMENT.width));
+    // Child-process raster: a resvg native abort kills only the child and
+    // surfaces here as a catchable Error (soft failure below), so the
+    // evaluation-bundle / manifest / provenance writes underneath always run.
+    await writeFile(contactSheetPngPath, rasterizeContactSheetPng(contactSheetSvg, EXPERIMENT.width));
   } catch (error) {
     contactSheetPngPath = undefined;
     failures.push({ code: 'contact-sheet-png-failed', stage: 'encode', message: error instanceof Error ? error.message : String(error), hard: false });
@@ -974,7 +977,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     evaluationBundle: 'evaluation-bundle.json',
     svg: 'final-scene.svg',
     video: videoPath ? 'video.mp4' : undefined,
-    contactSheet: 'contact-sheet.png',
+    ...(contactSheetPngPath ? { contactSheet: 'contact-sheet.png' } : {}),
     captions: captionsPath ? 'captions.vtt' : undefined,
     credits,
   });

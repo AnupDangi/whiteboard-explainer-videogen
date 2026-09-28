@@ -1,5 +1,15 @@
 # HANDOFF — Claude hypothesis track
 
+## Entry — 2026-09-28, contact-sheet native-crash isolation (uncommitted)
+
+- **Branch:** `fix/chat-audit-rollup-20260927` (HEAD db33df3, was clean before; changes uncommitted per instruction).
+- **Problem:** tides-600 run encoded video.mp4 (261 s, 15 scenes) then the Node process died with Rust fatal `failed to initiate panic, error 5` during contact-sheet PNG rasterize (resvg native). contact-sheet.svg exists, .png absent, no summary written → one-shot `no-summary`. runLive.ts try/catch cannot catch native aborts; frame `RasterPool` worker threads share the process so they cannot contain it either.
+- **Fix (domain-general, contact-sheet call only; frame pipeline untouched):** `export/videoEncode.ts` gains `rasterizeContactSheetPng(svg, width, spawn)` — SVG over stdin / PNG over stdout of a `spawnSync(process.execPath, ['--input-type=module', '-e', <inline ESM>])` child (bare `@resvg/resvg-js` import resolves from cwd; absolute bundled Kalam path via argv; no `encoding` so stdout stays binary; 120 s timeout, 64 MB maxBuffer). A native abort now kills only the child → non-zero exit / signal → ordinary catchable Error → existing runLive try/catch records soft `contact-sheet-png-failed` (taxonomy R, already present) and execution continues to evaluation-bundle / run-manifest / provenance writes. `pipeline/runLive.ts` calls the isolated rasterizer; run-manifest `contactSheet` is now conditional on the PNG existing (was unconditional — previously pointed at a file that might not exist), matching the video/captions pattern.
+- **Tests:** new `__tests__/contact-sheet-isolation.test.ts` (5 tests: real child emits PNG signature, child pixels equal in-process `rasterizePng`, non-zero exit → catchable `exit 1` error i.e. parent survives to write summary, SIGABRT signal → catchable error, invalid width rejects pre-spawn). Fail-pre: first draft used `encoding: 'buffer'` which `spawnSync` rejects (`ERR_UNKNOWN_ENCODING`) — caught by the new test before merge.
+- **Files:** `export/videoEncode.ts` (+~60: child script, spawner type, isolated rasterizer), `pipeline/runLive.ts` (+4/−3: isolated call + conditional manifest field), `__tests__/contact-sheet-isolation.test.ts` (new, 5 tests).
+- **Verification:** `npm run typecheck:hypothesis` 0 errors. Touched suites (contact-sheet-isolation, raster-pool, failure-taxonomy) 15/15. FULL `npm run test:hypothesis` exit 0: Node **601/601** (+5), alignment Python **28/28**, RAG Python **12/12**. `git diff --check` clean. Not committed.
+- **Limitation:** no live model/video rerun — the tides-600 artifact keeps its missing summary; only future runs survive this crash mode. Frame-pipeline native aborts (worker threads) still kill the process by design; only the one-off contact sheet is isolated.
+
 ## Entry — 2026-09-28, chat-audit yellows triage batch (10 small fixes)
 
 - **Branch:** `fix/chat-audit-rollup-20260927` (HEAD fb80628, was clean before; changes uncommitted per instruction).
