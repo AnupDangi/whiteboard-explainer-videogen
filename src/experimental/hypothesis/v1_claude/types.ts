@@ -229,8 +229,8 @@ export interface Edge {
 export type VisualDepictionStrategy = 'literal' | 'process' | 'comparison' | 'quantitative' | 'labelled-diagram';
 
 export type VisualIntentTarget =
-  | { kind: 'element'; elementId: string }
-  | { kind: 'edge'; fromElementId: string; toElementId: string; relationType: NonNullable<Edge['factualRelation']>['type'] };
+  | { kind: 'element'; elementId: string; evidenceSpanIds?: string[] }
+  | { kind: 'edge'; fromElementId: string; toElementId: string; relationType: NonNullable<Edge['factualRelation']>['type']; evidenceSpanIds?: string[] };
 
 /** A planner assertion is auditable but never itself proof of claim coverage. */
 export interface VisualIntent {

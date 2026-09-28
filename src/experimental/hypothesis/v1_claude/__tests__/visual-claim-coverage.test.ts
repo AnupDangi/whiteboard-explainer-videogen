@@ -89,8 +89,11 @@ test('edge targets disambiguate multiple relations between the same elements', (
 test('claim coverage rejects a target revealed only after the spoken claim', () => {
   const { spec, coverage } = fixture();
   const claimCoverage = timedCoverage(coverage);
-  const lateTimeline = { ...timeline, events: timeline.events.map((event) => event.track === 'edge' ? { ...event, t0: 500, t1: 600 } : event) };
+  // Claim ends at 340ms; 900ms grace tolerates finishes through 1240ms.
+  const lateTimeline = { ...timeline, events: timeline.events.map((event) => event.track === 'edge' ? { ...event, t0: 500, t1: 1600 } : event) };
   assert.match(visualClaimCoverageFailures(asInput(spec), claimCoverage, lateTimeline).map((failure) => failure.message).join(' '), /by the end of its spoken claim/);
+  const gracedTimeline = { ...timeline, events: timeline.events.map((event) => event.track === 'edge' ? { ...event, t0: 200, t1: 900 } : event) };
+  assert.deepEqual(visualClaimCoverageFailures(asInput(spec), claimCoverage, gracedTimeline), []);
 });
 
 test('claim timing maps compound tokens inside one aligned word and requires the depiction to finish in time', () => {
@@ -99,7 +102,7 @@ test('claim timing maps compound tokens inside one aligned word and requires the
   const compoundCoverage = { ...coverage, spokenClaimSpans: [{ claimId: 'claim-a', exactText: plainText, plainStart: 0, plainEnd: plainText.length }], plainText, alignedWords: [
     { w: 'A/B', startMs: 0, endMs: 90 }, { w: 'is', startMs: 100, endMs: 140 }, { w: 'spoken', startMs: 150, endMs: 240 },
   ] };
-  const slowTimeline = { ...timeline, events: timeline.events.map((event) => event.track === 'edge' ? { ...event, t0: 200, t1: 300 } : event) };
+  const slowTimeline = { ...timeline, events: timeline.events.map((event) => event.track === 'edge' ? { ...event, t0: 200, t1: 1400 } : event) };
   assert.match(visualClaimCoverageFailures(asInput(spec), compoundCoverage, slowTimeline).map((failure) => failure.message).join(' '), /not fully revealed/);
   const readyTimeline = { ...slowTimeline, events: slowTimeline.events.map((event) => event.track === 'edge' ? { ...event, t1: 230 } : event) };
   assert.deepEqual(visualClaimCoverageFailures(asInput(spec), compoundCoverage, readyTimeline), []);

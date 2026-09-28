@@ -37,7 +37,7 @@ function sourcePlannerCase() {
   const spec: SceneSpec = {
     schemaVersion: 'claude-scene-spec/v1', sceneId: input.sceneId,
     title: 'Leaf Uses Light', titleConceptIds: ['leaf'], titleEvidenceRefs: [evidence], template: 'list_icon',
-    boardIntent: { schemaVersion: 'typed-board-intent/v3', layout: 'list', visualKind: 'process', roles: [{ elementId: 'leaf_label', role: 'item' }], requiredConceptIds: ['leaf'], requiredRelations: [], visualIntents: [{ claimId: 'leaf_uses_light', strategy: 'literal', targets: [{ kind: 'element', elementId: 'leaf_label' }] }] },
+    boardIntent: { schemaVersion: 'typed-board-intent/v3', layout: 'list', visualKind: 'process', roles: [{ elementId: 'leaf_label', role: 'item' }], requiredConceptIds: ['leaf'], requiredRelations: [], visualIntents: [{ claimId: 'leaf_uses_light', strategy: 'literal', targets: [{ kind: 'element', elementId: 'leaf_label', evidenceSpanIds: [span.id] }] }] },
     elements: [{ id: 'leaf_label', slot: 'item', anchor: 'mention:leaf', prim: 'text', text: 'LEAF', size: 'title', conceptIds: ['leaf'], evidenceRefs: [evidence] }],
     edges: [],
   };

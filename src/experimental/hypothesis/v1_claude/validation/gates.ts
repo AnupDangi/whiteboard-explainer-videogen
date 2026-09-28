@@ -18,7 +18,9 @@ const evidenceKey = (ref: EvidenceReference): string => JSON.stringify([
 /** Minimum element scale vs measured size: the solver's smallest deliberate factor (layout/solver.ts GROWTH_FACTORS). Anything smaller is silent over-shrink and fails loudly instead of rendering tiny. */
 export const MIN_ELEMENT_SCALE = 0.6;
 
-export const VISUAL_COVERAGE_GATE_VERSION = 'visual-claim-coverage/v2';
+export const VISUAL_COVERAGE_GATE_VERSION = 'visual-claim-coverage/v3';
+/** Grace after a claim's last spoken word during which its depiction may finish drawing (§22). */
+export const CLAIM_REVEAL_GRACE_MS = 900;
 export interface ClaimCoverageInput {
   essentialClaims: SceneContract['essentialClaims'];
   spokenClaimSpans: SpokenClaimSpan[];
@@ -87,18 +89,21 @@ export function visualClaimCoverageFailures(scene: BoardAdequacyInput, coverage:
       seenTargets.add(key);
       if (target.kind === 'element') {
         const element = elements.get(target.elementId);
-        if (!element || element.origin === 'illustrative-example' || element.origin === 'fixture' || !element.evidenceRefs?.some((ref) => claim.evidenceSpanIds.includes(ref.spanId))) {
+        const cited = (target.evidenceSpanIds ?? []).some((span) => claim.evidenceSpanIds.includes(span));
+        const grounded = element?.evidenceRefs?.some((ref) => claim.evidenceSpanIds.includes(ref.spanId)) ?? false;
+        if (!element || element.origin === 'illustrative-example' || element.origin === 'fixture' || (!cited && !grounded)) {
           fail(`claim ${claim.id} targets unsupported element ${target.elementId}`); continue;
         }
-        for (const conceptId of element.conceptIds ?? []) coveredConcepts.add(conceptId);
+        for (const conceptId of element?.conceptIds ?? []) coveredConcepts.add(conceptId);
       } else {
         const from = elements.get(target.fromElementId);
         const to = elements.get(target.toElementId);
         const edge = scene.edges.find((item) => item.from === target.fromElementId && item.to === target.toElementId && item.factualRelation?.type === target.relationType);
         const relation = edge?.factualRelation;
+        const cited = (target.evidenceSpanIds ?? []).some((span) => claim.evidenceSpanIds.includes(span));
         if (!from || !to || !edge || !relation || edge.origin === 'illustrative-example' || edge.origin === 'fixture' ||
-          !edge.evidenceRefs?.some((ref) => claim.evidenceSpanIds.includes(ref.spanId)) ||
-          !relation.evidenceRefs.some((ref) => claim.evidenceSpanIds.includes(ref.spanId)) ||
+          (!cited && !edge.evidenceRefs?.some((ref) => claim.evidenceSpanIds.includes(ref.spanId))) ||
+          (!cited && !relation.evidenceRefs.some((ref) => claim.evidenceSpanIds.includes(ref.spanId))) ||
           !from.conceptIds?.includes(relation.fromConceptId) || !to.conceptIds?.includes(relation.toConceptId) ||
           !claim.relations.some((expected) => expected.from === relation.fromConceptId && expected.to === relation.toConceptId && expected.type === relation.type)) {
           fail(`claim ${claim.id} targets unsupported edge ${target.fromElementId}->${target.relationType}->${target.toElementId}`); continue;
@@ -108,7 +113,10 @@ export function visualClaimCoverageFailures(scene: BoardAdequacyInput, coverage:
         coveredRelations.add(`${relation.fromConceptId}|${relation.type}|${relation.toConceptId}`);
       }
       const end = revealEnd(target);
-      if (timeline && (end === undefined || end > (claimEndMs.get(claim.id) ?? -Infinity))) fail(`claim ${claim.id} target ${key} is not fully revealed by the end of its spoken claim`);
+      // Relation completion grace (§22 temporal policy): a reveal finishing
+      // within CLAIM_REVEAL_GRACE_MS after the spoken claim still reads as
+      // synchronized; anything later misses its narration window.
+      if (timeline && (end === undefined || end > (claimEndMs.get(claim.id) ?? -Infinity) + CLAIM_REVEAL_GRACE_MS)) fail(`claim ${claim.id} target ${key} is not fully revealed by the end of its spoken claim`);
     }
     for (const conceptId of claim.conceptIds) if (!coveredConcepts.has(conceptId)) fail(`claim ${claim.id} has no depicting target for concept ${conceptId}`);
     for (const relation of claim.relations) if (!coveredRelations.has(`${relation.from}|${relation.type}|${relation.to}`)) fail(`claim ${claim.id} has no depicting edge for ${relation.from} -[${relation.type}]-> ${relation.to}`);
@@ -509,7 +517,10 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline, claimCov
     || (scene.boardIntent ? STRUCTURAL_VISUAL_KINDS.includes(scene.boardIntent.visualKind) : false);
   const compare = (scene.boardIntent?.layout === 'compare') || scene.template === 'compare_2';
   if (!structured && !compare && scene.elements.length > 0 && (scene.occupancy < STYLE.occupancy.sparse || scene.elements.length < 2)) {
-    failures.push({ code: 'board-too-sparse', stage: 'layout', message: `board covers ${Math.round(scene.occupancy * 100)}% of the frame (< ${Math.round(STYLE.occupancy.sparse * 100)}%) with ${scene.elements.length} elements; it needs more or larger nodes`, hard: true });
+    const reason = scene.elements.length < 2
+      ? `only ${scene.elements.length} element(s) (minimum 2)`
+      : `board covers ${Math.round(scene.occupancy * 100)}% of the frame (< ${Math.round(STYLE.occupancy.sparse * 100)}%)`;
+    failures.push({ code: 'board-too-sparse', stage: 'layout', message: `${reason}; it needs more or larger nodes`, hard: true });
   } else if (scene.occupancy < STYLE.occupancy.min || scene.occupancy > STYLE.occupancy.max) {
     warnings.push({ code: 'occupancy', stage: 'layout', message: `occupancy ${scene.occupancy.toFixed(2)} outside [${STYLE.occupancy.min}, ${STYLE.occupancy.max}]`, hard: false });
   }

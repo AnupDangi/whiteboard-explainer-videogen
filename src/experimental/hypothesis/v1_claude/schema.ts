@@ -207,8 +207,8 @@ const BoardIntentSchema = z.object({
     claimId: z.string().min(1),
     strategy: z.enum(['literal', 'process', 'comparison', 'quantitative', 'labelled-diagram']),
     targets: z.array(z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('element'), elementId: z.string().min(1) }).strict(),
-      z.object({ kind: z.literal('edge'), fromElementId: z.string().min(1), toElementId: z.string().min(1), relationType: z.enum(RELATION_TYPES) }).strict(),
+      z.object({ kind: z.literal('element'), elementId: z.string().min(1), evidenceSpanIds: z.array(z.string().min(1)).min(1).max(3) }).strict(),
+      z.object({ kind: z.literal('edge'), fromElementId: z.string().min(1), toElementId: z.string().min(1), relationType: z.enum(RELATION_TYPES), evidenceSpanIds: z.array(z.string().min(1)).min(1).max(3) }).strict(),
     ])).min(1).max(12),
   }).strict()).max(8),
 }).strict();

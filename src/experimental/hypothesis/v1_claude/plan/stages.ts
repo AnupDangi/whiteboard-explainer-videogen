@@ -458,7 +458,7 @@ export async function writeScript(req: LessonRequest, graph: ConceptGraph, plan:
   const system = `You write the narration for ONE scene of a whiteboard teaching video. A tutor speaks while drawing each thing as it is named.
 Return ONE JSON object: { "text": "...", "claimSpans": [{ "claimId": "...", "exactText": "..." }] }.
 
-CLAIM SPANS (required): Each essential claim below must have exactly one claimSpans entry. exactText is a nonempty exact substring of what the tutor says after mention markers are removed, and it must occur only once. Include the complete spoken words that express the claim. Never give character offsets; code calculates them.
+CLAIM SPANS (required): Each essential claim below must have exactly one claimSpans entry. exactText is a nonempty exact substring of what the tutor says after mention markers are removed, and it must occur only once. COPY 4-12 CONSECUTIVE WORDS CHARACTER-FOR-CHARACTER FROM YOUR "text" FIELD (markers removed, phrases kept) — do not paraphrase, reorder, or fix grammar; a paraphrase fails validation. Include the complete spoken words that express the claim. Never give character offsets; code calculates them.
 
 MENTION MARKERS (required): wrap each phrase whose drawing should appear the moment it is spoken as [[id|spoken words]].
 - The spoken words stay in the sentence exactly as said; id is lowercase snake_case, unique within the scene.
