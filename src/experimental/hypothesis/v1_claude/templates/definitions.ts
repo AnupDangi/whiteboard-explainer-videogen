@@ -58,17 +58,28 @@ const titleCard: TemplateFn = (rect, elements) => {
 // ---------------------------------------------------------------------------
 // 2. hub_spoke — robot -> arrows -> {math, bug, experts}
 // ---------------------------------------------------------------------------
-const hubSpoke: TemplateFn = (rect, elements) => {
+const hubSpokeWithGap = (radialGap: number): TemplateFn => (rect, elements) => {
   const plan: SlotPlanEntry[] = [{ name: 'hub', capacity: 1 }, { name: 'spoke', capacity: 'many' }];
   const groups = assignSlots(elements, plan);
   const hub = groups.get('hub')!;
   const spokes = groups.get('spoke')!;
-  const { center, ring } = circleLayout(rect, spokes.map((s) => s.intrinsic), { center: hub[0]?.intrinsic });
+  const { center, ring } = circleLayout(rect, spokes.map((s) => s.intrinsic), { center: hub[0]?.intrinsic, radialGap });
   const boxes = new Map<string, BBox>();
   if (hub[0] && center) boxes.set(hub[0].elementId, center);
   spokes.forEach((s, i) => boxes.set(s.elementId, ring[i]));
   return { boxes, axis: 'none' };
 };
+const hubSpoke = hubSpokeWithGap(24);
+/**
+ * Dense hub_spoke: the same radial board with the ring pulled in to the
+ * exact no-overlap bound, so a dense ring of tall icon+label objects fits at
+ * native size instead of taking the solver's shrink-to-fit fallback just
+ * below the readability floor. Zero only removes the extra padding — the
+ * radius loop still grows until nothing overlaps, so ring boxes never cover
+ * each other or the hub. The roomy default above keeps its clearance whenever
+ * it fits and is always tried first.
+ */
+const hubSpokeDense = hubSpokeWithGap(0);
 
 // ---------------------------------------------------------------------------
 // 3. chain — ID verified -> reset password -> STOP
@@ -349,6 +360,7 @@ export const TEMPLATES: Record<TemplateId, TemplateFn> = {
 export const DENSE_TEMPLATES: Partial<Record<TemplateId, TemplateFn>> = {
   fan_out: fanOutDense,
   layered_stack: layeredStackDense,
+  hub_spoke: hubSpokeDense,
 };
 
 export function applyAxisOverlapFix(boxes: Map<string, BBox>, axis: 'x' | 'y' | 'none', gap: number): Map<string, BBox> {

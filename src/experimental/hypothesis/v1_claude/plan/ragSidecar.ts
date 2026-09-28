@@ -26,6 +26,7 @@ export interface RagIndexOutcome {
   cacheHit: boolean;
   itemCount: number;
   elapsedMs: number;
+  /** Cost *estimate* (the provider never exposes billed dollars). Settles only on `matched` retrieval; miss/partial keep $0. */
   estimatedCostUsd: number;
   actualUsage?: { callAttempts: number; successfulCallAttempts: number; failedCalls: number; providerReportedUsageResponses: number; promptTokens: number; completionTokens: number; totalTokens: number; costUsd: null; costStatus: string };
   artifactEstimatedCostUsd?: number;
@@ -293,6 +294,9 @@ export async function indexSourceBundleWithRag(input: {
   let itemCount = items.length;
   let indexCostUsd = 0;
   let queryCostUsd = 0;
+  // Both stay $0 until the match settlement below: sidecar calls run under
+  // provisional $0 ledger entries (budget-gated, fail-closed) and the
+  // estimate settles only when retrieval matches exact source spans.
   let artifactEstimatedCostUsd: number | undefined;
   let actualUsage: NonNullable<RagIndexOutcome['actualUsage']> = emptyUsage();
   let indexStatus: 'complete' | 'partial' | 'failed' | 'not-run' = 'failed';
@@ -333,7 +337,10 @@ export async function indexSourceBundleWithRag(input: {
       const indexResult = await input.ledger.call(input.remainingBudgetUsd, async (allowedUsd) => {
         if (allowedUsd < indexEstimate) throw new Error(`RAG index estimate $${indexEstimate.toFixed(4)} exceeds remaining run budget $${allowedUsd.toFixed(4)}`);
         const value = await runSidecar('index', { contentList: items, filePath: `${input.sourceBundle.bundleId}.pdf`, workingDir: input.workingDir, docId: input.sourceBundle.bundleId, forceMultimodalReprocess: true }, Number(process.env.RAG_INDEX_TIMEOUT_MS ?? 240_000), input.providerEnv);
-        return { value, costUsd: indexEstimate };
+        // Provisional $0: the sidecar reports estimates, never invoices, so the
+        // estimate settles only on matched retrieval (see the query block).
+        // Budget gating and fail-closed error handling above still apply.
+        return { value, costUsd: 0 };
       });
       if (!indexResult.allowed) throw new Error(`RAG index is over budget; ledger has spent $${indexResult.spentUsd.toFixed(4)}`);
       indexCostUsd = indexResult.costUsd;
@@ -353,7 +360,7 @@ export async function indexSourceBundleWithRag(input: {
       indexStatus = 'complete';
       itemCount = Number(indexResult.value.items) || items.length;
       for (const figure of selectedFigures) figure.indexStatus = 'indexed';
-      const manifest = { schemaVersion: 'rag-index-manifest/v2', status: 'complete', digest, bundleId: input.sourceBundle.bundleId, itemCount, expectedMultimodalItems: expectedItems ?? 0, completedMultimodalItems: completedItems ?? 0, estimatedCostUsd: indexCostUsd, costEstimated: true, providerUsage: actualUsage, indexedAt: new Date().toISOString() };
+      const manifest = { schemaVersion: 'rag-index-manifest/v2', status: 'complete', digest, bundleId: input.sourceBundle.bundleId, itemCount, expectedMultimodalItems: expectedItems ?? 0, completedMultimodalItems: completedItems ?? 0, estimatedCostUsd: indexEstimate, costEstimated: true, providerUsage: actualUsage, indexedAt: new Date().toISOString() };
       const temporary = `${manifestPath}.${process.pid}.tmp`;
       await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
       await rename(temporary, manifestPath);
@@ -363,7 +370,8 @@ export async function indexSourceBundleWithRag(input: {
       // Naive mode returns retrieved source chunks directly without graph/LLM
       // paraphrase, which is required for exact-span citation mapping.
       const value = await runSidecar('query', { workingDir: input.workingDir, question: input.query, mode: 'naive', topK: 20, chunkTopK: 12 }, Number(process.env.RAG_QUERY_TIMEOUT_MS ?? 100_000), input.providerEnv);
-      return { value, costUsd: queryEstimate };
+      // Provisional $0, as above: settles only on matched retrieval.
+      return { value, costUsd: 0 };
     });
     if (!queried.allowed) throw new Error(`RAG query is over budget; ledger has spent $${queried.spentUsd.toFixed(4)}`);
     queryCostUsd = queried.costUsd;
@@ -375,7 +383,20 @@ export async function indexSourceBundleWithRag(input: {
     }
     const ranked = mapRagChunksToEvidence(queried.value.data, input.sourceDoc, input.sourceBundle);
     exactSpanHits = ranked.length;
+    // Charge-on-match: booking an estimate for a miss charges the run for
+    // value it never received (retrieval stayed local-text). The estimate
+    // settles through the ledger only when chunks map to exact source spans.
+    let settledUsd = 0;
     if (ranked.length) {
+      const settlementUsd = (cacheHit ? 0 : indexEstimate) + queryEstimate;
+      if (settlementUsd > 0) {
+        const settled = await input.ledger.call(input.remainingBudgetUsd, async (allowedUsd) => {
+          if (allowedUsd < settlementUsd) throw new Error(`RAG estimate $${settlementUsd.toFixed(4)} exceeds remaining run budget $${allowedUsd.toFixed(4)}`);
+          return { value: null, costUsd: settlementUsd };
+        });
+        if (!settled.allowed) throw new Error(`RAG estimate is over budget; ledger has spent $${settled.spentUsd.toFixed(4)}`);
+        settledUsd = settled.costUsd;
+      }
       const deepIds = new Set(ranked.map((hit) => hit.citation.spanId));
       const combined = [...ranked, ...input.sourceBundle.evidenceHits.filter((hit) => !deepIds.has(hit.citation.spanId))];
       input.sourceBundle.evidenceHits = combined.map((hit, index) => ({ ...hit, rank: index + 1, retrievalMode: deepIds.has(hit.citation.spanId) ? 'deep-indexed+local-text' : 'local-text' }));
@@ -386,8 +407,8 @@ export async function indexSourceBundleWithRag(input: {
       retrievalStatus = ragRetrievalStatus(ranked.length);
     }
     input.sourceDoc.retrievalEvidence = input.sourceBundle.evidenceHits;
-    const estimatedCostUsd = indexCostUsd + queried.costUsd;
-    input.sourceBundle.retrievalCost = { apiCostUsd: estimatedCostUsd, estimated: true, elapsedMs: Date.now() - startedAtMs };
+    const estimatedCostUsd = settledUsd;
+    input.sourceBundle.retrievalCost = { apiCostUsd: estimatedCostUsd, estimated: estimatedCostUsd > 0, elapsedMs: Date.now() - startedAtMs };
     input.sourceBundle.ragStatus = { index: 'complete', retrieval: retrievalStatus, exactSpanHits, failedProviderCalls: actualUsage.failedCalls };
     const retrievalMiss = retrievalStatus === 'miss';
     return { enabled: true, status: retrievalMiss ? 'partial' : 'completed', retrievalStatus, indexed: true, cacheHit, itemCount, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd, artifactEstimatedCostUsd, actualUsage, ...(retrievalMiss ? { error: 'RAG query completed but returned no chunks that map to exact original source spans; continuing with local-text evidence.' } : {}) };
@@ -397,7 +418,7 @@ export async function indexSourceBundleWithRag(input: {
     input.sourceBundle.retrievalMode = 'local-text';
     input.sourceBundle.evidenceHits = input.sourceBundle.evidenceHits.map((hit) => ({ ...hit, retrievalMode: 'local-text' }));
     input.sourceDoc.retrievalEvidence = input.sourceBundle.evidenceHits;
-    input.sourceBundle.retrievalCost = { apiCostUsd: indexCostUsd + queryCostUsd, estimated: true, elapsedMs: Date.now() - startedAtMs };
+    input.sourceBundle.retrievalCost = { apiCostUsd: indexCostUsd + queryCostUsd, estimated: indexCostUsd + queryCostUsd > 0, elapsedMs: Date.now() - startedAtMs };
     input.sourceBundle.ragStatus ??= { index: indexStatus, retrieval: retrievalStatus, exactSpanHits, failedProviderCalls: actualUsage.failedCalls };
     return { enabled: true, status: indexStatus === 'complete' && retrievalStatus === 'failed' ? 'partial' : indexStatus === 'partial' ? 'partial' : 'failed', retrievalStatus, indexed, cacheHit, itemCount, elapsedMs: Date.now() - startedAtMs, estimatedCostUsd: indexCostUsd + queryCostUsd, ...(artifactEstimatedCostUsd !== undefined ? { artifactEstimatedCostUsd } : {}), actualUsage, error: error instanceof Error ? error.message : String(error) };
   }

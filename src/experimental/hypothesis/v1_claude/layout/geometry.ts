@@ -43,7 +43,7 @@ export function columnLayout(rect: Rect, sizes: IntrinsicSize[], gap: number): B
  * (12 o'clock) and proceeding clockwise. Radius grows deterministically until
  * no two placed boxes overlap and every box stays within `rect`.
  */
-export function circleLayout(rect: Rect, sizes: IntrinsicSize[], opts: { center?: IntrinsicSize; minRadius?: number } = {}): { center?: BBox; ring: BBox[] } {
+export function circleLayout(rect: Rect, sizes: IntrinsicSize[], opts: { center?: IntrinsicSize; minRadius?: number; radialGap?: number } = {}): { center?: BBox; ring: BBox[] } {
   const c = rectCenter(rect);
   const centerBox: BBox | undefined = opts.center
     ? { x: c.x - opts.center.w / 2, y: c.y - opts.center.h / 2, w: opts.center.w, h: opts.center.h }
@@ -55,7 +55,9 @@ export function circleLayout(rect: Rect, sizes: IntrinsicSize[], opts: { center?
   const maxRadius = rect.h / 2;
   const hub = opts.center ? Math.max(opts.center.w, opts.center.h) / 2 : 0;
   const smallest = Math.min(...sizes.map((s) => Math.min(s.w, s.h)));
-  let radius = Math.max(opts.minRadius ?? 0, hub + smallest / 2 + 24);
+  // Dense variants pack the ring tighter (hub_spoke dense uses 8, mirroring
+  // layered_stack dense); the default keeps the roomier reference clearance.
+  let radius = Math.max(opts.minRadius ?? 0, hub + smallest / 2 + (opts.radialGap ?? 24));
   const step = 6;
   let placement: BBox[] = [];
   do {
