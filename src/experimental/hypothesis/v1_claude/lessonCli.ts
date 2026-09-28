@@ -159,6 +159,11 @@ async function main(): Promise<void> {
     } catch (error) {
       console.error(`  [LESSON FAILED] ${lesson.id}: ${error instanceof Error ? error.message : String(error)}`);
       const completedAtMs = Date.now();
+      // A crashed run must still leave a bundle: diagnosis tooling reads
+      // evaluation-bundle.json uniformly, and a missing file hides crashes.
+      try {
+        await writeFile(path.join(outputDir, 'evaluation-bundle.json'), `${JSON.stringify({ schemaVersion: 'evaluation-bundle/v1', runId, status: 'failed', failures: [{ code: 'run-crashed', stage: 'pipeline', message: error instanceof Error ? error.message : String(error), hard: true }], metrics: {}, stageRuns: prepared.stageRuns ?? [] }, null, 2)}\n`, { flag: 'wx' });
+      } catch { /* outputDir itself may be the casualty; summary below still lands */ }
       summary.push({ lesson: lesson.id, runId, outputDir, status: 'failed', planDespiteAlignmentFailure, startedAt: new Date(executionStartedAtMs).toISOString(), completedAt: new Date(completedAtMs).toISOString(), wallMs: completedAtMs - executionStartedAtMs, error: error instanceof Error ? error.message : String(error) });
     }
   }

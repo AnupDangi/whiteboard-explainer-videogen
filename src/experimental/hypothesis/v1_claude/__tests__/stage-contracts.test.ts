@@ -82,6 +82,17 @@ test('S4 exact claim spans are code-offset into marker-stripped speech and rejec
   assert.ok(validateSceneText(raw, section, [{ claimId: 'heat_transfer', exactText: 'invented words' }]).some((p) => /occur exactly once/.test(p)));
   assert.throws(() => buildNarrationScene('s1', 's1', 'heat and heat', [{ claimId: 'x', exactText: 'heat' }]), /occur exactly once/);
 });
+test('word budget compares rounded bounds: an exact-boundary count passes', () => {
+  // 12s at 2.25 words/s = 27 words; tolerance band rounds to 16-38.
+  // A 38-word script hit the displayed max but failed the unrounded 37.8
+  // bound (live spaced-repetition run). The check must use rounded bounds.
+  const words38 = ['[[a|alpha]]', '[[b|beta]]', '[[c|gamma]]', '[[d|delta]]', ...Array.from({ length: 34 }, (_, i) => `word${i}`)].join(' ');
+  // 4 markers + 34 plain = 38 spoken words (markers strip to their phrases).
+  const section: TeachingPlan['sections'][number] = { id: 's1', title: 'T', goal: 'G', kind: 'explain', conceptIds: ['a'], budgetSec: 12, contract: { learningDelta: 'G', targetDurationSec: 12, requiredConceptIds: ['a'], requiredRelations: [], evidenceSpanIds: ['span'], essentialClaims: [], teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } };
+  assert.deepEqual(validateSceneText(words38, section), []);
+  const words39 = `${words38} extra`;
+  assert.ok(validateSceneText(words39, section).some((p) => /spoken words, needs 16-38/.test(p)));
+});
 
 test('the S3 draft schema lifts model-owned fields from an older full-plan response and drops copied ones', () => {
   const parsed = TeachingPlanDraftSchema.parse({

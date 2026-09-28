@@ -410,8 +410,12 @@ export function validateSceneText(text: string, section: TeachingPlan['sections'
   }
   const words = plainText.trim().split(/\s+/).filter(Boolean).length;
   const budget = section.budgetSec * WORDS_PER_SEC;
-  if (words < budget * (1 - WORD_TOLERANCE) || words > budget * (1 + WORD_TOLERANCE)) {
-    problems.push(`${words} spoken words, needs ${Math.round(budget * (1 - WORD_TOLERANCE))}-${Math.round(budget * (1 + WORD_TOLERANCE))} (${section.budgetSec}s at ${WORDS_PER_SEC} words/s)`);
+  // Compare rounded bounds (the model only ever sees the rounded range in the
+  // message and prompt): an exact-boundary count must not fail float dust.
+  const loWords = Math.round(budget * (1 - WORD_TOLERANCE));
+  const hiWords = Math.round(budget * (1 + WORD_TOLERANCE));
+  if (words < loWords || words > hiWords) {
+    problems.push(`${words} spoken words, needs ${loWords}-${hiWords} (${section.budgetSec}s at ${WORDS_PER_SEC} words/s)`);
   }
   if (mentions.length < MENTIONS_PER_SCENE.min || mentions.length > MENTIONS_PER_SCENE.max) problems.push(`${mentions.length} markers, needs ${MENTIONS_PER_SCENE.min}-${MENTIONS_PER_SCENE.max}`);
   const seen = new Set<string>();
@@ -490,7 +494,7 @@ SOURCE (facts must come from these source spans; evidence stays attached in the 
 ${sectionSourcePrompt(sourceDoc, section, graph)}`;
       return structuredCall({
         stage: 'script', subject: `scene ${section.id}`, model: m.model, apiKey: m.apiKey, system, user,
-        schema: SceneTextSchema, schemaName: 'scene_narration', remainingBudgetUsd: perScene, maxTokens: 2500,
+        schema: SceneTextSchema, schemaName: 'scene_narration', remainingBudgetUsd: perScene, maxTokens: 4000,
         // Checked in spoken form: that is what TTS reads (digits expand to words) and what the script stores.
         validate: (v) => validateSceneText(spokenForm(v.text), section, v.claimSpans), budgetLedger: m.budgetLedger, fetcher: m.fetcher,
       }).then((result) => ({ section, result, startedAtMs, completedAtMs: Date.now() }));

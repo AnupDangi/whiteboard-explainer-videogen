@@ -65,13 +65,19 @@ export function visualClaimCoverageFailures(scene: BoardAdequacyInput, coverage:
     if (!claimById.has(intent.claimId)) fail(`visual intent names unknown claim ${intent.claimId}`);
   }
   const elements = new Map(scene.elements.map(({ id, element }) => [id, element]));
-  const revealEnd = (target: { kind: 'element'; elementId: string } | { kind: 'edge'; fromElementId: string; toElementId: string; relationType: NonNullable<Edge['factualRelation']>['type'] }): number | undefined => {
+  // Synchronized depiction (§22 temporal policy): an element's drawing must
+  // START within its claim window (introduction roughly around the claim),
+  // while a relation arrow must COMPLETE within claim end + grace (relation
+  // completion). Judging element wipes by their end punished slow-but-
+  // synchronized drawing and caused systematic false failures.
+  const revealSync = (target: { kind: 'element'; elementId: string } | { kind: 'edge'; fromElementId: string; toElementId: string; relationType: NonNullable<Edge['factualRelation']>['type'] }): number | undefined => {
     if (!timeline) return undefined;
     if (target.kind === 'element' && (scene as LaidOutScene).carryOver?.includes(target.elementId)) return timeline.sceneStartMs;
     const event = target.kind === 'element'
       ? timeline.events.find((item) => item.elementId === target.elementId && isPrimaryReveal(item.track))
       : timeline.events.find((item) => item.track === 'edge' && item.edgeIndex === scene.edges.findIndex((edge) => edge.from === target.fromElementId && edge.to === target.toElementId && edge.factualRelation?.type === target.relationType));
-    return event && event.t1 - event.t0 >= 1 && event.t0 < timeline.sceneEndMs - 1 ? event.t1 : undefined;
+    if (!event || event.t1 - event.t0 < 1 || event.t0 >= timeline.sceneEndMs - 1) return undefined;
+    return target.kind === 'element' ? event.t0 : event.t1;
   };
   for (const claim of coverage.essentialClaims) {
     const spoken = spans.get(claim.id) ?? [];
@@ -112,7 +118,7 @@ export function visualClaimCoverageFailures(scene: BoardAdequacyInput, coverage:
         coveredConcepts.add(relation.toConceptId);
         coveredRelations.add(`${relation.fromConceptId}|${relation.type}|${relation.toConceptId}`);
       }
-      const end = revealEnd(target);
+      const end = revealSync(target);
       // Relation completion grace (§22 temporal policy): a reveal finishing
       // within CLAIM_REVEAL_GRACE_MS after the spoken claim still reads as
       // synchronized; anything later misses its narration window.
