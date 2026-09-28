@@ -57,6 +57,7 @@ export interface StageArtifact<T> {
   stageVersion:string;
   promptVersion?:string;
   modelId?:string;
+  modelParams?:Record<string,string|number|boolean>;
   inputHash:string;
   contentHash:string;
   payload:T;

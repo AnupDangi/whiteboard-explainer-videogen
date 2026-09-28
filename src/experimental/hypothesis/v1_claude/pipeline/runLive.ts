@@ -12,7 +12,9 @@ import { catalogVersion } from '../catalog/registry.js';
 import { collectPins, iconPinKey, type IconPin } from '../catalog/iconPins.js';
 import { EMBEDDING_MODEL, rankConcepts } from '../catalog/semantic.js';
 import { QueryEmbeddingCache } from '../catalog/queryEmbeddingCache.js';
-import { toNeutralElements, toNeutralEvents } from '../validation/gates.js';
+import { toNeutralElements, toNeutralEvents, VISUAL_COVERAGE_GATE_VERSION, SEMANTIC_FITNESS_GATE_VERSION, depictClaims, semanticCoverageMetrics, type ClaimCoverageInput } from '../validation/gates.js';
+import { buildLessonLock, LESSON_LOCK_VERSION } from './lessonLock.js';
+import { loadBridge } from '../catalog/bridge.js';
 import { conceptForMention } from '../planner/board.js';
 import { scenePlanner as scenePlannerById } from '../planner/registry.js';
 import { plannerProblems, shouldSkipPaidPlanning, type PlanSceneResult, type PlannerCallUsage } from '../planner/plan.js';
@@ -285,6 +287,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   const scenes: LiveScenePipelineResult[] = [];
   let firstPlayableSceneReadyAtMs: number | undefined;
+  /** Per-scene B3/B4 inputs for run-wide Simi coverage metrics (§6/§24). */
+  const coverageScenes: Array<{ laidOut: LaidOutScene; timeline: Timeline; coverage: ClaimCoverageInput }> = [];
 
   const videoScenes: VideoScene[] = [];
   const localStageMetrics = new Map<string, { durationMs: number; cacheHits: number; runs: number; startedAtMs: number; completedAtMs: number }>();
@@ -512,15 +516,16 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const objectConcepts = planned.spec.elements.flatMap((e) => (e.prim === 'object' ? [e.concept] : []));
     const resolutionCandidates = await rankConcepts(objectConcepts, 5, queryEmbeddingCache);
     const bounds = sceneBoundsMs[sceneInput.sceneId] ?? { startMs: 0, endMs: finalDurationMs };
+    const claimCoverage: ClaimCoverageInput | undefined = sceneInput.sceneContract ? {
+      essentialClaims: sceneInput.sceneContract.essentialClaims,
+      spokenClaimSpans: narration.scenes.find((scene) => scene.sceneId === sceneInput.sceneId)?.claimSpans ?? [],
+      plainText: narration.scenes.find((scene) => scene.sceneId === sceneInput.sceneId)?.plainText ?? '',
+      alignedWords: sceneWords[sceneInput.sceneId] ?? [],
+    } : undefined;
     const { resolved, laidOut, timeline, finalFrameSvg, gates: gateResult } = await runVisualChain(
       {
         sceneId: sceneInput.sceneId, spec: planned.spec, resolve: { candidates: resolutionCandidates, pins: iconPins }, previousBoxes, mentions: sceneMentions, bounds,
-        ...(sceneInput.sceneContract ? { claimCoverage: {
-          essentialClaims: sceneInput.sceneContract.essentialClaims,
-          spokenClaimSpans: narration.scenes.find((scene) => scene.sceneId === sceneInput.sceneId)?.claimSpans ?? [],
-          plainText: narration.scenes.find((scene) => scene.sceneId === sceneInput.sceneId)?.plainText ?? '',
-          alignedWords: sceneWords[sceneInput.sceneId] ?? [],
-        } } : {}),
+        ...(claimCoverage ? { claimCoverage } : {}),
       },
       {
         store: ctx.artifactStore,
@@ -538,6 +543,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     previousElements = laidOut.elements.map((e) => ({ id: e.id, prim: e.element.prim, label: e.element.label ?? (e.element.prim === 'object' ? e.element.concept : undefined), conceptIds: e.element.conceptIds }));
     failures.push(...gateResult.failures, ...gateResult.warnings);
     gateRecords.push({ gateSet: 'claude', sceneId: sceneInput.sceneId, passed: gateResult.failures.length === 0, failures: gateResult.failures.map(toRunFailure), warnings: gateResult.warnings.map(toRunFailure) });
+    if (claimCoverage) coverageScenes.push({ laidOut, timeline, coverage: claimCoverage });
     if (finalFrameSvg !== undefined) {
       const sceneLicenses = laidOut.elements.map((e) => e.resolution?.license).filter((l): l is string => Boolean(l));
       const gateFailures = deterministicGates({ ...(golden ? { golden } : {}), elements: toNeutralElements(laidOut), timeline: toNeutralEvents(laidOut, timeline, bounds.startMs), durationMs: Math.max(0, bounds.endMs - bounds.startMs), svg: finalFrameSvg, licenses: sceneLicenses });
@@ -829,6 +835,13 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     evaluationBundle.metrics['video.audioDurationDeltaMs'] = encodedVideoDurationMs - finalDurationMs;
   }
   evaluationBundle.metrics['timing.captionsMs'] = captionsMs;
+  if (coverageScenes.length) {
+    const depictions = coverageScenes.flatMap((s) => depictClaims(s.laidOut, s.coverage));
+    Object.assign(evaluationBundle.metrics, semanticCoverageMetrics(
+      depictions,
+      coverageScenes.map((s) => ({ laidOut: s.laidOut, timeline: s.timeline })),
+    ));
+  }
   const pipelineCompletedAtMs = Date.now();
   evaluationBundle.metrics['timing.pipelineWallMs'] = pipelineCompletedAtMs - runStartedAtMs;
   evaluationBundle.metrics['timing.totalPipelineMs'] = pipelineCompletedAtMs - runStartedAtMs;
@@ -912,5 +925,79 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     credits,
   });
 
+  try {
+    await writeLessonLockFile({
+      outputDir, runId, evaluationBundle, scenes,
+      sceneAudioPathById, sceneWords, input,
+      activeCatalogVersion,
+      plannerPromptVersion: planner.promptVersion,
+      plannerModel: ctx.plannerModel,
+    });
+  } catch (error) {
+    failures.push({ code: 'lesson-lock-failed', stage: 'encode', message: `lesson.lock.json could not be written: ${error instanceof Error ? error.message : String(error)}`, hard: true });
+    evaluationBundle.failures = failures.map(toRunFailure);
+    evaluationBundle.status = derivePublishStatus();
+  }
+
   return { runId, narration, alignedAudio, scenes, evaluationBundle, contactSheetSvg, failures, status: evaluationBundle.status, audioPath: masterWavPath, videoPath, encodedVideoDurationMs, captionsPath };
+}
+
+async function writeLessonLockFile(args: {
+  outputDir: string;
+  runId: string;
+  evaluationBundle: EvaluationBundle;
+  scenes: LiveScenePipelineResult[];
+  sceneAudioPathById: Map<string, string>;
+  sceneWords: Record<string, Array<{ w: string; startMs: number; endMs: number }>>;
+  input: HypothesisLiveInput;
+  activeCatalogVersion: string;
+  plannerPromptVersion: string;
+  plannerModel: string;
+}): Promise<void> {
+  let bridgeVersion: string | undefined;
+  try {
+    bridgeVersion = loadBridge().catalogVersion;
+  } catch { /* bridge manifest absent (unit-test trees): lock records no bridge */ }
+  const rendered = args.scenes.filter((s) => s.finalFrameSvg.length > 0);
+  const blockedScenes = args.scenes.filter((s) => s.finalFrameSvg.length === 0).map((s) => s.sceneId);
+  const lock = await buildLessonLock({
+    runId: args.runId,
+    status: args.evaluationBundle.status,
+    outputDir: args.outputDir,
+    scenes: rendered.map((s) => {
+      const audioAbs = args.sceneAudioPathById.get(s.sceneId);
+      return {
+        sceneId: s.sceneId,
+        finalFrameSvg: s.finalFrameSvg,
+        assetRefs: s.laidOut.elements
+          .filter((e) => e.element.prim === 'object')
+          .map((e) => ({
+            assetId: e.resolution?.assetId ?? null,
+            ...(e.resolution?.strategy ? { strategy: e.resolution.strategy } : {}),
+            ...(e.resolution?.rung !== undefined ? { rung: e.resolution.rung } : {}),
+          })),
+        ...(audioAbs ? { audioFile: path.relative(args.outputDir, audioAbs) } : {}),
+        ...(args.sceneWords[s.sceneId] ? { alignmentHash: sha256(stableJson(args.sceneWords[s.sceneId])) } : {}),
+      };
+    }),
+    ...(blockedScenes.length ? { blockedScenes } : {}),
+    sourceFiles: [
+      ...(args.input.sourceDoc ? ['source-doc.json'] : []),
+      ...(args.input.sourceBundle ? ['source-bundle.json'] : []),
+    ],
+    assets: {
+      ...(bridgeVersion ? { bridgeVersion } : {}),
+      catalogVersion: args.activeCatalogVersion,
+    },
+    promptVersions: {
+      scene: SCENE_PROMPT_VERSION,
+      board: args.plannerPromptVersion,
+      coverage: VISUAL_COVERAGE_GATE_VERSION,
+      fitness: SEMANTIC_FITNESS_GATE_VERSION,
+      lock: LESSON_LOCK_VERSION,
+      ...VISUAL_STAGE_VERSIONS,
+    },
+    modelIds: [args.plannerModel],
+  });
+  await writeFile(path.join(args.outputDir, 'lesson.lock.json'), `${stableJson(lock)}\n`, 'utf8');
 }

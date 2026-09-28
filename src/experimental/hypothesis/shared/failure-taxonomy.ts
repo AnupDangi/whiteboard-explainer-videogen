@@ -93,6 +93,9 @@ export function classifyFailureCode(code: string): FailureClass {
   // S extras: sparse/wrong board content that is neither layout nor timing.
   if (c.includes('element-count') || c.includes('unresolved-object') || c.includes('no-source-evidence')) return 'S';
 
+  // B4 semantic fitness: depiction quality of essential claims.
+  if (c.includes('claim-undepicted') || c.includes('literal-fallback') || c.includes('fallback-despite-assets')) return 'S';
+
   // Default: planner-owned (budget/schema/provenance/unknown codes).
   return 'P';
 }

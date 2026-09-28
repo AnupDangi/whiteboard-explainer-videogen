@@ -11,6 +11,9 @@ export interface StageDefinition {
   promptVersion?: string;
   modelId?: string;
   catalogVersion?: string;
+  /** Model call parameters that change output (temperature, maxTokens, ...).
+   * Include whenever a stage varies them; keyed and verified like modelId. */
+  modelParams?: Record<string, string | number | boolean>;
 }
 
 export interface VersionedStageArtifact<T> extends StageArtifact<T> { catalogVersion?: string }
@@ -57,7 +60,7 @@ export class ContentAddressedArtifactStore {
       try {
         const artifact = JSON.parse(await readFile(artifactPath, 'utf8')) as VersionedStageArtifact<T>;
         await verifyArtifact(artifact);
-        if (artifact.inputHash !== sha256(stableJson(input)) || artifact.schemaVersion !== meta.schemaVersion || artifact.stageVersion !== stageVersion || artifact.promptVersion !== meta.promptVersion || artifact.modelId !== meta.modelId || artifact.catalogVersion !== meta.catalogVersion) {
+        if (artifact.inputHash !== sha256(stableJson(input)) || artifact.schemaVersion !== meta.schemaVersion || stableJson(artifact.modelParams) !== stableJson(meta.modelParams) || artifact.stageVersion !== stageVersion || artifact.promptVersion !== meta.promptVersion || artifact.modelId !== meta.modelId || artifact.catalogVersion !== meta.catalogVersion) {
           throw new Error(`Cached artifact metadata mismatch for ${stage}`);
         }
         return { artifact, key, cacheHit: true };
@@ -73,6 +76,7 @@ export class ContentAddressedArtifactStore {
       stageVersion,
       ...(meta.promptVersion ? { promptVersion: meta.promptVersion } : {}),
       ...(meta.modelId ? { modelId: meta.modelId } : {}),
+      ...(meta.modelParams ? { modelParams: meta.modelParams } : {}),
     });
     const artifact: VersionedStageArtifact<T> = { ...base, ...(meta.catalogVersion ? { catalogVersion: meta.catalogVersion } : {}) };
     if (options.cacheable && !options.cacheable(payload)) return { artifact, key, cacheHit: false };
@@ -112,7 +116,7 @@ export class ContentAddressedArtifactStore {
       try {
         const artifact = JSON.parse(await readFile(artifactPath, 'utf8')) as VersionedStageArtifact<T>;
         await verifyArtifact(artifact);
-        if (artifact.inputHash !== inputHash || artifact.schemaVersion !== meta.schemaVersion || artifact.stageVersion !== stageVersion || artifact.promptVersion !== meta.promptVersion || artifact.modelId !== meta.modelId || artifact.catalogVersion !== meta.catalogVersion) {
+        if (artifact.inputHash !== inputHash || artifact.schemaVersion !== meta.schemaVersion || stableJson(artifact.modelParams) !== stableJson(meta.modelParams) || artifact.stageVersion !== stageVersion || artifact.promptVersion !== meta.promptVersion || artifact.modelId !== meta.modelId || artifact.catalogVersion !== meta.catalogVersion) {
           throw new Error(`Cached artifact metadata mismatch for ${stage}`);
         }
         return artifact;
@@ -171,6 +175,7 @@ export class ContentAddressedArtifactStore {
       stageVersion,
       ...(meta.promptVersion ? { promptVersion: meta.promptVersion } : {}),
       ...(meta.modelId ? { modelId: meta.modelId } : {}),
+      ...(meta.modelParams ? { modelParams: meta.modelParams } : {}),
     });
     const artifact: VersionedStageArtifact<T> = { ...base, ...(meta.catalogVersion ? { catalogVersion: meta.catalogVersion } : {}) };
     await writeFile(artifactTemp, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');

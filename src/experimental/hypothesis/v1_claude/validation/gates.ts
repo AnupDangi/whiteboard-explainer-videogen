@@ -6,6 +6,7 @@ import type { EvidenceReference, NeutralElement, NeutralTimelineEvent } from '..
 import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 
 import { LICENSE_ALLOWLIST } from '../catalog/normalize.js';
+import { bridgeConceptFor } from '../catalog/bridge.js';
 import { maxIdleWindowMs, nominalRevealMs } from '../timeline/compile.js';
 import { formulaSource } from '../render/math.js';
 import { tokenizeWords } from '../narration/align.js';
@@ -111,6 +112,116 @@ export function visualClaimCoverageFailures(scene: BoardAdequacyInput, coverage:
     }
     for (const conceptId of claim.conceptIds) if (!coveredConcepts.has(conceptId)) fail(`claim ${claim.id} has no depicting target for concept ${conceptId}`);
     for (const relation of claim.relations) if (!coveredRelations.has(`${relation.from}|${relation.type}|${relation.to}`)) fail(`claim ${claim.id} has no depicting edge for ${relation.from} -[${relation.type}]-> ${relation.to}`);
+  }
+  return failures.map(withFailureClass);
+}
+
+/**
+ * B4 semantic fitness (Teaching Compiler V1 §6): B3 proves structure (one
+ * span + one intent per claim, source-backed targets); B4 judges whether the
+ * depiction actually teaches. Hard only when a major claim has NO drawing at
+ * all (every target is rung-4 text); weaker-but-present depictions are
+ * DRAFT findings (hard:false), never silent passes.
+ */
+export const SEMANTIC_FITNESS_GATE_VERSION = 'semantic-fitness/v1';
+
+/** Per-claim depiction summary shared by the B4 gate and Simi coverage metrics. */
+export interface ClaimDepiction {
+  claimId: string;
+  hasIntent: boolean;
+  elementTargets: number;
+  drawnTargets: number;
+  textTargets: number;
+  edgeTargets: number;
+  strategies: Array<string | undefined>;
+  encodedRelations: string[];
+  diagramFirst: boolean;
+}
+
+export function depictClaims(scene: LaidOutScene, coverage: ClaimCoverageInput): ClaimDepiction[] {
+  const intents = scene.boardIntent?.visualIntents ?? [];
+  const byClaim = new Map<string, typeof intents>();
+  for (const intent of intents) byClaim.set(intent.claimId, [...(byClaim.get(intent.claimId) ?? []), intent]);
+  const resolutionByElement = new Map(scene.elements.map(({ id, resolution }) => [id, resolution]));
+  return coverage.essentialClaims.map((claim) => {
+    const links = byClaim.get(claim.id) ?? [];
+    const elementTargets = links.flatMap((intent) => intent.targets.filter((t) => t.kind === 'element'));
+    const edgeTargets = links.flatMap((intent) => intent.targets.filter((t) => t.kind === 'edge'));
+    const strategies = elementTargets.map((t) => resolutionByElement.get(t.kind === 'element' ? t.elementId : '')?.strategy);
+    const rungs = elementTargets.map((t) => resolutionByElement.get(t.kind === 'element' ? t.elementId : '')?.rung);
+    const encodedRelations = edgeTargets
+      .filter((t) => t.kind === 'edge' && scene.edges.some((e) =>
+        e.from === t.fromElementId && e.to === t.toElementId && e.factualRelation?.type === t.relationType))
+      .map((t) => t.kind === 'edge' ? `${t.fromElementId}|${t.relationType}|${t.toElementId}` : '');
+    return {
+      claimId: claim.id,
+      hasIntent: links.length > 0,
+      elementTargets: elementTargets.length,
+      drawnTargets: rungs.filter((r) => r !== undefined && r !== 4).length,
+      textTargets: rungs.filter((r) => r === 4 || r === undefined).length,
+      edgeTargets: edgeTargets.length,
+      strategies,
+      encodedRelations,
+      diagramFirst: claim.conceptIds.some((cid) => bridgeConceptFor(cid)?.preferredStrategies[0] === 'diagram'),
+    };
+  });
+}
+
+/** Simi release metrics (Teaching Compiler V1 §6/§24): coverage ratios over depicted claims. */
+export function semanticCoverageMetrics(depictions: ClaimDepiction[], scenes: Array<{ laidOut: LaidOutScene; timeline: Timeline }>): Record<string, number> {
+  const major = depictions.length;
+  const depicted = depictions.filter((d) => d.drawnTargets > 0 || d.edgeTargets > 0).length;
+  const textFallback = depictions.filter((d) => d.elementTargets > 0 && d.drawnTargets === 0).length;
+  const weakMechanism = depictions.filter((d) =>
+    d.diagramFirst && d.drawnTargets > 0 && !d.strategies.some((s) => s === 'R1-diagram' || s === 'R2-semantic-core')).length;
+  let reveals = 0;
+  let occupancySum = 0;
+  let scoreSum = 0;
+  let scoreCount = 0;
+  for (const { laidOut, timeline } of scenes) {
+    reveals += timeline.events.filter((e) => e.track !== 'hold' && e.track !== 'emphasis').length;
+    occupancySum += laidOut.occupancy;
+    for (const el of laidOut.elements) {
+      if (el.element.prim === 'object' && el.resolution && el.resolution.rung !== 4) {
+        scoreSum += el.resolution.score;
+        scoreCount++;
+      }
+    }
+  }
+  const ratio = (n: number): number => (major ? Math.round((n / major) * 1000) / 1000 : 1);
+  return {
+    'semantic.majorClaims': major,
+    'semantic.depictedClaims': depicted,
+    'semantic.majorClaimVisualCoverage': ratio(depicted),
+    'semantic.textFallbackClaims': textFallback,
+    'semantic.lastResortTextRate': ratio(textFallback),
+    'semantic.weakMechanismClaims': weakMechanism,
+    'semantic.meaningfulReveals': reveals,
+    'semantic.meaningfulRevealsPerClaim': major ? Math.round((reveals / major) * 10) / 10 : 0,
+    'semantic.meanAssetConfidence': scoreCount ? Math.round((scoreSum / scoreCount) * 1000) / 1000 : 1,
+    'semantic.finalBoardOccupancy': scenes.length ? Math.round((occupancySum / scenes.length) * 1000) / 1000 : 0,
+  };
+}
+
+export function semanticFitnessFailures(scene: LaidOutScene, coverage: ClaimCoverageInput): StageFailure[] {
+  const failures: StageFailure[] = [];
+  for (const depiction of depictClaims(scene, coverage)) {
+    const claim = coverage.essentialClaims.find((c) => c.id === depiction.claimId)!;
+    if (!depiction.hasIntent) continue; // B3 (visual-claim-coverage) owns missing intents.
+    // Edge targets depict relations, not drawings; an edge-only claim is
+    // depicted when its edge exists (B3) — fitness judges element drawings.
+    if (!depiction.elementTargets) continue;
+    if (!depiction.drawnTargets) {
+      failures.push({ code: 'major-claim-undepicted', stage: 'resolve', message: `${scene.sceneId}: essential claim ${claim.id} is depicted only by text fallback, never drawn`, hard: true });
+      const hasAssets = claim.conceptIds.some((cid) => (bridgeConceptFor(cid)?.approvedAssetRefs.length ?? 0) > 0);
+      if (hasAssets) {
+        failures.push({ code: 'text-fallback-despite-assets', stage: 'resolve', message: `${scene.sceneId}: essential claim ${claim.id} fell back to text although approved assets exist`, hard: false });
+      }
+      continue;
+    }
+    if (depiction.diagramFirst && !depiction.strategies.some((s) => s === 'R1-diagram' || s === 'R2-semantic-core')) {
+      failures.push({ code: 'mechanism-literal-fallback', stage: 'resolve', message: `${scene.sceneId}: essential claim ${claim.id} describes a mechanism but depicts it with a literal/retrieval asset instead of a diagram or semantic role`, hard: false });
+    }
   }
   return failures.map(withFailureClass);
 }
@@ -338,6 +449,7 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline, claimCov
     warnings.push(...labelOnlyProcessWarnings(scene));
   }
   if (claimCoverage) failures.push(...visualClaimCoverageFailures(scene, claimCoverage, timeline));
+  if (claimCoverage) failures.push(...semanticFitnessFailures(scene, claimCoverage));
   failures.push(...semanticAssetMismatchFailures(scene));
 
   for (const el of scene.elements) {

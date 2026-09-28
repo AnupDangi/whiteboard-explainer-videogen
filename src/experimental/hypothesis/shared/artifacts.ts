@@ -12,7 +12,7 @@ const normalize=(value:unknown):unknown=>{
 export const stableJson=(value:unknown):string=>JSON.stringify(normalize(value));
 export const sha256=(value:string|Uint8Array):string=>createHash('sha256').update(value).digest('hex');
 
-export function stageArtifact<T>(input:unknown,payload:T,meta:{schemaVersion:string;stageVersion:string;promptVersion?:string;modelId?:string}):StageArtifact<T>{
+export function stageArtifact<T>(input:unknown,payload:T,meta:{schemaVersion:string;stageVersion:string;promptVersion?:string;modelId?:string;modelParams?:Record<string,string|number|boolean>}):StageArtifact<T>{
   const inputHash=sha256(stableJson(input));
   const contentHash=sha256(stableJson(payload));
   return {...meta,inputHash,contentHash,payload};
