@@ -45,8 +45,8 @@ const singular = (s: string) => (s.length > 3 && s.endsWith('s') && !s.endsWith(
 
 /**
  * Next-best pick after the top choice was avoided (cross-scene repetition for
- * a different concept). Mirrors resolveObject's priority — strong embedding
- * candidates, then other exact-name matches, then weaker embedding
+ * a different concept). Mirrors resolveObject's priority — exact-name matches
+ * first, then strong embedding candidates, then weaker embedding
  * candidates, then lexical overlap — with every tier fully ordered so the
  * result stays deterministic. Returns undefined when nothing un-avoided
  * qualifies (the caller falls through to the rung-4 text box).
@@ -62,18 +62,24 @@ function nextBest(
   const usable = (id: string): boolean => id !== excludeId && !avoid.has(id);
   const byId = new Map(catalog.map((entry) => [entry.id, entry]));
   const ranked: Array<{ entry: CatalogEntry; score: number; rung: 2 | 3 }> = [];
-  for (const candidate of candidates ?? []) {
-    const entry = byId.get(candidate.id);
-    if (!entry || !usable(entry.id)) continue;
-    if (candidate.score >= TAU_HIGH_EMB) ranked.push({ entry, score: candidate.score, rung: 2 });
-  }
+  const seen = new Set<string>();
+  const push = (entry: CatalogEntry, score: number, rung: 2 | 3): void => {
+    if (seen.has(entry.id)) return;
+    seen.add(entry.id);
+    ranked.push({ entry, score, rung });
+  };
   for (const entry of catalog.filter((e) => usable(e.id) && e.names.some((name) => wanted.has(name.toLowerCase().replace(/[_-]+/g, ' ')))).sort((a, b) => a.id.localeCompare(b.id))) {
-    ranked.push({ entry, score: 1, rung: 2 });
+    push(entry, 1, 2);
   }
   for (const candidate of candidates ?? []) {
     const entry = byId.get(candidate.id);
     if (!entry || !usable(entry.id)) continue;
-    if (candidate.score >= TAU_MID_EMB && candidate.score < TAU_HIGH_EMB) ranked.push({ entry, score: candidate.score, rung: 3 });
+    if (candidate.score >= TAU_HIGH_EMB) push(entry, candidate.score, 2);
+  }
+  for (const candidate of candidates ?? []) {
+    const entry = byId.get(candidate.id);
+    if (!entry || !usable(entry.id)) continue;
+    if (candidate.score >= TAU_MID_EMB && candidate.score < TAU_HIGH_EMB) push(entry, candidate.score, 3);
   }
   if (!candidates?.length) {
     const lex = catalog
@@ -81,7 +87,7 @@ function nextBest(
       .map((entry) => ({ entry, score: semanticScore(conceptLower, entry) }))
       .filter(({ score }) => score >= TAU_MID)
       .sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id));
-    for (const { entry, score } of lex) ranked.push({ entry, score, rung: score >= TAU_HIGH ? 2 : 3 });
+    for (const { entry, score } of lex) push(entry, score, score >= TAU_HIGH ? 2 : 3);
   }
   return ranked[0];
 }

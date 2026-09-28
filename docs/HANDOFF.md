@@ -1,5 +1,25 @@
 # HANDOFF — Claude hypothesis track
 
+## Entry — 2026-09-28, chat-audit yellows triage batch (10 small fixes)
+
+- **Branch:** `fix/chat-audit-rollup-20260927` (HEAD fb80628, was clean before; changes uncommitted per instruction).
+- **Scope:** ten small independent risks, one layer each, domain-general (no lesson/topic wording in runtime); all gates stay strict (nothing silently passes).
+- **Fixes:**
+  1. `v1_claude/catalog/ladder.ts` — `nextBest` ranked strong-embedding before exact-name while main path ranks exact-first; reordered to exact-first (+ dedupe via seen-set so dual-qualifying entries rank once).
+  2. `v1_claude/narration/resolveMentions.ts:96` — out-of-order fallback could rewind cursor (`cursor = end`); now `cursor = Math.max(cursor, end)`.
+  3. `v1_claude/narration/align.ts:37` — monotonic check only `startMs < prevStart`; now also flags `startMs < prevEndMs` (overlap). `:75` — judgment call: pure `Math.ceil` broke the exact-target contract (float dust → 12346 vs 12345, caught by existing test), so `durationMs` stays `Math.round(cursorMs)` and new `snapFixtureDuration` caps the trailing word/bounds ends at the rounded total — last-word end and durationMs consistent AND target still lands exactly.
+  4. `shared/alignment/align.ts:274` — `repairedWordIndexes` only finite-checked; now also requires integer + `0 <= v < words.length`.
+  5. `shared/contracts.ts:169` — message said "between 0ms and 80ms" but code rejects `>= 80`; message now ">= 0ms and < 80ms" to match code.
+  6. `shared/failure-taxonomy.ts` — `tiny-element` fell to default P; now matches `tiny` → C (pure label; gate behavior unchanged).
+  7. `v1_claude/validation/gates.ts:123` — `scene.edges[ev.edgeIndex].from` threw TypeError on out-of-range index; now guards undefined and falls back to raw `elementId` (an `a->b` edge label no element carries), so shared `deterministicGates` emits `dangling-event` hard failure instead.
+  8. `v1_claude/validation/gates.ts:228` — idle-fill closing-focus check used exact `===` on float clocks; now epsilon (`1e-6` ms) comparison.
+  9. `v1_claude/harness/boardMetrics.ts` — `outlineThenFill` defaulted true with zero primary reveals; now false when no primary reveal seen (type stays boolean).
+  10. `v1_claude/harness/planCalibrationCli.ts:36` — date-only stamp overwrote same-day reruns; now full ISO timestamp (`replace(/[:.]/g, '-')`), same as one-shot.
+- **Tests:** new `__tests__/chat-audit-yellows.test.ts` (6 tests: ladder exact-first-after-avoid, cursor no-rewind, taxonomy tiny→C, gates dangling guard incl. downstream `dangling-event`, overlap validator, metrics no-reveal false). Fail-pre verified indirectly for ladder (old order returns embedding) — full fail-pre stash run not done; all 6 pass post-fix.
+- **Verification:** `npm run typecheck:hypothesis` 0 errors. Touched suites (yellows, mentions, timeline, board-metrics, catalog, failure-taxonomy, contracts, evaluation, board, board-intent) 107/107. FULL `npm run test:hypothesis` exit 0: Node **596/596**, alignment Python **28/28**, RAG Python **12/12**. `git diff --check` clean. Not committed.
+- **Skipped (out of scope, noted only):** artifactCache corrupt-throw policy (needs validator call — fail-loud vs recompute undecided), solver fallback `!` (proven unreachable), prompt carryOver re-check, exemplar-number canonical compare, voice-engine path traversal (different worktree ownership), scripts validation gaps — batch ids, provenance regex, baselines hash, render-strip, lamina-reference, benchmark stats (unhandled, listed only).
+- **Limitation:** no live model rerun; fixes verified offline via unit + full suite only.
+
 ## Entry — 2026-09-28, dense hub_spoke + RAG charge-on-match fix
 
 - **Branch:** `fix/chat-audit-rollup-20260927`.

@@ -118,9 +118,15 @@ export function toNeutralElements(scene: LaidOutScene): NeutralElement[] {
 }
 
 export function toNeutralEvents(scene: LaidOutScene, timeline: Timeline, timeOriginMs = 0): NeutralTimelineEvent[] {
-  return timeline.events.map((ev) => ({
+  return timeline.events.map((ev) => {
     // An edge event is attributed to its source element (neutral bundles only know elements).
-    elementId: `${scene.sceneId}:${ev.track === 'edge' && ev.edgeIndex !== undefined ? scene.edges[ev.edgeIndex].from : ev.elementId}`,
+    // Guard an out-of-range edgeIndex: fall back to the raw elementId (an "a->b"
+    // edge label no element carries), so the shared deterministicGates emits a
+    // `dangling-event` hard failure instead of this throwing a TypeError.
+    const edge = ev.track === 'edge' && ev.edgeIndex !== undefined ? scene.edges[ev.edgeIndex] : undefined;
+    const from = edge?.from ?? ev.elementId;
+    return {
+    elementId: `${scene.sceneId}:${from}`,
     action: ev.track,
     // Timelines use the lesson clock; per-scene gates and module clips use a
     // local clock. Callers pass the scene/module start when validating those.
@@ -128,7 +134,8 @@ export function toNeutralEvents(scene: LaidOutScene, timeline: Timeline, timeOri
     endMs: ev.t1 - timeOriginMs,
     anchor: scene.elements.find((e) => e.id === ev.elementId)?.element.anchor,
     pedagogicalHold: ev.track === 'hold',
-  }));
+    };
+  });
 }
 
 /**
@@ -223,9 +230,10 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
   // emphasis (focus id, last 400 ms of the scene). Those carry intent;
   // anything else is the compiler papering over a quiet window.
   const focusCloseT0 = Math.max(timeline.sceneStartMs, timeline.sceneEndMs - 400);
+  const EPS_MS = 1e-6;
   const idleFilled = timeline.events.filter((ev) =>
     ev.track === 'emphasis'
-    && !(ev.t0 === focusCloseT0 && ev.t1 === timeline.sceneEndMs && (scene.focus ?? []).includes(ev.elementId)));
+    && !(Math.abs(ev.t0 - focusCloseT0) < EPS_MS && Math.abs(ev.t1 - timeline.sceneEndMs) < EPS_MS && (scene.focus ?? []).includes(ev.elementId)));
   if (idleFilled.length) {
     warnings.push({ code: 'timeline-idle-filled', stage: 'timeline', message: `${scene.sceneId}: ${idleFilled.length} idle-gap emphasis ring(s) fill quiet window(s) > ${STYLE.motion.maxIdleMs}ms on: ${[...new Set(idleFilled.map((e) => e.elementId))].join(', ')}`, hard: false });
   }

@@ -273,6 +273,7 @@ function validateAlignmentResult(value: unknown): AlignmentResult {
   const repairedWordIndexes: number[] = Array.isArray(repairedWordIndexesRaw)
     ? repairedWordIndexesRaw.map((value, index) => {
       if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`forced alignment repairedWordIndexes[${index}] is not a finite number`);
+      if (!Number.isInteger(value) || value < 0 || value >= words.length) throw new Error(`forced alignment repairedWordIndexes[${index}] is out of range`);
       return value;
     })
     : [];

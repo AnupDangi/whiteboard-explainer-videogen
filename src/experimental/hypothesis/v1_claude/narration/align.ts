@@ -25,6 +25,7 @@ const SCENE_GAP_MS = 200;
 export function alignedWordTimingProblems(words: AlignedWord[], durationMs: number): string[] {
   const problems: string[] = [];
   let previousStartMs = -Infinity;
+  let previousEndMs = -Infinity;
   for (const [index, word] of words.entries()) {
     if (!word.w.trim()) problems.push(`word ${index} has empty text`);
     if (!Number.isFinite(word.startMs) || !Number.isFinite(word.endMs)) {
@@ -34,8 +35,9 @@ export function alignedWordTimingProblems(words: AlignedWord[], durationMs: numb
     if (word.startMs < 0 || word.endMs <= word.startMs || word.endMs > durationMs) {
       problems.push(`word ${index} has invalid interval [${word.startMs}, ${word.endMs}) for ${durationMs}ms audio`);
     }
-    if (word.startMs < previousStartMs) problems.push(`word ${index} starts before the previous word`);
+    if (word.startMs < previousStartMs || word.startMs < previousEndMs) problems.push(`word ${index} starts before the previous word`);
     previousStartMs = word.startMs;
+    previousEndMs = word.endMs;
   }
   return problems;
 }
@@ -72,9 +74,34 @@ export function alignFixture(script: NarrationScript, targetDurationMs: number, 
     schemaVersion: 'claude-aligned-audio/v1',
     provider: 'fixture',
     wavPath,
-    durationMs: Math.round(cursorMs),
+    durationMs: snapFixtureDuration(sceneWords, sceneBoundsMs, script, cursorMs),
     sceneWords,
     sceneBoundsMs,
     mentions: [],
   };
+}
+
+/**
+ * Float accumulation over scaled per-word durations can leave the final
+ * cursor a dust-fraction above the rounded total, so the last word's endMs
+ * would exceed `durationMs` (an invalid interval per
+ * `alignedWordTimingProblems`). The scaled sum is by construction the
+ * requested target, so any excess is dust: cap the trailing ends at the
+ * rounded total. Keeps the exact-target contract (durationMs === target for
+ * integer targets) AND endMs <= durationMs consistently.
+ */
+function snapFixtureDuration(
+  sceneWords: Record<string, AlignedWord[]>,
+  sceneBoundsMs: Record<string, { startMs: number; endMs: number }>,
+  script: NarrationScript,
+  cursorMs: number,
+): number {
+  const durationMs = Math.round(cursorMs);
+  const lastScene = script.scenes[script.scenes.length - 1];
+  const words = lastScene ? sceneWords[lastScene.sceneId] : undefined;
+  const lastWord = words?.[words.length - 1];
+  if (lastWord && lastWord.endMs > durationMs) lastWord.endMs = durationMs;
+  const bounds = lastScene ? sceneBoundsMs[lastScene.sceneId] : undefined;
+  if (bounds && bounds.endMs > durationMs) bounds.endMs = durationMs;
+  return durationMs;
 }

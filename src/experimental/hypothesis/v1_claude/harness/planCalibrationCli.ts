@@ -32,7 +32,7 @@ async function main(): Promise<void> {
 
   const report = await runPlanCalibration({ sources: HELD_OUT_SOURCES, variants, repeatsPerSource: repeats, model, apiKey: env.apiKey });
   await mkdir(outDir, { recursive: true });
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const jsonPath = path.join(outDir, `${stamp}-plan-calibration.json`);
   await writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`);
 

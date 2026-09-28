@@ -104,8 +104,10 @@ export function measureBoardScene(scene: LaidOutScene, timeline: Timeline): Boar
 
   const byId = new Map(scene.elements.map((e) => [e.id, e]));
   let outlineThenFill = true;
+  let sawPrimaryReveal = false;
   for (const ev of events) {
     if (!isPrimaryReveal(ev.track)) continue;
+    sawPrimaryReveal = true;
     const laid = byId.get(ev.elementId);
     if (!laid) continue;
     if (laid.visual.paths.length > 0 && ev.track === 'stroke') {
@@ -115,6 +117,7 @@ export function measureBoardScene(scene: LaidOutScene, timeline: Timeline): Boar
       }
     }
   }
+  if (!sawPrimaryReveal) outlineThenFill = false;
 
   return {
     sceneId: scene.sceneId,

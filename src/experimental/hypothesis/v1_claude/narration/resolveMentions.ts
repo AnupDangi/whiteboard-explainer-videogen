@@ -93,7 +93,7 @@ export function resolveMentions(script: NarrationScript, audio: AlignedAudio): R
         ambiguous: search.matchCount > 1,
         wordRange: [start, end],
       });
-      cursor = end;
+      cursor = Math.max(cursor, end);
     }
   }
 

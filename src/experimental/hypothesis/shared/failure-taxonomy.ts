@@ -76,6 +76,7 @@ export function classifyFailureCode(code: string): FailureClass {
     || c.includes('anchor')
     || c.includes('invalid-math')
     || c.includes('min-readable')
+    || c.includes('tiny')
   ) return 'C';
 
   // R: renderer/encoder.

@@ -166,5 +166,5 @@ export function assertCommonRunOptions(value:HypothesisRunOptions):void{
   if(value.maxCostUsd<=0||value.maxCostUsd>EXPERIMENT.maxComparisonCostUsd)throw new Error('Clip cost exceeds the $1.00 hard cap');
   if(value.mode==='live'&&value.alignment.provider!=='stable-ts')throw new Error('Live scored runs require stable-ts alignment');
   const calibrationErrorMs=value.alignment.calibrationMedianErrorMs;
-  if(value.mode==='live'&&calibrationErrorMs!==undefined&&(!Number.isFinite(calibrationErrorMs)||calibrationErrorMs<0||calibrationErrorMs>=80))throw new Error('Measured alignment calibration must be between 0ms and 80ms');
+  if(value.mode==='live'&&calibrationErrorMs!==undefined&&(!Number.isFinite(calibrationErrorMs)||calibrationErrorMs<0||calibrationErrorMs>=80))throw new Error('Measured alignment calibration must be >= 0ms and < 80ms');
 }
