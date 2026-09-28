@@ -114,6 +114,13 @@ test('S11: raster workers and ffmpeg produce a decodable MP4 from the shared fra
     const probe = spawnSync('ffmpeg', ['-v', 'error', '-i', videoPath, '-f', 'null', '-'], { encoding: 'utf8' });
     assert.equal(probe.status, 0, probe.stderr);
 
+    // Deterministic encode: the same frames + audio encode byte-identically
+    // (bitexact flags, no muxer timestamps), so a lock re-render is verifiable.
+    const videoPath2 = path.join(dir, 'output2.mp4');
+    await encodeVideoAtomically([{ laidOut: scene.laidOut, timeline: scene.timeline, startMs: 0, endMs: 500 }], 500, audioPath, videoPath2, 2, 1);
+    const { readFile } = await import('node:fs/promises');
+    assert.deepEqual(await readFile(videoPath), await readFile(videoPath2), 'identical inputs must encode identical MP4 bytes');
+
     const failedPath = path.join(dir, 'interrupted.mp4');
     await assert.rejects(encodeVideoAtomically([], 500, audioPath, failedPath, 2, 1, async (_scenes, _duration, _audio, partialPath) => {
       await import('node:fs/promises').then(({ writeFile }) => writeFile(partialPath, Buffer.from('incomplete')));

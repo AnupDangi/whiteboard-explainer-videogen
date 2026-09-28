@@ -130,6 +130,9 @@ async function main(): Promise<void> {
     if (!prepared.script || blockingPreparationFailures.length) {
       for (const f of prepFailures) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
       const completedAtMs = Date.now();
+      try {
+        await writeFile(path.join(outputDir, 'evaluation-bundle.json'), `${JSON.stringify({ schemaVersion: 'evaluation-bundle/v1', runId, status: 'failed', failures: prepFailures.map(({ code, stage, message }) => ({ code, stage, message, hard: true })), metrics: {}, stageRuns: prepared.stageRuns }, null, 2)}\n`, { flag: 'wx' });
+      } catch { /* diagnosis summary below still lands */ }
       summary.push({ lesson: lesson.id, runId, outputDir, stage: 'prepare', status: 'failed', planDespiteAlignmentFailure, failures: prepFailures.length, hardFailures: prepFailures.length, failureDetails: prepFailures.map(({ code, stage, message }) => ({ code, stage, message })), costUsd: prepared.usage.costUsd + (ragOutcome?.estimatedCostUsd ?? 0), estimatedRagCostUsd: ragOutcome?.estimatedCostUsd ?? 0, requestedDurationSec: lesson.targetDurationSec, plannedDurationSec: prepared.plannedDurationSec ?? null, coverageReason: prepared.coverageReason ?? null, startedAt: new Date(executionStartedAtMs).toISOString(), completedAt: new Date(completedAtMs).toISOString(), wallMs: completedAtMs - executionStartedAtMs, preparationMs: completedAtMs - pipelineStartedAtMs, stageRuns: prepared.stageRuns });
       continue;
     }

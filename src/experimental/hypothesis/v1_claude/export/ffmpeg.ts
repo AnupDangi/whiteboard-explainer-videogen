@@ -38,10 +38,18 @@ export function probeMediaDurationMs(filePath: string): Promise<number> {
 export function spawnFrameEncoder(outPath: string, fps: number, audioWavPath: string) {
   const args = [
     '-y',
+    // Deterministic output: no muxer timestamps/metadata in the file, so the
+    // same frames + audio encode byte-identically on the same toolchain.
+    // (-fflags is an input flag; the bitexact/map_metadata output options
+    // must sit after the inputs, beside the other codec options.)
+    '-fflags', '+bitexact',
     '-f', 'image2pipe',
     '-framerate', String(fps),
     '-i', '-',
     '-i', audioWavPath,
+    '-flags:v', '+bitexact',
+    '-flags:a', '+bitexact',
+    '-map_metadata', '-1',
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
     '-crf', '20',
