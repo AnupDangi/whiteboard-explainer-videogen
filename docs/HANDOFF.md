@@ -2149,3 +2149,10 @@ hypothesis before layering on production-latency infrastructure.
 - **Regression found:** recap-split trades board-failures for pacing-failures whenever the recap budget < 28s (three runs, all post-split code). Proposed guard (needs validator): split only when both halves ≥ 14s; else keep whole recap. Not implemented yet.
 - **Remaining:** above guard decision → re-runs → yellows → 10/5/5 → reports.
 - **Next bounded task:** validator decides split guard; then bicycle re-run.
+
+## Entry — 2026-09-28, tides-600 draft post-isolation (branch fix/chat-audit-rollup-20260927)
+
+- **Run:** same 600s tides → `output/2026-09-28T08-12-45-060Z-ocean-tides/` (`tampered=false`). **Draft, 16/16, 0 hard, 0 fallbacks**, 266s video, $0.0411, 551s wall. Tracked tree clean.
+- **Compare:** prior attempt died in native raster crash with no summary; isolation fix verified live (summary written, contact PNG soft-failed or written). Frame @200s (`COASTLINES MODIFY THE TIDE`, planet→mountain TRANSFORMS, highlighted box) is a strong board; mild label repetition remains.
+- **Note:** 266s actual vs 600 requested — planner covered what the source supports; duration honesty via playable reporting.
+- **Next bounded task:** compost-600 re-run (sparse era) + remaining yellows if validator wants.
