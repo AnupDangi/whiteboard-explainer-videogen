@@ -91,7 +91,9 @@ test('word budget compares rounded bounds: an exact-boundary count passes', () =
   const section: TeachingPlan['sections'][number] = { id: 's1', title: 'T', goal: 'G', kind: 'explain', conceptIds: ['a'], budgetSec: 12, contract: { learningDelta: 'G', targetDurationSec: 12, requiredConceptIds: ['a'], requiredRelations: [], evidenceSpanIds: ['span'], essentialClaims: [], teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } };
   assert.deepEqual(validateSceneText(words38, section), []);
   const words39 = `${words38} extra`;
-  assert.ok(validateSceneText(words39, section).some((p) => /spoken words, needs 16-38/.test(p)));
+  assert.ok(validateSceneText(words39, section).some((p) => /needs 16-38 \(12s at 2\.25 words\/s\) — cut at least 1 word/.test(p)));
+  const short = 'Just a few words here now.';
+  assert.ok(validateSceneText(short, section).some((p) => /add at least 10 words/.test(p)));
 });
 
 test('the S3 draft schema lifts model-owned fields from an older full-plan response and drops copied ones', () => {

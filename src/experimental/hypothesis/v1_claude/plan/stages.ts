@@ -415,7 +415,8 @@ export function validateSceneText(text: string, section: TeachingPlan['sections'
   const loWords = Math.round(budget * (1 - WORD_TOLERANCE));
   const hiWords = Math.round(budget * (1 + WORD_TOLERANCE));
   if (words < loWords || words > hiWords) {
-    problems.push(`${words} spoken words, needs ${loWords}-${hiWords} (${section.budgetSec}s at ${WORDS_PER_SEC} words/s)`);
+    const direction = words > hiWords ? `cut at least ${words - hiWords} words` : `add at least ${loWords - words} words`;
+    problems.push(`${words} spoken words, needs ${loWords}-${hiWords} (${section.budgetSec}s at ${WORDS_PER_SEC} words/s) — ${direction}`);
   }
   if (mentions.length < MENTIONS_PER_SCENE.min || mentions.length > MENTIONS_PER_SCENE.max) problems.push(`${mentions.length} markers, needs ${MENTIONS_PER_SCENE.min}-${MENTIONS_PER_SCENE.max}`);
   const seen = new Set<string>();
