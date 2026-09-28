@@ -110,6 +110,7 @@ test('S3 buildTeachingPlan rejects a section concept id that is a JSON-Schema ke
       contract: {
         learningDelta: 'Explain how heat raises pressure', targetDurationSec: 18, requiredConceptIds: ['type'],
         requiredRelations: [], evidenceSpanIds: [sourceSpan.id], teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
+        essentialClaims: [{ id: 'heat_pressure', statement: 'Heat raises pressure.', conceptIds: ['type'], relations: [], evidenceSpanIds: [sourceSpan.id] }],
       },
     }],
   };
@@ -120,6 +121,7 @@ test('S3 buildTeachingPlan rejects a section concept id that is a JSON-Schema ke
       contract: {
         learningDelta: 'Explain how heat raises pressure', targetDurationSec: 18, requiredConceptIds: ['heat', 'pressure'],
         requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: [sourceSpan.id], teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
+        essentialClaims: [{ id: 'heat_pressure', statement: 'Heat raises pressure.', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: [sourceSpan.id] }],
       },
     }],
   };

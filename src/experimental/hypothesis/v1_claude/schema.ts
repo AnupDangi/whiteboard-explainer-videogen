@@ -195,7 +195,7 @@ const EdgeSchema = z
   .strict();
 
 const BoardIntentSchema = z.object({
-  schemaVersion: z.literal('typed-board-intent/v1'),
+  schemaVersion: z.literal('typed-board-intent/v3'),
   layout: z.enum(['flow', 'fan_out', 'convergence', 'list', 'compare', 'cycle', 'hub']),
   visualKind: z.enum(['process', 'plain', 'comparison', 'worked-example', 'formula', 'plot', 'matrix', 'number-line']),
   roles: z.array(z.object({ elementId: z.string().min(1), role: z.enum(['input', 'process', 'output', 'item', 'attribute']) }).strict()).max(7),
@@ -203,6 +203,14 @@ const BoardIntentSchema = z.object({
   requiredRelations: z.array(z.object({
     from: z.string().min(1), to: z.string().min(1), type: z.enum(RELATION_TYPES), evidenceRefs: z.array(EvidenceReferenceSchema).min(1).max(6),
   }).strict()).max(24),
+  visualIntents: z.array(z.object({
+    claimId: z.string().min(1),
+    strategy: z.enum(['literal', 'process', 'comparison', 'quantitative', 'labelled-diagram']),
+    targets: z.array(z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('element'), elementId: z.string().min(1) }).strict(),
+      z.object({ kind: z.literal('edge'), fromElementId: z.string().min(1), toElementId: z.string().min(1), relationType: z.enum(RELATION_TYPES) }).strict(),
+    ])).min(1).max(12),
+  }).strict()).max(8),
 }).strict();
 
 const TemplateIdSchema = z.enum(TEMPLATE_IDS);

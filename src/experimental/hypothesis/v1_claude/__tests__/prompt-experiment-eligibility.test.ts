@@ -7,7 +7,7 @@ const validRun = {
   runClass: 'generated-lesson',
   sourceDoc: { schemaVersion: 'source-doc/v2', sourceId: 'src_test', format: 'text', text: 'A source long enough for a source document.', spans: [] },
   scenes: [{
-    sceneContract: { learningDelta: 'explain a mechanism', targetDurationSec: 20, requiredConceptIds: ['mechanism'], requiredRelations: [], evidenceSpanIds: ['span_mechanism'], teachingSkill: 'mechanism', candidateMechanisms: ['focus'] },
+    sceneContract: { learningDelta: 'explain a mechanism', targetDurationSec: 20, requiredConceptIds: ['mechanism'], requiredRelations: [], evidenceSpanIds: ['span_mechanism'], essentialClaims: [{ id: 'mechanism_claim', statement: 'A mechanism explains the process.', conceptIds: ['mechanism'], relations: [], evidenceSpanIds: ['span_mechanism'] }], teachingSkill: 'mechanism', candidateMechanisms: ['focus'] },
     lessonBible: { audience: 'learner', terminology: [], persistentConceptIds: [] },
   }],
 };

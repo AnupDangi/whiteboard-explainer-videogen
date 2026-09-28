@@ -14,25 +14,37 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
   const graph = { concepts, relations: [], prerequisites: [] };
   const sections = concepts.map((concept, index) => ({
     id: `idea_${index + 1}`, title: concept.label, goal: `Explain how ${concept.label} starts this process.`, kind: index === 0 ? 'intro' : index === 2 ? 'recap' : 'explain', conceptIds: [concept.id], budgetSec: 20,
-    contract: { learningDelta: `Explain how ${concept.label} starts this process.`, targetDurationSec: 20, requiredConceptIds: [concept.id], requiredRelations: [], evidenceSpanIds: [span.id], teachingSkill: 'definition', candidateMechanisms: ['focus'] },
+    contract: { learningDelta: `Explain how ${concept.label} starts this process.`, targetDurationSec: 20, requiredConceptIds: [concept.id], requiredRelations: [], evidenceSpanIds: [span.id], essentialClaims: [{ id: `idea_${index + 1}_claim`, statement: concept.definition, conceptIds: [concept.id], relations: [], evidenceSpanIds: [span.id] }], teachingSkill: 'definition', candidateMechanisms: ['focus'] },
   }));
   const plan = { targetDurationSec: 60, intro: { sourceTitle: 'Water cycle', sections: ['Heating', 'Evaporation', 'Cloud formation'] }, lessonBible: { audience: 'general learner', terminology: concepts.map((concept) => ({ conceptId: concept.id, label: concept.label })), persistentConceptIds: [] }, sections, recap: { keyPoints: ['Sunlight starts the cycle.'] } };
-  const script = { text: 'First consider [[sunlight|the sunlight]]. It adds energy to [[water|the water]], which helps the next stage begin. This connects [[evaporation|evaporation]] with [[clouds|clouds]], completing one useful part of the water cycle and showing how these changes fit together.' };
+  const scriptText = 'First consider [[sunlight|the sunlight]]. It adds energy to [[water|the water]], which helps the next stage begin. This connects [[evaporation|evaporation]] with [[clouds|clouds]], completing one useful part of the water cycle and showing how these changes fit together.';
+  const claimTextById: Record<string, string> = {
+    idea_1_claim: 'First consider the sunlight',
+    idea_2_claim: 'This connects evaporation with clouds',
+    idea_3_claim: 'completing one useful part of the water cycle',
+  };
   const syllabus = {
     requestedDurationSec: 60, plannedDurationSec: 60, coverageReason: 'The source supports this one-minute overview.', coreGoalSupported: true, learningObjective: 'Explain the first steps of the water cycle.', audienceAssumptions: ['Basic science vocabulary.'],
     concepts: concepts.map(({ id, label, definition, evidence }) => ({ id, label, definition, evidence })), prerequisites: [],
     modules: [{ id: 'water_cycle', title: 'The water cycle begins', goal: 'Connect heating, evaporation, and cloud formation.', budgetSec: 60, conceptIds: concepts.map((concept) => concept.id), evidenceSpanIds: [span.id], recallOfModuleIds: [] }],
   };
-  const payloads: Record<string, unknown> = { lesson_syllabus: syllabus, concept_graph: graph, teaching_plan: plan, scene_narration: script };
+  const payloads: Record<string, unknown> = { lesson_syllabus: syllabus, concept_graph: graph, teaching_plan: plan };
   const seen: Array<{ name: string; user: string; system: string }> = [];
   const fetcher: typeof fetch = async (_input, init) => {
     const request = JSON.parse(String(init?.body)) as { response_format?: { json_schema?: { name?: string } }; messages?: Array<{ role: string; content: string | Array<{ type: string; text?: string }> }> };
     const name = request.response_format?.json_schema?.name;
-    assert.ok(name && payloads[name], `unexpected stage ${name}`);
+    assert.ok(name && (payloads[name] || name === 'scene_narration'), `unexpected stage ${name}`);
     const message = request.messages?.find((entry) => entry.role === 'user')?.content;
     const systemMessage = request.messages?.find((entry) => entry.role === 'system')?.content;
-    seen.push({ name, user: typeof message === 'string' ? message : message?.map((part) => part.text ?? '').join('') ?? '', system: typeof systemMessage === 'string' ? systemMessage : systemMessage?.map((part) => part.text ?? '').join('') ?? '' });
-    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payloads[name]) }, finish_reason: 'stop' }], usage: { prompt_tokens: 50, completion_tokens: 40, cost: 0.001 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const userText = typeof message === 'string' ? message : message?.map((part) => part.text ?? '').join('') ?? '';
+    seen.push({ name, user: userText, system: typeof systemMessage === 'string' ? systemMessage : systemMessage?.map((part) => part.text ?? '').join('') ?? '' });
+    let value: unknown = payloads[name];
+    if (name === 'scene_narration') {
+      const claimsText = userText.split('Essential claims:')[1]?.split('\nConcepts:')[0] ?? '[]';
+      const claimId = (claimsText.match(/"id":"([^"]+)"/)?.[1] ?? 'idea_1_claim');
+      value = { text: scriptText, claimSpans: [{ claimId, exactText: claimTextById[claimId] ?? 'First consider the sunlight' }] };
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) }, finish_reason: 'stop' }], usage: { prompt_tokens: 50, completion_tokens: 40, cost: 0.001 } }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   const prepared = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 60 }, { model: 'test/hierarchy', apiKey: 'test-only', budgetUsd: 0.1, fetcher });
   assert.deepEqual(prepared.failures.filter((failure) => failure.hard), []);

@@ -135,11 +135,13 @@ export async function runHypothesis(input: HypothesisInput, options: HypothesisR
     // each time, so the result is consistent, just redundantly confirmed).
     if (golden) {
       const sceneLicenses = laidOut.elements.map((e) => e.resolution?.license).filter((l): l is string => Boolean(l));
-      const gateFailures = deterministicGates({ golden, elements: toNeutralElements(laidOut), timeline: toNeutralEvents(laidOut, timeline), durationMs: alignedAudio.durationMs, svg: finalFrameSvg, licenses: sceneLicenses });
-      failures.push(...gateFailures.map((f) => ({ code: f.code, stage: f.stage, message: f.message, hard: f.hard })));
+      if (finalFrameSvg !== undefined) {
+        const gateFailures = deterministicGates({ golden, elements: toNeutralElements(laidOut), timeline: toNeutralEvents(laidOut, timeline), durationMs: alignedAudio.durationMs, svg: finalFrameSvg, licenses: sceneLicenses });
+        failures.push(...gateFailures.map((f) => ({ code: f.code, stage: f.stage, message: f.message, hard: f.hard })));
+      }
     }
 
-    scenes.push({ sceneId: sceneInput.sceneId, resolved, laidOut, timeline, finalFrameSvg });
+    scenes.push({ sceneId: sceneInput.sceneId, resolved, laidOut, timeline, finalFrameSvg: finalFrameSvg ?? '' });
   }
 
   const allElements = scenes.flatMap((s) => toNeutralElements(s.laidOut));

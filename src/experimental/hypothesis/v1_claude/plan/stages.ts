@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from '../llm/structuredCall.js';
-import { parseMarkers } from '../narration/markers.js';
+import { parseMarkers, resolveClaimSpans } from '../narration/markers.js';
 import { spokenForm } from '../narration/spokenForm.js';
 import { ConceptGraphSchema, ScopedConceptGraphSchema, TeachingPlanDraftSchema, RELATION_TYPES, SECTION_KINDS, SECTION_TITLE_MAX_WORDS, TEACHING_SKILLS, VISUAL_MECHANISMS, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
 import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan, sceneCountFor } from './analyze.js';
@@ -157,7 +157,7 @@ export const TEACHING_PLAN_PROMPT_SCHEMA_RULES = `SCHEMA LIMITS — follow these
 - intro.sourceTitle is 1-80 characters. intro.sections has at most 12 strings, each 1-80 characters.
 - lessonBible is required for generated plans. audience is 1-120 characters; optional domain is 1-50 characters; terminology has at most 14 entries, each with a graph concept ID and an exact concept label of at most 4 words; persistentConceptIds has at most 14 graph concept IDs.
 - sections has 1-40 entries. Each id is a unique lowercase snake_case token of 1-40 characters. Each title is 1-${SECTION_TITLE_MAX_WORDS} words (and at most ${SECTION_TITLE_MAX_WORDS * 12} characters); each goal is 1-240 characters. kind must be exactly one of: ${SECTION_KINDS.join(', ')}. conceptIds has at most 6 graph IDs and must be nonempty for generated plans. budgetSec is positive.
-- Every generated section requires a contract. learningDelta is 1-240 characters and exactly equals goal; targetDurationSec is positive and exactly equals budgetSec; requiredConceptIds has 1-8 IDs and exactly equals conceptIds; requiredRelations has at most 24 entries and each type must be one of: ${RELATION_TYPES.join(', ')} (and must match the graph). evidenceSpanIds has 1-96 valid cited span IDs. teachingSkill is exactly one of: ${TEACHING_SKILLS.join(', ')}. candidateMechanisms has 1-3 values, each exactly one of: ${VISUAL_MECHANISMS.join(', ')}.
+- Every generated section requires a contract. learningDelta is 1-240 characters and exactly equals goal; targetDurationSec is positive and exactly equals budgetSec; requiredConceptIds has 1-8 IDs and exactly equals conceptIds; requiredRelations has at most 24 entries and each type must be one of: ${RELATION_TYPES.join(', ')} (and must match the graph). evidenceSpanIds has 1-96 valid cited span IDs. essentialClaims has 1-8 atomic statements, each with a unique id, linked section conceptIds, graph relations between those concepts, and evidenceSpanIds from the linked concepts/relations. teachingSkill is exactly one of: ${TEACHING_SKILLS.join(', ')}. candidateMechanisms has 1-3 values, each exactly one of: ${VISUAL_MECHANISMS.join(', ')}.
 - recap.keyPoints has at most 6 strings, each 1-160 characters.
 - The schema also rejects unknown fields at every object level. All IDs must use lowercase snake_case and be at most 40 characters. Follow the requested duration, scene budget, graph coverage, relation, evidence, and teaching rules above as well as these shape limits.`;
 
@@ -168,7 +168,7 @@ Return ONE JSON object: { "targetDurationSec", "intro": {"sourceTitle","sections
 Rules:
 - The bible audience is the supplied audience or "general learner"; optional domain is a broad subject label used only as a low-weight example-retrieval signal. Terminology entries use unique concept IDs and exact labels from the graph. List every concept used in more than one section in persistentConceptIds; each persistent concept needs exactly one terminology entry and must keep that canonical name across scenes. Do not invent visual facts or icon choices.
 - Assign concepts explicitly before writing each section: choose one or more exact concept IDs from the graph, put those IDs in section.conceptIds, then copy the identical nonempty ID list to contract.requiredConceptIds. These two arrays are required for EVERY section, including intro and recap. Never leave either array empty, and never put concept IDs only in the contract. Do not invent IDs or use concept labels in place of IDs.
-- The contract has learningDelta (exactly the section goal), targetDurationSec (exactly section budgetSec), requiredConceptIds (exactly section conceptIds), requiredRelations (every graph relation whose two endpoints appear in this section, each as {from,to,type}), evidenceSpanIds (all cited span IDs for those concepts and relations), teachingSkill (definition|mechanism|comparison|process|derivation|application|recap), candidateMechanisms (1-3 advisory values from focus|chain|convergence|fan_out|weighted_blend|cycle|threshold|comparison|trajectory|equation|state_transition). A mechanism is a generic visual idea, never a lesson-specific drawing instruction.
+- The contract has learningDelta (exactly the section goal), targetDurationSec (exactly section budgetSec), requiredConceptIds (exactly section conceptIds), requiredRelations (every graph relation whose two endpoints appear in this section, each as {from,to,type}), evidenceSpanIds (all cited span IDs for those concepts and relations), essentialClaims (1-8 source-backed statements with id, statement, linked conceptIds, linked relations, evidenceSpanIds), teachingSkill (definition|mechanism|comparison|process|derivation|application|recap), candidateMechanisms (1-3 advisory values from focus|chain|convergence|fan_out|weighted_blend|cycle|threshold|comparison|trajectory|equation|state_transition). A mechanism is a generic visual idea, never a lesson-specific drawing instruction.
 - ${PLAN_COMPONENT_GUIDANCE}
 - Before returning, verify section-by-section that conceptIds and requiredConceptIds are identical and nonempty, every ID occurs in the supplied graph, every required relation is included, and evidenceSpanIds exactly covers the listed concepts and relations. If a section is only an intro or recap, anchor it to the graph concepts it introduces or reviews; do not create an ungrounded scene.
 - Order by prerequisites: a concept is never taught before what it needs.
@@ -204,7 +204,7 @@ Return ONE JSON object: { "targetDurationSec", "intro": {"sourceTitle","sections
 Rules:
 - The bible audience is the supplied audience or "general learner"; optional domain is a broad subject label used only as a low-weight example-retrieval signal. Terminology entries use unique concept IDs and exact labels from the graph. List every concept used in more than one section in persistentConceptIds; each persistent concept needs exactly one terminology entry and must keep that canonical name across scenes. Do not invent visual facts or icon choices.
 - Assign concepts explicitly before writing each section: choose one or more exact concept IDs from the graph, put those IDs in section.conceptIds, then copy the identical nonempty ID list to contract.requiredConceptIds. These two arrays are REQUIRED and must never be empty for ANY section, including intro and recap — not even while correcting a different problem. If a section genuinely should not exist without concepts, delete that entire section rather than leaving its conceptIds empty. Do not invent IDs or use concept labels in place of IDs. Every graph relation whose two endpoints are BOTH assigned to a section must appear in that section's contract.requiredRelations — if you move a concept out of a section, move its relations (and their other endpoint) with it; never leave a relation stranded with no section.
-- The contract has learningDelta (exactly the section goal), targetDurationSec (exactly section budgetSec), requiredConceptIds (exactly section conceptIds), requiredRelations (every graph relation whose two endpoints appear in this section, each as {from,to,type}), evidenceSpanIds (all cited span IDs for those concepts and relations), teachingSkill (definition|mechanism|comparison|process|derivation|application|recap), candidateMechanisms (1-3 advisory values from focus|chain|convergence|fan_out|weighted_blend|cycle|threshold|comparison|trajectory|equation|state_transition). A mechanism is a generic visual idea, never a lesson-specific drawing instruction.
+- The contract has learningDelta (exactly the section goal), targetDurationSec (exactly section budgetSec), requiredConceptIds (exactly section conceptIds), requiredRelations (every graph relation whose two endpoints appear in this section, each as {from,to,type}), evidenceSpanIds (all cited span IDs for those concepts and relations), essentialClaims (1-8 source-backed statements with id, statement, linked conceptIds, linked relations, evidenceSpanIds), teachingSkill (definition|mechanism|comparison|process|derivation|application|recap), candidateMechanisms (1-3 advisory values from focus|chain|convergence|fan_out|weighted_blend|cycle|threshold|comparison|trajectory|equation|state_transition). A mechanism is a generic visual idea, never a lesson-specific drawing instruction.
 - Before returning, verify section-by-section that conceptIds and requiredConceptIds are identical and nonempty, every ID occurs in the supplied graph, every required relation is included, and evidenceSpanIds exactly covers the listed concepts and relations. If a section is only an intro or recap, anchor it to the graph concepts it introduces or reviews; do not create an ungrounded scene.
 - Order by prerequisites: a concept is never taught before what it needs.
 - Math: build intuition before notation. For a multi-step idea, give each step its own "step" section (the learner sees one move at a time), then an "example" or "recap". A one-step idea fits in one "explain" section.
@@ -267,11 +267,12 @@ ${JSON.stringify(graph, null, 1)}`,
 const buildV6DerivedContractsPrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
   system: `You are a teaching architect. Turn a concept graph into a time-budgeted plan for a narrated whiteboard video, one scene per section.
 Return ONE JSON object: { "targetDurationSec", "intro": {"sourceTitle","sections"}, "domain"?, "sections": [...], "recap": {"keyPoints"} }.
-Each section is {"id","title","goal","kind","conceptIds","budgetSec","teachingSkill","candidateMechanisms"}.
+Each section is {"id","title","goal","kind","conceptIds","budgetSec","teachingSkill","candidateMechanisms","essentialClaims"}.
 Rules:
-- conceptIds: the 1-6 exact graph concept IDs this scene teaches (from VALID CONCEPT IDS). Code attaches each scene's relations and source evidence from the graph: a relation is taught only in a section whose conceptIds contain BOTH of its endpoints, and every graph relation must be taught somewhere. So put related concepts in the same section (see RELATIONS TO TEACH).
-- A concept may appear again in a later section (to build on it or recap it); it keeps its graph label everywhere.
-- teachingSkill: one of ${TEACHING_SKILLS.join(', ')}. candidateMechanisms: 1-3 of ${VISUAL_MECHANISMS.join(', ')} — ways the board could show this scene.
+ - conceptIds: the 1-6 exact graph concept IDs this scene teaches (from VALID CONCEPT IDS). Code attaches each scene's relations and source evidence from the graph: a relation is taught only in a section whose conceptIds contain BOTH of its endpoints, and every graph relation must be taught somewhere. So put related concepts in the same section (see RELATIONS TO TEACH).
+ - A concept may appear again in a later section (to build on it or recap it); it keeps its graph label everywhere.
+ - teachingSkill: one of ${TEACHING_SKILLS.join(', ')}. candidateMechanisms: 1-3 of ${VISUAL_MECHANISMS.join(', ')} — ways the board could show this scene.
+ - essentialClaims: 1-8 atomic, source-backed claims this scene must say and depict. Each is {"id","statement","conceptIds","relations","evidenceSpanIds"}. Use a unique lowercase id across the whole lesson. Link only this section's concept IDs and graph relations between them. Cite span IDs from the linked concepts or relations; never cite an unrelated span. Do not list every graph node as a separate claim. Pick the essential statements that teach this scene's goal.
 - title: at most ${SECTION_TITLE_MAX_WORDS} words. Do not put a number (digits or a word like "three") in a title unless the source evidence for that section's concepts states it.
 - ${PLAN_COMPONENT_GUIDANCE}
 - Order by prerequisites: a concept is never taught before what it needs.
@@ -332,9 +333,9 @@ export function teachingPlanTokenBudget(sceneCount: number, conceptCount: number
   return Math.min(10_000, 1_500 + Math.ceil(sceneCount) * 500 + Math.ceil(conceptCount) * 150 + Math.ceil(relationCount) * 100);
 }
 
-/** Completion allowance for a v6 draft: sections only, no copied contracts, plus room for hidden reasoning. */
+/** Completion allowance for a v6 draft: sections and source-backed claims, plus room for hidden reasoning. */
 export function teachingPlanDraftTokenBudget(sceneCount: number, conceptCount: number): number {
-  return Math.min(10_000, 2_500 + Math.ceil(sceneCount) * 400 + Math.ceil(conceptCount) * 80);
+  return Math.min(10_000, 2_500 + Math.ceil(sceneCount) * 550 + Math.ceil(conceptCount) * 80);
 }
 
 export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph, m: StageModel, variant: PlanPromptVariant = DEFAULT_PLAN_PROMPT_VARIANT): Promise<StructuredCallResult<TeachingPlan>> {
@@ -399,7 +400,7 @@ function sectionSourcePrompt(doc: SourceDoc, section: TeachingPlan['sections'][n
 }
 
 /** Deterministic S4 checks for ONE scene: markers parse, the spoken length fits the section budget, mentions are usable anchors. */
-export function validateSceneText(text: string, section: TeachingPlan['sections'][number]): string[] {
+export function validateSceneText(text: string, section: TeachingPlan['sections'][number], claimSpans?: ReadonlyArray<{ claimId: string; exactText: string }>): string[] {
   const problems: string[] = [];
   if (/\[\[[^\]]*\[\[/.test(text)) problems.push('nested markers');
   const { plainText, mentions } = parseMarkers(text);
@@ -419,6 +420,16 @@ export function validateSceneText(text: string, section: TeachingPlan['sections'
     if (seen.has(mm.id)) problems.push(`marker id "${mm.id}" used twice`);
     seen.add(mm.id);
   }
+  if (section.contract?.essentialClaims) {
+    const expected = section.contract.essentialClaims.map((claim) => claim.id);
+    const actual = claimSpans?.map((span) => span.claimId) ?? [];
+    for (const claimId of expected) if (actual.filter((id) => id === claimId).length !== 1) problems.push(`essential claim ${claimId} needs exactly one spoken span`);
+    for (const claimId of actual) if (!expected.includes(claimId)) problems.push(`unknown spoken claim ${claimId}`);
+    for (const span of claimSpans ?? []) {
+      try { resolveClaimSpans(text, [span]); }
+      catch (error) { problems.push(error instanceof Error ? error.message : String(error)); }
+    }
+  }
   return problems;
 }
 
@@ -430,12 +441,12 @@ export function validateScript(script: Script, plan: TeachingPlan): string[] {
     const scene = script.scenes[i];
     if (!scene) return;
     if (scene.sectionId !== section.id) problems.push(`scene ${i + 1} must have sectionId "${section.id}", got "${scene.sectionId}"`);
-    problems.push(...validateSceneText(scene.text, section).map((p) => `${section.id}: ${p}`));
+    problems.push(...validateSceneText(scene.text, section, scene.claimSpans).map((p) => `${section.id}: ${p}`));
   });
   return problems;
 }
 
-const SceneTextSchema = z.object({ text: z.string().min(1).max(2000) }).strict();
+const SceneTextSchema = z.object({ text: z.string().min(1).max(2000), claimSpans: z.array(z.object({ claimId: z.string().regex(/^[a-z0-9_]+$/), exactText: z.string().min(1).max(500) }).strict()) }).strict();
 
 /**
  * S4 is written one scene per call, in parallel: a flash model reliably hits
@@ -445,7 +456,9 @@ const SceneTextSchema = z.object({ text: z.string().min(1).max(2000) }).strict()
  */
 export async function writeScript(req: LessonRequest, graph: ConceptGraph, plan: TeachingPlan, m: StageModel): Promise<StructuredCallResult<Script> & { sceneStageRuns: StageRunRecord[] }> {
   const system = `You write the narration for ONE scene of a whiteboard teaching video. A tutor speaks while drawing each thing as it is named.
-Return ONE JSON object: { "text": "..." }.
+Return ONE JSON object: { "text": "...", "claimSpans": [{ "claimId": "...", "exactText": "..." }] }.
+
+CLAIM SPANS (required): Each essential claim below must have exactly one claimSpans entry. exactText is a nonempty exact substring of what the tutor says after mention markers are removed, and it must occur only once. Include the complete spoken words that express the claim. Never give character offsets; code calculates them.
 
 MENTION MARKERS (required): wrap each phrase whose drawing should appear the moment it is spoken as [[id|spoken words]].
 - The spoken words stay in the sentence exactly as said; id is lowercase snake_case, unique within the scene.
@@ -469,6 +482,7 @@ ${outline}
 
 WRITE SCENE ${i + 1}: "${section.title}" (${section.kind})
 Goal: ${section.goal}
+Essential claims: ${JSON.stringify(section.contract?.essentialClaims ?? [])}
 Concepts: ${JSON.stringify(concepts)}
 Length: about ${words} words (${section.budgetSec} s). Markers: ${MENTIONS_PER_SCENE.min}-${MENTIONS_PER_SCENE.max}.
 
@@ -478,7 +492,7 @@ ${sectionSourcePrompt(sourceDoc, section, graph)}`;
         stage: 'script', subject: `scene ${section.id}`, model: m.model, apiKey: m.apiKey, system, user,
         schema: SceneTextSchema, schemaName: 'scene_narration', remainingBudgetUsd: perScene, maxTokens: 2500,
         // Checked in spoken form: that is what TTS reads (digits expand to words) and what the script stores.
-        validate: (v) => validateSceneText(spokenForm(v.text), section), budgetLedger: m.budgetLedger, fetcher: m.fetcher,
+        validate: (v) => validateSceneText(spokenForm(v.text), section, v.claimSpans), budgetLedger: m.budgetLedger, fetcher: m.fetcher,
       }).then((result) => ({ section, result, startedAtMs, completedAtMs: Date.now() }));
     }),
   );
@@ -500,6 +514,6 @@ ${sectionSourcePrompt(sourceDoc, section, graph)}`;
     failures: result.failures.map((failure) => ({ code: failure.code, stage: failure.stage, message: failure.message, hard: failure.hard })),
   }));
   if (results.some(({ result }) => !result.value)) return { usage, failures, rawResponses, sceneStageRuns };
-  const script: Script = { scenes: results.map(({ section, result }) => ({ sectionId: section.id, text: spokenForm(result.value!.text) })) };
+  const script: Script = { scenes: results.map(({ section, result }) => ({ sectionId: section.id, text: spokenForm(result.value!.text), claimSpans: result.value!.claimSpans })) };
   return { value: script, usage, failures, rawResponses, sceneStageRuns };
 }

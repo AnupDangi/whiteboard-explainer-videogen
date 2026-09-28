@@ -9,7 +9,7 @@ import { BOARD_EXAMPLES as V1_EXAMPLES, type BoardExample } from './boardBank.v1
  * concepts, so none of it can be copied into a generated board.
  */
 export type { BoardExample };
-export const BOARD_BANK_VERSION = 'board-bank-v2';
+export const BOARD_BANK_VERSION = 'board-bank-v3-current-wire-shape';
 
 const ABSTRACT_INSTANCES: BoardExample = {
   id: 'convergence-effort-instances',

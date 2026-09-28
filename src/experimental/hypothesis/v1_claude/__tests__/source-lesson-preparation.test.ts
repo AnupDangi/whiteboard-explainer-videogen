@@ -28,12 +28,13 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
       contract: {
         learningDelta: 'Explain how leaves build sugar', targetDurationSec: 15, requiredConceptIds: ['leaf', 'sugar'],
         requiredRelations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id],
+        essentialClaims: [{ id: 'build_sugar_claim', statement: 'Leaves use light to build sugar.', conceptIds: ['leaf', 'sugar'], relations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id] }],
         teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
       },
     }],
     recap: { keyPoints: ['Leaves use light to build sugar'] },
   };
-  const script = { text: 'When [[leaf|a leaf]] receives [[light|light energy]], it uses that energy to build [[sugar|sugar]]. This process makes food [[plant|the plant]] can store and use.' };
+  const script = { text: 'When [[leaf|a leaf]] receives [[light|light energy]], it uses that energy to build [[sugar|sugar]]. This process makes food [[plant|the plant]] can store and use.', claimSpans: [{ claimId: 'build_sugar_claim', exactText: 'it uses that energy to build sugar' }] };
   const payloads: Record<string, unknown> = { concept_graph: graph, teaching_plan: plan, scene_narration: script };
   const received: string[] = [];
   const requestPrompts = new Map<string, { system: string; user: string }>();
@@ -182,12 +183,13 @@ test('S3 never trusts a relation the model writes: contract relations are derive
         // between leaf and sugar: the invented relation must never reach the SceneContract.
         learningDelta: 'Explain how leaves build sugar', targetDurationSec: 15, requiredConceptIds: ['leaf', 'sugar'],
         requiredRelations: [{ from: 'leaf', to: 'sugar', type: 'contains' }], evidenceSpanIds: [sourceSpan.id],
+        essentialClaims: [{ id: 'build_sugar_claim', statement: 'Leaves use light to build sugar.', conceptIds: ['leaf', 'sugar'], relations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id] }],
         teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
       },
     }],
     recap: { keyPoints: ['Leaves use light to build sugar'] },
   };
-  const script = { text: 'When [[leaf|a leaf]] receives [[light|light energy]], it uses that energy to build [[sugar|sugar]]. This process makes food [[plant|the plant]] can store and use.' };
+  const script = { text: 'When [[leaf|a leaf]] receives [[light|light energy]], it uses that energy to build [[sugar|sugar]]. This process makes food [[plant|the plant]] can store and use.', claimSpans: [{ claimId: 'build_sugar_claim', exactText: 'it uses that energy to build sugar' }] };
   const payloads: Record<string, unknown> = { concept_graph: graph, teaching_plan: planUnsupportedRelation, scene_narration: script };
   const received: string[] = [];
   const fakeProvider: typeof fetch = async (_input, init) => {

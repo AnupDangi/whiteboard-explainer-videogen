@@ -1,4 +1,5 @@
-import type { Edge, Element, LaidOutScene, ResolutionRecord, StageFailure, Timeline } from '../types.js';
+import type { Edge, Element, LaidOutScene, ResolutionRecord, StageFailure, Timeline, SpokenClaimSpan } from '../types.js';
+import type { SceneContract } from '../plan/schemas.js';
 import { TEMPLATE_SPECS } from '../templates/catalog.js';
 import { withFailureClass } from '../../shared/failure-taxonomy.js';
 import type { EvidenceReference, NeutralElement, NeutralTimelineEvent } from '../../shared/contracts.js';
@@ -7,6 +8,7 @@ import { MAX_CONCURRENT_REVEALS, MIN_READABLE_FONT_PX, STYLE } from '../style.js
 import { LICENSE_ALLOWLIST } from '../catalog/normalize.js';
 import { maxIdleWindowMs, nominalRevealMs } from '../timeline/compile.js';
 import { formulaSource } from '../render/math.js';
+import { tokenizeWords } from '../narration/align.js';
 
 const evidenceKey = (ref: EvidenceReference): string => JSON.stringify([
   ref.sourceId, ref.spanId, ref.startChar, ref.endChar, ref.startLine, ref.endLine, ref.quote,
@@ -14,6 +16,104 @@ const evidenceKey = (ref: EvidenceReference): string => JSON.stringify([
 
 /** Minimum element scale vs measured size: the solver's smallest deliberate factor (layout/solver.ts GROWTH_FACTORS). Anything smaller is silent over-shrink and fails loudly instead of rendering tiny. */
 export const MIN_ELEMENT_SCALE = 0.6;
+
+export const VISUAL_COVERAGE_GATE_VERSION = 'visual-claim-coverage/v2';
+export interface ClaimCoverageInput {
+  essentialClaims: SceneContract['essentialClaims'];
+  spokenClaimSpans: SpokenClaimSpan[];
+  plainText?: string;
+  alignedWords?: Array<{ w: string; startMs: number; endMs: number }>;
+}
+
+/** Structural S6 coverage: source-backed targets, linked concepts/relations, and aligned reveal timing. Semantic entailment still needs review. */
+export function visualClaimCoverageFailures(scene: BoardAdequacyInput, coverage: ClaimCoverageInput, timeline?: Timeline): StageFailure[] {
+  const failures: StageFailure[] = [];
+  const fail = (message: string) => failures.push({ code: 'visual-claim-coverage', stage: timeline ? 'timeline' : 'planner', message: `${scene.sceneId}: ${message}`, hard: true });
+  const claimById = new Map(coverage.essentialClaims.map((claim) => [claim.id, claim]));
+  const intents = scene.boardIntent?.visualIntents ?? [];
+  const spans = new Map<string, SpokenClaimSpan[]>();
+  const claimEndMs = new Map<string, number>();
+  if (timeline) {
+    const text = coverage.plainText ?? '';
+    const words: Array<{ text: string; start: number; end: number }> = [];
+    const re = /[\p{L}\p{M}\p{N}]+(?:['’‘ʼ-][\p{L}\p{M}\p{N}]+)*/gu;
+    for (const match of text.matchAll(re)) words.push({ text: match[0], start: match.index!, end: match.index! + match[0].length });
+    const aligned = coverage.alignedWords ?? [];
+    const alignedTokens = aligned.flatMap((word, alignedIndex) => tokenizeWords(word.w).map((token) => ({ token, alignedIndex })));
+    const sameTokens = words.length === alignedTokens.length && words.every((word, index) => tokenizeWords(word.text)[0]?.toLocaleLowerCase() === alignedTokens[index]!.token.toLocaleLowerCase());
+    if (!text || !sameTokens) fail('claim timing cannot be mapped to the validated aligned narration');
+    else for (const span of coverage.spokenClaimSpans) {
+      const firstToken = words.findIndex((word) => word.end > span.plainStart);
+      let finalToken = -1;
+      for (let index = words.length - 1; index >= 0; index--) if (words[index]!.start < span.plainEnd) { finalToken = index; break; }
+      if (firstToken < 0 || words[firstToken]!.start < span.plainStart || finalToken < firstToken || words[finalToken]!.end > span.plainEnd) {
+        fail(`claim ${span.claimId} exact spoken span does not start and end on aligned word boundaries`);
+      } else claimEndMs.set(span.claimId, aligned[alignedTokens[finalToken]!.alignedIndex]!.endMs);
+    }
+  }
+  for (const span of coverage.spokenClaimSpans) {
+    spans.set(span.claimId, [...(spans.get(span.claimId) ?? []), span]);
+    if (!claimById.has(span.claimId)) fail(`spoken span names unknown claim ${span.claimId}`);
+    if (!span.exactText.trim() || span.plainStart < 0 || span.plainEnd - span.plainStart !== span.exactText.length || (coverage.plainText !== undefined && coverage.plainText.slice(span.plainStart, span.plainEnd) !== span.exactText)) fail(`claim ${span.claimId} has an invalid exact spoken span`);
+  }
+  const byClaim = new Map<string, typeof intents>();
+  for (const intent of intents) {
+    byClaim.set(intent.claimId, [...(byClaim.get(intent.claimId) ?? []), intent]);
+    if (!claimById.has(intent.claimId)) fail(`visual intent names unknown claim ${intent.claimId}`);
+  }
+  const elements = new Map(scene.elements.map(({ id, element }) => [id, element]));
+  const revealEnd = (target: { kind: 'element'; elementId: string } | { kind: 'edge'; fromElementId: string; toElementId: string; relationType: NonNullable<Edge['factualRelation']>['type'] }): number | undefined => {
+    if (!timeline) return undefined;
+    if (target.kind === 'element' && (scene as LaidOutScene).carryOver?.includes(target.elementId)) return timeline.sceneStartMs;
+    const event = target.kind === 'element'
+      ? timeline.events.find((item) => item.elementId === target.elementId && isPrimaryReveal(item.track))
+      : timeline.events.find((item) => item.track === 'edge' && item.edgeIndex === scene.edges.findIndex((edge) => edge.from === target.fromElementId && edge.to === target.toElementId && edge.factualRelation?.type === target.relationType));
+    return event && event.t1 - event.t0 >= 1 && event.t0 < timeline.sceneEndMs - 1 ? event.t1 : undefined;
+  };
+  for (const claim of coverage.essentialClaims) {
+    const spoken = spans.get(claim.id) ?? [];
+    if (spoken.length !== 1) { fail(`essential claim ${claim.id} requires exactly one exact spoken span (found ${spoken.length})`); continue; }
+    const links = byClaim.get(claim.id) ?? [];
+    if (links.length !== 1) { fail(`essential spoken claim ${claim.id} requires exactly one visual intent (found ${links.length})`); continue; }
+    const intent = links[0]!;
+    if (!intent.targets.length) { fail(`claim ${claim.id} has no depiction targets`); continue; }
+    const coveredConcepts = new Set<string>();
+    const coveredRelations = new Set<string>();
+    const seenTargets = new Set<string>();
+    for (const target of intent.targets) {
+      const key = target.kind === 'element' ? `element:${target.elementId}` : `edge:${target.fromElementId}->${target.relationType}->${target.toElementId}`;
+      if (seenTargets.has(key)) { fail(`claim ${claim.id} repeats target ${key}`); continue; }
+      seenTargets.add(key);
+      if (target.kind === 'element') {
+        const element = elements.get(target.elementId);
+        if (!element || element.origin === 'illustrative-example' || element.origin === 'fixture' || !element.evidenceRefs?.some((ref) => claim.evidenceSpanIds.includes(ref.spanId))) {
+          fail(`claim ${claim.id} targets unsupported element ${target.elementId}`); continue;
+        }
+        for (const conceptId of element.conceptIds ?? []) coveredConcepts.add(conceptId);
+      } else {
+        const from = elements.get(target.fromElementId);
+        const to = elements.get(target.toElementId);
+        const edge = scene.edges.find((item) => item.from === target.fromElementId && item.to === target.toElementId && item.factualRelation?.type === target.relationType);
+        const relation = edge?.factualRelation;
+        if (!from || !to || !edge || !relation || edge.origin === 'illustrative-example' || edge.origin === 'fixture' ||
+          !edge.evidenceRefs?.some((ref) => claim.evidenceSpanIds.includes(ref.spanId)) ||
+          !relation.evidenceRefs.some((ref) => claim.evidenceSpanIds.includes(ref.spanId)) ||
+          !from.conceptIds?.includes(relation.fromConceptId) || !to.conceptIds?.includes(relation.toConceptId) ||
+          !claim.relations.some((expected) => expected.from === relation.fromConceptId && expected.to === relation.toConceptId && expected.type === relation.type)) {
+          fail(`claim ${claim.id} targets unsupported edge ${target.fromElementId}->${target.relationType}->${target.toElementId}`); continue;
+        }
+        coveredConcepts.add(relation.fromConceptId);
+        coveredConcepts.add(relation.toConceptId);
+        coveredRelations.add(`${relation.fromConceptId}|${relation.type}|${relation.toConceptId}`);
+      }
+      const end = revealEnd(target);
+      if (timeline && (end === undefined || end > (claimEndMs.get(claim.id) ?? -Infinity))) fail(`claim ${claim.id} target ${key} is not fully revealed by the end of its spoken claim`);
+    }
+    for (const conceptId of claim.conceptIds) if (!coveredConcepts.has(conceptId)) fail(`claim ${claim.id} has no depicting target for concept ${conceptId}`);
+    for (const relation of claim.relations) if (!coveredRelations.has(`${relation.from}|${relation.type}|${relation.to}`)) fail(`claim ${claim.id} has no depicting edge for ${relation.from} -[${relation.type}]-> ${relation.to}`);
+  }
+  return failures.map(withFailureClass);
+}
 
 /**
  * Check the semantic structure retained by a compiled typed board. This does
@@ -227,7 +327,7 @@ function compressedReveals(scene: LaidOutScene, timeline: Timeline): { count: nu
   return { count, slowest };
 }
 
-export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failures: StageFailure[]; warnings: StageFailure[] } {
+export function runClaudeGates(scene: LaidOutScene, timeline: Timeline, claimCoverage?: ClaimCoverageInput): { failures: StageFailure[]; warnings: StageFailure[] } {
   const failures: StageFailure[] = [];
   const warnings: StageFailure[] = [];
 
@@ -237,6 +337,7 @@ export function runClaudeGates(scene: LaidOutScene, timeline: Timeline): { failu
     failures.push(...typedBoardAdequacyFailures(scene));
     warnings.push(...labelOnlyProcessWarnings(scene));
   }
+  if (claimCoverage) failures.push(...visualClaimCoverageFailures(scene, claimCoverage, timeline));
   failures.push(...semanticAssetMismatchFailures(scene));
 
   for (const el of scene.elements) {

@@ -8,7 +8,7 @@ import { EXAMPLE_BANK_HASH, EXAMPLE_BANK_VERSION, EXAMPLE_RANK_VERSION, exemplar
 import { SCENE_DIRECTOR_SKILL_HASH, SCENE_DIRECTOR_SKILL_VERSION } from './sceneDirectorSkill.js';
 import { RECIPE_VERSION } from './recipes.js';
 
-export const SCENE_PROMPT_VERSION = 'scene-planner-prompt-v13';
+export const SCENE_PROMPT_VERSION = 'scene-planner-prompt-v14-visual-claims';
 export const SCENE_SKILL_VERSION = SCENE_DIRECTOR_SKILL_VERSION;
 export const CANDIDATE_FEASIBILITY_VERSION = `catalog-embedding-min-${TAU_MID_EMB}-v1`;
 export type ExampleOrder = 'ranked' | 'reverse';
@@ -16,10 +16,10 @@ export type ExampleOrder = 'ranked' | 'reverse';
 const relationKey = (relation: { from: string; to: string; type: string }): string => `${relation.from}|${relation.type}|${relation.to}`;
 
 export interface ScenePlanningContext {
-  schemaVersion: 'scene-planning-context/v3';
+  schemaVersion: 'scene-planning-context/v4';
   sceneContract: SceneContract;
   lessonBible: LessonBible;
-  narration: { raw: string; plainText: string; mentions: PlannerSceneInput['mentions'] };
+  narration: { raw: string; plainText: string; mentions: PlannerSceneInput['mentions']; claimSpans: PlannerSceneInput['claimSpans'] };
   teachingContext: PlannerSceneInput['teachingContext'];
   evidence: EvidenceReference[];
   visualCandidates: PlannerSceneInput['candidates'];
@@ -70,6 +70,6 @@ export function compileScenePlanningContext(input: PlannerSceneInput, contract: 
   const examples = exampleOrder === 'reverse' ? [...rankedExamples].reverse() : rankedExamples;
   const availableTemplates = Object.entries(TEMPLATE_SLOTS).map(([id, slots]) => ({ id, slots }));
   const versions = { prompt: SCENE_PROMPT_VERSION, skill: SCENE_SKILL_VERSION, skillHash: SCENE_DIRECTOR_SKILL_HASH, bank: EXAMPLE_BANK_VERSION, bankHash: EXAMPLE_BANK_HASH, rank: EXAMPLE_RANK_VERSION, catalog: catalogVersion, candidateFeasibility: CANDIDATE_FEASIBILITY_VERSION, recipes: RECIPE_VERSION };
-  const payload = { sceneContract: contract, lessonBible: bible, narration: { raw: input.raw, plainText: input.plainText, mentions: input.mentions }, teachingContext: input.teachingContext, evidence, visualCandidates, availableTemplates, mentionTimes, mentionTimingState: requireMeasuredMentionTimes ? 'measured' as const : 'pending-s5' as const, previousElements: input.previousElements, promptArm: arm, exampleOrder, examples: examples.map(exemplarContextRecord), versions };
-  return { schemaVersion: 'scene-planning-context/v3', ...payload, examples, contextHash: sha256(stableJson(payload)) };
+  const payload = { sceneContract: contract, lessonBible: bible, narration: { raw: input.raw, plainText: input.plainText, mentions: input.mentions, claimSpans: input.claimSpans }, teachingContext: input.teachingContext, evidence, visualCandidates, availableTemplates, mentionTimes, mentionTimingState: requireMeasuredMentionTimes ? 'measured' as const : 'pending-s5' as const, previousElements: input.previousElements, promptArm: arm, exampleOrder, examples: examples.map(exemplarContextRecord), versions };
+  return { schemaVersion: 'scene-planning-context/v4', ...payload, examples, contextHash: sha256(stableJson(payload)) };
 }

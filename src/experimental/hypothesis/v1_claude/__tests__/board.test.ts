@@ -208,6 +208,10 @@ test('board prompt carries the scene data and per-mention candidates, never icon
   assert.match(prompt.user, /"mustShow"/);
   assert.ok(!prompt.user.includes('lib:flour'));
   assert.match(prompt.system, /illustrative, not about this lesson/);
+  assert.match(prompt.system, /relationType/);
+  assert.match(prompt.system, /"schemaVersion":"claude-board\/v3"/);
+  assert.doesNotMatch(prompt.system, /"schemaVersion":"claude-board\/v2"/);
+  assert.match(prompt.system, /"visualIntents":\[\]/);
 });
 
 test('rainbow arc prompt handles many mentions for one source concept and retains process-role validation on repair', () => {

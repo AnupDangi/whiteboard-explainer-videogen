@@ -58,7 +58,7 @@ test('S6 compiles source-derived board intent and retains it through resolve and
   const { spec, problems } = compileBoard(makeProcessBoard(ids), input);
   assert.deepEqual(problems, []);
   assert.deepEqual(spec.boardIntent, {
-    schemaVersion: 'typed-board-intent/v1',
+    schemaVersion: 'typed-board-intent/v3',
     layout: 'flow',
     visualKind: 'process',
     roles: [
@@ -70,6 +70,7 @@ test('S6 compiles source-derived board intent and retains it through resolve and
       { from: 'grain', to: 'change', type: 'feeds', evidenceRefs: input.teachingContext!.relations![0]!.evidenceRefs },
       { from: 'change', to: 'mixture', type: 'produces', evidenceRefs: input.teachingContext!.relations![1]!.evidenceRefs },
     ],
+    visualIntents: [],
   });
   // Geometry carries the relationship; no verb label is emitted, the type itself stays in the intent.
   assert.deepEqual(spec.edges.map((edge) => edge.label ?? null), [null, null]);

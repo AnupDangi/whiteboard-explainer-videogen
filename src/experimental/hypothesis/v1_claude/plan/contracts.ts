@@ -25,6 +25,11 @@ export const CONTRACT_CODES = {
   EVIDENCE_SPAN_OMITTED: 'EVIDENCE_SPAN_OMITTED',
   EVIDENCE_SPAN_UNRELATED: 'EVIDENCE_SPAN_UNRELATED',
   LESSON_OMITS_SOURCE_RELATION: 'LESSON_OMITS_SOURCE_RELATION',
+  ESSENTIAL_CLAIMS_MISSING: 'ESSENTIAL_CLAIMS_MISSING',
+  ESSENTIAL_CLAIM_DUPLICATE: 'ESSENTIAL_CLAIM_DUPLICATE',
+  ESSENTIAL_CLAIM_CONCEPT: 'ESSENTIAL_CLAIM_CONCEPT',
+  ESSENTIAL_CLAIM_RELATION: 'ESSENTIAL_CLAIM_RELATION',
+  ESSENTIAL_CLAIM_EVIDENCE: 'ESSENTIAL_CLAIM_EVIDENCE',
 } as const;
 
 export type ContractCode = (typeof CONTRACT_CODES)[keyof typeof CONTRACT_CODES];
@@ -37,6 +42,7 @@ export function teachingContractFindings(plan: TeachingPlan, graph: ConceptGraph
   const concepts = new Map(graph.concepts.map((concept) => [concept.id, concept]));
   const relations = new Map(graph.relations.map((relation) => [relationKey(relation), relation]));
   const conceptSceneCounts = new Map<string, number>();
+  const claimIds = new Set<string>();
   for (const section of plan.sections) for (const conceptId of new Set(section.conceptIds)) conceptSceneCounts.set(conceptId, (conceptSceneCounts.get(conceptId) ?? 0) + 1);
   const bible = plan.lessonBible;
   if (!bible) push(CONTRACT_CODES.LESSON_BIBLE_MISSING, 'lessonBible is required for generated lessons');
@@ -82,6 +88,29 @@ export function teachingContractFindings(plan: TeachingPlan, graph: ConceptGraph
     if (new Set(contract.evidenceSpanIds).size !== contract.evidenceSpanIds.length) push(CONTRACT_CODES.EVIDENCE_SPANS_DUPLICATE, `${section.id} repeats evidence spans`);
     for (const spanId of allowedSpanIds) if (!contract.evidenceSpanIds.includes(spanId)) push(CONTRACT_CODES.EVIDENCE_SPAN_OMITTED, `${section.id} omits evidence span ${spanId}`);
     for (const spanId of contract.evidenceSpanIds) if (!allowedSpanIds.has(spanId)) push(CONTRACT_CODES.EVIDENCE_SPAN_UNRELATED, `${section.id} has unrelated evidence span ${spanId}`);
+    const claims = contract.essentialClaims ?? [];
+    if (!claims.length) push(CONTRACT_CODES.ESSENTIAL_CLAIMS_MISSING, `${section.id} needs at least one essential claim`);
+    if (new Set(claims.map((claim) => claim.id)).size !== claims.length) push(CONTRACT_CODES.ESSENTIAL_CLAIM_DUPLICATE, `${section.id} repeats an essential claim id`);
+    for (const claim of claims) {
+      if (claimIds.has(claim.id)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_DUPLICATE, `${section.id} repeats lesson claim id ${claim.id}`);
+      claimIds.add(claim.id);
+      const linkedEvidence = new Set<string>();
+      for (const conceptId of claim.conceptIds) {
+        if (!contract.requiredConceptIds.includes(conceptId) || !concepts.has(conceptId)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_CONCEPT, `${section.id} claim ${claim.id} links an invalid concept ${conceptId}`);
+        else for (const ref of concepts.get(conceptId)!.evidence) linkedEvidence.add(ref.spanId);
+      }
+      if (new Set(claim.conceptIds).size !== claim.conceptIds.length) push(CONTRACT_CODES.ESSENTIAL_CLAIM_CONCEPT, `${section.id} claim ${claim.id} repeats a concept`);
+      if (new Set(claim.relations.map(relationKey)).size !== claim.relations.length) push(CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION, `${section.id} claim ${claim.id} repeats a relation`);
+      for (const relation of claim.relations) {
+        const source = relations.get(relationKey(relation));
+        if (!source || !listed.has(relationKey(relation))) push(CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION, `${section.id} claim ${claim.id} links an invalid relation ${relationKey(relation)}`);
+        if (!claim.conceptIds.includes(relation.from) || !claim.conceptIds.includes(relation.to)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION, `${section.id} claim ${claim.id} relation endpoints must be linked concepts`);
+        if (source && listed.has(relationKey(relation))) for (const ref of source.evidence) linkedEvidence.add(ref.spanId);
+      }
+      if (new Set(claim.evidenceSpanIds).size !== claim.evidenceSpanIds.length) push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} repeats evidence`);
+      for (const spanId of claim.evidenceSpanIds) if (!linkedEvidence.has(spanId) || !contract.evidenceSpanIds.includes(spanId)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} cites unsupported evidence ${spanId}`);
+      if (!claim.evidenceSpanIds.length) push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} needs linked source evidence`);
+    }
   }
   for (const relation of graph.relations) {
     if (!plan.sections.some((section) => section.contract?.requiredRelations.some((required) => relationKey(required) === relationKey(relation)))) {
@@ -126,7 +155,7 @@ export function deriveTeachingPlan(draft: TeachingPlanDraft, graph: ConceptGraph
       terminology: taught.map((conceptId) => ({ conceptId, label: concepts.get(conceptId)!.label })),
       persistentConceptIds,
     },
-    sections: draft.sections.map(({ teachingSkill, candidateMechanisms, ...section }) => {
+    sections: draft.sections.map(({ teachingSkill, candidateMechanisms, essentialClaims, ...section }) => {
       const conceptIds = [...new Set(section.conceptIds)];
       const requiredRelations = graph.relations.filter((relation) => conceptIds.includes(relation.from) && conceptIds.includes(relation.to));
       const evidenceSpanIds = [...new Set([
@@ -142,6 +171,17 @@ export function deriveTeachingPlan(draft: TeachingPlanDraft, graph: ConceptGraph
           requiredConceptIds: conceptIds,
           requiredRelations: requiredRelations.map(({ from, to, type }) => ({ from, to, type })),
           evidenceSpanIds,
+          essentialClaims: essentialClaims.map((claim) => ({
+            ...claim,
+            // A visual target is independently checked against the claim's cited evidence.
+            // Fill in every graph-backed span for the concepts/relations linked by the claim
+            // so S6 can cite the specific node/edge evidence it actually depicts.
+            evidenceSpanIds: [...new Set([
+              ...claim.evidenceSpanIds,
+              ...claim.conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence.map((ref) => ref.spanId) ?? []),
+              ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence.map((ref) => ref.spanId) ?? []),
+            ])].slice(0, 96),
+          })),
           teachingSkill,
           candidateMechanisms,
         },

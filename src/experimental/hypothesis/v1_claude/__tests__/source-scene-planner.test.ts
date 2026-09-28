@@ -13,6 +13,7 @@ function sourcePlannerCase() {
   const contract = {
     learningDelta: 'Explain how a leaf uses light', targetDurationSec: 8,
     requiredConceptIds: ['leaf'], requiredRelations: [], evidenceSpanIds: [span.id],
+    essentialClaims: [{ id: 'leaf_uses_light', statement: 'A leaf uses light to build sugar.', conceptIds: ['leaf'], relations: [], evidenceSpanIds: [span.id] }],
     teachingSkill: 'mechanism' as const, candidateMechanisms: ['chain'] as ['chain'],
   };
   const bible = { audience: 'general learner', terminology: [{ conceptId: 'leaf', label: 'Leaf' }], persistentConceptIds: [] };
@@ -20,6 +21,7 @@ function sourcePlannerCase() {
     sceneId: 'leaf_mechanism',
     raw: 'A [[leaf|leaf]] uses [[light|light]] to build [[sugar|sugar]].',
     plainText: 'A leaf uses light to build sugar.',
+    claimSpans: [{ claimId: 'leaf_uses_light', exactText: 'A leaf uses light to build sugar.', plainStart: 0, plainEnd: 33 }],
     mentions: [{ id: 'leaf', phrase: 'leaf' }, { id: 'light', phrase: 'light' }, { id: 'sugar', phrase: 'sugar' }],
     teachingContext: {
       displayText: 'Leaf Uses Light', visualIntent: contract.learningDelta, role: 'explain',
@@ -35,6 +37,7 @@ function sourcePlannerCase() {
   const spec: SceneSpec = {
     schemaVersion: 'claude-scene-spec/v1', sceneId: input.sceneId,
     title: 'Leaf Uses Light', titleConceptIds: ['leaf'], titleEvidenceRefs: [evidence], template: 'list_icon',
+    boardIntent: { schemaVersion: 'typed-board-intent/v3', layout: 'list', visualKind: 'process', roles: [{ elementId: 'leaf_label', role: 'item' }], requiredConceptIds: ['leaf'], requiredRelations: [], visualIntents: [{ claimId: 'leaf_uses_light', strategy: 'literal', targets: [{ kind: 'element', elementId: 'leaf_label' }] }] },
     elements: [{ id: 'leaf_label', slot: 'item', anchor: 'mention:leaf', prim: 'text', text: 'LEAF', size: 'title', conceptIds: ['leaf'], evidenceRefs: [evidence] }],
     edges: [],
   };

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CONTRACT_CODES, teachingContractFindings, teachingContractProblems } from '../plan/contracts.js';
-import type { ConceptGraph, SceneContract, TeachingPlan } from '../plan/schemas.js';
+import { SceneContractSchema, type ConceptGraph, type SceneContract, type TeachingPlan } from '../plan/schemas.js';
 
 const heatRef = { sourceId: 'source_a', spanId: 'span_heat', startChar: 0, endChar: 11, startLine: 1, endLine: 1, quote: 'heat enters' };
 const pressureRef = { sourceId: 'source_a', spanId: 'span_pressure', startChar: 12, endChar: 26, startLine: 2, endLine: 2, quote: 'pressure rises' };
@@ -16,6 +16,7 @@ const graph: ConceptGraph = {
 const contract: SceneContract = {
   learningDelta: 'Explain how heat raises pressure', targetDurationSec: 20, requiredConceptIds: ['heat', 'pressure'],
   requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_heat', 'span_pressure', 'span_relation'],
+  essentialClaims: [{ id: 'heat_raises_pressure', statement: 'Heat raises pressure', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_relation'] }],
   teachingSkill: 'mechanism', candidateMechanisms: ['convergence', 'threshold'],
 };
 const bible = { audience: 'general learner', terminology: [{ conceptId: 'heat', label: 'Heat' }, { conceptId: 'pressure', label: 'Pressure' }], persistentConceptIds: ['heat'] };
@@ -24,6 +25,10 @@ const plan: TeachingPlan = {
   sections: [{ id: 'heat_pressure', title: 'Heat Raises Pressure', goal: contract.learningDelta, kind: 'explain', conceptIds: ['heat', 'pressure'], budgetSec: 20, contract }],
   recap: { keyPoints: [] },
 };
+
+test('generated scene contracts cannot validate without an essential claim', () => {
+  assert.equal(SceneContractSchema.safeParse({ ...contract, essentialClaims: [] }).success, false);
+});
 
 test('teachingContractFindings tags a clean plan with no findings', () => {
   assert.deepEqual(teachingContractFindings(plan, graph, 'general learner'), []);

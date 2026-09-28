@@ -61,7 +61,7 @@ test('measured module audio changes only the target of narration not yet written
             const sectionId = `scene_${index + 1}`;
             const goal = `Explain a distinct part ${index + 1} of ${concept.label}.`;
             const budgetSec = base + (index < remainder ? 1 : 0);
-            return { id: sectionId, title: `Part ${index + 1}`, goal, kind: index === 0 ? 'intro' : index === sceneCount - 1 ? 'recap' : 'explain', conceptIds: [concept.id], budgetSec, contract: { learningDelta: goal, targetDurationSec: budgetSec, requiredConceptIds: [concept.id], requiredRelations: [], evidenceSpanIds: [span.id], teachingSkill: 'definition', candidateMechanisms: ['focus'] } };
+            return { id: sectionId, title: `Part ${index + 1}`, goal, kind: index === 0 ? 'intro' : index === sceneCount - 1 ? 'recap' : 'explain', conceptIds: [concept.id], budgetSec, contract: { learningDelta: goal, targetDurationSec: budgetSec, requiredConceptIds: [concept.id], requiredRelations: [], evidenceSpanIds: [span.id], essentialClaims: [{ id: `${concept.id}_claim_${index + 1}`, statement: goal, conceptIds: [concept.id], relations: [], evidenceSpanIds: [span.id] }], teachingSkill: 'definition', candidateMechanisms: ['focus'] } };
           }),
           recap: { keyPoints: ['The two mechanisms build on one another.'] },
         };
@@ -69,7 +69,12 @@ test('measured module audio changes only the target of narration not yet written
         // 53 spoken words: fits every scene budget this test produces (17-19s at the
         // measured WORDS_PER_SEC = 2.25), including the narrowest (17s => 22.95-53.55
         // words, unrounded) — see the word-count check in plan/stages.ts validateSceneText.
-        value = { text: 'First consider [[topic_one|the core idea]] as a useful starting point. Notice [[mechanism|the mechanism]] and follow [[process|the process]] through [[step|each step]]. This helps you understand how the parts connect, why the sequence matters, and what changes when one part behaves. Keep the central idea in view as we connect the example to the explanation.' };
+        // "the core idea" occurs exactly once in the marker-stripped spoken text
+        // ("the central idea" later is distinct); the claimId is read from this
+        // scene's Essential claims prompt so each generated section gets its own span.
+        const claimsText = user.split('Essential claims:')[1]?.split('\nConcepts:')[0] ?? '[]';
+        const claimId = (claimsText.match(/"id":"([^"]+)"/)?.[1] ?? 'topic_one_claim_1');
+        value = { text: 'First consider [[topic_one|the core idea]] as a useful starting point. Notice [[mechanism|the mechanism]] and follow [[process|the process]] through [[step|each step]]. This helps you understand how the parts connect, why the sequence matters, and what changes when one part behaves. Keep the central idea in view as we connect the example to the explanation.', claimSpans: [{ claimId, exactText: 'the core idea' }] };
       } else assert.fail(`unexpected model response schema ${name}`);
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) }, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 5, cost: 0.001 } }), { status: 200, headers: { 'content-type': 'application/json' } });
     };

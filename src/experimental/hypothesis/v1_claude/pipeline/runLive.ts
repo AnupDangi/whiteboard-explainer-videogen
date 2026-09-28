@@ -33,7 +33,7 @@ import { lessonCostCapUsd } from '../plan/hierarchical.js';
 import { budgetLedgerAccountingProblems, type PersistentBudgetLedger } from './budgetLedger.js';
 import { withHostResourcePermit } from '../../shared/hostResourcePool.js';
 import { ContentAddressedArtifactStore } from '../artifactCache.js';
-import type { LessonBible, SceneContract } from '../plan/schemas.js';
+import { LessonBibleSchema, SceneContractSchema, type LessonBible, type SceneContract } from '../plan/schemas.js';
 import { CANDIDATE_FEASIBILITY_VERSION, compileScenePlanningContext, SCENE_PROMPT_VERSION, SCENE_SKILL_VERSION, type ExampleOrder } from '../planner/context.js';
 import { EXAMPLE_BANK_VERSION, EXAMPLE_RANK_VERSION, type PromptArm } from '../planner/exemplars.js';
 import { EXAMPLE_BANK_HASH } from '../planner/exemplars.js';
@@ -101,6 +101,8 @@ export interface LiveSceneInput {
   sectionId?: string;
   /** Raw scripted text WITH `[[id|phrase]]` markers (S4 output) — spoken verbatim to the TTS engine once markers are stripped. */
   raw: string;
+  /** S4 claim-to-exact-spoken-text references; offsets are recomputed from `raw` in code. */
+  claimSpans?: Array<{ claimId: string; exactText: string }>;
   teachingContext?: PlannerTeachingContext;
   sceneContract?: SceneContract;
   lessonBible?: LessonBible;
@@ -248,7 +250,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
   const narration: NarrationScript = {
     schemaVersion: 'claude-narration-script/v1',
-    scenes: input.scenes.map((s) => buildNarrationScene(s.sceneId, s.sectionId ?? s.sceneId, s.raw)),
+    scenes: input.scenes.map((s) => buildNarrationScene(s.sceneId, s.sectionId ?? s.sceneId, s.raw, s.claimSpans)),
   };
 
   // --- S5: real TTS (voice-engine) + real forced alignment (shared/alignment), per scene, stitched onto one master clock ---
@@ -353,6 +355,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
       if (!sceneInput.sceneContract || !sceneInput.lessonBible) {
         return { failure: { code: 'scene-contract-missing', stage: 'planner', message: `${sceneInput.sceneId}: generated scene lacks validated S3 contract or lesson bible`, hard: true } };
       }
+      const parsedContract = SceneContractSchema.safeParse(sceneInput.sceneContract);
+      const parsedBible = LessonBibleSchema.safeParse(sceneInput.lessonBible);
+      if (!parsedContract.success || !parsedBible.success) {
+        return { failure: { code: 'scene-contract-invalid', stage: 'planner', message: `${sceneInput.sceneId}: generated scene has an invalid S3 contract or lesson bible`, hard: true } };
+      }
       try {
         // Pending timing is explicit in the context hash and prompt. S6 may
         // choose mention anchors by ID, but it is never given invented times.
@@ -446,6 +453,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
     if (input.runClass === 'generated-lesson' && sceneInput.spec) {
       failures.push({ code: 'fixture-spec-in-generated-lesson', stage: 'provenance', message: `${sceneInput.sceneId}: a hand-authored SceneSpec cannot be counted as a generated lesson`, hard: true });
+      failures.push({ code: 'visual-claim-coverage', stage: 'planner', message: `${sceneInput.sceneId}: no generated board was planned to prove essential-claim coverage`, hard: true });
       continue;
     }
 
@@ -453,6 +461,10 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (!step) continue;
     if ('failure' in step) {
       failures.push(step.failure);
+      if (input.runClass === 'generated-lesson') {
+        const claimCount = sceneInput.sceneContract?.essentialClaims.length ?? 0;
+        failures.push({ code: 'visual-claim-coverage', stage: 'planner', message: claimCount ? `${sceneInput.sceneId}: no board was produced for ${claimCount} essential spoken claim(s)` : `${sceneInput.sceneId}: no valid essential-claim contract was available to prove visual coverage`, hard: true });
+      }
       continue;
     }
     const { plannerInput, promptAudit, plannerSkipped, plannerCacheHit, plannerArtifactCostUsd } = step;
@@ -479,7 +491,12 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
 
     await writeJsonArtifact(outputDir, `planner-log.${sceneInput.sceneId}.json`, { input: plannerInput, promptAudit, plannerSkipped, skipReason: plannerSkipped ? 'hard-s5-alignment-failure' : undefined, responses: planned.rawResponses, usage: planned.usage, failures: planned.failures, fallback: planned.fallback });
 
-    if (!planned.spec) continue; // real, recorded planner failure for this scene.
+    if (!planned.spec) {
+      if (input.runClass === 'generated-lesson' && sceneInput.sceneContract?.essentialClaims.length) {
+        failures.push({ code: 'visual-claim-coverage', stage: 'planner', message: `${sceneInput.sceneId}: planner produced no board for ${sceneInput.sceneContract.essentialClaims.length} essential spoken claim(s)`, hard: true });
+      }
+      continue; // real, recorded planner failure for this scene.
+    }
 
     // A board names its icon exactly; reuse it only for the same depicted referent.
     const boardIcons = (planned as { iconAssets?: Record<string, string> }).iconAssets ?? {};
@@ -496,7 +513,15 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     const resolutionCandidates = await rankConcepts(objectConcepts, 5, queryEmbeddingCache);
     const bounds = sceneBoundsMs[sceneInput.sceneId] ?? { startMs: 0, endMs: finalDurationMs };
     const { resolved, laidOut, timeline, finalFrameSvg, gates: gateResult } = await runVisualChain(
-      { sceneId: sceneInput.sceneId, spec: planned.spec, resolve: { candidates: resolutionCandidates, pins: iconPins }, previousBoxes, mentions: sceneMentions, bounds },
+      {
+        sceneId: sceneInput.sceneId, spec: planned.spec, resolve: { candidates: resolutionCandidates, pins: iconPins }, previousBoxes, mentions: sceneMentions, bounds,
+        ...(sceneInput.sceneContract ? { claimCoverage: {
+          essentialClaims: sceneInput.sceneContract.essentialClaims,
+          spokenClaimSpans: narration.scenes.find((scene) => scene.sceneId === sceneInput.sceneId)?.claimSpans ?? [],
+          plainText: narration.scenes.find((scene) => scene.sceneId === sceneInput.sceneId)?.plainText ?? '',
+          alignedWords: sceneWords[sceneInput.sceneId] ?? [],
+        } } : {}),
+      },
       {
         store: ctx.artifactStore,
         catalogVersion: activeCatalogVersion,
@@ -513,14 +538,17 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     previousElements = laidOut.elements.map((e) => ({ id: e.id, prim: e.element.prim, label: e.element.label ?? (e.element.prim === 'object' ? e.element.concept : undefined), conceptIds: e.element.conceptIds }));
     failures.push(...gateResult.failures, ...gateResult.warnings);
     gateRecords.push({ gateSet: 'claude', sceneId: sceneInput.sceneId, passed: gateResult.failures.length === 0, failures: gateResult.failures.map(toRunFailure), warnings: gateResult.warnings.map(toRunFailure) });
-    const sceneLicenses = laidOut.elements.map((e) => e.resolution?.license).filter((l): l is string => Boolean(l));
-    const gateFailures = deterministicGates({ ...(golden ? { golden } : {}), elements: toNeutralElements(laidOut), timeline: toNeutralEvents(laidOut, timeline, bounds.startMs), durationMs: Math.max(0, bounds.endMs - bounds.startMs), svg: finalFrameSvg, licenses: sceneLicenses });
-    failures.push(...gateFailures.map((f) => ({ code: f.code, stage: f.stage, message: f.message, hard: f.hard })));
-    gateRecords.push({ gateSet: 'shared', sceneId: sceneInput.sceneId, passed: gateFailures.length === 0, failures: gateFailures, warnings: [] });
+    if (finalFrameSvg !== undefined) {
+      const sceneLicenses = laidOut.elements.map((e) => e.resolution?.license).filter((l): l is string => Boolean(l));
+      const gateFailures = deterministicGates({ ...(golden ? { golden } : {}), elements: toNeutralElements(laidOut), timeline: toNeutralEvents(laidOut, timeline, bounds.startMs), durationMs: Math.max(0, bounds.endMs - bounds.startMs), svg: finalFrameSvg, licenses: sceneLicenses });
+      failures.push(...gateFailures.map((f) => ({ code: f.code, stage: f.stage, message: f.message, hard: f.hard })));
+      gateRecords.push({ gateSet: 'shared', sceneId: sceneInput.sceneId, passed: gateFailures.length === 0, failures: gateFailures, warnings: [] });
+    }
 
-    scenes.push({ sceneId: sceneInput.sceneId, spec: planned.spec, resolved, laidOut, timeline, finalFrameSvg, plannerUsage: planned.usage, plannerRawResponses: planned.rawResponses });
-    videoScenes.push({ laidOut, timeline, startMs: bounds.startMs, endMs: bounds.endMs });
+    scenes.push({ sceneId: sceneInput.sceneId, spec: planned.spec, resolved, laidOut, timeline, finalFrameSvg: finalFrameSvg ?? '', plannerUsage: planned.usage, plannerRawResponses: planned.rawResponses });
+    if (finalFrameSvg !== undefined) videoScenes.push({ laidOut, timeline, startMs: bounds.startMs, endMs: bounds.endMs });
     const moduleId = input.modules?.find((module) => module.sceneIds.includes(sceneInput.sceneId))?.id ?? sceneInput.sectionId ?? sceneInput.sceneId;
+    if (finalFrameSvg === undefined) continue;
     const sequence = sceneEvents.length;
     const audioArtifactIndex = sceneIndex;
     const previewLocation = `preview-scenes/${String(sequence).padStart(4, '0')}.json`;
@@ -633,11 +661,12 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   let encodedVideoDurationMs: number | undefined;
   let diagnosticCaptionFailure: string | undefined;
   let moduleVideoArtifacts: ModuleVideoArtifact[] = [];
-  const renderedSceneIds = new Set(scenes.map((scene) => scene.sceneId));
+  const renderedSceneIds = new Set(scenes.filter((scene) => scene.finalFrameSvg.length > 0).map((scene) => scene.sceneId));
   const missingVideoSceneIds = input.scenes.map((scene) => scene.sceneId).filter((sceneId) => !renderedSceneIds.has(sceneId));
-  if (missingVideoSceneIds.length) failures.push({ code: 'video-scenes-incomplete', stage: 'render', message: `No visual scene for ${missingVideoSceneIds.join(', ')}; diagnostic video retains the full narration clock`, hard: true });
+  if (missingVideoSceneIds.length) failures.push({ code: 'video-scenes-incomplete', stage: 'render', message: `No rendered visual scene for ${missingVideoSceneIds.join(', ')}; visual-claim-coverage may have prevented S11 encoding`, hard: true });
   const encodeStartedAtMs = Date.now();
-  if (videoScenes.length > 0) {
+  const visualClaimCoverageBlocked = failures.some((failure) => failure.code === 'visual-claim-coverage');
+  if (videoScenes.length > 0 && !visualClaimCoverageBlocked) {
     videoPath = path.join(outputDir, 'video.mp4');
     try {
       const produce = async () => {
@@ -714,6 +743,8 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
         failures.push({ code: 'media-probe-failed', stage: 'encode', message: error instanceof Error ? error.message : String(error), hard: true });
       }
     }
+  } else if (visualClaimCoverageBlocked) {
+    failures.push({ code: 'video-render-blocked-by-claim-coverage', stage: 'render', message: 'S11 video encoding was skipped because at least one scene failed the pre-render visual claim coverage gate', hard: true });
   } else {
     failures.push({ code: 'no-scenes', stage: 'render', message: 'no scenes survived planning/validation for this case — no video produced', hard: true });
   }

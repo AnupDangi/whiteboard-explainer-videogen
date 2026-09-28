@@ -80,6 +80,13 @@ export const SceneContractSchema = z.object({
   requiredConceptIds: z.array(id()).min(1).max(8),
   requiredRelations: z.array(z.object({ from: id(), to: id(), type: z.enum(RELATION_TYPES) }).strict()).max(24),
   evidenceSpanIds: z.array(id()).min(1).max(96),
+  essentialClaims: z.array(z.object({
+    id: id(),
+    statement: z.string().trim().min(1).max(240),
+    conceptIds: z.array(id()).min(1).max(6),
+    relations: z.array(z.object({ from: id(), to: id(), type: z.enum(RELATION_TYPES) }).strict()).max(24),
+    evidenceSpanIds: z.array(id()).min(1).max(96),
+  }).strict()).min(1).max(8),
   teachingSkill: z.enum(TEACHING_SKILLS),
   candidateMechanisms: z.array(z.enum(VISUAL_MECHANISMS)).min(1).max(3),
 }).strict();
@@ -135,6 +142,7 @@ const SectionDraftSchema = z.object({
   budgetSec: z.number().positive(),
   teachingSkill: z.enum(TEACHING_SKILLS),
   candidateMechanisms: z.array(z.enum(VISUAL_MECHANISMS)).min(1).max(3),
+  essentialClaims: SceneContractSchema.shape.essentialClaims,
 }).strict();
 
 /** Accept a plan in the older full shape by lifting its model-owned fields; copied contract/bible fields are dropped and rebuilt. */
@@ -149,7 +157,7 @@ function liftLegacyPlan(raw: unknown): unknown {
       if (!section || typeof section !== 'object' || Array.isArray(section)) return section;
       const { contract, ...fields } = section as Record<string, unknown>;
       const legacy = contract && typeof contract === 'object' ? contract as Record<string, unknown> : {};
-      return { ...fields, ...('teachingSkill' in fields || !legacy.teachingSkill ? {} : { teachingSkill: legacy.teachingSkill }), ...('candidateMechanisms' in fields || !legacy.candidateMechanisms ? {} : { candidateMechanisms: legacy.candidateMechanisms }) };
+      return { ...fields, ...('teachingSkill' in fields || !legacy.teachingSkill ? {} : { teachingSkill: legacy.teachingSkill }), ...('candidateMechanisms' in fields || !legacy.candidateMechanisms ? {} : { candidateMechanisms: legacy.candidateMechanisms }), ...('essentialClaims' in fields || !legacy.essentialClaims ? {} : { essentialClaims: legacy.essentialClaims }) };
     }) : sections,
   };
 }
@@ -169,7 +177,7 @@ export type TeachingPlanDraft = z.infer<typeof TeachingPlanDraftSchema>;
 export const ScriptSchema = z
   .object({
     scenes: z
-      .array(z.object({ sectionId: id(), text: z.string().min(1).max(2000) }).strict())
+      .array(z.object({ sectionId: id(), text: z.string().min(1).max(2000), claimSpans: z.array(z.object({ claimId: id(), exactText: z.string().min(1).max(500) }).strict()).optional() }).strict())
       .min(1)
       .max(40),
   })

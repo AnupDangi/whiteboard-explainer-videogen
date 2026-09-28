@@ -1,4 +1,4 @@
-import type { TemplateId } from '../types.js';
+import type { TemplateId, SpokenClaimSpan } from '../types.js';
 import { TEMPLATE_IDS, templateSlots, type TemplateSlot } from '../templates/catalog.js';
 import type { EvidenceReference } from '../../shared/contracts.js';
 import { MAX_ELEMENTS_PER_SCENE, MAX_LABEL_WORDS, MAX_TITLE_WORDS } from '../style.js';
@@ -43,6 +43,8 @@ export interface PlannerSceneInput {
   raw: string;
   plainText: string;
   mentions: Array<{ id: string; phrase: string }>;
+  /** Exact S4 spoken spans for validated essential claims; generated scenes only. */
+  claimSpans?: SpokenClaimSpan[];
   teachingContext?: PlannerTeachingContext;
   /** Top-k house-style icon candidates per mention id (catalog/semantic.ts). */
   candidates?: Record<string, Array<{ id?: string; name: string; score: number }>>;
@@ -145,6 +147,7 @@ export function buildUserPrompt(input: PlannerSceneInput): string {
   if (ctx?.equations?.length) ctxLines.push(`Equations available: ${escapeXml(ctx.equations.join(' ; '))}`);
   if (planning) ctxLines.push(`Validated scene planning context (the source evidence, not examples, is factual authority): ${escapeXml(JSON.stringify({
     sceneContract: planning.sceneContract,
+    essentialClaims: planning.sceneContract.essentialClaims,
     lessonBible: planning.lessonBible,
     promptArm: planning.promptArm,
     exampleOrder: planning.exampleOrder,

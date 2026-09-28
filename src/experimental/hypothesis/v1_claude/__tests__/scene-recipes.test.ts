@@ -21,11 +21,11 @@ test('recipe cards are topic-neutral', () => {
   }
 });
 
-test('v13 system prompt contains the recipe section and version', () => {
+test('v14 system prompt contains the recipe section and version', () => {
   const prompt = buildSystemPrompt();
   assert.ok(prompt.includes('## Visual recipes'));
   assert.ok(prompt.includes(recipeSectionBody()));
-  assert.equal(SCENE_PROMPT_VERSION, 'scene-planner-prompt-v13');
+  assert.equal(SCENE_PROMPT_VERSION, 'scene-planner-prompt-v14-visual-claims');
   assert.equal(RECIPE_VERSION, 'visual-recipes/v1');
 });
 
@@ -48,11 +48,13 @@ const graph: ConceptGraph = {
 const contract: SceneContract = {
   learningDelta: 'Explain how heat raises pressure', targetDurationSec: 20, requiredConceptIds: ['heat', 'pressure'],
   requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_heat', 'span_pressure', 'span_relation'],
+  essentialClaims: [{ id: 'heat_causes_pressure', statement: 'Heat causes pressure to rise.', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_relation'] }],
   teachingSkill: 'mechanism', candidateMechanisms: ['convergence', 'threshold'],
 };
 const bible = { audience: 'general learner', terminology: [{ conceptId: 'heat', label: 'Heat' }, { conceptId: 'pressure', label: 'Pressure' }], persistentConceptIds: ['heat'] };
 const scene: PlannerSceneInput = {
   sceneId: 'heat_pressure', raw: '[[heat|Heat]] raises [[pressure|pressure]].', plainText: 'Heat raises pressure.',
+  claimSpans: [{ claimId: 'heat_causes_pressure', exactText: 'Heat raises pressure.', plainStart: 0, plainEnd: 21 }],
   mentions: [{ id: 'heat', phrase: 'Heat' }, { id: 'pressure', phrase: 'pressure' }],
   teachingContext: { requireEvidence: true, sourceId: 'source_a', displayText: 'Heat Raises Pressure', sourceEvidenceRefs: [heatRef, pressureRef, relationRef],
     concepts: graph.concepts.map((item) => ({ id: item.id, label: item.label, kind: item.kind, definition: item.definition, evidenceRefs: item.evidence })),
@@ -61,9 +63,9 @@ const scene: PlannerSceneInput = {
 };
 const times = [{ id: 'heat', startMs: 100, endMs: 300 }, { id: 'pressure', startMs: 1100, endMs: 1600 }];
 
-test('prompt v13 changes the planning context hash', () => {
+test('prompt v14 changes the planning context hash', () => {
   const context = compileScenePlanningContext(scene, contract, bible, times, 'zero', 'catalog-v1');
-  assert.equal(context.versions.prompt, 'scene-planner-prompt-v13');
+  assert.equal(context.versions.prompt, 'scene-planner-prompt-v14-visual-claims');
   assert.equal(context.versions.recipes, 'visual-recipes/v1');
 
   // Mirror compileScenePlanningContext's own payload shape exactly (planner/context.ts),
@@ -73,7 +75,7 @@ test('prompt v13 changes the planning context hash', () => {
     teachingContext: context.teachingContext, evidence: context.evidence, visualCandidates: context.visualCandidates,
     availableTemplates: context.availableTemplates, mentionTimes: context.mentionTimes, previousElements: context.previousElements,
     promptArm: context.promptArm, exampleOrder: context.exampleOrder, examples: context.examples.map(exemplarContextRecord),
-    versions: { ...context.versions, prompt: 'scene-planner-prompt-v12' },
+    versions: { ...context.versions, prompt: 'scene-planner-prompt-v13' },
   };
   const v12Hash = sha256(stableJson(payload));
   assert.notEqual(context.contextHash, v12Hash);

@@ -28,7 +28,8 @@ test('every S3 prompt variant spells out schema constraints and uses the schema 
       assert.match(system, /no other fields/);
       assert.match(system, /a relation is taught only in a section whose conceptIds contain BOTH of its endpoints/);
       assert.match(system, /intro\.sections: use short outline headings of 2-5 words, each under 60 characters/);
-      assert.doesNotMatch(system, /requiredRelations|evidenceSpanIds|lessonBible/, `${name} must not ask the model to copy derived fields`);
+      assert.doesNotMatch(system, /requiredRelations|lessonBible/, `${name} must not ask the model to copy derived fields`);
+      assert.match(system, /essentialClaims/, `${name} must identify source-backed claims to say and depict`);
     }
   }
 });

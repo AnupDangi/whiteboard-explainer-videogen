@@ -26,6 +26,7 @@ const graph: ConceptGraph = {
 const contract: SceneContract = {
   learningDelta: 'Explain how heat raises pressure', targetDurationSec: 20, requiredConceptIds: ['heat', 'pressure'],
   requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_heat', 'span_pressure', 'span_relation'],
+  essentialClaims: [{ id: 'heat_causes_pressure', statement: 'Heat causes pressure to rise.', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_heat', 'span_pressure', 'span_relation'] }],
   teachingSkill: 'mechanism', candidateMechanisms: ['convergence', 'threshold'],
 };
 const bible = { audience: 'general learner', terminology: [{ conceptId: 'heat', label: 'Heat' }, { conceptId: 'pressure', label: 'Pressure' }], persistentConceptIds: ['heat'] };
@@ -36,6 +37,7 @@ const plan: TeachingPlan = {
 };
 const scene: PlannerSceneInput = {
   sceneId: 'heat_pressure', raw: '[[heat|Heat]] raises [[pressure|pressure]].', plainText: 'Heat raises pressure.',
+  claimSpans: [{ claimId: 'heat_causes_pressure', exactText: 'Heat raises pressure.', plainStart: 0, plainEnd: 21 }],
   mentions: [{ id: 'heat', phrase: 'Heat' }, { id: 'pressure', phrase: 'pressure' }],
   teachingContext: { requireEvidence: true, sourceId: 'source_a', displayText: 'Heat Raises Pressure', sourceEvidenceRefs: [heatRef, pressureRef, relationRef],
     concepts: graph.concepts.map((item) => ({ id: item.id, label: item.label, kind: item.kind, definition: item.definition, evidenceRefs: item.evidence })),
@@ -361,6 +363,7 @@ test('few-shot contract rejects copied facts, values, and relations after topic 
   const input = { ...scene, planningContext: context };
   const target: SceneSpec = {
     schemaVersion: 'claude-scene-spec/v1', sceneId: scene.sceneId, title: 'Heat input', titleConceptIds: ['heat'], titleEvidenceRefs: [heatRef], template: 'chain',
+    boardIntent: { schemaVersion: 'typed-board-intent/v3', layout: 'flow', visualKind: 'process', roles: [], requiredConceptIds: [], requiredRelations: [], visualIntents: [{ claimId: 'heat_causes_pressure', strategy: 'process', targets: [{ kind: 'element', elementId: 'heat_node' }, { kind: 'element', elementId: 'pressure_node' }, { kind: 'edge', fromElementId: 'heat_node', toElementId: 'pressure_node', relationType: 'causes' }] }] },
     elements: [
       { id: 'heat_node', prim: 'box', anchor: 'mention:heat', text: 'Heat', conceptIds: ['heat'], evidenceRefs: [heatRef] },
       { id: 'pressure_node', prim: 'box', anchor: 'mention:pressure', text: 'Pressure', conceptIds: ['pressure'], evidenceRefs: [pressureRef] },

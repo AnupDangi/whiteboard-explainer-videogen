@@ -5,6 +5,7 @@ import { buildScenePlannerPrompt, type PlannerSceneInput } from './prompt.js';
 import { MAX_ELEMENTS_PER_SCENE, MAX_LABEL_WORDS, MAX_TITLE_WORDS } from '../style.js';
 import type { PersistentBudgetLedger } from '../pipeline/budgetLedger.js';
 import { unsupportedNumericClaims } from '../validation/numericClaims.js';
+import { visualClaimCoverageFailures } from '../validation/gates.js';
 
 /**
  * S6 — Scene Planner (claude_pipeline.md §6/§9): strongest affordable model,
@@ -272,6 +273,12 @@ export function plannerProblems(spec: SceneSpec, input: PlannerSceneInput): stri
   }
   const prevIds = new Set(input.previousElements?.map((e) => e.id) ?? []);
   for (const id of spec.carryOver ?? []) if (!prevIds.has(id)) problems.push(`carryOver "${id}" is not an element of the previous scene`);
+  if (input.planningContext?.sceneContract.essentialClaims?.length) {
+    problems.push(...visualClaimCoverageFailures({ ...spec, elements: spec.elements.map((element) => ({ id: element.id, element })) }, {
+      essentialClaims: input.planningContext.sceneContract.essentialClaims,
+      spokenClaimSpans: input.claimSpans ?? [],
+    }).map((failure) => failure.message));
+  }
   return problems;
 }
 

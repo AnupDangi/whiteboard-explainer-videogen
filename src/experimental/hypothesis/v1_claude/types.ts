@@ -26,6 +26,15 @@ export interface RawMention {
   plainEnd: number;
 }
 
+/** Exact spoken substring attributed to one source-backed essential claim. */
+export interface SpokenClaimSpan {
+  claimId: string;
+  exactText: string;
+  /** Character offsets within NarrationScene.plainText, derived by code. */
+  plainStart: number;
+  plainEnd: number;
+}
+
 export interface NarrationScene {
   sceneId: string;
   sectionId: string;
@@ -34,6 +43,8 @@ export interface NarrationScene {
   /** Text with markers stripped to their spoken phrase: "The query compares..." */
   plainText: string;
   mentions: RawMention[];
+  /** Present on generated lessons; absent only on older/uncontracted scene inputs. */
+  claimSpans?: SpokenClaimSpan[];
 }
 
 export interface NarrationScript {
@@ -215,9 +226,22 @@ export interface Edge {
   };
 }
 
-/** Semantic requirements preserved from a validated board-v2 plan. */
+export type VisualDepictionStrategy = 'literal' | 'process' | 'comparison' | 'quantitative' | 'labelled-diagram';
+
+export type VisualIntentTarget =
+  | { kind: 'element'; elementId: string }
+  | { kind: 'edge'; fromElementId: string; toElementId: string; relationType: NonNullable<Edge['factualRelation']>['type'] };
+
+/** A planner assertion is auditable but never itself proof of claim coverage. */
+export interface VisualIntent {
+  claimId: string;
+  strategy: VisualDepictionStrategy;
+  targets: VisualIntentTarget[];
+}
+
+/** Semantic requirements preserved from a validated board-v3 plan. */
 export interface BoardIntent {
-  schemaVersion: 'typed-board-intent/v1';
+  schemaVersion: 'typed-board-intent/v3';
   layout: 'flow' | 'fan_out' | 'convergence' | 'list' | 'compare' | 'cycle' | 'hub';
   visualKind: 'process' | 'plain' | 'comparison' | 'worked-example' | 'formula' | 'plot' | 'matrix' | 'number-line';
   roles: Array<{ elementId: string; role: 'input' | 'process' | 'output' | 'item' | 'attribute' }>;
@@ -230,6 +254,8 @@ export interface BoardIntent {
     type: NonNullable<Edge['factualRelation']>['type'];
     evidenceRefs: EvidenceReference[];
   }>;
+  /** Claim-to-depiction links compiled from the validated S6 board. */
+  visualIntents: VisualIntent[];
 }
 
 export interface SceneSpec {

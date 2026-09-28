@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveTeachingPlan, teachingContractFindings } from '../plan/contracts.js';
-import { TeachingPlanDraftSchema, TeachingPlanSchema, type ConceptGraph, type TeachingPlanDraft } from '../plan/schemas.js';
-import { buildConceptGraph, buildTeachingPlan, writeScript } from '../plan/stages.js';
+import { TeachingPlanDraftSchema, TeachingPlanSchema, type ConceptGraph, type TeachingPlan, type TeachingPlanDraft } from '../plan/schemas.js';
+import { buildConceptGraph, buildTeachingPlan, writeScript, validateSceneText } from '../plan/stages.js';
+import { buildNarrationScene } from '../narration/markers.js';
 import { resolveSourceEvidence, sourceDocFromText, spanExcerptPrompt } from '../plan/sourceDoc.js';
 
 const response = (payload: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.0001 } }), { status: 200 });
@@ -15,7 +16,7 @@ for (const words of [{ a: 'heat', b: 'pressure', c: 'volume' }, { a: 'tariff', b
   const graph: ConceptGraph = {
     concepts: [
       { id: words.a, label: words.a, kind: 'entity', definition: `${words.a}.`, evidence: [ref(first, words.a)], level: 'one-step' },
-      { id: words.b, label: words.b, kind: 'quantity', definition: `${words.b}.`, evidence: [ref(first, words.b)], level: 'one-step' },
+      { id: words.b, label: words.b, kind: 'quantity', definition: `${words.b}.`, evidence: [ref(first, words.b), ref(second, words.b)], level: 'one-step' },
       { id: words.c, label: words.c, kind: 'quantity', definition: `${words.c}.`, evidence: [ref(second, words.c)], level: 'one-step' },
     ],
     relations: [
@@ -24,7 +25,7 @@ for (const words of [{ a: 'heat', b: 'pressure', c: 'volume' }, { a: 'tariff', b
     ],
     prerequisites: [],
   };
-  const section = (id: string, conceptIds: string[]) => ({ id, title: `About ${id}`, goal: `Explain ${id}.`, kind: 'explain' as const, conceptIds, budgetSec: 18, teachingSkill: 'mechanism' as const, candidateMechanisms: ['chain' as const] });
+  const section = (id: string, conceptIds: string[]) => ({ id, title: `About ${id}`, goal: `Explain ${id}.`, kind: 'explain' as const, conceptIds, budgetSec: 18, teachingSkill: 'mechanism' as const, candidateMechanisms: ['chain' as const], essentialClaims: [{ id: `${id}_claim`, statement: `Explain ${conceptIds[0]}.`, conceptIds: [conceptIds[0]], relations: [], evidenceSpanIds: [conceptIds[0] === words.c ? second.id : first.id] }] });
   const draft = (sections: TeachingPlanDraft['sections']): TeachingPlanDraft => ({ targetDurationSec: 36, intro: { sourceTitle: 'Notes', sections: [] }, sections, recap: { keyPoints: [] } });
 
   test(`contracts are derived from co-sectioned concepts and the graph (${words.a})`, () => {
@@ -37,6 +38,13 @@ for (const words of [{ a: 'heat', b: 'pressure', c: 'volume' }, { a: 'tariff', b
     assert.deepEqual(teachingContractFindings(plan, graph, 'general learner'), []);
   });
 
+  test(`essential claim evidence includes every linked concept and relation span (${words.a})`, () => {
+    const claimSection: TeachingPlanDraft['sections'][number] = section('claim_evidence', [words.a, words.b]);
+    claimSection.essentialClaims = [{ id: 'linked_claim', statement: `${words.a} raises ${words.b}.`, conceptIds: [words.a, words.b], relations: [{ from: words.a, to: words.b, type: 'causes' }], evidenceSpanIds: [first.id] }];
+    const plan = deriveTeachingPlan(draft([claimSection]), graph, 'general learner');
+    assert.deepEqual(plan.sections[0]!.contract!.essentialClaims[0]!.evidenceSpanIds.sort(), [...new Set([first.id, second.id])].sort());
+  });
+
   test(`splitting related concepts into separate sections still fails as a lost relation (${words.a})`, () => {
     const plan = deriveTeachingPlan(draft([section('s1', [words.a]), section('s2', [words.b, words.c])]), graph, 'general learner');
     assert.deepEqual(teachingContractFindings(plan, graph, 'general learner').map((f) => f.code), ['LESSON_OMITS_SOURCE_RELATION']);
@@ -46,16 +54,44 @@ for (const words of [{ a: 'heat', b: 'pressure', c: 'volume' }, { a: 'tariff', b
     const plan = deriveTeachingPlan(draft([section('s1', [words.a, words.b, 'invented']), section('s2', [words.b, words.c])]), graph, 'general learner');
     assert.ok(teachingContractFindings(plan, graph, 'general learner').some((f) => f.code === 'REQUIRED_CONCEPT_UNKNOWN'));
   });
+
+  test(`essential claim IDs, links, and source evidence cannot be forged (${words.a})`, () => {
+    const plan = deriveTeachingPlan(draft([section('s1', [words.a, words.b]), section('s2', [words.b, words.c])]), graph, 'general learner');
+    const claim = plan.sections[0].contract!.essentialClaims[0];
+    assert.deepEqual(teachingContractFindings(plan, graph), []);
+    plan.sections[1].contract!.essentialClaims[0].id = claim.id;
+    assert.ok(teachingContractFindings(plan, graph).some((f) => f.code === 'ESSENTIAL_CLAIM_DUPLICATE'));
+    plan.sections[1].contract!.essentialClaims[0].id = 's2_claim';
+    claim.conceptIds = [words.c];
+    assert.ok(teachingContractFindings(plan, graph).some((f) => f.code === 'ESSENTIAL_CLAIM_CONCEPT'));
+    claim.conceptIds = [words.a];
+    claim.evidenceSpanIds = [second.id];
+    assert.ok(teachingContractFindings(plan, graph).some((f) => f.code === 'ESSENTIAL_CLAIM_EVIDENCE'));
+  });
 }
+
+test('S4 exact claim spans are code-offset into marker-stripped speech and reject missing, duplicate, and forged text', () => {
+  const raw = 'A [[a|warm cup]] transfers heat to a [[b|cool cup]]. [[c|Heat]] moves. [[d|Both cups]] change.';
+  const section: TeachingPlan['sections'][number] = { id: 's1', title: 'Heat', goal: 'Heat moves', kind: 'explain', conceptIds: ['heat'], budgetSec: 15, contract: { learningDelta: 'Heat moves', targetDurationSec: 15, requiredConceptIds: ['heat'], requiredRelations: [], evidenceSpanIds: ['span'], essentialClaims: [{ id: 'heat_transfer', statement: 'Heat moves', conceptIds: ['heat'], relations: [], evidenceSpanIds: ['span'] }], teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } };
+  const claimSpans = [{ claimId: 'heat_transfer', exactText: 'warm cup transfers heat to a cool cup' }];
+  const scene = buildNarrationScene('s1', 's1', raw, claimSpans);
+  assert.equal(scene.plainText.slice(scene.claimSpans![0].plainStart, scene.claimSpans![0].plainEnd), claimSpans[0].exactText);
+  assert.ok(validateSceneText(raw, section, []).some((p) => /needs exactly one spoken span/.test(p)));
+  assert.ok(validateSceneText(raw, section, [...claimSpans, ...claimSpans]).some((p) => /needs exactly one spoken span/.test(p)));
+  assert.ok(validateSceneText(raw, section, [{ claimId: 'wrong', exactText: 'warm cup' }]).some((p) => /unknown spoken claim/.test(p)));
+  assert.ok(validateSceneText(raw, section, [{ claimId: 'heat_transfer', exactText: 'invented words' }]).some((p) => /occur exactly once/.test(p)));
+  assert.throws(() => buildNarrationScene('s1', 's1', 'heat and heat', [{ claimId: 'x', exactText: 'heat' }]), /occur exactly once/);
+});
 
 test('the S3 draft schema lifts model-owned fields from an older full-plan response and drops copied ones', () => {
   const parsed = TeachingPlanDraftSchema.parse({
     targetDurationSec: 18, intro: { sourceTitle: 'x', sections: [] }, recap: { keyPoints: [] },
     lessonBible: { audience: 'anyone', domain: 'physics', terminology: [], persistentConceptIds: [] },
-    sections: [{ id: 's1', title: 't', goal: 'g', kind: 'explain', conceptIds: ['a'], budgetSec: 18, contract: { teachingSkill: 'process', candidateMechanisms: ['cycle'], requiredRelations: [{ from: 'a', to: 'b', type: 'contains' }] } }],
+    sections: [{ id: 's1', title: 't', goal: 'g', kind: 'explain', conceptIds: ['a'], budgetSec: 18, contract: { teachingSkill: 'process', candidateMechanisms: ['cycle'], requiredRelations: [{ from: 'a', to: 'b', type: 'contains' }], essentialClaims: [{ id: 'claim', statement: 'x', conceptIds: ['a'], relations: [], evidenceSpanIds: ['span'] }] } }],
   });
   assert.equal(parsed.domain, 'physics');
   assert.deepEqual([parsed.sections[0].teachingSkill, parsed.sections[0].candidateMechanisms], ['process', ['cycle']]);
+  assert.equal(parsed.sections[0].essentialClaims[0].id, 'claim');
   assert.ok(!('contract' in parsed.sections[0]));
 });
 
@@ -103,8 +139,8 @@ test('each S4 scene sees only its own section\'s evidence spans', async () => {
     relations: [], prerequisites: [],
   };
   const plan = deriveTeachingPlan({ targetDurationSec: 30, intro: { sourceTitle: 'x', sections: [] }, recap: { keyPoints: [] }, sections: [
-    { id: 's_alpha', title: 'Alpha', goal: 'x', kind: 'explain', conceptIds: ['alpha'], budgetSec: 15, teachingSkill: 'definition', candidateMechanisms: ['focus'] },
-    { id: 's_beta', title: 'Beta', goal: 'x', kind: 'explain', conceptIds: ['beta'], budgetSec: 15, teachingSkill: 'definition', candidateMechanisms: ['focus'] },
+    { id: 's_alpha', title: 'Alpha', goal: 'x', kind: 'explain', conceptIds: ['alpha'], budgetSec: 15, teachingSkill: 'definition', candidateMechanisms: ['focus'], essentialClaims: [{ id: 'alpha_claim', statement: 'Alpha fact.', conceptIds: ['alpha'], relations: [], evidenceSpanIds: [alpha.id] }] },
+    { id: 's_beta', title: 'Beta', goal: 'x', kind: 'explain', conceptIds: ['beta'], budgetSec: 15, teachingSkill: 'definition', candidateMechanisms: ['focus'], essentialClaims: [{ id: 'beta_claim', statement: 'Beta fact.', conceptIds: ['beta'], relations: [], evidenceSpanIds: [beta.id] }] },
   ] }, graph, 'general learner');
   const users: string[] = [];
   await writeScript({ source: doc.text, sourceDoc: doc, targetDurationSec: 30 }, graph, plan, {
