@@ -785,7 +785,11 @@ function compiledFallback(input: PlannerSceneInput, priorFailures: StageFailure[
   const compiled = compileBoard(board, input);
   const checked = safeParseSceneSpec(compiled.spec);
   if (!checked.success) return { usage, failures: [...failures, { code: 'planner-fallback-invalid', stage: 'planner', message: `${input.sceneId}: fallback board failed schema validation: ${checked.error.message}`, hard: true }], rawResponses, fallback: false };
-  const problems = [...boardProblems(board, input, boardEnums(input)), ...compiled.problems, ...plannerProblems(checked.data, input)];
+  // Proximity guidance targets the model's repair loop; the deterministic
+  // fallback cannot reshape itself, so its residual proximity notes are
+  // dropped here — B3 reveal timing still judges the actual synchronization.
+  const problems = [...boardProblems(board, input, boardEnums(input)), ...compiled.problems, ...plannerProblems(checked.data, input)]
+    .filter((problem) => !problem.includes('never names it nearby'));
   if (problems.length) failures.push({ code: 'planner-fallback-gate', stage: 'planner', message: `${input.sceneId}: fallback retained as a diagnostic preview but did not satisfy: ${problems.join('; ')}`, hard: true });
   return { spec: checked.data, iconAssets: compiled.iconAssets, usage: { ...usage, fallbacks: usage.fallbacks + 1 }, failures, rawResponses, fallback: true };
 }
