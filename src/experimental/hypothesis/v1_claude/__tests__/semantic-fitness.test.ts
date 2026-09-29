@@ -100,3 +100,28 @@ test('text fallback despite approved assets is a draft finding', () => {
   assert.ok(failures.some((f) => f.code === 'major-claim-undepicted' && f.hard));
   assert.ok(failures.some((f) => f.code === 'text-fallback-despite-assets' && !f.hard));
 });
+
+test('labelled boxes count as drawn depictions, not text fallback', () => {
+  // Simi-style labelled boxes (prim box/shape/text) are drawings by
+  // construction: B4 must not flag them as undepicted. Only object prims
+  // stuck at rung 4 (styledTextBoxVisual) count as text-only.
+  const scene = laidOut([{ id: 'n1', rung: 4, conceptIds: ['c1'] }]);
+  const boxed: LaidOutScene = {
+    ...scene,
+    elements: scene.elements.map((e) => ({ ...e, element: { ...e.element, prim: 'box' as const }, resolution: undefined })),
+  };
+  const withIntent: LaidOutScene = {
+    ...boxed,
+    boardIntent: {
+      schemaVersion: 'typed-board-intent/v3',
+      layout: 'flow',
+      visualKind: 'process',
+      roles: [],
+      requiredConceptIds: [],
+      requiredRelations: [],
+      visualIntents: [{ claimId: 'k1', strategy: 'process', targets: [{ kind: 'element', elementId: 'n1' }] }],
+    },
+  } as unknown as LaidOutScene;
+  const failures = semanticFitnessFailures(withIntent, { spokenClaimSpans: [], essentialClaims: [claim('k1')] });
+  assert.ok(!failures.some((f) => f.code === 'major-claim-undepicted'), JSON.stringify(failures));
+});

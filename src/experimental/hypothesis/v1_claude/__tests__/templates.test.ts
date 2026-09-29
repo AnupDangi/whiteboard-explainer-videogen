@@ -263,3 +263,23 @@ test('a three-node board fills toward the occupancy target and keeps labels read
     for (const t of el.visual.texts) assert.ok(t.size * (el.bbox.h / el.intrinsicSize.h) >= 32 - 1e-6, `${el.id} text below readable floor`);
   }
 });
+
+test('wide-but-short boards grow vertically past the sparse floor instead of stalling', () => {
+  // Regression: two side-by-side boxes spanning the full working width
+  // saturated uniform scaling (maxScale ~= 1) and stalled at ~0.28 although
+  // vertical room sat unused. Height-only growth must lift them to >= 0.30.
+  const spec: SceneSpec = {
+    schemaVersion: 'claude-scene-spec/v1', sceneId: 'wide_short', title: 'T', template: 'chain',
+    elements: [
+      { id: 'a', slot: 'node', anchor: 'sceneStart', prim: 'box', text: 'Left definition box' },
+      { id: 'b', slot: 'node', anchor: 'sceneStart', prim: 'box', text: 'Right definition box' },
+    ],
+    edges: [],
+  };
+  const laidOut = layoutScene(resolveScene(spec));
+  assert.ok(laidOut.occupancy >= STYLE.occupancy.sparse, `occupancy ${laidOut.occupancy} below sparse floor`);
+  for (const el of laidOut.elements) {
+    assert.ok(el.bbox.x >= STYLE.canvas.safe - 0.01 && el.bbox.x + el.bbox.w <= STYLE.canvas.w - STYLE.canvas.safe + 0.01, 'stays in safe area horizontally');
+    assert.ok(el.bbox.y >= STYLE.canvas.safe - 0.01 && el.bbox.y + el.bbox.h <= STYLE.canvas.h - STYLE.canvas.safe + 0.01, 'stays in safe area vertically');
+  }
+});

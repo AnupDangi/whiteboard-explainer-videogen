@@ -152,27 +152,37 @@ export interface ClaimDepiction {
   diagramFirst: boolean;
 }
 
+/** Procedural prims are drawings by construction (Simi-style labelled boxes included). */
+const DRAWN_PRIMS = new Set(['box', 'pill', 'tokenStrip', 'operator', 'meter', 'matrix', 'formula', 'container', 'cylinder', 'stack', 'axis', 'hill', 'plot', 'numberLine', 'shape', 'text']);
+
 export function depictClaims(scene: LaidOutScene, coverage: ClaimCoverageInput): ClaimDepiction[] {
   const intents = scene.boardIntent?.visualIntents ?? [];
   const byClaim = new Map<string, typeof intents>();
   for (const intent of intents) byClaim.set(intent.claimId, [...(byClaim.get(intent.claimId) ?? []), intent]);
   const resolutionByElement = new Map(scene.elements.map(({ id, resolution }) => [id, resolution]));
+  const primByElement = new Map(scene.elements.map(({ id, element }) => [id, element.prim]));
+  const isDrawn = (elementId: string): boolean => {
+    if (DRAWN_PRIMS.has(primByElement.get(elementId) ?? '')) return true;
+    const rung = resolutionByElement.get(elementId)?.rung;
+    return rung !== undefined && rung !== 4;
+  };
   return coverage.essentialClaims.map((claim) => {
     const links = byClaim.get(claim.id) ?? [];
     const elementTargets = links.flatMap((intent) => intent.targets.filter((t) => t.kind === 'element'));
     const edgeTargets = links.flatMap((intent) => intent.targets.filter((t) => t.kind === 'edge'));
     const strategies = elementTargets.map((t) => resolutionByElement.get(t.kind === 'element' ? t.elementId : '')?.strategy);
-    const rungs = elementTargets.map((t) => resolutionByElement.get(t.kind === 'element' ? t.elementId : '')?.rung);
+    const drawnFlags = elementTargets.map((t) => t.kind === 'element' && isDrawn(t.elementId));
     const encodedRelations = edgeTargets
       .filter((t) => t.kind === 'edge' && scene.edges.some((e) =>
         e.from === t.fromElementId && e.to === t.toElementId && e.factualRelation?.type === t.relationType))
       .map((t) => t.kind === 'edge' ? `${t.fromElementId}|${t.relationType}|${t.toElementId}` : '');
+    const drawnTargets = drawnFlags.filter(Boolean).length;
     return {
       claimId: claim.id,
       hasIntent: links.length > 0,
       elementTargets: elementTargets.length,
-      drawnTargets: rungs.filter((r) => r !== undefined && r !== 4).length,
-      textTargets: rungs.filter((r) => r === 4 || r === undefined).length,
+      drawnTargets,
+      textTargets: elementTargets.length - drawnTargets,
       edgeTargets: edgeTargets.length,
       strategies,
       encodedRelations,

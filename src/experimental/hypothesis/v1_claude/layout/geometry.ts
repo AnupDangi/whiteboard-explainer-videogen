@@ -113,6 +113,16 @@ export function scaleAround(boxes: BBox[], pivot: { x: number; y: number }, scal
   }));
 }
 
+/** Scale every box vertically around `pivotY`, keeping x/width fixed. */
+export function scaleVertical(boxes: BBox[], pivotY: number, scaleY: number): BBox[] {
+  return boxes.map((b) => ({
+    x: b.x,
+    y: pivotY + (b.y - pivotY) * scaleY,
+    w: b.w,
+    h: b.h * scaleY,
+  }));
+}
+
 export function unionBBox(boxes: BBox[]): BBox {
   if (boxes.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
   const minX = Math.min(...boxes.map((b) => b.x));

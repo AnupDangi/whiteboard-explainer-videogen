@@ -2,7 +2,7 @@ import type { BBox, LaidOutElement, LaidOutScene, ResolvedScene } from '../types
 import { MIN_READABLE_FONT_PX, STYLE } from '../style.js';
 import { DENSE_TEMPLATES, TEMPLATES, applyAxisOverlapFix, type TemplateFn } from '../templates/definitions.js';
 import type { SlotAssignment } from '../templates/assign.js';
-import { unionBBox, scaleAround, type Rect } from './geometry.js';
+import { unionBBox, scaleAround, scaleVertical, type Rect } from './geometry.js';
 import { routeEdges } from './edges.js';
 import { fitEdgeLabels } from './edges.js';
 
@@ -156,6 +156,26 @@ export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): 
       const ids = [...boxes.keys()];
       const scaled = scaleAround(ids.map((id) => boxes.get(id)!), pivot, scale);
       boxes = new Map(ids.map((id, i) => [id, scaled[i]]));
+      // Anisotropic follow-up: uniform scaling saturates when content spans
+      // the full working width (maxScale ~= 1) while vertical room sits
+      // unused — wide-but-short boards then stall below the sparse floor
+      // (observed 28% vs 0.30). Grow height-only toward the target area,
+      // capped by vertical room; text only ever grows, never shrinks here.
+      const grown = unionBBox([...boxes.values()]);
+      const grownOccupancy = (grown.w * grown.h) / canvasArea;
+      if (grownOccupancy > 0 && grownOccupancy < min) {
+        const needY = Math.sqrt((target * canvasArea) / (grown.w * grown.h));
+        if (needY > 1 + 1e-9) {
+          // Recompute pivot/room from grown content (uniform step may have moved it).
+          const pivotY = grown.y + grown.h / 2;
+          const clampedY = Math.min(needY, (pivotY - rect.y) / (grown.h / 2), (rect.y + rect.h - pivotY) / (grown.h / 2));
+          if (clampedY > 1 + 1e-9) {
+            const idsY = [...boxes.keys()];
+            const scaledY = scaleVertical(idsY.map((id) => boxes.get(id)!), pivotY, clampedY);
+            boxes = new Map(idsY.map((id, i) => [id, scaledY[i]]));
+          }
+        }
+      }
     }
   }
 
