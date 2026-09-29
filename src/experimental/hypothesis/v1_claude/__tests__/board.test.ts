@@ -435,7 +435,7 @@ test('claim-target proximity: depictions far from their claim text are flagged f
   (contract as Record<string, unknown>).essentialClaims = [
     { id: 'mixing_claim', statement: 'Mixing combines flour and water.', conceptIds: ['src_a', 'src_b', 'src_p'], relations: [], evidenceSpanIds: ['src_a'] },
   ];
-  claimed.plainText = 'Mixing combines flour and water into dough. Much later, something unrelated happens far away in the kitchen.';
+  claimed.plainText = 'Mixing combines flour and water into dough. The mixture rests while the baker prepares the oven, cleans the counter, measures more ingredients, and preheats everything thoroughly. Much later, something unrelated happens far away.';
   claimed.claimSpans = [{ claimId: 'mixing_claim', exactText: 'Mixing combines flour and water', plainStart: 0, plainEnd: 31 }];
   claimed.mentions = [
     ...claimed.mentions,
