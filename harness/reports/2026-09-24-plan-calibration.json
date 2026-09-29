@@ -1,0 +1,385 @@
+{
+  "generatedAt": "2026-09-24T21:26:45.165Z",
+  "model": "qwen/qwen3.8-flash",
+  "sources": [
+    "ocean-tides",
+    "bicycle-balance",
+    "composting",
+    "rainbow-formation",
+    "mirror-images"
+  ],
+  "repeatsPerSource": 3,
+  "variants": [
+    {
+      "variant": "v3-baseline",
+      "attempts": 15,
+      "passed": 0,
+      "passRate": 0,
+      "failureCodeCounts": {
+        "S3_CALL_FAILED": 15
+      },
+      "totalCostUsd": 0.039769254000000004
+    },
+    {
+      "variant": "v4-explicit-concepts",
+      "attempts": 15,
+      "passed": 6,
+      "passRate": 0.4,
+      "failureCodeCounts": {
+        "S3_CALL_FAILED": 9
+      },
+      "totalCostUsd": 0.03701555
+    }
+  ],
+  "attempts": [
+    {
+      "sourceId": "ocean-tides",
+      "variant": "v3-baseline",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002748042,
+      "durationMs": 54474,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "ocean-tides",
+      "variant": "v3-baseline",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.00285057,
+      "durationMs": 60347,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "ocean-tides",
+      "variant": "v3-baseline",
+      "attempt": 3,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.00239966,
+      "durationMs": 53611,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "ocean-tides",
+      "variant": "v4-explicit-concepts",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002547954,
+      "durationMs": 46881,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "ocean-tides",
+      "variant": "v4-explicit-concepts",
+      "attempt": 2,
+      "passed": true,
+      "repairs": 1,
+      "costUsd": 0.002438412,
+      "durationMs": 51746,
+      "failureCodes": []
+    },
+    {
+      "sourceId": "ocean-tides",
+      "variant": "v4-explicit-concepts",
+      "attempt": 3,
+      "passed": true,
+      "repairs": 1,
+      "costUsd": 0.002266682,
+      "durationMs": 48268,
+      "failureCodes": []
+    },
+    {
+      "sourceId": "bicycle-balance",
+      "variant": "v3-baseline",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002889602,
+      "durationMs": 63800,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "bicycle-balance",
+      "variant": "v3-baseline",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.00257756,
+      "durationMs": 55381,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "bicycle-balance",
+      "variant": "v3-baseline",
+      "attempt": 3,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.00258535,
+      "durationMs": 57821,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "bicycle-balance",
+      "variant": "v4-explicit-concepts",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002571814,
+      "durationMs": 48907,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "bicycle-balance",
+      "variant": "v4-explicit-concepts",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0038494619999999997,
+      "durationMs": 70247,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "bicycle-balance",
+      "variant": "v4-explicit-concepts",
+      "attempt": 3,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002785652,
+      "durationMs": 56493,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "composting",
+      "variant": "v3-baseline",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002601588,
+      "durationMs": 55183,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "composting",
+      "variant": "v3-baseline",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.003076002,
+      "durationMs": 64835,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "composting",
+      "variant": "v3-baseline",
+      "attempt": 3,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002725692,
+      "durationMs": 53307,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "composting",
+      "variant": "v4-explicit-concepts",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.00260135,
+      "durationMs": 49113,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "composting",
+      "variant": "v4-explicit-concepts",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002513084,
+      "durationMs": 52709,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "composting",
+      "variant": "v4-explicit-concepts",
+      "attempt": 3,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0025112800000000003,
+      "durationMs": 51302,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "rainbow-formation",
+      "variant": "v3-baseline",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.00295559,
+      "durationMs": 56664,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "rainbow-formation",
+      "variant": "v3-baseline",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002624652,
+      "durationMs": 54943,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "rainbow-formation",
+      "variant": "v3-baseline",
+      "attempt": 3,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002324182,
+      "durationMs": 49116,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "rainbow-formation",
+      "variant": "v4-explicit-concepts",
+      "attempt": 1,
+      "passed": true,
+      "repairs": 1,
+      "costUsd": 0.002326912,
+      "durationMs": 54494,
+      "failureCodes": []
+    },
+    {
+      "sourceId": "rainbow-formation",
+      "variant": "v4-explicit-concepts",
+      "attempt": 2,
+      "passed": true,
+      "repairs": 1,
+      "costUsd": 0.0021251539999999998,
+      "durationMs": 61982,
+      "failureCodes": []
+    },
+    {
+      "sourceId": "rainbow-formation",
+      "variant": "v4-explicit-concepts",
+      "attempt": 3,
+      "passed": true,
+      "repairs": 0,
+      "costUsd": 0.001262124,
+      "durationMs": 35688,
+      "failureCodes": []
+    },
+    {
+      "sourceId": "mirror-images",
+      "variant": "v3-baseline",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002757596,
+      "durationMs": 55667,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "mirror-images",
+      "variant": "v3-baseline",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0025232839999999998,
+      "durationMs": 53099,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "mirror-images",
+      "variant": "v3-baseline",
+      "attempt": 3,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0021298840000000003,
+      "durationMs": 47789,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "mirror-images",
+      "variant": "v4-explicit-concepts",
+      "attempt": 1,
+      "passed": true,
+      "repairs": 1,
+      "costUsd": 0.002640618,
+      "durationMs": 53333,
+      "failureCodes": []
+    },
+    {
+      "sourceId": "mirror-images",
+      "variant": "v4-explicit-concepts",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002391016,
+      "durationMs": 52394,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "mirror-images",
+      "variant": "v4-explicit-concepts",
+      "attempt": 3,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002184036,
+      "durationMs": 52254,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    }
+  ],
+  "skippedSources": []
+}

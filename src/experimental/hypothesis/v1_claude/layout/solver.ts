@@ -1,0 +1,198 @@
+import type { BBox, LaidOutElement, LaidOutScene, ResolvedScene } from '../types.js';
+import { MIN_READABLE_FONT_PX, STYLE } from '../style.js';
+import { DENSE_TEMPLATES, TEMPLATES, applyAxisOverlapFix, type TemplateFn } from '../templates/definitions.js';
+import type { SlotAssignment } from '../templates/assign.js';
+import { unionBBox, scaleAround, scaleVertical, type Rect } from './geometry.js';
+import { routeEdges } from './edges.js';
+import { fitEdgeLabels } from './edges.js';
+
+const TITLE_BAND_H = 150;
+
+function workingRect(template: ResolvedScene['template']): Rect {
+  const safe = STYLE.canvas.safe;
+  const base: Rect = { x: safe, y: safe, w: STYLE.canvas.w - 2 * safe, h: STYLE.canvas.h - 2 * safe };
+  if (template === 'title_card') return base;
+  return { ...base, y: base.y + TITLE_BAND_H, h: base.h - TITLE_BAND_H };
+}
+
+function containerPad(): number {
+  return 32;
+}
+
+/**
+ * Element growth before placement: reference frames show icons ~120-200px
+ * with content covering ~50-70% of the frame, whereas union-bbox scaling
+ * alone only spreads small elements apart. Try uniform size factors from
+ * largest to smallest and keep the first placement that stays inside the
+ * working rect with no leaf overlaps. The single shrink factor (0.85) fits a
+ * scene whose measured content does not fit (e.g. a long formula beside a
+ * plot) rather than letting it run off the canvas; anything smaller is silent
+ * over-shrink and fails loudly at the solver fallback + readability gate (G6)
+ * instead. Growth factors that would set any text run below
+ * MIN_READABLE_FONT_PX are skipped up front when the scene contains labels
+ * (see placeWithGrowth) — this fixes the sub-32px composting labels.
+ */
+const GROWTH_FACTORS = [2.0, 1.8, 1.6, 1.45, 1.3, 1.15, 1.0, 0.85];
+
+function placementFits(boxes: Map<string, BBox>, rect: Rect, containerIds: Set<string>): boolean {
+  const leaves = [...boxes.entries()].filter(([id]) => !containerIds.has(id)).map(([, b]) => b);
+  const inside = leaves.every((b) => b.x >= rect.x - 0.5 && b.y >= rect.y - 0.5 && b.x + b.w <= rect.x + rect.w + 0.5 && b.y + b.h <= rect.y + rect.h + 0.5);
+  const overlapping = leaves.some((a, i) => leaves.some((b, j) => j > i && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
+  return inside && !overlapping;
+}
+
+/**
+ * Try the template at every growth factor >= 1 first, then its dense variant
+ * (if any) at the same factors, and only then the shrink factor (each
+ * shrink factor tries the template, then the dense variant). Growth scales
+ * text through the bbox/intrinsic ratio (see renderScene.ts), so any factor
+ * that would set the scene's smallest text run below MIN_READABLE_FONT_PX is
+ * skipped: a dense variant that keeps native size wins instead, and content
+ * that fits no readable factor falls through to the loud shrink-to-fit
+ * fallback (overlaps/readability are still reported by the gates, not hidden).
+ */
+function placeWithGrowth(template: TemplateFn, dense: TemplateFn | undefined, rect: Rect, assignments: SlotAssignment[], containerIds: Set<string>, minTextPx: number): Map<string, BBox> {
+  const readable = (g: number): boolean => minTextPx * g >= MIN_READABLE_FONT_PX - 1e-9;
+  const native = GROWTH_FACTORS.filter((g) => g >= 1 && readable(g));
+  const shrunk = GROWTH_FACTORS.filter((g) => g < 1 && readable(g));
+  const variants = dense ? [template, dense] : [template];
+  const attempts: Array<[TemplateFn, number]> = [
+    ...variants.flatMap((fn) => native.map((g) => [fn, g] as [TemplateFn, number])),
+    ...shrunk.flatMap((g) => variants.map((fn) => [fn, g] as [TemplateFn, number])),
+  ];
+  let fallback: Map<string, BBox> | undefined;
+  for (const [fn, g] of attempts) {
+    const grown = assignments.map((a) => ({ ...a, intrinsic: { w: a.intrinsic.w * g, h: a.intrinsic.h * g } }));
+    const { boxes: raw, axis } = fn(rect, grown);
+    const boxes = applyAxisOverlapFix(raw, axis, STYLE.element.gap);
+    if (fn === template) fallback = boxes;
+    if (placementFits(boxes, rect, containerIds)) return boxes;
+  }
+  // Nothing fit: shrink the smallest-factor placement uniformly into the working rect so it can never
+  // leave the safe area (overlaps/readability are still reported by the gates, not hidden).
+  const all = [...fallback!.values()];
+  const u = { x: Math.min(...all.map((b) => b.x)), y: Math.min(...all.map((b) => b.y)), r: Math.max(...all.map((b) => b.x + b.w)), b: Math.max(...all.map((b) => b.y + b.h)) };
+  const k = Math.min(1, rect.w / (u.r - u.x), rect.h / (u.b - u.y));
+  const ox = rect.x + (rect.w - (u.r - u.x) * k) / 2;
+  const oy = rect.y + (rect.h - (u.b - u.y) * k) / 2;
+  return new Map([...fallback!.entries()].map(([id, b]) => [id, { x: ox + (b.x - u.x) * k, y: oy + (b.y - u.y) * k, w: b.w * k, h: b.h * k }]));
+}
+
+export interface LayoutOptions {
+  /** Previous scene's laid-out elements, keyed by id, for carry-over continuity. */
+  previous?: Map<string, BBox>;
+}
+
+/**
+ * S8 — deterministic template layout (claude_pipeline.md §14). Procedure:
+ * template slot boxes -> measured sizes already baked into ResolvedElement
+ * -> axis overlap push -> container hugging -> carry-over pin -> occupancy
+ * scaling (skipped when carry-over is present, to keep continuity exact
+ * rather than silently drifting pinned elements — see docs/HANDOFF.md) ->
+ * edge routing. Fails loud (returns an occupancy/overflow signal in the
+ * caller's gate, never silently clips) if content cannot fit safe area.
+ */
+export function layoutScene(scene: ResolvedScene, options: LayoutOptions = {}): LaidOutScene {
+  const rect = workingRect(scene.template);
+  const containerIds = new Set(scene.elements.filter((e) => e.element.prim === 'container').map((e) => e.element.id));
+
+  const assignments: SlotAssignment[] = scene.elements.map((e) => ({
+    elementId: e.element.id,
+    intrinsic: e.intrinsicSize,
+    slot: e.element.slot,
+  }));
+
+  const template = TEMPLATES[scene.template];
+  const minTextPx = Math.min(Infinity, ...scene.elements.flatMap((e) => e.visual.texts.map((t) => t.size)));
+  let boxes = placeWithGrowth(template, DENSE_TEMPLATES[scene.template], rect, assignments, containerIds, minTextPx);
+
+  // Container hugging: a container's own box is the union of its children's
+  // final boxes (padded), never an independently placed slot box.
+  for (const e of scene.elements) {
+    if (e.element.prim !== 'container') continue;
+    const childBoxes = e.element.children.map((id) => boxes.get(id)).filter((b): b is BBox => Boolean(b));
+    if (childBoxes.length > 0) {
+      const pad = containerPad();
+      const u = unionBBox(childBoxes);
+      boxes.set(e.element.id, { x: u.x - pad, y: u.y - pad, w: u.w + pad * 2, h: u.h + pad * 2 });
+    }
+  }
+
+  // Carry-over: pin to the previous scene's exact position for continuity.
+  const carriedIds = new Set(scene.carryOver);
+  if (options.previous) {
+    for (const id of carriedIds) {
+      const prevBox = options.previous.get(id);
+      if (prevBox && boxes.has(id)) boxes.set(id, prevBox);
+    }
+  }
+
+  // Occupancy scaling: skipped when carry-over is active so pinned elements
+  // never drift between scenes (continuity takes precedence — documented
+  // trade-off, occupancy is a Warn-level gate per hypothesis/v1_claude/03).
+  const hasCarry = options.previous && carriedIds.size > 0;
+  const canvasArea = STYLE.canvas.w * STYLE.canvas.h;
+  if (!hasCarry && boxes.size > 0) {
+    const content = unionBBox([...boxes.values()]);
+    const occupancy = (content.w * content.h) / canvasArea;
+    const { min, target, max } = STYLE.occupancy;
+    if (occupancy > 0 && (occupancy < min || occupancy > max)) {
+      const targetArea = (occupancy < min ? target : max) * canvasArea;
+      let scale = Math.sqrt(targetArea / (content.w * content.h));
+      const pivot = { x: content.x + content.w / 2, y: content.y + content.h / 2 };
+      // Clamp by actual available room from the PIVOT to each of the four
+      // rect edges (not just a total-size ratio): content is rarely centered
+      // in `rect`, so scaling around its own center can push whichever side
+      // is already closest to a rect edge straight through it even when
+      // `rect.h / content.h` alone looks safe.
+      const halfW = content.w / 2;
+      const halfH = content.h / 2;
+      const roomLeft = pivot.x - rect.x;
+      const roomRight = rect.x + rect.w - pivot.x;
+      const roomUp = pivot.y - rect.y;
+      const roomDown = rect.y + rect.h - pivot.y;
+      const maxScale = Math.min(roomLeft / halfW, roomRight / halfW, roomUp / halfH, roomDown / halfH);
+      scale = Math.min(scale, maxScale);
+      const ids = [...boxes.keys()];
+      const scaled = scaleAround(ids.map((id) => boxes.get(id)!), pivot, scale);
+      boxes = new Map(ids.map((id, i) => [id, scaled[i]]));
+      // Anisotropic follow-up: uniform scaling saturates when content spans
+      // the full working width (maxScale ~= 1) while vertical room sits
+      // unused — wide-but-short boards then stall below the sparse floor
+      // (observed 28% vs 0.30). Grow height-only toward the target area,
+      // capped by vertical room; text only ever grows, never shrinks here.
+      const grown = unionBBox([...boxes.values()]);
+      const grownOccupancy = (grown.w * grown.h) / canvasArea;
+      if (grownOccupancy > 0 && grownOccupancy < min) {
+        const needY = Math.sqrt((target * canvasArea) / (grown.w * grown.h));
+        if (needY > 1 + 1e-9) {
+          // Recompute pivot/room from grown content (uniform step may have moved it).
+          const pivotY = grown.y + grown.h / 2;
+          const clampedY = Math.min(needY, (pivotY - rect.y) / (grown.h / 2), (rect.y + rect.h - pivotY) / (grown.h / 2));
+          if (clampedY > 1 + 1e-9) {
+            const idsY = [...boxes.keys()];
+            const scaledY = scaleVertical(idsY.map((id) => boxes.get(id)!), pivotY, clampedY);
+            boxes = new Map(idsY.map((id, i) => [id, scaledY[i]]));
+          }
+        }
+      }
+    }
+  }
+
+  const content = boxes.size > 0 ? unionBBox([...boxes.values()]) : { x: 0, y: 0, w: 0, h: 0 };
+  const occupancy = (content.w * content.h) / canvasArea;
+
+  const elements: LaidOutElement[] = scene.elements.map((e) => ({
+    id: e.element.id,
+    element: e.element,
+    resolution: e.resolution,
+    visual: e.visual,
+    intrinsicSize: e.intrinsicSize,
+    strokeLength: e.strokeLength,
+    bbox: boxes.get(e.element.id) ?? { x: rect.x, y: rect.y, w: e.intrinsicSize.w, h: e.intrinsicSize.h },
+  }));
+
+  const edges = fitEdgeLabels(routeEdges(scene.edges, boxes), boxes);
+
+  return { sceneId: scene.sceneId, title: scene.title, template: scene.template, elements, edges, occupancy, carryOver: scene.carryOver, focus: scene.focus, ...(scene.boardIntent ? { boardIntent: scene.boardIntent } : {}) };
+}

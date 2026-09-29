@@ -6,6 +6,7 @@
     "outDir": "dist",
     "rootDir": ".",
     "strict": true,
+    "noUnusedLocals": true,
     "noEmitOnError": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -16,10 +17,6 @@
   },
   "include": [
     "src/**/*.ts",
-    "public/**/*.ts",
     "scripts/**/*.ts"
-  ],
-  "exclude": [
-    "scripts/publish-github.ts"
   ]
 }

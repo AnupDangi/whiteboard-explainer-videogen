@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.venv/
+out/
+models/
+*.log
+__pycache__/
+*.pyc
+.DS_Store
+g2pW/

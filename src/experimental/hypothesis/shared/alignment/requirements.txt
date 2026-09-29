@@ -1,0 +1,9 @@
+# Pinned runtime dependencies for the stable-ts sidecar. Word-boundary
+# calibration is currently unmeasured; pinned versions do not imply accuracy.
+# stable-ts pulls
+# in openai-whisper + torch transitively even though align.py only uses the
+# faster-whisper backend (stable_whisper.load_faster_whisper) -- that's a
+# packaging quirk of stable-ts itself, not something this sidecar needs; CPU
+# alignment at runtime goes through faster-whisper/ctranslate2 only.
+stable-ts==2.19.1
+faster-whisper==1.2.1

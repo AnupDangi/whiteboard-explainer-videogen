@@ -8,12 +8,15 @@ output/
 .DS_Store
 
 dist/
-.kokoro-venv/
 .claude/worktrees/
 
 # python build artifacts
 __pycache__/
 *.pyc
+.venv/
+.venv
+parse-engine/models/
+rag-engine/models/
 
 # local tooling artifacts
 .playwright-mcp/
@@ -21,3 +24,4 @@ app.server.out
 *.scenes/
 .agents/
 .claude/
+graphify-out/

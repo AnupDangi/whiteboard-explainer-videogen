@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "lamina-board-metrics/v1",
+  "generatedAt": "2026-09-27",
+  "sources": [
+    "harness/reference/lamina/index.json",
+    "harness/reference/lamina/OBSERVATIONS.md"
+  ],
+  "sceneCount": 33,
+  "videoCount": 4,
+  "sceneDurationSec": {
+    "median": 18.5,
+    "p25": 17.5,
+    "p75": 19.5,
+    "min": 10.5,
+    "max": 28.5
+  },
+  "sampleFramesPerScene": 6,
+  "revealTargetBand": {
+    "min": 5,
+    "max": 7
+  },
+  "boardCoverageBand": {
+    "min": 0.5,
+    "max": 0.7
+  },
+  "revealOrder": "outline-then-fill",
+  "provenance": {
+    "sceneDurationSec": "computed from startS/endS of all 33 entries in harness/reference/lamina/index.json (median 18.5, p25 17.5, p75 19.5, range 10.5-28.5)",
+    "sampleFramesPerScene": "every index.json entry lists 6 sampleTimesS values; used only as a sampling cadence, not a measured reveal count",
+    "revealTargetBand": "parity target centred on the 6-frame sampling cadence (6 +/- 1); not a claim about reference internals",
+    "boardCoverageBand": "observed end-of-scene coverage in OBSERVATIONS.md composition notes (50-70% of frame)",
+    "revealOrder": "observed drawing order in OBSERVATIONS.md (outline first, then fill); describes frames only, not how the reference was built"
+  },
+  "notes": [
+    "Observations describe reference frames only, not reference implementation.",
+    "Do not use for pixel similarity or visual-acceptance scoring."
+  ]
+}

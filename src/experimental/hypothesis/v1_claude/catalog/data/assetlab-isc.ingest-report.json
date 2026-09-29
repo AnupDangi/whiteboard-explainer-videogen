@@ -1,0 +1,9 @@
+{
+  "libraryId": "assetlab-isc",
+  "version": "1.0.0",
+  "accepted": 13,
+  "rejected": [],
+  "limitations": [
+    "SVG style attributes are not parsed; use presentation attributes for fill, stroke, stroke-width, and fill-rule."
+  ]
+}

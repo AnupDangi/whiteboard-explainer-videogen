@@ -8,29 +8,49 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
     "typecheck": "tsc --noEmit",
-    "start": "npm run build && node --env-file-if-exists=.env dist/src/server.js",
-    "test": "npm run build && APP_LOG_PATH=.data/test-app.log node --test test/*.test.js",
-    "benchmark": "npm run build && node dist/scripts/benchmark.js",
-    "export": "npm run build && node dist/scripts/export.js",
-    "test:live": "npm run build && node --env-file-if-exists=.env dist/scripts/live-evaluation.js",
-    "generate-video": "npm run build && node --env-file-if-exists=.env dist/scripts/generate-video.js",
-    "kokoro:setup": "sh scripts/setup-kokoro.sh",
-    "kokoro-server": "sh -c '${KOKORO_PYTHON:-.kokoro-venv/bin/python} scripts/kokoro_server.py'",
-    "kokoro-pool": "sh scripts/kokoro_pool.sh",
-    "bench:tts": "npm run build && node dist/scripts/bench-tts.js",
-    "router:report": "npm run build && node dist/scripts/router-report.js"
-  },
-  "optionalDependencies": {
-    "sharp": "0.35.4"
+    "voice-engine:setup": "sh -c 'cd voice-engine && npm run setup'",
+    "typecheck:hypothesis": "tsc --noEmit -p tsconfig.json",
+    "test:hypothesis": "npm run build && node scripts/shared-manifest.mjs --check && node --test dist/src/experimental/hypothesis/v1_claude/__tests__/*.test.js && python3 -m unittest discover -s src/experimental/hypothesis/shared/alignment -p 'test_*.py' && python3 -m unittest discover -s rag-engine -p 'test_*.py'",
+    "fixture:hypothesis": "npm run test:hypothesis",
+    "run:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/cli.js",
+    "preview:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/player/previewCli.js",
+    "run:hypothesis:live": "npm run build && node dist/src/experimental/hypothesis/v1_claude/liveCli.js",
+    "run:lesson": "npm run build && node dist/src/experimental/hypothesis/v1_claude/lessonCli.js",
+    "video:one-shot": "node scripts/one-shot-video.mjs",
+    "catalog:build": "node scripts/build-catalog.mjs && node scripts/embed-catalog.mjs",
+    "catalog:e4:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/catalog/e4CalibrationCli.js",
+    "plan:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/planCalibrationCli.js",
+    "scene:calibrate": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/sceneCalibrationCli.js",
+    "icons:ingest": "npm run build && node scripts/ingest-icon-library.mjs",
+    "reliability:run": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/reliabilityCli.js",
+    "reference:lamina": "node scripts/lamina-reference.mjs ../lamina-labs-video harness/reference/lamina",
+    "judge:hypothesis": "node dist/src/experimental/hypothesis/v1_claude/harness/judgeCli.js",
+    "judge:human:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/humanReviewCli.js",
+    "judge:human:pack:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/humanReviewPackCli.js",
+    "judge:e5:human:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/e5HumanReviewCli.js",
+    "judge:e5:human:pack:hypothesis": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/e5HumanReviewPackCli.js",
+    "strip:scene": "node scripts/render-strip.mjs",
+    "baseline:freeze": "node scripts/baselines.mjs --freeze",
+    "baseline:verify": "node scripts/baselines.mjs",
+    "metrics:boards": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/boardMetricsCli.js",
+    "validate:batch": "npm run build && node dist/src/experimental/hypothesis/v1_claude/harness/validationBatchCli.js",
+    "manifest:shared": "node scripts/shared-manifest.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
+    "domhandler": "^5.0.3",
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
+    "@resvg/resvg-js": "^2.6.2",
     "cheerio": "^1.2.0",
-    "ipaddr.js": "^2.5.0"
+    "ipaddr.js": "^2.5.0",
+    "mathjax-full": "^3.2.1",
+    "svg-path-properties": "^2.1.0",
+    "zod": "^4.6.5"
   }
 }

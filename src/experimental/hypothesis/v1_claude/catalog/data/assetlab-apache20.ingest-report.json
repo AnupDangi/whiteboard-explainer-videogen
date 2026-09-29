@@ -1,0 +1,90 @@
+{
+  "libraryId": "assetlab-apache20",
+  "version": "1.0.0",
+  "accepted": 0,
+  "rejected": [
+    {
+      "file": "svg/analytics-iconify-material-symbols-light-a.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/business-iconify-material-symbols-light-a.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/conversation-iconify-material-symbols-light-c.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/conveyor-belt-iconify-material-symbols-light-c.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/data-table-iconify-material-symbols-light-d.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/dataset-iconify-material-symbols-light-d.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/exercise-iconify-material-symbols-light-e.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/forest-iconify-material-symbols-light-f.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/gene-iconify-material-symbols-light-g.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/glucose-iconify-material-symbols-light-g.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/liquid-iconify-material-symbols-light-m.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/nutrition-iconify-material-symbols-light-n.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/phishing-iconify-material-symbols-light-p.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/privacy-iconify-material-symbols-light-p.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/recycling-iconify-material-symbols-light-r.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/savings-iconify-material-symbols-light-s.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/security-warning-iconify-material-symbols-light-s.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/storage-iconify-material-symbols-light-s.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/token-iconify-material-symbols-light-t.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    },
+    {
+      "file": "svg/valve-iconify-material-symbols-light-v.svg",
+      "reason": "no-ink: the reveal needs at least one dark outline stroke"
+    }
+  ],
+  "limitations": [
+    "SVG style attributes are not parsed; use presentation attributes for fill, stroke, stroke-width, and fill-rule."
+  ]
+}
