@@ -672,7 +672,11 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
   if (missingVideoSceneIds.length) failures.push({ code: 'video-scenes-incomplete', stage: 'render', message: `No rendered visual scene for ${missingVideoSceneIds.join(', ')}; visual-claim-coverage may have prevented S11 encoding`, hard: true });
   const encodeStartedAtMs = Date.now();
   const visualClaimCoverageBlocked = failures.some((failure) => failure.code === 'visual-claim-coverage');
-  if (videoScenes.length > 0 && !visualClaimCoverageBlocked) {
+  const partialDelivery = Boolean(options.allowPartialVideo) && visualClaimCoverageBlocked;
+  if (partialDelivery) {
+    failures.push({ code: 'video-partial-delivery', stage: 'render', message: 'Best-effort delivery: encoding rendered scenes although visual-claim-coverage blocked others; blocked scenes are listed, status stays failed', hard: false });
+  }
+  if (videoScenes.length > 0 && (!visualClaimCoverageBlocked || partialDelivery)) {
     videoPath = path.join(outputDir, 'video.mp4');
     try {
       const produce = async () => {
@@ -749,7 +753,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
         failures.push({ code: 'media-probe-failed', stage: 'encode', message: error instanceof Error ? error.message : String(error), hard: true });
       }
     }
-  } else if (visualClaimCoverageBlocked) {
+  } else if (visualClaimCoverageBlocked && !partialDelivery) {
     failures.push({ code: 'video-render-blocked-by-claim-coverage', stage: 'render', message: 'S11 video encoding was skipped because at least one scene failed the pre-render visual claim coverage gate', hard: true });
   } else {
     failures.push({ code: 'no-scenes', stage: 'render', message: 'no scenes survived planning/validation for this case — no video produced', hard: true });

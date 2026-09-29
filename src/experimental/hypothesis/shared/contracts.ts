@@ -49,6 +49,13 @@ export interface HypothesisRunOptions {
   maxCostUsd:number;
   /** Explicitly allow an invalid caption clock to omit captions while retaining a failed diagnostic MP4. */
   diagnosticCaptionlessVideo?:boolean;
+  /**
+   * Best-effort delivery: encode the rendered scenes even when
+   * visual-claim-coverage blocks some scenes. Blocked scenes stay listed in
+   * failures + lesson.lock.json `blockedScenes`; status stays failed. The
+   * default (false) remains fail-closed: no video unless every scene passes.
+   */
+  allowPartialVideo?:boolean;
   seed?:number;
 }
 

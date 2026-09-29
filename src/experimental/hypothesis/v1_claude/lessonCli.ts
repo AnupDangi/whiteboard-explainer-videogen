@@ -34,6 +34,7 @@ import { argValue, argValues, hasFlag } from './cli/args.js';
  *   [--example-order=ranked|reverse] [--stage-cache=<shared-cache-dir>]
  *   [--plan-despite-alignment-failure] # diagnostic S6 opt-in; run remains failed
  *   [--diagnostic-video-with-invalid-captions] # retain failed MP4 without captions when word timing is invalid
+ *   [--allow-partial-video] # best-effort delivery: encode rendered scenes even when coverage blocks others (failures still recorded, status stays failed)
  *   [--out=.data/hypothesis-runs/claude/lessons]
  */
 async function main(): Promise<void> {
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
   const exampleOrder = (arg('example-order') ?? 'ranked') as ExampleOrder;
   const planDespiteAlignmentFailure = hasFlag(args, 'plan-despite-alignment-failure');
   const diagnosticCaptionlessVideo = hasFlag(args, 'diagnostic-video-with-invalid-captions');
+  const allowPartialVideo = hasFlag(args, 'allow-partial-video');
   const scenePlanner = scenePlannerById(arg('scene-planner')).id;
   const sharedStageCache = arg('stage-cache') ? path.resolve(arg('stage-cache')!) : undefined;
   if (!['zero', 'text', 'mechanism', 'diverse'].includes(promptArm)) throw new Error(`unknown E5 prompt arm: ${promptArm}`);
@@ -149,6 +151,7 @@ async function main(): Promise<void> {
       cache: cacheMode,
       maxCostUsd: Math.max(0.001, lessonCostCapUsd(prepared.plannedDurationSec ?? lesson.targetDurationSec) - (await budgetLedger.snapshot()).spentUsd),
       ...(diagnosticCaptionlessVideo ? { diagnosticCaptionlessVideo: true } : {}),
+      ...(allowPartialVideo ? { allowPartialVideo: true } : {}),
     };
     try {
       const result = await runHypothesisLive(lessonToLiveInput(lesson.id, prepared), options, { openRouterApiKey: env.apiKey, plannerModel, budgetLedger, artifactStore, promptArm, exampleOrder, planDespiteAlignmentFailure, scenePlanner, executionTiming: { startedAtMs: executionStartedAtMs, pipelineStartedAtMs } });
