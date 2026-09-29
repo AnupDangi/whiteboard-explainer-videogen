@@ -625,6 +625,20 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
     const label = (canonical ?? mention.phrase).split(/\s+/).slice(0, MAX_LABEL_WORDS).join(' ');
     nodes.push({ id: NODE_IDS[nodes.length], mention: mention.id, concept: concept.id, icon, label, role: 'item' });
   }
+  // Coverage completeness: every required concept must be drawable, or B3
+  // fails the fallback on omitted concepts/relations. Concepts the narration
+  // never mentions get a labelled box anchored at scene start (VSR ladder:
+  // labelled primitive beats a missing depiction). Mentioned concepts keep
+  // their mention anchors for reveal timing.
+  const required = input.planningContext?.sceneContract.requiredConceptIds ?? [];
+  for (const conceptId of required) {
+    if (nodes.length >= MAX_BOARD_NODES || used.has(conceptId)) continue;
+    used.add(conceptId);
+    const concept = input.teachingContext?.concepts?.find((c) => c.id === conceptId);
+    const label = (canonicalTerm(input, conceptId) ?? concept?.label ?? conceptId).split(/\s+/).slice(0, MAX_LABEL_WORDS).join(' ');
+    const firstMention = input.mentions[0]?.id ?? 'sceneStart';
+    nodes.push({ id: NODE_IDS[nodes.length], mention: firstMention, concept: conceptId, icon: LABEL_ONLY, label, role: 'item' });
+  }
   const conceptNode = new Map(nodes.map((node) => [node.concept, node.id]));
   const shownRelations = (input.teachingContext?.relations ?? []).filter((relation) => conceptNode.has(relation.from) && conceptNode.has(relation.to) && relation.from !== relation.to);
   const outDegree = new Map<string, number>();

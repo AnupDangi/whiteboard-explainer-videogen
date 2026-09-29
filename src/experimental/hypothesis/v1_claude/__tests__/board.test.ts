@@ -450,3 +450,13 @@ test('claim-target proximity: depictions far from their claim text are flagged f
   near.visualIntents = [{ claimId: 'mixing_claim', strategy: 'literal', targets: [{ kind: 'element', elementId: 'n1', evidenceSpanIds: ['src_a'] }] }];
   assert.ok(!boardProblems(near, claimed, boardEnums(claimed)).some((p) => p.includes('never names it nearby')));
 });
+
+test('fallback covers required concepts the narration never mentions', () => {
+  const claimed = makeScene(WORDS);
+  const contract = claimed.planningContext!.sceneContract as unknown as { requiredConceptIds: string[] };
+  // src_o (dough) is required but has no mention pointing at it here.
+  claimed.mentions = claimed.mentions.filter((m) => m.id !== 'm_o');
+  const fb = fallbackBoard(claimed);
+  const shown = new Set(fb.nodes.map((n) => n.concept));
+  for (const id of contract.requiredConceptIds) assert.ok(shown.has(id), `required concept ${id} shown`);
+});
