@@ -653,7 +653,7 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
     toElementId: conceptNode.get(relation.to)!,
     relationType: relation.type as NonNullable<import('../types.js').Edge['factualRelation']>['type'],
   }));
-  const visualIntents = (input.planningContext?.sceneContract.essentialClaims ?? []).map((claim) => {
+  const visualIntents = (input.planningContext?.sceneContract.essentialClaims ?? []).flatMap((claim) => {
     const targets: import('../types.js').VisualIntent['targets'] = [];
     for (const node of nodes) {
       if (claim.conceptIds.includes(node.concept)) {
@@ -667,7 +667,9 @@ export function fallbackBoard(input: PlannerSceneInput): Board {
         targets.push({ kind: 'edge', ...edge, evidenceSpanIds: claim.evidenceSpanIds.slice(0, 3) });
       }
     }
-    return { claimId: claim.id, strategy: 'literal' as const, targets };
+    // A claim the fallback genuinely does not depict gets no intent: B3
+    // reports the gap instead of the schema rejecting an empty target list.
+    return targets.length ? [{ claimId: claim.id, strategy: 'literal' as const, targets }] : [];
   });
   return { schemaVersion: BOARD_SCHEMA_VERSION, title, layout, nodes, visual: layout === 'compare' ? { kind: 'comparison' } : { kind: 'process' }, visualIntents };
 }
