@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { z } from 'zod';
 import type { PlannerSceneInput } from '../planner/prompt.js';
 import { goodBoard, makeScene, WORDS } from './support/boardScene.js';
-import { boardEnums, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
+import { boardEnums, boardProblems, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
 
 const scene = makeScene(WORDS);
 
@@ -427,4 +427,26 @@ test('fallback board synthesizes one visual intent per essential claim over show
   assert.equal(intent.strategy, 'literal');
   assert.ok(intent.targets.length > 0, 'fallback depicts what it shows');
   assert.ok(intent.targets.every((t) => (t.evidenceSpanIds ?? []).length > 0), 'every fallback target cites claim spans');
+});
+
+test('claim-target proximity: depictions far from their claim text are flagged for repair', () => {
+  const claimed = makeScene(WORDS);
+  const contract = claimed.planningContext!.sceneContract as unknown as { essentialClaims: unknown };
+  (contract as Record<string, unknown>).essentialClaims = [
+    { id: 'mixing_claim', statement: 'Mixing combines flour and water.', conceptIds: ['src_a', 'src_b', 'src_p'], relations: [], evidenceSpanIds: ['src_a'] },
+  ];
+  claimed.plainText = 'Mixing combines flour and water into dough. Much later, something unrelated happens far away in the kitchen.';
+  claimed.claimSpans = [{ claimId: 'mixing_claim', exactText: 'Mixing combines flour and water', plainStart: 0, plainEnd: 31 }];
+  claimed.mentions = [
+    ...claimed.mentions,
+    { id: 'm_far', phrase: 'something unrelated happens far away' },
+  ];
+  const board = goodBoard();
+  board.nodes.push({ id: 'n5', mention: 'm_far', concept: 'src_o', icon: 'label', label: 'far away', role: 'item' });
+  board.visualIntents = [{ claimId: 'mixing_claim', strategy: 'literal', targets: [{ kind: 'element', elementId: 'n5', evidenceSpanIds: ['src_a'] }] }];
+  const problems = boardProblems(board, claimed, boardEnums(claimed));
+  assert.ok(problems.some((p) => p.includes('never names it nearby')), JSON.stringify(problems));
+  const near = goodBoard();
+  near.visualIntents = [{ claimId: 'mixing_claim', strategy: 'literal', targets: [{ kind: 'element', elementId: 'n1', evidenceSpanIds: ['src_a'] }] }];
+  assert.ok(!boardProblems(near, claimed, boardEnums(claimed)).some((p) => p.includes('never names it nearby')));
 });

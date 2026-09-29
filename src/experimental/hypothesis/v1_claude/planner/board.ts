@@ -30,7 +30,7 @@ import { RELATION_TYPES } from '../plan/schemas.js';
 export const BOARD_SCHEMA_VERSION = 'claude-board/v3';
 export const BOARD_PROMPT_VERSION = `board-prompt-v18-claim-timing+${BOARD_BANK_VERSION}`;
 /** S6 cache stage version: bump whenever board validation or compilation changes, so cached results from older rules are never replayed. */
-export const BOARD_STAGE_VERSION = 'board-10-fallback-intents';
+export const BOARD_STAGE_VERSION = 'board-11-claim-proximity';
 export const BOARD_LAYOUTS = ['flow', 'fan_out', 'convergence', 'list', 'compare', 'cycle', 'hub'] as const;
 export const BOARD_ROLES = ['input', 'process', 'output', 'item', 'attribute'] as const;
 export const LABEL_ONLY = 'label';
@@ -248,6 +248,25 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
     const expected = new Set(claims.map((claim) => claim.id));
     const seenClaims = new Set<string>();
     const nodeIds = new Set(board.nodes.map((node) => node.id));
+    const nodeById = new Map(board.nodes.map((node) => [node.id, node]));
+    const mentionPhrase = new Map(input.mentions.map((mention) => [mention.id, mention.phrase.toLowerCase()]));
+    const claimText = new Map((input.claimSpans ?? []).map((span) => [span.claimId, input.plainText.slice(span.plainStart, span.plainEnd).toLowerCase()]));
+    // Depiction-claim proximity: a target drawn when its mention is spoken
+    // must be named inside (or adjacent to) the claim's exact spoken text,
+    // or the drawing lands seconds from its claim and fails the B3 reveal
+    // window. Checked textually here so the one repair can fix it.
+    const PROXIMITY_CHARS = 80;
+    const nearClaim = (claimId: string, nodeId: string): boolean => {
+      const text = claimText.get(claimId);
+      const node = nodeById.get(nodeId);
+      if (text === undefined || !node) return true;
+      const phrase = mentionPhrase.get(node.mention) ?? '';
+      if (!phrase) return true;
+      const at = input.plainText.toLowerCase().indexOf(text);
+      if (at < 0) return true;
+      const window = input.plainText.toLowerCase().slice(Math.max(0, at - PROXIMITY_CHARS), at + text.length + PROXIMITY_CHARS);
+      return window.includes(phrase);
+    };
     const claimSpans = new Map(claims.map((claim) => [claim.id, new Set(claim.evidenceSpanIds)]));
     for (const intent of board.visualIntents ?? []) {
       if (!expected.has(intent.claimId)) problems.push(`visual intent names unknown essential claim ${intent.claimId}`);
@@ -257,6 +276,13 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
         if (target.kind === 'element' && target.elementId !== 'visual' && !nodeIds.has(target.elementId)) problems.push(`claim ${intent.claimId} targets unknown element ${target.elementId}`);
         if (target.kind === 'element' && target.elementId === 'visual' && ['process', 'comparison'].includes(board.visual.kind)) problems.push(`claim ${intent.claimId} targets absent structured visual`);
         if (target.kind === 'edge' && (!nodeIds.has(target.fromElementId) || !nodeIds.has(target.toElementId))) problems.push(`claim ${intent.claimId} targets an edge with unknown endpoint`);
+        const depictedIds = target.kind === 'element' ? [target.elementId] : [target.fromElementId, target.toElementId];
+        for (const depictedId of depictedIds) {
+          if (depictedId !== 'visual' && !nearClaim(intent.claimId, depictedId)) {
+            problems.push(`claim ${intent.claimId} is depicted by ${depictedId} but the claim text never names it nearby; attach the claim to nodes its exact spoken text names (depictions far from their claim fail validation)`);
+            break;
+          }
+        }
         const allowed = claimSpans.get(intent.claimId);
         if (allowed && !(target.evidenceSpanIds ?? []).some((span) => allowed.has(span))) problems.push(`claim ${intent.claimId} target cites no evidence span listed for that claim (copy 1-3 span IDs from the claim)`);
       }
