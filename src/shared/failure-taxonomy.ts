@@ -106,7 +106,7 @@ export function withFailureClass<T extends { code: string }>(failure: T): T & { 
 }
 
 /**
- * SIMI-60 fixed 60s baseline reclassification (docs/SIMI-60-BENCHMARK.md F1-F4).
+ * SIMI-60 fixed 60s baseline reclassification (docs/archive/SIMI-60-BENCHMARK.md F1-F4).
  * Frozen run; values below only label already-recorded codes.
  *
  * - reasoning_modes (F1+F2): 4 codes planner-repair-failed, planner-fallback,

@@ -2465,3 +2465,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Deleted:** `.superpowers/` (1.0M SDD history, zero code refs), `hypothesis/v1_claude/` (spec pack 00-05; only comment section-citations remain, now noted in CLAUDE.md/ARCHITECTURE.md). `bench/` kept whole (64K: frozen dev-set manifest + pinned sources + probes feed live runs). `harness/{baselines,reference,reports}` kept (judge/boardMetrics read reference; baselines.mjs reads baselines/; reports are cited evidence). `docs/` now: ARCHITECTURE, HANDOFF, 2 AUDITs, SIMI-60-BENCHMARK, archive/, superpowers/plans (plan-lock frozen intact).
 - **Output:** 100 -> 30 files, 10 video sets kept: tfm12-1800 (30min), tfm10/11/13/14/15/16, fix10-half-life, root-flat-verify, root-cleanup-verify. Rich/goal/older batches removed (run dirs in .data retained).
 - **Verification:** `test:hypothesis` exit 0, 964 pass. v2 worktree untouched.
+
+## Continuation — 2026-10-03, cleanup round 3: skills/docs/harness + post-cleanup video
+
+- **Video proof (after rounds 1-2):** `post-cleanup-verify` osmosis 60s via direct lessonCli: **draft 5/5, 0 hard, 1 fallback, $0.0287, 309s wall, 105.8s 1080p H264+AAC**. Copy replaces fix10-half-life in `output/goal-videos/` (10 sets held). Full run in `.data/post-cleanup-verify/`.
+- **Skills:** deleted `canvas`, `whiteboard-planner`, `visual-director`, `prompt-builder` — all described a retired architecture (`src/engine.ts`, `src/icons.ts`, 2-scene chapters, `scripts/generate-video.js`), zero references anywhere. Rewrote `video-generation/SKILL.md` to the real surface (`video:one-shot`, lessonCli, preview, judge, draft rule). Live prompt is `src/planner/sceneDirectorSkill.ts`, self-contained.
+- **Docs:** `AUDIT-2026-09-23` (self-marked superseded), `AUDIT-2026-09-27`, `SIMI-60-BENCHMARK` -> `docs/archive/`. Kept: ARCHITECTURE.md (updated), HANDOFF.md, superpowers/plans (plan-lock frozen). Production push needs only ARCHITECTURE.md + plan-lock + code; AUDITs are history.
+- **Harness kept whole:** `reference/` (9.5M judge inputs, read by judgeCli/boardMetricsCli), `baselines/` (read by baselines.mjs), `reports/` (156K cited evidence incl. bakeoff). Nothing dead.
+- **Verification:** `test:hypothesis` exit 0, 964 pass.
