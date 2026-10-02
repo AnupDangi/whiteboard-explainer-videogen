@@ -87,6 +87,10 @@ async function main() {
   const v2 = JSON.parse(v2Bytes.toString('utf8'));
   if (v2.parentManifestSha256 !== frozenManifestSha256) throw new Error('V2 evidence inventory does not reference the frozen v1 manifest');
   for (const entry of v2.entries) {
+    // Entries outside the repo (e.g. `../lamina-labs-video/`, a sibling
+    // checkout that is never committed and absent in CI) are reported, never
+    // verified. Missing repo files and hash mismatches still fail closed.
+    if (entry.path.startsWith('../')) { (globalThis.__externalRefs ??= []).push(entry.path); continue; }
     try { if (await hashFile(entry.path) !== entry.sha256) changed.push(entry.path); }
     catch {
       // `.data/` holds gitignored local scratch (pruned 2026-10-03; kept videos
@@ -98,6 +102,7 @@ async function main() {
   }
   if (changed.length) throw new Error(`Frozen evidence changed:\n${changed.join('\n')}`);
   if (globalThis.__prunedScratch?.length) console.log(`note: ${globalThis.__prunedScratch.length} v2 .data scratch entries pruned from disk (unverifiable, not counted as verified)`);
+  if (globalThis.__externalRefs?.length) console.log(`note: ${globalThis.__externalRefs.length} v2 external (outside-repo) entries skipped, not verified`);
   console.log(`verified ${manifest.entries.length} v1 and ${v2.entries.length} v2 evidence files; missing test sets: ${manifest.missingSets.map((x) => x.id).join(', ')}`);
   // Reviewed relocation (flat src/ layout): v3 carries the same fixture bytes at
   // new paths. v1 keeps reporting old paths as missing/changed (frozen history);
