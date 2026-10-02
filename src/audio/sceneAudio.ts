@@ -54,7 +54,7 @@ export async function synthesizeSceneAudio(request: SceneAudioRequest, deps: Sce
     const generated = await withHostResourcePermit('tts-alignment', DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY, () => aligner(request.text, { language: request.language, voice: request.voice, provider: 'auto', model: 'base' }));
     return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
   };
-  const cacheInput = { text: request.text, language: request.language, voice: request.voice, provider: 'auto', model: 'base', tts: deps.aligner ? 'injected' : tts, calibrationMedianErrorMs: request.calibrationMedianErrorMs };
+  const cacheInput = { text: request.text, language: request.language, voice: request.voice, provider: 'auto', model: 'base', ...(tts === 'local' ? {} : { tts }), calibrationMedianErrorMs: request.calibrationMedianErrorMs };
   if (!deps.artifactStore) {
     const payload = await generate();
     return { ...fromPayload(payload), cacheHit: false };

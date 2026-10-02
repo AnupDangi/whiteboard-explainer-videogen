@@ -9,7 +9,7 @@ import { beatContextFor, validateBeatPlan, type BeatContext } from './validate.j
 import { emptyTrace } from '../../structured/trace.js';
 
 export interface BeatSection { id: string; title: string; goal: string; conceptIds: string[]; budgetSec: number; contract?: SceneContract }
-export interface BeatStageModel { model: string; apiKey: string; remainingBudgetUsd: number; budgetLedger?: PersistentBudgetLedger; fetcher?: typeof fetch; client?: ModelClient }
+export interface BeatStageModel { /** ISO 639-1 language the narration is written in (default en). */ language?: string; model: string; apiKey: string; remainingBudgetUsd: number; budgetLedger?: PersistentBudgetLedger; fetcher?: typeof fetch; client?: ModelClient }
 
 /** S3b: the beats of one scene, planned from its S3 contract and the concept graph. The model sees no source text and writes no wording. */
 export async function planSceneBeats(input: { section: BeatSection; graph: ConceptGraph }, m: BeatStageModel): Promise<StructuredCallResult<TeachingBeat[]> & { context?: BeatContext }> {

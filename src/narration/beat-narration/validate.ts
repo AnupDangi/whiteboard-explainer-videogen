@@ -11,6 +11,10 @@ export interface NarrationContext {
   durationSec: number;
   /** Concept labels the speaker may stress. */
   emphasisCandidates: string[];
+  /** ISO 639-1 language of the speech (default en). */
+  language?: string;
+  /** Where this scene sits in the lesson, so the speech continues one talk instead of restarting. */
+  lesson?: { title: string; sceneIndex: number; sceneCount: number; previous?: { title: string; goal: string }; next?: { title: string; goal: string } };
 }
 
 /** Speech that depends on the picture instead of teaching the idea (screen-dependent phrasing, final_plan/03 §12). */

@@ -30,6 +30,14 @@ export interface BeatStagesResult {
 }
 
 const BEAT_PROVIDER_CONCURRENCY = 4;
+
+/** The scene's place in the lesson: what came before and what comes next, so each scene bridges from the last one. */
+function lessonPosition(plan: TeachingPlan, sceneId: string): NonNullable<NarrationContext['lesson']> {
+  const index = Math.max(0, plan.sections.findIndex((s) => s.id === sceneId));
+  const brief = (s?: TeachingPlan['sections'][number]) => (s ? { title: s.title, goal: s.goal } : undefined);
+  const previous = brief(plan.sections[index - 1]); const next = brief(plan.sections[index + 1]);
+  return { title: plan.intro?.sourceTitle ?? plan.sections[0]?.title ?? '', sceneIndex: index, sceneCount: plan.sections.length, ...(previous ? { previous } : {}), ...(next ? { next } : {}) };
+}
 const numbersIn = (texts: readonly string[]): Set<string> => new Set(texts.flatMap((text) => text.match(/\d+(?:\.\d+)?/g) ?? []));
 
 /** S3b + S4 in beat mode: per scene, plan the teaching beats, then write the speech of each beat. Scenes run in parallel. */
@@ -49,6 +57,8 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
       sceneId: section.id, beats: beats.value, durationSec: beats.context.durationSec,
       allowedNumbers: numbersIn([...claims.map((claim) => claim.statement), ...evidence, ...definitions, sourceExcerpt]),
       emphasisCandidates: section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.label ?? []),
+      ...(m.language ? { language: m.language } : {}),
+      lesson: lessonPosition(plan, section.id),
     };
     const narration = await writeBeatNarration({ ctx, scene: { title: section.title, goal: section.goal }, sourceExcerpt }, stage);
     return { section, beats, narration, ctx };

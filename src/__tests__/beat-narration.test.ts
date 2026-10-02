@@ -124,3 +124,14 @@ test('speech with a symbol the voice and aligner cannot read is a pointer proble
   const problems = validateSceneNarration(symbolic, ctx) as Array<{ path: string; message: string }>;
   assert.ok(problems.some((p) => p.path === '/beats/0/sentences/0' && /cannot be spoken or aligned/.test(p.message)));
 });
+
+test('the narration prompt names the language and tells the speaker where the scene sits in one continuous lesson', async () => {
+  const { buildNarrationPrompt } = await import('../narration/beat-narration/prompt.js');
+  const scene = { title: 'Why it moves', goal: 'explain the flow' };
+  const first = buildNarrationPrompt({ ...ctx, language: 'hi', lesson: { title: 'Lesson', sceneIndex: 0, sceneCount: 3, next: { title: 'Balance', goal: 'when it stops' } } }, scene, 'src');
+  assert.match(first.system, /idiomatic Hindi/); assert.match(first.system, /FIRST of 3 scenes/); assert.match(first.system, /Open with the question or puzzle/);
+  assert.match(first.user, /The next scene will cover: Balance/); assert.doesNotMatch(first.user, /previous scene taught/);
+  const last = buildNarrationPrompt({ ...ctx, lesson: { title: 'Lesson', sceneIndex: 2, sceneCount: 3, previous: { title: 'Why it moves', goal: 'flow' } } }, scene, 'src');
+  assert.match(last.system, /LAST of 3 scenes/); assert.match(last.system, /two-sentence recap/); assert.match(last.system, /idiomatic English/);
+  assert.match(last.user, /previous scene taught: Why it moves/);
+});

@@ -15,7 +15,7 @@ import { FEATURE_FLAGS, TEACHING_COMPILER_VERSION } from './featureFlags.js';
 import { runLessonV2 } from '../pipeline-v2/runLessonV2.js';
 import { encodeLockedLessonV2Clips } from '../pipeline-v2/clipsV2.js';
 import { loadAlignmentCalibration } from '../shared/alignment/calibration.js';
-import { closeSpeechWorkers, synthesizeAndAlign } from '../shared/alignment/align.js';
+import { closeSpeechWorkers } from '../shared/alignment/align.js';
 import { intakeWarningFailures, loadSourceDocFromBytes, loadSourceDocFromUrl, planSourceIntake } from '../intake/sourceIntake.js';
 import { buildSourceBundle, evidenceHitBudget } from '../intake/sourceBundle.js';
 import { indexSourceBundleWithRag } from '../plan/ragSidecar.js';
@@ -127,6 +127,9 @@ async function main(): Promise<void> {
   const outBase = arg('out') ?? '.data/hypothesis-runs/claude/lessons';
   const benchmarkAttemptId = arg('benchmark-attempt');
   const benchmarkAttempt = benchmarkAttemptId ? resolveDevelopmentAttempt(process.cwd(), benchmarkAttemptId) : undefined;
+  // --language=<ISO 639-1> sets the narration and speech language (default en); --tts=elevenlabs switches speech and word timing to ElevenLabs.
+  const language = arg('language') ?? 'en';
+  if (arg('tts')) process.env.TTS_PROVIDER = arg('tts');
   const cacheMode = (arg('cache') ?? (benchmarkAttempt ? 'cold' : 'warm')) as 'cold' | 'warm' | 'replay';
   const explicitSourcePaths = argValues(args, 'source');
   const sourcePaths = benchmarkAttempt && explicitSourcePaths.length === 0
@@ -261,7 +264,7 @@ async function main(): Promise<void> {
     const ragOutcome = lesson.sourceBundle && lesson.sourceDoc
       ? await indexSourceBundleWithRag({ sourceDoc: lesson.sourceDoc, sourceBundle: lesson.sourceBundle, query: lesson.instruction ?? lesson.title, workingDir: path.join(outBase, lesson.id, 'rag-index', lesson.sourceBundle.bundleId), ledger: budgetLedger, remainingBudgetUsd: Math.max(0, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd), providerEnv: env.ragSidecarEnv })
       : undefined;
-    const prepared = await prepareLesson(lesson, { model: contentModel, stageModels: argValue(args, 'content') ? {} : env.stageModels, apiKey: env.apiKey, budgetUsd: requestedBudgetUsd, budgetLedger, artifactStore, ...(env.visionModel ? { visionModel: env.visionModel } : {}), speechAligner: synthesizeAndAlign, speechLanguage: 'en', alignmentCalibrationMedianErrorMs: calibration.status === 'measured' ? calibration.medianAbsoluteBoundaryErrorMs! : undefined, beats: FEATURE_FLAGS.enabled.TEACHING_BEATS_V2 });
+    const prepared = await prepareLesson(lesson, { model: contentModel, stageModels: argValue(args, 'content') ? {} : env.stageModels, apiKey: env.apiKey, budgetUsd: requestedBudgetUsd, budgetLedger, artifactStore, ...(env.visionModel ? { visionModel: env.visionModel } : {}), speechLanguage: language, alignmentCalibrationMedianErrorMs: calibration.status === 'measured' ? calibration.medianAbsoluteBoundaryErrorMs! : undefined, beats: FEATURE_FLAGS.enabled.TEACHING_BEATS_V2 });
     if (ragOutcome) prepared.stageRuns.push({ stage: 'S1-rag-index', kind: ragOutcome.estimatedCostUsd > 0 || ragOutcome.cacheHit ? 'provider' : 'local', status: ['completed', 'disabled', 'skipped'].includes(ragOutcome.status) ? 'completed' : 'failed', ...(ragOutcome.skipReason ? { skipReason: ragOutcome.skipReason } : {}), durationMs: ragOutcome.elapsedMs, startedAt: new Date(ragStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: ragOutcome.estimatedCostUsd, ...(ragOutcome.artifactEstimatedCostUsd ? { artifactApiCostUsd: ragOutcome.artifactEstimatedCostUsd } : {}), ...(ragOutcome.estimatedCostUsd > 0 || ragOutcome.artifactEstimatedCostUsd ? { costEstimated: true } : {}), cacheHit: ragOutcome.cacheHit, fallbackCount: 0, ...(ragOutcome.actualUsage ? { usage: { calls: ragOutcome.actualUsage.callAttempts, promptTokens: ragOutcome.actualUsage.promptTokens, completionTokens: ragOutcome.actualUsage.completionTokens, cachedTokens: 0, costUsd: ragOutcome.estimatedCostUsd, repairs: 0, fallbacks: 0, cacheHits: ragOutcome.cacheHit ? 1 : 0 } } : {}), failures: ragOutcome.error ? [{ code: ragOutcome.retrievalStatus === 'miss' ? 'rag-exact-span-retrieval-miss' : ragOutcome.status === 'partial' ? 'rag-index-partial' : 'rag-index-failed', stage: 'S1-rag-index', message: ragOutcome.error, hard: false }] : [] });
     const sourceArtifactList = sourceArtifacts.get(lesson.id);
     if (sourceArtifactList) {
@@ -298,7 +301,7 @@ async function main(): Promise<void> {
     for (const f of prepFailures) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
     if (FEATURE_FLAGS.enabled.BOARD_OPS_V2) {
       // Teaching Compiler V2: beats -> real audio -> board operations -> persistent board -> frames. No V1 board planner.
-      const v2 = await runLessonV2({ lessonId: lesson.id, outputDir, prepared, plannerModel, apiKey: env.apiKey, budgetLedger, artifactStore, language: 'en', ...(calibration.status === 'measured' ? { calibrationMedianErrorMs: calibration.medianAbsoluteBoundaryErrorMs! } : {}), remainingBudgetUsd: Math.max(0.01, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd) });
+      const v2 = await runLessonV2({ lessonId: lesson.id, outputDir, prepared, plannerModel, apiKey: env.apiKey, budgetLedger, artifactStore, language, ...(calibration.status === 'measured' ? { calibrationMedianErrorMs: calibration.medianAbsoluteBoundaryErrorMs! } : {}), remainingBudgetUsd: Math.max(0.01, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd) });
       const v2Hard = v2.failures.filter((f) => f.hard);
       const v2CompletedAtMs = Date.now();
       await writeFile(path.join(outputDir, 'scorecard.json'), `${JSON.stringify(buildScorecard({ compilerVersion: TEACHING_COMPILER_VERSION, reports: [...callRecorder.reports()], coverageMetrics: v2.metrics }), null, 2)}\n`, 'utf8');
