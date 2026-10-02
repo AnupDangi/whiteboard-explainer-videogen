@@ -131,12 +131,17 @@ function opShapeProblems(op: BoardOp, state: BoardState, index: number, groundin
  * Simulate the ops on a copy of the board. A failed precondition or a mismatched `expects` becomes a problem at its JSON
  * pointer, so a repair patches that one op. A failed op leaves the board unchanged and simulation continues.
  */
+/** Density caps: a board must stay readable, so a scene draws a handful of things and a kit holds a handful of children. */
+export const MAX_BOARD_ELEMENTS = 10;
+export const MAX_KIT_CHILDREN = 6;
+
 export function validateBoardOps(ops: readonly BoardOp[], initial: BoardState, grounding?: Grounding): ValidatorProblem[] {
   const problems: ValidatorProblem[] = [];
   let state = initial;
   // Elements a failed op would have created. Later ops that need them fail only because of that one root cause, so they are
   // skipped silently: the model should repair the failed op, not a cascade of "does not exist".
   const phantom = new Set<string>();
+  let created = 0;
   const skip = (op: BoardOp): void => { for (const id of createdBy(op)) phantom.add(id); };
   ops.forEach((op, index) => {
     const previousBeat = ops[index - 1]?.beatId;
@@ -144,12 +149,21 @@ export function validateBoardOps(ops: readonly BoardOp[], initial: BoardState, g
     const shape = opShapeProblems(op, state, index, grounding);
     problems.push(...shape);
     if (shape.length > 0) { skip(op); return; }
+    const drawn = op.op === 'add' || op.op === 'replace' || op.op === 'merge' ? 1 : op.op === 'split' ? op.into.length : 0;
+    if (drawn > 0 && created + drawn > MAX_BOARD_ELEMENTS) {
+      problems.push({ path: `/ops/${index}`, message: `this scene already draws ${created} elements; at most ${MAX_BOARD_ELEMENTS} per scene, so reuse, move or restyle what is on the board instead of adding more` });
+      skip(op); return;
+    }
     try { state = applyOpAfter(state, op, previousBeat).state; } catch (error) {
       if (!(error instanceof BoardOpError)) throw error;
       problems.push({ path: `/ops/${index}`, message: error.message.replace(`${op.opId}: `, '') });
       skip(op);
       return;
     }
+    created += drawn;
+    const placed = op.op === 'add' ? [op.at] : op.op === 'move' ? [op.to] : op.op === 'split' ? op.into.map((part) => part.at) : op.op === 'merge' ? [op.into.at] : [];
+    for (const at of placed) if (at.container && containerContents(state, at.container).length > MAX_KIT_CHILDREN) problems.push({ path: `/ops/${index}`, message: `${at.container} would hold more than ${MAX_KIT_CHILDREN} children; slots become too small to read, so remove one first or use a second kit in another region` });
+
     (op.expects ?? []).forEach((expect, j) => { const message = unmet(expect, state); if (message) problems.push({ path: `/ops/${index}/expects/${j}`, message }); });
   });
   return problems;

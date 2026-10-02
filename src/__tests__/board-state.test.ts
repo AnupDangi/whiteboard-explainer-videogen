@@ -193,3 +193,13 @@ test('ids are never reused across elements and edges, and split parts need disti
   assert.throws(() => applyOp(state, split), /distinct ids; p is repeated/);
   assert.ok(validateBoardOps([split], state).some((problem) => typeof problem !== 'string' && problem.path === '/ops/0/into'));
 });
+
+test('density caps: a scene draws at most 10 elements and a kit holds at most 6 children, each reported at the op that crosses the cap', () => {
+  const tok = (id: string, container?: string) => add(`o.${id}`, 'b1', id, token(id), container ? { region: 'center', container, slot: 'top' } : { region: 'center' });
+  const many = [add('o.k', 'b0', 'k', stackKit, { region: 'center' }), ...Array.from({ length: 7 }, (_, i) => tok(`c${i}`, 'k'))];
+  const kitProblems = validateBoardOps(many, emptyBoardState()) as Array<{ path: string; message: string }>;
+  assert.equal(kitProblems.length, 1); assert.equal(kitProblems[0]!.path, '/ops/7'); assert.match(kitProblems[0]!.message, /more than 6 children/);
+  const crowd = Array.from({ length: 11 }, (_, i) => tok(`t${i}`));
+  const elementProblems = validateBoardOps(crowd, emptyBoardState()) as Array<{ path: string; message: string }>;
+  assert.equal(elementProblems[0]!.path, '/ops/10'); assert.match(elementProblems[0]!.message, /at most 10 per scene/);
+});
