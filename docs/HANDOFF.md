@@ -2480,3 +2480,8 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **`.data/` 21G -> ~800M:** deleted `goal-run/`, `one-shot/`, `hypothesis-runs/`, `review-videos-20260927/`, old 20260925 review pack. Kept: 3 verify runs, alignment models/review, stage caches, source assets. `.claude/` untouched.
 - **Fix found by migration:** `probeToolVersions` digest crashed on the deleted package-lock (staged) -> pipeline `unknown` -> 10 lock tests failed. Now digests `pnpm-lock.yaml`, skips missing files.
 - **Verification:** `pnpm run test:hypothesis` exit 0, 964 pass (run next).
+
+## Continuation — 2026-10-03, publish gate: baseline v3 + green everywhere
+
+- **Baseline:** flatten moved 5 frozen fixtures. `corrections/flat-layout-import-rewrite.v1.json` (import-only diff proof, mathLessons byte-identical) + `manifest.v3.json` (new paths, current hashes). `baselines.mjs` verifies v3 against the correction chain; v1/v2 bytes untouched. v2 `.data` scratch entries (40, pruned) report as unverifiable, never as verified; repo-file mismatches still fail closed.
+- **Gate status:** `baseline:verify` exit 0 (40 v1 + 77 v2 + 5 v3). `test:hypothesis` exit 0, 964 pass. Typecheck clean. Frozen-lockfile install clean.

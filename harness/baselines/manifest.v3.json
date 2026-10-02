@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "baseline-inventory/v3",
+  "baselineVersion": 3,
+  "frozenAt": "2026-10-03",
+  "immutable": true,
+  "parentCorrection": "harness/baselines/corrections/flat-layout-import-rewrite.v1.json",
+  "entries": [
+    {
+      "path": "src/shared/fixtures.ts",
+      "sha256": "bdf248e54dcb80ee67c7c7f3e5de9db9ac9cd0736ad64b58b0b579227a27bdad",
+      "role": "hand-authored-fixture-input",
+      "relocatedFrom": "src/experimental/hypothesis/shared/fixtures.ts"
+    },
+    {
+      "path": "src/fixtures/attentionScenes.ts",
+      "sha256": "c5caf71ac436a3c4ec72f5ddc769385d053909a56d81ca9ca5a74009b0ecc11a",
+      "role": "hand-authored-fixture-input",
+      "relocatedFrom": "src/experimental/hypothesis/v1_claude/fixtures/attentionScenes.ts"
+    },
+    {
+      "path": "src/fixtures/liveNarrationScripts.ts",
+      "sha256": "5d6e14efb38a55c7e01761592e7e866eeb919ba71a0201e70b993d99342edb83",
+      "role": "hand-authored-fixture-input",
+      "relocatedFrom": "src/experimental/hypothesis/v1_claude/fixtures/liveNarrationScripts.ts"
+    },
+    {
+      "path": "src/fixtures/mathLessons.ts",
+      "sha256": "6107986106bb7202e209c3fa3b7fb0412a8e0c663b294da841f74345ed9668de",
+      "role": "hand-authored-fixture-input",
+      "relocatedFrom": "src/experimental/hypothesis/v1_claude/fixtures/mathLessons.ts"
+    },
+    {
+      "path": "src/fixtures/mathScenes.ts",
+      "sha256": "60081a09281a3e1b612dc093807ed97e7bfdd8bac8b3a4ad1092c19574e8457b",
+      "role": "hand-authored-fixture-input",
+      "relocatedFrom": "src/experimental/hypothesis/v1_claude/fixtures/mathScenes.ts"
+    }
+  ]
+}

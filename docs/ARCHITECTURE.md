@@ -49,7 +49,7 @@ syllabus, concept graph, plan, and teaching contracts. A renderable lock fails
 closed when Node, pipeline, resvg, Rough.js, or ffmpeg cannot be identified.
 
 S8 uses the pinned Rough.js 4.6.6 package (MIT; package registry integrity is
-recorded in `package-lock.json`) only to compile procedural classroom-ink
+recorded in `pnpm-lock.yaml`) only to compile procedural classroom-ink
 strokes. It leaves approved catalog vectors and exact math, plot, code, and
 chemistry adapters untouched. Seeds bind renderer version, lesson, scene,
 element or edge, and profile; fixed paths and seeds are stored in the locked
