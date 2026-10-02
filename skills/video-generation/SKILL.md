@@ -16,7 +16,7 @@ Pipeline lives in flat `src/`: `intake plan narration audio planner assets rende
 ```bash
 pnpm run build
 pnpm run video:one-shot -- --prompt="Explain X simply" --source=bench/sources/half-life.md --duration=60 --id=my-run
-# --source=<file> | --url=<https-url> (exactly one) · --duration=60|300|600|1800
+# --source=<file> | --url=<https-url> (exactly one) · --duration=60-3600s (whole seconds; canonical 60|300|600|1800)
 # output: output/<id>-<timestamp>/video.mp4 + .vtt + contact-sheet.png + provenance.json
 ```
 

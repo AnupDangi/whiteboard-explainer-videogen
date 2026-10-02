@@ -2492,3 +2492,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Freed:** `~/.npm` cache removed (1.8G->0), `pnpm store prune` (3.8G orphans pruned), `.data` already 777M. `.claude/` untouched.
 - **Docs normalized to flat layout + pnpm:** ARCHITECTURE.md all stage paths -> `src/*`, commands -> pnpm; CLAUDE.md/AGENTS.md verify commands -> pnpm; `.env.example` intake path + commands; alignment README archive ref; video-generation skill already accurate.
 - **Gates:** typecheck clean, 964 pass, manifest 22/22, baseline green (40+77+5).
+
+## Continuation — 2026-10-03, CI gate + sweep removals (none)
+
+- **CI:** `.github/workflows/ci.yml` (`verify` job, ubuntu-latest, Node 22, Python 3.12, pnpm 10 frozen install): typecheck, full offline suite, baselines, diff-check. Test-only, no deploy, no secrets. Triggers on push/PR to main. Enable "Require status checks to pass" on main for enforcement.
+- **Dead-code verdict:** two agent sweeps found nothing removable — every flagged export has refs; scripts/CLIs/fixtures all wired; reference PNGs indexed; probe sources feed live runs. Zero deletions.
+- **Docs:** ARCHITECTURE stage paths normalized to `src/*`; SKILL duration range corrected; stale `.env.example`/README refs fixed.
+- **Gates re-verified:** 964 pass, baselines green, diff-check clean.
