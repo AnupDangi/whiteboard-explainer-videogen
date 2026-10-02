@@ -14,7 +14,7 @@ const tag = flag('tag', new Date().toISOString().replace(/[:.]/g, '-'));
 const env = { ...process.env, TEACHING_COMPILER_VERSION: 'v2', TEACHING_BEATS_V2: '1', BOARD_OPS_V2: '1', PERSISTENT_BOARD_V2: '1', TYPE_RESOLVER_V2: '1', LAYOUT_V2: '1', RENDER_PLAN_V2: '1' };
 const run = (language) => new Promise((resolve) => {
   const out = path.join('.data/lang-demo', tag, language);
-  const child = spawn('node', ['dist/src/run/lessonCli.js', `--source=${source}`, '--instruction=Teach the main idea of this source to a beginner.', `--duration=${flag('duration', '60')}`, `--id=${path.basename(source, path.extname(source))}-${language}`, '--cache=cold', '--tts=elevenlabs', `--language=${language}`, `--out=${out}`], { env });
+  const child = spawn('node', ['dist/src/run/lessonCli.js', `--source=${source}`, '--instruction=Teach the main idea of this source to a beginner.', `--duration=${flag('duration', '60')}`, `--id=${path.basename(source, path.extname(source))}-${language}`, '--cache=cold', '--tts=elevenlabs', `--language=${language}`, `--out=${out}`, ...(process.env.V2_BENCH_PLANNER ? [`--planner=${process.env.V2_BENCH_PLANNER}`] : [])], { env });
   let log = '';
   child.stdout.on('data', (d) => { log += d; }); child.stderr.on('data', (d) => { log += d; });
   child.on('close', () => resolve({ language, out, log }));

@@ -18,6 +18,9 @@ export function isSupportedLessonDuration(durationSec: number): boolean {
 
 /** Cap for a duration off the table: $0.10 per minute, clamped to [$0.10, $1]. */
 export function lessonCostCapUsd(durationSec: number): number {
+  // Explicit, owner-approved experiments only: LESSON_COST_CAP_USD=<0..2> replaces the table for the run (recorded by the budget ledger).
+  const override = Number(process.env.LESSON_COST_CAP_USD);
+  if (Number.isFinite(override) && override > 0 && override <= 2) return override;
   if (durationSec in LESSON_COST_CAP_USD) return LESSON_COST_CAP_USD[durationSec as LessonDurationSec];
   return Math.min(1, Math.max(0.1, durationSec / 60 * 0.1));
 }
