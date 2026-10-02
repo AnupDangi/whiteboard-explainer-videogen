@@ -2485,3 +2485,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 
 - **Baseline:** flatten moved 5 frozen fixtures. `corrections/flat-layout-import-rewrite.v1.json` (import-only diff proof, mathLessons byte-identical) + `manifest.v3.json` (new paths, current hashes). `baselines.mjs` verifies v3 against the correction chain; v1/v2 bytes untouched. v2 `.data` scratch entries (40, pruned) report as unverifiable, never as verified; repo-file mismatches still fail closed.
 - **Gate status:** `baseline:verify` exit 0 (40 v1 + 77 v2 + 5 v3). `test:hypothesis` exit 0, 964 pass. Typecheck clean. Frozen-lockfile install clean.
+
+## Continuation — 2026-10-03, agent sweep + doc normalization + push
+
+- **4 parallel agents:** dead-code hunt (2 test-only/extension-point exports kept by design; `assets:sync`/`reference:lamina` sibling paths confirmed present; HANDOFF history + frozen plan left alone), import cycles (one pre-existing runtime cycle layout/measure->assets/ladder->render/primitives, ESM-deferred, tests green; rest type-only), docs audit (fixed ~15 stale paths), security scan (clean: no secrets tracked, no eval, array-form spawns, allowlisted fetch, hardened preview server).
+- **Freed:** `~/.npm` cache removed (1.8G->0), `pnpm store prune` (3.8G orphans pruned), `.data` already 777M. `.claude/` untouched.
+- **Docs normalized to flat layout + pnpm:** ARCHITECTURE.md all stage paths -> `src/*`, commands -> pnpm; CLAUDE.md/AGENTS.md verify commands -> pnpm; `.env.example` intake path + commands; alignment README archive ref; video-generation skill already accurate.
+- **Gates:** typecheck clean, 964 pass, manifest 22/22, baseline green (40+77+5).

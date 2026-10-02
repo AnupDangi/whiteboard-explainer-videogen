@@ -38,7 +38,7 @@ human review never repairs timestamps or changes the live S5 provider.
 - Archived hand-authored or renderer-fixture audio is ineligible for this
   workflow and must not be used to measure timing.
 
-See `docs/HANDOFF.md` and `hypothesis/v1_claude/03-VALIDATION-HARNESS.md` for
+See `docs/HANDOFF.md` and `docs/archive/AUDIT-2026-09-27.md` for
 the dated evidence ledger.
 
 ## Blinded human word-boundary review
