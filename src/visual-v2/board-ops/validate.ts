@@ -134,6 +134,8 @@ function opShapeProblems(op: BoardOp, state: BoardState, index: number, groundin
 /** Density caps: a board must stay readable, so a scene draws a handful of things and a kit holds a handful of children. */
 export const MAX_BOARD_ELEMENTS = 10;
 export const MAX_KIT_CHILDREN = 6;
+/** Zoned kits split their width between zones, so each zone holds fewer. */
+export const MAX_ZONE_CHILDREN = 4;
 
 export function validateBoardOps(ops: readonly BoardOp[], initial: BoardState, grounding?: Grounding): ValidatorProblem[] {
   const problems: ValidatorProblem[] = [];
@@ -162,6 +164,7 @@ export function validateBoardOps(ops: readonly BoardOp[], initial: BoardState, g
     }
     created += drawn;
     const placed = op.op === 'add' ? [op.at] : op.op === 'move' ? [op.to] : op.op === 'split' ? op.into.map((part) => part.at) : op.op === 'merge' ? [op.into.at] : [];
+    for (const at of placed) if (at.container && at.zone && containerContents(state, at.container).filter((id) => state.elements[id]?.placement.zone === at.zone).length > MAX_ZONE_CHILDREN) problems.push({ path: `/ops/${index}`, message: `zone ${at.zone} of ${at.container} would hold more than ${MAX_ZONE_CHILDREN} children; each zone gets only part of the kit's width, so keep zones to ${MAX_ZONE_CHILDREN} or fewer` });
     for (const at of placed) if (at.container && containerContents(state, at.container).length > MAX_KIT_CHILDREN) problems.push({ path: `/ops/${index}`, message: `${at.container} would hold more than ${MAX_KIT_CHILDREN} children; slots become too small to read, so remove one first or use a second kit in another region` });
 
     (op.expects ?? []).forEach((expect, j) => { const message = unmet(expect, state); if (message) problems.push({ path: `/ops/${index}/expects/${j}`, message }); });

@@ -203,3 +203,10 @@ test('density caps: a scene draws at most 10 elements and a kit holds at most 6 
   const elementProblems = validateBoardOps(crowd, emptyBoardState()) as Array<{ path: string; message: string }>;
   assert.equal(elementProblems[0]!.path, '/ops/10'); assert.match(elementProblems[0]!.message, /at most 10 per scene/);
 });
+
+test('a zone of a zoned kit holds at most 4 children', () => {
+  const comp = { type: 'kit', kit: 'compartment', label: 'cell', paramsJson: '{"zones":["left","right"],"boundary":"semipermeable"}', provenance: 'metaphorical' };
+  const inZone = (i: number) => add(`o.z${i}`, 'b1', `z${i}`, token(`z${i}`), { region: 'center', container: 'cell', zone: 'left' });
+  const problems = validateBoardOps([add('o.cell', 'b0', 'cell', comp, { region: 'center' }), ...[0, 1, 2, 3, 4].map(inZone)], emptyBoardState()) as Array<{ path: string; message: string }>;
+  assert.equal(problems.length, 1); assert.equal(problems[0]!.path, '/ops/5'); assert.match(problems[0]!.message, /zone left of cell would hold more than 4/);
+});
