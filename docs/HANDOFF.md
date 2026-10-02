@@ -2499,3 +2499,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Dead-code verdict:** two agent sweeps found nothing removable — every flagged export has refs; scripts/CLIs/fixtures all wired; reference PNGs indexed; probe sources feed live runs. Zero deletions.
 - **Docs:** ARCHITECTURE stage paths normalized to `src/*`; SKILL duration range corrected; stale `.env.example`/README refs fixed.
 - **Gates re-verified:** 964 pass, baselines green, diff-check clean.
+
+## Continuation — 2026-10-03, v2b pnpm + v2 removal (root log)
+
+- Deleted unused worktree `.claude/worktrees/v2` (1.6G freed). v2b is the live branch.
+- v2b: already flat (`src/` + `pipeline-v2/structured/teaching/visual-v2` extras), switched npm->pnpm (locks imported, frozen installs), `lessonLock` pipeline-version probe hardened (pnpm-lock + missing-file guard), AGENTS/CLAUDE/docs/scripts commands -> pnpm. Committed in v2b as `2ea5fc5`.
+- v2b gates: typecheck clean, `test:hypothesis` exit 0, **1171 pass**.
+- Benchmark policy (`simi_benchmark_v1_1/BENCHMARK_POLICY.md`) read: strict invariants already mirrored (anti-hardcoding, lock hashes, evidence gates, draft-never-publish). Absolute thresholds need calibration — report ABSOLUTE_QUALITY_CERTIFICATION=UNAVAILABLE until then.
+- Root pnpm guideline: `docs/PNPM.md`.
