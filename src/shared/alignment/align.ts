@@ -58,7 +58,7 @@ export interface AlignedWord {
   endMs: number;
 }
 
-export type AlignerIdentity = 'stable-ts' | 'stable-ts-fast-mode' | 'torchaudio-wav2vec2-ctc' | 'stable-ts+collapsed-repair';
+export type AlignerIdentity = 'stable-ts' | 'stable-ts-fast-mode' | 'torchaudio-wav2vec2-ctc' | 'stable-ts+collapsed-repair' | 'elevenlabs-timestamps';
 
 export interface AlignmentResult {
   durationMs: number;
@@ -261,7 +261,7 @@ function validateAlignmentResult(value: unknown): AlignmentResult {
     if (typeof word.endMs !== 'number' || !Number.isFinite(word.endMs)) throw new Error(`forced alignment word[${index}].endMs is not a finite number`);
     return {word: word.word, startMs: word.startMs, endMs: word.endMs};
   });
-  const alignerValues: AlignerIdentity[] = ['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair'];
+  const alignerValues: AlignerIdentity[] = ['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair', 'elevenlabs-timestamps'];
   const aligner = record.aligner;
   if (aligner !== undefined && !alignerValues.includes(aligner as AlignerIdentity)) {
     throw new Error('forced alignment output has an unsupported aligner identity');

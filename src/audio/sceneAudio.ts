@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { elevenLabsAligner } from './elevenlabs.js';
 import { withHostResourcePermit } from '../shared/hostResourcePool.js';
 import { synthesizeAndAlign, type AlignedWord, type AlignerIdentity } from '../shared/alignment/align.js';
 import type { ContentAddressedArtifactStore } from '../run/artifactCache.js';
@@ -36,6 +37,8 @@ export interface SceneAudioDeps {
 }
 
 const ARTIFACT_META = { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID } as const;
+/** `TTS_PROVIDER=elevenlabs` switches speech and word timing to ElevenLabs; the default is the local voice engine plus forced alignment. */
+export const ttsProvider = (env: NodeJS.ProcessEnv = process.env): 'local' | 'elevenlabs' => (env.TTS_PROVIDER === 'elevenlabs' ? 'elevenlabs' : 'local');
 export const sceneAudioStage = (sceneId: string) => `S5-tts-alignment:${sceneId}`;
 
 /**
@@ -45,12 +48,13 @@ export const sceneAudioStage = (sceneId: string) => `S5-tts-alignment:${sceneId}
  * identical cached artifact for the same text, voice and calibration.
  */
 export async function synthesizeSceneAudio(request: SceneAudioRequest, deps: SceneAudioDeps = {}): Promise<SceneAudio> {
-  const aligner = deps.aligner ?? synthesizeAndAlign;
+  const tts = ttsProvider();
+  const aligner = deps.aligner ?? (tts === 'elevenlabs' ? elevenLabsAligner : synthesizeAndAlign);
   const generate = async () => {
     const generated = await withHostResourcePermit('tts-alignment', DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY, () => aligner(request.text, { language: request.language, voice: request.voice, provider: 'auto', model: 'base' }));
     return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, audioBase64: (await readFile(generated.audioPath)).toString('base64') };
   };
-  const cacheInput = { text: request.text, language: request.language, voice: request.voice, provider: 'auto', model: 'base', calibrationMedianErrorMs: request.calibrationMedianErrorMs };
+  const cacheInput = { text: request.text, language: request.language, voice: request.voice, provider: 'auto', model: 'base', tts: deps.aligner ? 'injected' : tts, calibrationMedianErrorMs: request.calibrationMedianErrorMs };
   if (!deps.artifactStore) {
     const payload = await generate();
     return { ...fromPayload(payload), cacheHit: false };

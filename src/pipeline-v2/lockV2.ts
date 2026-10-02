@@ -63,7 +63,7 @@ const AlignmentSchema = z.object({
   scenes: z.array(z.object({
     sceneId: z.string().min(1), durationMs: z.number().positive(),
     words: z.array(z.object({ word: z.string().min(1), startMs: z.number(), endMs: z.number() }).strict()).min(1),
-    aligner: z.enum(['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair']),
+    aligner: z.enum(['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair', 'elevenlabs-timestamps']),
     repairedWordIndexes: z.array(z.number().int().nonnegative()),
     calibration: z.object({ status: z.enum(['measured', 'unmeasured']), medianAbsoluteBoundaryErrorMs: z.number().nonnegative().optional() }).strict()
       .refine((value) => value.status === 'measured' ? value.medianAbsoluteBoundaryErrorMs !== undefined : value.medianAbsoluteBoundaryErrorMs === undefined, 'calibration status must match the recorded boundary error'),

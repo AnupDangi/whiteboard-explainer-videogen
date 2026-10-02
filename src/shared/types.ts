@@ -83,7 +83,7 @@ export interface AlignedAudio {
    * aligner among the contributing scenes (pass order: stable-ts ->
    * stable-ts-fast-mode -> torchaudio-wav2vec2-ctc -> stable-ts+collapsed-repair).
    */
-  provider: 'fixture' | 'stable-ts' | 'stable-ts-fast-mode' | 'torchaudio-wav2vec2-ctc' | 'stable-ts+collapsed-repair';
+  provider: 'fixture' | 'stable-ts' | 'stable-ts-fast-mode' | 'torchaudio-wav2vec2-ctc' | 'stable-ts+collapsed-repair' | 'elevenlabs-timestamps';
   wavPath: string;
   durationMs: number;
   /** Per scene, in narration order, word timings covering that scene's plainText only. */
