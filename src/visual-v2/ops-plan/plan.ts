@@ -10,7 +10,7 @@ export async function planSceneBoard(input: { ctx: BoardContext }, m: BeatStageM
   const { system, user } = buildBoardPrompt(ctx);
   return structuredCall({
     stage: 'board-ops', subject: `scene ${ctx.sceneId}`, model: m.model, apiKey: m.apiKey, system, user, schema: SceneBoardDraftSchema, schemaName: 'scene_board',
-    maxTokens: 7000, maxRepairs: 2, remainingBudgetUsd: m.remainingBudgetUsd, ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.client ? { client: m.client } : {}),
+    maxTokens: 7000, maxRepairs: 3, remainingBudgetUsd: m.remainingBudgetUsd, ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.client ? { client: m.client } : {}),
     validate: (draft) => validateSceneBoard(draft, ctx),
     // A board problem is repaired inside the operation it names, whichever of its fields needs to change.
     repairScope: (pointer) => pointer.replace(/^(\/ops\/\d+)(\/.*)?$/, '$1'),

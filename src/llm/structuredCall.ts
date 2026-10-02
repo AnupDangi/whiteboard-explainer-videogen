@@ -69,7 +69,7 @@ export interface StructuredCallOptions<T> {
   /** Semantic checks beyond the zod shape; return a list of problems (empty = valid). */
   validate?: (value: T) => ValidatorProblem[];
   /** Semantic repair attempts after the first response. Defaults to one for all existing stages. */
-  maxRepairs?: 1 | 2;
+  maxRepairs?: 1 | 2 | 3;
   /** `patch` (default): a failure with JSON pointers is repaired by patching those pointers only. `full` regenerates the document. Failures without a pointer always use the full prompt. */
   repairMode?: 'patch' | 'full';
   /** Widens the area a patch may touch for a rejected pointer (default: the pointer itself). A fix often belongs to the same operation or beat, not the exact field the validator named. */
