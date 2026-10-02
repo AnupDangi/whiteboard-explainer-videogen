@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "baseline-correction/v1",
+  "id": "flat-layout-import-rewrite.v1",
+  "date": "2026-10-03",
+  "reason": "flatten src/experimental/hypothesis/v1_claude into stage-named src/ dirs; only relative import specifiers rewritten by codemod, zero logic change (diffed against pre-move bytes; each file shows only its import lines changed, mathLessons.ts byte-identical)",
+  "review": "pending-human",
+  "files": [
+    {
+      "from": "src/experimental/hypothesis/shared/fixtures.ts",
+      "to": "src/shared/fixtures.ts",
+      "frozenSha256": "c29fa95a6aec22d864c0c941c0583bd4fbbc999bcf20d7537b5366f8609f83b4",
+      "currentSha256": "bdf248e54dcb80ee67c7c7f3e5de9db9ac9cd0736ad64b58b0b579227a27bdad",
+      "identical": false
+    },
+    {
+      "from": "src/experimental/hypothesis/v1_claude/fixtures/attentionScenes.ts",
+      "to": "src/fixtures/attentionScenes.ts",
+      "frozenSha256": "af6856c8bad382476774a4bcacdf672977337ee3001b4746be0737df694fcc78",
+      "currentSha256": "c5caf71ac436a3c4ec72f5ddc769385d053909a56d81ca9ca5a74009b0ecc11a",
+      "identical": false
+    },
+    {
+      "from": "src/experimental/hypothesis/v1_claude/fixtures/liveNarrationScripts.ts",
+      "to": "src/fixtures/liveNarrationScripts.ts",
+      "frozenSha256": "dc8c8398da0ceb09517a27e3383125019fffa60ed124284d73c7b2a89e437d31",
+      "currentSha256": "5d6e14efb38a55c7e01761592e7e866eeb919ba71a0201e70b993d99342edb83",
+      "identical": false
+    },
+    {
+      "from": "src/experimental/hypothesis/v1_claude/fixtures/mathLessons.ts",
+      "to": "src/fixtures/mathLessons.ts",
+      "frozenSha256": "6107986106bb7202e209c3fa3b7fb0412a8e0c663b294da841f74345ed9668de",
+      "currentSha256": "6107986106bb7202e209c3fa3b7fb0412a8e0c663b294da841f74345ed9668de",
+      "identical": true
+    },
+    {
+      "from": "src/experimental/hypothesis/v1_claude/fixtures/mathScenes.ts",
+      "to": "src/fixtures/mathScenes.ts",
+      "frozenSha256": "915aa0a1561cdce41dc8a4f9108c07d9f5b33f9a47e187e2f950b789ed01eb2b",
+      "currentSha256": "60081a09281a3e1b612dc093807ed97e7bfdd8bac8b3a4ad1092c19574e8457b",
+      "identical": false
+    }
+  ]
+}

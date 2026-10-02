@@ -2514,3 +2514,12 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 
 - The main checkout was flattened by another session (`src/experimental/hypothesis/v1_claude/*` became stage-named `src/*` dirs) while this branch was in flight, and the old git metadata was lost. The V2 work was ported onto the flattened `main` as branch `teaching-compiler-v2`: V2 code lives in `src/visual-v2`, `src/pipeline-v2`, `src/teaching`, `src/structured`, `src/narration/beat-narration`; shared V1 files modified by V2 were merged on top of the flattened versions. Entries above this one use the pre-flatten paths (`src/experimental/hypothesis/v1_claude/…` = today's `src/…`; `catalog/` = `assets/`, `pipeline/` = `run/`, `validation/` = `validate/`).
 - The 27 earlier branch commits are not recoverable (history was lost with the old metadata); this branch starts from the V1 flatten commit plus one V2 port commit.
+
+## Entry — 2026-10-03, branch implementation resumed
+
+- Work remains isolated on `teaching-compiler-v2` (`2ea5fc5`); the other checkout is untouched. No provider runs were started. All interrupted r11 slots are void and excluded.
+- Restored the pnpm worktree guide and the current offline CI workflow from the flattened checkout. The guide now requires live test summaries rather than quoting stale historical test counts.
+- Added the separately versioned v3 relocation inventory and correction record, and updated `baseline:verify` to preserve frozen v1/v2 manifests. `pnpm run baseline:verify` exits 0; it verifies 40 v1 entries, 77 v2 entries, and 5 relocated fixtures. It reports 40 pruned `.data` items and 4 outside-repository references as unverified, and names missing legacy test sets G-10, G-DOC, and G-LONG. These omissions do not count as verified evidence.
+- Verification at checkpoint entry: `pnpm run typecheck:hypothesis` and `pnpm run test:hypothesis` passed before the new implementation wave; current test verification is pending. `git diff --check` is pending after the active workers' edits.
+- Active bounded work: typed BoardOps and preservation-safe repairs; multilingual audio/capability and usage contracts; layout geometry validation. Next integration work: lock/version provenance, playable scene streaming, artifact-backed V2 reports, and cold-grid runner hardening.
+- Limit: the correction record is marked `pending-human`; baseline command integrity is verified, but independent review of the historical relocation equivalence is not claimed here.
