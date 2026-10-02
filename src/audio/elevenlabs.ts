@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -23,7 +24,22 @@ export const ELEVENLABS_MODELS = [
 export interface ElevenLabsEnv { [name: string]: string | undefined }
 export type FetchLike = (url: string, init: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> }>;
 
-export function elevenLabsKeys(env: ElevenLabsEnv = process.env): string[] {
+/** process.env plus ELEVENLABS_* / TTS_* lines of the working directory's .env (the pipeline's own loader only knows OpenRouter settings). */
+let merged: ElevenLabsEnv | undefined;
+export function elevenLabsEnv(): ElevenLabsEnv {
+  if (merged) return merged;
+  const fromFile: ElevenLabsEnv = {};
+  try {
+    for (const line of readFileSync(path.join(process.cwd(), '.env'), 'utf8').split('\n')) {
+      const m = /^\s*(ELEVENLABS_[A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+      if (m) fromFile[m[1]!] = m[2]!.replace(/^["']|["']$/g, '');
+    }
+  } catch { /* no .env: only process.env counts */ }
+  merged = { ...fromFile, ...process.env };
+  return merged;
+}
+
+export function elevenLabsKeys(env: ElevenLabsEnv = elevenLabsEnv()): string[] {
   const keys: string[] = [];
   if (env.ELEVENLABS_API_KEY) keys.push(env.ELEVENLABS_API_KEY);
   for (let i = 1; i <= 9; i++) { const key = env[`ELEVENLABS_API_KEY_${i}`]; if (key) keys.push(key); }
@@ -137,9 +153,9 @@ interface Attempt { wav: Buffer; alignment: { characters: string[]; character_st
 /** One synthesis with timestamps, trying models cheapest-first until one accepts the language. */
 async function synthesize(text: string, opts: ElevenLabsOptions): Promise<Attempt> {
   const fetcher = opts.fetcher ?? defaultFetch;
-  const pool = poolFor(opts.env ?? process.env, fetcher);
-  const voice = opts.voice ?? (opts.env ?? process.env).ELEVENLABS_VOICE_ID ?? DEFAULT_VOICE_ID;
-  const forced = opts.model ?? (opts.env ?? process.env).ELEVENLABS_MODEL;
+  const pool = poolFor(opts.env ?? elevenLabsEnv(), fetcher);
+  const voice = opts.voice ?? (opts.env ?? elevenLabsEnv()).ELEVENLABS_VOICE_ID ?? DEFAULT_VOICE_ID;
+  const forced = opts.model ?? (opts.env ?? elevenLabsEnv()).ELEVENLABS_MODEL;
   const known = workingModel.get(opts.language);
   const models = forced ? ELEVENLABS_MODELS.filter((m) => m.id === forced) : known ? ELEVENLABS_MODELS.filter((m) => m.id === known) : [...ELEVENLABS_MODELS];
   if (models.length === 0) throw new Error(`unknown ElevenLabs model ${forced}`);

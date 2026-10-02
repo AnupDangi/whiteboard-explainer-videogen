@@ -135,3 +135,12 @@ test('the narration prompt names the language and tells the speaker where the sc
   assert.match(last.system, /LAST of 3 scenes/); assert.match(last.system, /two-sentence recap/); assert.match(last.system, /idiomatic English/);
   assert.match(last.user, /previous scene taught: Why it moves/);
 });
+
+test('the spoken-word budget scales with the language: Hindi gets more words per second than English', async () => {
+  const { wordsPerSec } = await import('../plan/analyze.js');
+  assert.equal(wordsPerSec(), 2.25); assert.equal(wordsPerSec('en'), 2.25); assert.ok(wordsPerSec('hi') > wordsPerSec('en'));
+  const sentence = Array.from({ length: 15 }, (_, i) => `word${i}`).join(' ');
+  const long = draft([{ sentences: [sentence, `${sentence} a`, `${sentence} b`, `${sentence} c`] }]);
+  assert.ok((validateSceneNarration(long, { ...ctx, durationSec: 14 }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
+  assert.ok(!(validateSceneNarration(long, { ...ctx, durationSec: 20, language: 'hi' }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
+});

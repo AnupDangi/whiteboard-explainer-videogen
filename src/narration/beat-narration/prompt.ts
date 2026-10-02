@@ -1,6 +1,6 @@
 import type { NarrationContext } from './validate.js';
 import { NARRATION_HARD_CEILING } from './validate.js';
-import { WORDS_PER_SEC } from '../../plan/analyze.js';
+import { wordsPerSec } from '../../plan/analyze.js';
 
 /** Topic-free narration rules; everything lesson-specific comes from the beat plan and the source excerpt passed in. */
 export function buildNarrationPrompt(ctx: NarrationContext, scene: { title: string; goal: string }, sourceExcerpt: string): { system: string; user: string } {
@@ -13,7 +13,7 @@ Teach like a person: ${place} ${lesson?.sceneIndex === 0 || (lesson && lesson.sc
 Rules: teach the reasoning (what it is, why it matters, how it changes, what causes what); never refer to the screen, the drawing, positions, boxes, arrows or colours; never command the drawing ("now show", "draw"); say each idea once and move it forward instead of repeating it; use only facts and numbers from the source excerpt and the claims; calm, confident, conversational, short sentences.
 Return ONE JSON object { "beats": [{ "beatId", "sentences": [...1-4 sentences], "claimSentences": [{ "claimId", "sentenceIndex" }], "emphasisTerms": [...] }] } with exactly one narration beat per teaching beat, in order, with the given beat ids. Each claimSentences entry names the sentence (0-based) of that beat that states the claim; every claim of the beat needs one. emphasisTerms are concept labels worth stressing.`;
   const beatLines = ctx.beats.map((beat) => `- ${beat.beatId} [${beat.beatType}; ${beat.cognitiveOperation}] claims ${JSON.stringify(beat.claimIds)}: ${beat.narrationGoal} (the learner should leave able to: ${beat.learnerDelta})`).join('\n');
-  const words = Math.round(ctx.durationSec * WORDS_PER_SEC);
+  const words = Math.round(ctx.durationSec * wordsPerSec(ctx.language));
   const around = lesson ? `Lesson: "${lesson.title}".${lesson.previous ? ` The previous scene taught: ${lesson.previous.title} (${lesson.previous.goal}).` : ''}${lesson.next ? ` The next scene will cover: ${lesson.next.title} (${lesson.next.goal}).` : ''}\n` : '';
   const user = `${around}SCENE ${ctx.sceneId}: "${scene.title}" — ${scene.goal}
 About ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_HARD_CEILING)}); the audio sets the real length.

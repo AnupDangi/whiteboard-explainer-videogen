@@ -11,6 +11,10 @@ import type { ConceptGraph, TeachingPlan } from './schemas.js';
  * 10.5-28.5 s, mean 18.6 s (harness/reference/lamina/index.json).
  */
 export const WORDS_PER_SEC = 2.25;
+
+/** Spoken words per second by language: Devanagari-script speech uses more, shorter words per second than English. Default is English. */
+const WORDS_PER_SEC_BY_LANGUAGE: Record<string, number> = { hi: 3.0, ne: 2.7, mr: 2.7, bn: 2.6, es: 2.7, fr: 2.6, pt: 2.6, it: 2.6 };
+export const wordsPerSec = (language?: string): number => WORDS_PER_SEC_BY_LANGUAGE[(language ?? 'en').toLowerCase()] ?? WORDS_PER_SEC;
 // Hard pacing bounds from measurement: harness/reference/lamina/index.json
 // (n=33 scenes) runs 10.5-28.5 s, mean 18.6 s — the 10.5 s and 13.5 s scenes
 // sit below the old 14 s hard floor, so the hard minimum is 10 s. Scenes

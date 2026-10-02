@@ -1,6 +1,6 @@
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { TeachingBeat } from '../../teaching/beat-plan/types.js';
-import { WORDS_PER_SEC } from '../../plan/analyze.js';
+import { wordsPerSec } from '../../plan/analyze.js';
 import type { SceneNarrationDraft } from './types.js';
 
 export interface NarrationContext {
@@ -31,7 +31,7 @@ const UNSPEAKABLE_SYMBOLS = /[\u0370-\u03FF\u2190-\u21FF\u2200-\u22FF\u00B1\u00D
 
 export function narrationLengthWarning(draft: SceneNarrationDraft, ctx: NarrationContext): string | undefined {
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence), 0), 0);
-  const budget = ctx.durationSec * WORDS_PER_SEC;
+  const budget = ctx.durationSec * wordsPerSec(ctx.language);
   return words > budget ? `${words} spoken words against a ${Math.round(budget)}-word budget; audio sets the clock` : undefined;
 }
 
@@ -64,7 +64,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
     for (const claim of planClaims) if (!anchored.has(claim)) problems.push({ path: `${at}/claimSentences`, message: `claim ${claim} must be anchored to the sentence of this beat that states it` });
   });
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence), 0), 0);
-  const ceiling = Math.round(ctx.durationSec * WORDS_PER_SEC * NARRATION_HARD_CEILING);
+  const ceiling = Math.round(ctx.durationSec * wordsPerSec(ctx.language) * NARRATION_HARD_CEILING);
   if (words > ceiling) problems.push({ path: '/beats', message: `too long: ${words} spoken words, at most ${ceiling} for a ${ctx.durationSec}s scene; shorten the sentences` });
   return problems;
 }
