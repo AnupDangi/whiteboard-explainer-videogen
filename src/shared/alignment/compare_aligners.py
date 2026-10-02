@@ -258,7 +258,7 @@ def compare_generated_run(run_dir: Path, model_dir: Path | None = None, asr_cons
     import torchaudio
 
     bundle = torchaudio.pipelines.WAV2VEC2_ASR_BASE_960H
-    root = model_dir or (Path(__file__).resolve().parents[5] / ".data" / "alignment-models")
+    root = model_dir or (Path(__file__).resolve().parents[3] / ".data" / "alignment-models")
     model_path = root / bundle._path
     model = bundle.get_model(dl_kwargs={"model_dir": str(root)}).eval()
     transcription_model = None

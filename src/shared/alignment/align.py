@@ -179,7 +179,7 @@ def _align_with_ctc(audio_path: str, text: str, language: str) -> list[dict]:
         import torchaudio
 
         bundle = torchaudio.pipelines.WAV2VEC2_ASR_BASE_960H
-        model_dir = Path(os.environ.get('HYPOTHESIS_ALIGNMENT_MODEL_DIR', Path(__file__).resolve().parents[5] / '.data' / 'alignment-models'))
+        model_dir = Path(os.environ.get('HYPOTHESIS_ALIGNMENT_MODEL_DIR', Path(__file__).resolve().parents[3] / '.data' / 'alignment-models'))
         weights = model_dir / bundle._path
         if not weights.is_file():
             raise FileNotFoundError(f'local CTC fallback weights are missing: {weights}')

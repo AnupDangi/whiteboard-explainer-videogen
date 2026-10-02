@@ -120,7 +120,7 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
       const label = labelOf.get(entity.conceptId);
       const shown = live.some((el) => (el.spec.type === 'entity' && el.spec.conceptId === entity.conceptId)
         || (label !== undefined && specText(el.spec).some((text) => stem(text).includes(stem(label)) && stem(label).length > 0)));
-      if (!shown) problems.push({ path: '/ops', message: `concept ${entity.conceptId}${label ? ` (${label})` : ''} is not on the board by the end of beat ${beat.beatId}; add an entity element whose conceptId is ${entity.conceptId}${label ? `, or a text or token element that contains the words "${label}"` : ''}` });
+      if (!shown) problems.push({ path: '/ops', message: `concept ${entity.conceptId}${label ? ` (${label})` : ''} is not on the board by the end of beat ${beat.beatId}; add an entity element whose conceptId is ${entity.conceptId}${label ? `, or a text or token element that contains the words "${label}"` : ''}; add it with a patch at /ops/${at + 1}, right after the last op of that beat, so ops stay beat by beat` });
     }
   }
   // Geometry: the board must lay out inside the safe area without overlap or unreadable slots. These problems name no single op.
