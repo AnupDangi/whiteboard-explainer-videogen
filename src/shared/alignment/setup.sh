@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sets up the local forced-alignment sidecar's Python environment:
 # stable-ts (faster-whisper/CTranslate2 backend). Idempotent. Mirrors the
-# same uv-based pattern used by ../../../../../voice-engine/setup.sh.
+# same uv-based pattern used by ../../../voice-engine/setup.sh.
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV="$REPO_ROOT/.venv"

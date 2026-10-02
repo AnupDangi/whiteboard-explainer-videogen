@@ -23,7 +23,7 @@ test('no benchmark topic name appears in production TypeScript outside fixtures,
 
 // liveCli.ts is the developer CLI that selects NAMED FIXTURE cases (labelled fixtures, never counted as generated
 // lessons, see CLAUDE.md); it dispatches on the case the user typed and contains no lesson logic.
-const CASE_SELECTOR_CLIS = new Set(['v1_claude/liveCli.ts']);
+const CASE_SELECTOR_CLIS = new Set(['run/liveCli.ts']);
 
 test('production code has no conditional on a run, scene or case id literal', () => {
   const pattern = /(?:sceneId|caseId|runId|lessonId)\s*===?\s*['"`][^'"`]+['"`]/;

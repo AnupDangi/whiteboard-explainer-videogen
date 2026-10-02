@@ -29,7 +29,7 @@
     "icons:ingest": "npm run build && node scripts/ingest-icon-library.mjs",
     "reliability:run": "npm run build && node dist/src/harness/reliabilityCli.js",
     "reference:lamina": "node scripts/lamina-reference.mjs ../lamina-labs-video harness/reference/lamina",
-    "judge:hypothesis": "node dist/src/harness/judgeCli.js",
+    "judge:hypothesis": "npm run build && node dist/src/harness/judgeCli.js",
     "judge:human:hypothesis": "npm run build && node dist/src/harness/humanReviewCli.js",
     "judge:human:pack:hypothesis": "npm run build && node dist/src/harness/humanReviewPackCli.js",
     "judge:e5:human:hypothesis": "npm run build && node dist/src/harness/e5HumanReviewCli.js",

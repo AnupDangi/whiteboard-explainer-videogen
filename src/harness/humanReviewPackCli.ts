@@ -12,7 +12,7 @@ import { judgeRunEligibility, resolveLocalRunArtifact, sourceDocMatchesRecordedH
 import { argValue } from '../run/args.js';
 
 interface ReferenceScene { video: string; endS: number; sampleTimesS: number[] }
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../');
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../');
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);

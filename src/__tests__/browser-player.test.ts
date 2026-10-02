@@ -54,7 +54,7 @@ test('hypothesis browser player serves run status and uses the shared renderer m
 
     const client = await request('/dist/src/export/player/client.js');
     assert.equal(client.status, 200);
-    assert.match(client.body, /export\/frame\.js/);
+    assert.match(client.body, /(\.\.\/frame\.js|export\/frame\.js)/, 'player client must import the shared export/frame.js composer');
     const renderer = await request('/dist/src/render/renderScene.js');
     assert.equal(renderer.status, 200);
     assert.match(renderer.body, /mathIds\.js/);
