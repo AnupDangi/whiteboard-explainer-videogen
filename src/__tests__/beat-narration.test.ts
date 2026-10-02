@@ -141,6 +141,6 @@ test('the spoken-word budget scales with the language: Hindi gets more words per
   assert.equal(wordsPerSec(), 2.25); assert.equal(wordsPerSec('en'), 2.25); assert.ok(wordsPerSec('hi') > wordsPerSec('en'));
   const sentence = Array.from({ length: 15 }, (_, i) => `word${i}`).join(' ');
   const long = draft([{ sentences: [sentence, `${sentence} a`, `${sentence} b`, `${sentence} c`] }]);
-  assert.ok((validateSceneNarration(long, { ...ctx, durationSec: 14 }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
-  assert.ok(!(validateSceneNarration(long, { ...ctx, durationSec: 20, language: 'hi' }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
+  assert.ok((validateSceneNarration(long, { ...ctx, durationSec: 8 }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
+  assert.ok(!(validateSceneNarration(long, { ...ctx, durationSec: 12, language: 'hi' }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
 });

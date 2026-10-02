@@ -1,5 +1,5 @@
 import type { NarrationContext } from './validate.js';
-import { NARRATION_HARD_CEILING } from './validate.js';
+import { NARRATION_PROMPT_CEILING } from './validate.js';
 import { wordsPerSec } from '../../plan/analyze.js';
 
 /** Topic-free narration rules; everything lesson-specific comes from the beat plan and the source excerpt passed in. */
@@ -16,7 +16,7 @@ Return ONE JSON object { "beats": [{ "beatId", "sentences": [...1-4 sentences], 
   const words = Math.round(ctx.durationSec * wordsPerSec(ctx.language));
   const around = lesson ? `Lesson: "${lesson.title}".${lesson.previous ? ` The previous scene taught: ${lesson.previous.title} (${lesson.previous.goal}).` : ''}${lesson.next ? ` The next scene will cover: ${lesson.next.title} (${lesson.next.goal}).` : ''}\n` : '';
   const user = `${around}SCENE ${ctx.sceneId}: "${scene.title}" — ${scene.goal}
-About ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_HARD_CEILING)}); the audio sets the real length.
+About ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_PROMPT_CEILING)}); the audio sets the real length.
 Teaching beats (write one narration beat for each):
 ${beatLines}
 Concept labels you may stress: ${JSON.stringify(ctx.emphasisCandidates)}
