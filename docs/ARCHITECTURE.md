@@ -22,7 +22,7 @@ fixed, and how to extend each part (template, planner, model, document reader).
 > endpoints and relation; S6 gets those exact spoken spans and uses two bounded validator-driven repairs
 > (structure, then claim/relation coverage); S7 records the canonical R0–R11 strategy
 > while type-gating similarity against curated bridge types; and S8/S9 inputs are frozen
-> in a verified `lesson.lock.json` before S10/S11. `npm run video:render -- --from=<lock>`
+> in a verified `lesson.lock.json` before S10/S11. `pnpm run video:render -- --from=<lock>`
 > replays render work offline. Output hashes live in `render-artifacts.json`. The current
 > AssetBridge is still a migration snapshot: strict opt-in snapshot validation exists,
 > and `freezeBridgeSnapshot()` can create a self-contained export from an explicitly
@@ -129,16 +129,16 @@ LessonRequest (local files or HTTPS URLs: PDF, DOCX, PPTX, HTML, text)         p
 
 - `harness/sceneRichness.ts` reports deterministic structural metrics for a scene or set of scenes. These metrics are diagnostic and are not visual-acceptance evidence.
 - `lessonCli.ts --plan-despite-alignment-failure` opts into diagnostic S6 planning when S5 has hard alignment failures. The opt-in is part of run/cache identity; S5 failures remain hard and the run remains failed.
-- `planner/sceneInput.ts` supplies the same planner input builder to live runs and the calibration harness. `harness/sceneCalibration.ts` and `sceneCalibrationCli.ts` implement cached S1–S5 prompt-arm diagnostics; `npm run scene:calibrate` writes explicitly labeled reports with a per-invocation budget ledger.
-- `catalog/libraryIngest.ts` and `scripts/ingest-icon-library.mjs` normalize a supported SVG subset and write a catalog plus rejection report. `npm run icons:ingest -- <library-dir>` enforces the manifest license list and rejects paths escaping the library root.
+- `planner/sceneInput.ts` supplies the same planner input builder to live runs and the calibration harness. `harness/sceneCalibration.ts` and `sceneCalibrationCli.ts` implement cached S1–S5 prompt-arm diagnostics; `pnpm run scene:calibrate` writes explicitly labeled reports with a per-invocation budget ledger.
+- `catalog/libraryIngest.ts` and `scripts/ingest-icon-library.mjs` normalize a supported SVG subset and write a catalog plus rejection report. `pnpm run icons:ingest -- <library-dir>` enforces the manifest license list and rejects paths escaping the library root.
 - `harness/developmentBenchmark.ts` verifies the frozen five-topic/15-trial development manifest and exact source bytes before a benchmark attempt is accepted. Both `one-shot-video.mjs` and `lessonCli.js --benchmark-attempt=<id>` derive the pinned source, instruction, duration, topic ID, and cold-cache setting from that manifest; explicit overrides are checked, and failed early attempts retain a partial `run-manifest.json` with hashes for the evidence available at failure.
 - `harness/releaseArtifactVerifier.ts` verifies run-manifest-indexed artifact bytes, matches each attempt to the frozen slot, and rerenders claimed-passed locks through the offline lock renderer. `release:gates --runs=<dir1,dir2,...> --project-root=<repo>` evaluates only those verified run/evaluation/lock artifacts and leaves held-out, semantic human audits, asset-rights review, and reviewer votes unmeasured when their signed/reviewed evidence is absent. `release:gates --input=...` remains a threshold preview only and always reports `unmeasured`.
 - `catalog/registry.ts` defines enabled libraries and hashes each enabled catalog and embedding matrix into `catalogVersion()`. Retrieval, run/config identity, and S6/S7 cache inputs use that version. The registry currently enables Streamline only; AssetLab workspace artifacts are not enabled pending source and attribution verification.
 - `catalog/queryEmbeddingCache.ts` caches vectors by embedding model and normalized query. `catalog/iconPins.ts` pins S7-resolved icons by concept identity and depicted referent across scenes only after the scene's semantic gates pass. Explicit S6 representation intent participates in pin compatibility; asset IDs and candidate names are software-owned and never enter the default board-planner prompt. Distinct objects tied to one teaching concept retain distinct assets; the pin set participates in S7 cache identity.
-- `harness/reliability.ts` and `reliabilityCli.ts` implement cold S1–S4 reliability measurement. `npm run reliability:run` records conditional stage rates, end-to-end rate, failure codes, retries, evidence-anchor markers, cost, and duration under a capped persistent ledger.
+- `harness/reliability.ts` and `reliabilityCli.ts` implement cold S1–S4 reliability measurement. `pnpm run reliability:run` records conditional stage rates, end-to-end rate, failure codes, retries, evidence-anchor markers, cost, and duration under a capped persistent ledger.
 - Live lesson summaries and `video:one-shot` provenance preserve the full numeric evaluation metric map; `validate:batch` reports per-run visual, relation, state-change, and R11 text metrics plus means with contributing-run counts. Missing metrics remain `n/a`. This is measurement transport only: the release batch still needs typed cold-trial/topic and human-review evidence before its thresholds can be evaluated.
 - `release:gates -- --input=<versioned-evidence.json>` evaluates supplied cold-run, held-out, alignment-calibration, lock-rerender, rights, and muted-board evidence. Relation and state-change coverage are independent checks; muted-board scoring requires a hashed review-pack manifest and at least two distinct reviewers per major scene, with scene-balanced scoring. Missing evidence stays `unmeasured`; the command does not launch providers or attest to the contents of externally supplied hashes.
-  The input envelope uses `schemaVersion: "teaching-compiler-v1-release-gates/v1"` and an `evidence` object. Evidence names the five opaque `topicIds`, all 15 `{attemptId, topicId, trial, cold, completion}` rows, per-complete-run metrics, versioned held-out report metadata, measured alignment calibration from two annotators across at least three documents and 100 word items, and each muted-board `{sceneId, reviewerId, responseId, score}` plus the frozen review-pack scene IDs and manifest digest. See `harness/releaseGate.ts` for the full typed contract. For example: `npm run release:gates -- --input=release-evidence.json --output=release-report.json`.
+  The input envelope uses `schemaVersion: "teaching-compiler-v1-release-gates/v1"` and an `evidence` object. Evidence names the five opaque `topicIds`, all 15 `{attemptId, topicId, trial, cold, completion}` rows, per-complete-run metrics, versioned held-out report metadata, measured alignment calibration from two annotators across at least three documents and 100 word items, and each muted-board `{sceneId, reviewerId, responseId, score}` plus the frozen review-pack scene IDs and manifest digest. See `harness/releaseGate.ts` for the full typed contract. For example: `pnpm run release:gates -- --input=release-evidence.json --output=release-report.json`.
 
 These CLIs have offline contract tests. One paid cold S6 diagnostic has been measured and failed with claim-to-relation and provider-usage errors; it is a separate diagnostic, not a frozen benchmark slot. The full 15-run benchmark, held-out measurement, and prompt-arm calibration remain incomplete.
 
@@ -271,7 +271,7 @@ live encoder writes to a unique partial filename and renames to `video.mp4` only
 an interrupted encode cannot publish a truncated final-path artifact. Its content-addressed cache stores
 the MP4 bytes as a binary blob and materializes them into each run directory on warm hits. A missing blob
 is regenerated in warm mode and is a replay miss; metadata alone can never claim that an MP4 exists.
-The offline suite verifies a small real MP4 encode/decode. `npm run preview:hypothesis -- <run-directory>
+The offline suite verifies a small real MP4 encode/decode. `pnpm run preview:hypothesis -- <run-directory>
 [port]` starts a loopback-only preview for a completed run. Its browser client loads laid-out scenes,
 timelines, aligned words, and optional local audio/captions, then calls the same pure `frameSvgAt`
 composition function as MP4 export. The production application's playback path remains separate and
@@ -416,18 +416,18 @@ uncalibrated.
 ## Commands
 
 ```
-npm run typecheck:hypothesis && npm run test:hypothesis      # offline, no keys needed
-npm run strip:scene -- <run>/preview-scenes/0000.json out.png # progression strip of one generated scene (after a build)
-npm run run:lesson -- --lesson=all [--content=<model>] [--planner=<model>]
-npm run video:one-shot -- --prompt="<learner prompt>" --source=<file>|--url=<url> [--duration=60] [--id=<name>]  # locked single run, provenance in output/
-npm run run:hypothesis:live [-- --case=<golden> --planner=<model>]
-npm run preview:hypothesis -- <run-directory> [port]                 # loopback browser player
-npm run judge:hypothesis -- --runs=.data/hypothesis-runs/claude/lessons [--cache-dir=.data/hypothesis-runs/judge-cache]
-npm run judge:human:pack:hypothesis -- --run=<eligible-generated-run-dir> --topic=<declared-topic> [--out=<pack-root>] [--key-out=<sealed-key.json>] [--organizer-out=<organizer-record.json>]
-npm run judge:human:hypothesis -- --key=<sealed-answer-key.json> --votes=<judge-1.json,judge-2.json> [--out=<report.json>]
-npm run judge:e5:human:pack:hypothesis -- --pairs=<e5-pair-list.json> --dataset=<versioned-heldout-set.json> [--out=<pack-root>] [--key-out=<sealed-key.json>]
-npm run judge:e5:human:hypothesis -- --key=<sealed-e5-key.json> --votes=<judge-1.json,judge-2.json> [--out=<report.json>]
-npm run catalog:build                                         # rebuild the Streamline catalog + embeddings
-npm run catalog:e4:calibrate -- --input=<e4-labeled-pairs.json> [--out=<report.json>]
-npm run reference:lamina                                      # rebuild the Lamina reference pack
+pnpm run typecheck:hypothesis && pnpm run test:hypothesis      # offline, no keys needed
+pnpm run strip:scene -- <run>/preview-scenes/0000.json out.png # progression strip of one generated scene (after a build)
+pnpm run run:lesson -- --lesson=all [--content=<model>] [--planner=<model>]
+pnpm run video:one-shot -- --prompt="<learner prompt>" --source=<file>|--url=<url> [--duration=60] [--id=<name>]  # locked single run, provenance in output/
+pnpm run run:hypothesis:live [-- --case=<golden> --planner=<model>]
+pnpm run preview:hypothesis -- <run-directory> [port]                 # loopback browser player
+pnpm run judge:hypothesis -- --runs=.data/hypothesis-runs/claude/lessons [--cache-dir=.data/hypothesis-runs/judge-cache]
+pnpm run judge:human:pack:hypothesis -- --run=<eligible-generated-run-dir> --topic=<declared-topic> [--out=<pack-root>] [--key-out=<sealed-key.json>] [--organizer-out=<organizer-record.json>]
+pnpm run judge:human:hypothesis -- --key=<sealed-answer-key.json> --votes=<judge-1.json,judge-2.json> [--out=<report.json>]
+pnpm run judge:e5:human:pack:hypothesis -- --pairs=<e5-pair-list.json> --dataset=<versioned-heldout-set.json> [--out=<pack-root>] [--key-out=<sealed-key.json>]
+pnpm run judge:e5:human:hypothesis -- --key=<sealed-e5-key.json> --votes=<judge-1.json,judge-2.json> [--out=<report.json>]
+pnpm run catalog:build                                         # rebuild the Streamline catalog + embeddings
+pnpm run catalog:e4:calibrate -- --input=<e4-labeled-pairs.json> [--out=<report.json>]
+pnpm run reference:lamina                                      # rebuild the Lamina reference pack
 ```

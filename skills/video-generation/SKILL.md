@@ -9,13 +9,13 @@ Pipeline lives in flat `src/`: `intake plan narration audio planner assets rende
 
 ## Prerequisites
 
-`.env` with `OPENROUTER_API_KEY`, `OPENROUTER_CONTENT_MODEL`, `OPENROUTER_SCENE_MODEL` (+ optional `OPENROUTER_VISION_MODEL` for the judge). FFmpeg installed. `npm install` done. Voice needs no key: `npm run voice-engine:setup` once.
+`.env` with `OPENROUTER_API_KEY`, `OPENROUTER_CONTENT_MODEL`, `OPENROUTER_SCENE_MODEL` (+ optional `OPENROUTER_VISION_MODEL` for the judge). FFmpeg installed. `pnpm install` done. Voice needs no key: `pnpm run voice-engine:setup` once.
 
 ## One-shot video (primary path)
 
 ```bash
-npm run build
-npm run video:one-shot -- --prompt="Explain X simply" --source=bench/sources/half-life.md --duration=60 --id=my-run
+pnpm run build
+pnpm run video:one-shot -- --prompt="Explain X simply" --source=bench/sources/half-life.md --duration=60 --id=my-run
 # --source=<file> | --url=<https-url> (exactly one) · --duration=60|300|600|1800
 # output: output/<id>-<timestamp>/video.mp4 + .vtt + contact-sheet.png + provenance.json
 ```
@@ -29,13 +29,13 @@ node dist/src/run/lessonCli.js --source=bench/sources/half-life.md --prompt="...
 ## Preview and judge
 
 ```bash
-npm run preview:hypothesis -- <run-directory> [port]   # loopback browser player, same frame composer as export
-npm run judge:hypothesis -- --runs=<run-dir>            # VLM judge on a complete run (needs vision model + $0.25 cap)
+pnpm run preview:hypothesis -- <run-directory> [port]   # loopback browser player, same frame composer as export
+pnpm run judge:hypothesis -- --runs=<run-dir>            # VLM judge on a complete run (needs vision model + $0.25 cap)
 ```
 
 ## Verify before delivering
 
-1. `npm run typecheck:hypothesis && npm run test:hypothesis` — green, no keys needed.
+1. `pnpm run typecheck:hypothesis && pnpm run test:hypothesis` — green, no keys needed.
 2. Run status is `draft` unless S5 alignment calibration is measured and human muted-board review passed — never present a draft as publishable.
 3. Check: scene count matches duration budget, hard findings = 0 for a clean run, contact sheet inspected frame by frame, MP4 1920x1080 H.264 + AAC + captions.
 4. Append exact commands, costs, wall time, limitations, and next task to `docs/HANDOFF.md`.

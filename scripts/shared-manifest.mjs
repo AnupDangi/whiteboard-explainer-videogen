@@ -31,7 +31,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const expected = buildSharedManifest();
   if (process.argv.includes('--check')) {
     if (readFileSync(MANIFEST, 'utf8') !== expected) {
-      console.error('shared/MANIFEST.sha256 is stale; run `npm run manifest:shared` after changing shared files.');
+      console.error('shared/MANIFEST.sha256 is stale; run `pnpm run manifest:shared` after changing shared files.');
       process.exitCode = 1;
     } else console.log('shared manifest verified');
   } else {

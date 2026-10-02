@@ -2473,3 +2473,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Docs:** `AUDIT-2026-09-23` (self-marked superseded), `AUDIT-2026-09-27`, `SIMI-60-BENCHMARK` -> `docs/archive/`. Kept: ARCHITECTURE.md (updated), HANDOFF.md, superpowers/plans (plan-lock frozen). Production push needs only ARCHITECTURE.md + plan-lock + code; AUDITs are history.
 - **Harness kept whole:** `reference/` (9.5M judge inputs, read by judgeCli/boardMetricsCli), `baselines/` (read by baselines.mjs), `reports/` (156K cited evidence incl. bakeoff). Nothing dead.
 - **Verification:** `test:hypothesis` exit 0, 964 pass.
+
+## Continuation — 2026-10-03, pnpm migration + .data prune
+
+- **Package manager:** npm -> pnpm 10.28.2 everywhere. `pnpm import` for root + voice-engine (locked versions preserved), `package-lock.json` removed, `pnpm-lock.yaml` added, `packageManager` pinned, all `npm run` -> `pnpm run` (package.json, voice-engine, 3 scripts, ARCHITECTURE.md commands, video-generation skill). `voice-engine:setup` now `pnpm --dir voice-engine run setup`.
+- **`.data/` 21G -> ~800M:** deleted `goal-run/`, `one-shot/`, `hypothesis-runs/`, `review-videos-20260927/`, old 20260925 review pack. Kept: 3 verify runs, alignment models/review, stage caches, source assets. `.claude/` untouched.
+- **Fix found by migration:** `probeToolVersions` digest crashed on the deleted package-lock (staged) -> pipeline `unknown` -> 10 lock tests failed. Now digests `pnpm-lock.yaml`, skips missing files.
+- **Verification:** `pnpm run test:hypothesis` exit 0, 964 pass (run next).

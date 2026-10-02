@@ -2,8 +2,8 @@
 // One prompt + one source -> one whiteboard lesson video, with no code edits
 // once the first provider call can happen.
 //
-//   npm run video:one-shot -- --prompt="Explain ..." --source=paper.pdf [--duration=60|300|600|1800] [--id=name]
-//   npm run video:one-shot -- --prompt="Explain ..." --url=https://.../paper.pdf
+//   pnpm run video:one-shot -- --prompt="Explain ..." --source=paper.pdf [--duration=60|300|600|1800] [--id=name]
+//   pnpm run video:one-shot -- --prompt="Explain ..." --url=https://.../paper.pdf
 //
 // Guarantees (recorded in output/<id>/provenance.json):
 // - Refuses to start unless every tracked file matches HEAD, then builds dist/
@@ -86,8 +86,8 @@ if (before.dirty) fail(`tracked files differ from HEAD; commit or stash first:\n
 if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) fail('ffmpeg is not on PATH (needed for MP4 export)');
 
 // 2. Build from the locked commit and hash the compiled pipeline.
-const build = spawnSync('npm', ['run', 'build'], { cwd: ROOT, stdio: 'inherit' });
-if (build.status !== 0) fail('npm run build failed; no API call was made');
+const build = spawnSync('pnpm', ['run', 'build'], { cwd: ROOT, stdio: 'inherit' });
+if (build.status !== 0) fail('pnpm run build failed; no API call was made');
 const distHashBefore = hashTree(path.join(ROOT, 'dist'));
 
 // 3. Single cold run. This is the first point where a provider call can happen.

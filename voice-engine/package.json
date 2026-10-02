@@ -12,10 +12,11 @@
     "typecheck": "tsc --noEmit",
     "setup": "sh setup.sh",
     "synth": "node dist/cli.js",
-    "compare:en": "npm run build && node dist/compare-en.js"
+    "compare:en": "pnpm run build && node dist/compare-en.js"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
     "typescript": "^7.0.2"
-  }
+  },
+  "packageManager": "pnpm@10.28.2"
 }
