@@ -83,7 +83,7 @@ export const EquationStepOpSchema = z.object({ op: z.literal('equationStep'), ..
 export const RevealRegionOpSchema = z.object({ op: z.literal('revealRegion'), ...base, region: z.enum(REGION_IDS) }).strict();
 export const ClearRegionOpSchema = z.object({ op: z.literal('clearRegion'), ...base, region: z.enum(REGION_IDS) }).strict();
 
-export const BoardOpSchema = z.union([
+export const BoardOpSchema = z.discriminatedUnion('op', [
   AddOpSchema, ConnectOpSchema, MoveOpSchema, TransformOpSchema, ReplaceOpSchema, RemoveOpSchema, HighlightOpSchema, DeemphasizeOpSchema, StrikeOpSchema,
   UpdateValueOpSchema, SplitOpSchema, MergeOpSchema, EquationStepOpSchema, RevealRegionOpSchema, ClearRegionOpSchema,
 ]);
