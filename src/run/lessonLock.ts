@@ -354,7 +354,12 @@ export function rerenderFinalFrame(laidOut: LaidOutScene, timeline: Timeline): s
 }
 
 /** Verify a written lock against its outputDir. Returns problems (empty = valid). */
-export async function verifyLessonLock(outputDir: string): Promise<string[]> {
+export interface VerifyLockOptions {
+  /** Cross-commit replay evidence only: skip the pipeline-source drift check (every other tool pin still applies). Never set on a release replay. */
+  allowPipelineDrift?: boolean;
+}
+
+export async function verifyLessonLock(outputDir: string, options: VerifyLockOptions = {}): Promise<string[]> {
   const problems: string[] = [];
   let lock: LessonLock;
   try {
@@ -394,6 +399,7 @@ export async function verifyLessonLock(outputDir: string): Promise<string[]> {
   if (lock.versions.kalamSha256 !== KALAM_FONT_SHA256) problems.push('font content hash drift');
   const tools = probeToolVersions();
   for (const name of ['node', 'pipeline', 'resvg', 'roughjs', 'ffmpeg'] as const) {
+    if (name === 'pipeline' && options.allowPipelineDrift) continue;
     if (lock.versions[name] !== 'unknown' && tools[name] !== lock.versions[name]) problems.push(`${name} tool version drift`);
   }
   if (lock.assets.bridgeDigest) {
@@ -417,8 +423,8 @@ export interface LockRenderDependencies {
 }
 
 /** S10 entrypoint. The first renderSVG call occurs after the lock verifies. */
-export async function renderLockedFinalFrames(outputDir: string, options: { allowFailedDiagnostic?: boolean } = {}): Promise<{ frames: Record<string, string>; artifacts: Record<string, string> }> {
-  const problems = await verifyLessonLock(outputDir);
+export async function renderLockedFinalFrames(outputDir: string, options: { allowFailedDiagnostic?: boolean } & VerifyLockOptions = {}): Promise<{ frames: Record<string, string>; artifacts: Record<string, string> }> {
+  const problems = await verifyLessonLock(outputDir, options);
   if (problems.length) throw new Error(`lesson lock verification failed: ${problems.join('; ')}`);
   const lock = JSON.parse(await readFile(path.join(outputDir, 'lesson.lock.json'), 'utf8')) as LessonLock;
   if (!options.allowFailedDiagnostic && (lock.status !== 'renderable' || lock.blockedScenes?.length)) throw new Error('lesson lock is not renderable');

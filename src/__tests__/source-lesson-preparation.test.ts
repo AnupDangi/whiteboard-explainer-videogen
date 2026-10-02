@@ -136,7 +136,8 @@ test('S3 rejects a model plan that omits its teaching decisions (skill and visua
     sections: [{ id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 15 }],
     recap: { keyPoints: ['Leaves use light to build sugar'] },
   };
-  const payloads: Record<string, unknown> = { concept_graph: graph, teaching_plan: planMissingContract };
+  // The schema failures carry JSON pointers, so S3's one repair is a patch call (a patch that does not fix the plan here).
+  const payloads: Record<string, unknown> = { concept_graph: graph, teaching_plan: planMissingContract, json_patch: { patches: [{ op: 'replace', path: '/targetDurationSec', valueJson: '15' }] } };
   const received: string[] = [];
   const fakeProvider: typeof fetch = async (_input, init) => {
     const request = JSON.parse(String(init?.body)) as { response_format?: { json_schema?: { name?: string } } };
@@ -154,7 +155,7 @@ test('S3 rejects a model plan that omits its teaching decisions (skill and visua
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
       artifactStore: new ContentAddressedArtifactStore(root, 'cold'), fetcher: fakeProvider,
     });
-    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'teaching_plan'], 'S3 gets exactly one repair but never proceeds to S4');
+    assert.deepEqual(received, ['concept_graph', 'teaching_plan', 'json_patch'], 'S3 gets exactly one (patch) repair but never proceeds to S4');
     assert.equal(rejected.script, undefined);
     assert.ok(rejected.failures.some((failure) => failure.hard && /teachingSkill/.test(failure.message) && /candidateMechanisms/.test(failure.message)));
     assert.equal(rejected.stageRuns.find((stage) => stage.stage === 'S3-teaching-plan')?.status, 'failed');

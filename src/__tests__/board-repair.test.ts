@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repairRawBoard } from '../planner/boardRepair.js';
+import { collectCoercions } from '../structured/coercionLedger.js';
 
 const ctx = { requiredConceptCount: 4, maxLabelWords: 3 };
 const node = (id: string, extra: Record<string, unknown> = {}) => ({ id, mention: 'm', concept: 'c', representation: { kind: 'literal' }, label: 'a', role: 'item', ...extra });
@@ -105,6 +106,8 @@ test('the provider-facing board schema repairs unknown enums and surplus targets
     visualIntents: [{ claimId: 'c', strategy: 'literal', targets: Array.from({ length: 15 }, () => ({ kind: 'element', elementId: 'n1', evidenceSpanIds: ['x'] })) }],
   };
   assert.equal(boardSchema(enums).safeParse(raw).success, false, 'the strict schema alone rejects it');
-  const repaired = boardSchema(enums, { requiredConceptCount: 4, maxLabelWords: 4 }).safeParse(raw);
+  const { result: repaired, entries } = collectCoercions(() => boardSchema(enums, { requiredConceptCount: 4, maxLabelWords: 4 }).safeParse(raw));
   assert.ok(repaired.success, repaired.success ? '' : JSON.stringify(repaired.error.issues));
+  assert.ok(entries.some((entry) => entry.reason === 'board-repair' && entry.path.startsWith('/nodes/0/representation') && entry.semanticRisk === 'semantic'), JSON.stringify(entries.map((e) => [e.reason, e.path])));
+  assert.ok(entries.some((entry) => entry.reason === 'board-repair' && entry.path.startsWith('/visualIntents/0/targets/')), 'surplus targets are recorded as removed');
 });

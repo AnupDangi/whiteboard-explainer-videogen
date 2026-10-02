@@ -57,6 +57,10 @@ export function spawnFrameEncoder(outPath: string, fps: number, audioWavPath: st
     '-shortest',
     outPath,
   ];
+  return spawnPipedEncoder(args);
+}
+
+function spawnPipedEncoder(args: string[]) {
   const ff = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
   let stderr = '';
   ff.stderr.on('data', (d) => {
@@ -94,4 +98,18 @@ export function spawnFrameEncoder(outPath: string, fps: number, audioWavPath: st
   }
 
   return { write, end, abort, done, args };
+}
+
+/**
+ * Spawn ffmpeg reading raw PNG frames from stdin and writing a silent H.264 clip. Per-scene clips carry no audio: AAC priming
+ * would leave a gap at every join, so the master audio is muxed once when the clips are concatenated.
+ */
+export function spawnClipEncoder(outPath: string, fps: number) {
+  const args = ['-y', '-fflags', '+bitexact', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-', '-flags:v', '+bitexact', '-map_metadata', '-1', '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-g', String(Math.max(1, fps * 2)), outPath];
+  return spawnPipedEncoder(args);
+}
+
+/** Join silent clips in order without re-encoding the video, and mux the one master audio track. */
+export function concatClips(listPath: string, audioWavPath: string, outPath: string): Promise<void> {
+  return runFfmpeg(['-y', '-fflags', '+bitexact', '-f', 'concat', '-safe', '0', '-i', listPath, '-i', audioWavPath, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-flags:a', '+bitexact', '-map_metadata', '-1', '-shortest', outPath]);
 }

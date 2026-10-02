@@ -231,4 +231,9 @@ test('a syllabus quote that stays unanchorable after the model was asked is snap
   assert.ok(result.value, JSON.stringify(result.failures));
   assert.equal(result.value!.concepts[0]!.evidence[0]!.quote, 'The exact source says sunlight heats the water.');
   assert.ok(result.failures.some((failure) => failure.code === 'syllabus-evidence-snapped' && !failure.hard));
+  const snap = result.trace.coercions.find((entry) => entry.reason === 'syllabus-evidence-snapped');
+  assert.ok(snap, 'the snap is in the coercion ledger');
+  assert.equal(snap!.semanticRisk, 'semantic');
+  assert.equal(snap!.oldValue, 'sunlight heats up water');
+  assert.equal(snap!.newValue, 'The exact source says sunlight heats the water.');
 });

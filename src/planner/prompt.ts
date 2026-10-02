@@ -6,7 +6,7 @@ import { MAX_ELEMENTS_PER_SCENE, MAX_LABEL_WORDS, MAX_TITLE_WORDS } from '../ren
 import type { ScenePlanningContext } from './context.js';
 import { SCENE_DIRECTOR_SKILL } from './sceneDirectorSkill.js';
 import { exemplarPromptRecord } from './exemplars.js';
-import { buildPrompt, type PromptSection } from './promptBuilder.js';
+import { buildPrompt, type PromptSection } from './builder.js';
 import { recipeSectionBody } from './recipes.js';
 
 /**

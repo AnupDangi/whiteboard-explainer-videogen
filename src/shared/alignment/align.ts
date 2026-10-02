@@ -49,7 +49,7 @@ const DEFAULT_ALIGN_SCRIPT = resolve(HERE, 'align.py');
  */
 const DEFAULT_VOICE_ENGINE_MODULE = resolve(
   HERE,
-  '../../../../../voice-engine/dist/index.js',
+  '../../../voice-engine/dist/index.js',
 );
 
 export interface AlignedWord {

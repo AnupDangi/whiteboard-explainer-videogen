@@ -8,7 +8,7 @@ import { edgeLabelAnchor } from '../layout/edges.js';
 const strokeAttrs = (width: number = STYLE.stroke.width, color: string = STYLE.stroke.color) =>
   `fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="${STYLE.stroke.cap}" stroke-linejoin="${STYLE.stroke.join}"`;
 
-const strokeSvg = (path: StrokePath, dashProgress: number): string => {
+export const strokeSvg = (path: StrokePath, dashProgress: number): string => {
   const len = Math.max(1e-6, path.length);
   const width = path.width ?? STYLE.stroke.width;
   const tf = path.transform ? ` transform="${path.transform}"` : '';
@@ -16,13 +16,13 @@ const strokeSvg = (path: StrokePath, dashProgress: number): string => {
   return `<path d="${path.d}" ${strokeAttrs(width, path.color)}${tf} stroke-dasharray="${len}" stroke-dashoffset="${len * (1 - dashProgress)}"/>`;
 };
 
-const fillSvg = (f: FillShape, opacity = 1): string =>
+export const fillSvg = (f: FillShape, opacity = 1): string =>
   `<path d="${f.d}" fill="${f.fill}"${f.fillRule ? ` fill-rule="${f.fillRule}"` : ''}${f.transform ? ` transform="${f.transform}"` : ''}${opacity < 1 ? ` opacity="${opacity}"` : ''}/>`;
 
-const textSvg = (t: TextRun): string =>
+export const textSvg = (t: TextRun): string =>
   `<text${t.preserveSpace ? ' xml:space="preserve"' : ''} x="${t.x}" y="${t.y}" text-anchor="${t.anchor}" font-family="${STYLE.font.family}" font-weight="${STYLE.font.weight}" font-size="${t.size}" fill="${STYLE.stroke.color}">${escapeXml(t.text)}</text>`;
 
-const embedSvg = (e: EmbeddedSvg): string =>
+export const embedSvg = (e: EmbeddedSvg): string =>
   `<svg x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" viewBox="${e.viewBox}" overflow="visible">${e.body}</svg>`;
 
 /**
@@ -30,7 +30,7 @@ const embedSvg = (e: EmbeddedSvg): string =>
  * length (hypothesis/v1_claude/01 §7 "paths sequenced"), the way a hand
  * draws an icon — never every path growing at once.
  */
-function sequentialStrokes(paths: StrokePath[], p: number): string[] {
+export function sequentialStrokes(paths: StrokePath[], p: number): string[] {
   const px = (x: StrokePath) => x.length * (x.pxScale ?? 1);
   const total = paths.reduce((s, x) => s + px(x), 0);
   if (total <= 0) return p > 0 ? paths.map((x) => strokeSvg(x, 1)) : [];
@@ -46,7 +46,7 @@ function sequentialStrokes(paths: StrokePath[], p: number): string[] {
 }
 
 /** Left-to-right handwriting wipe over `inner`, in the element's local frame. */
-function wipe(clipId: string, w: number, h: number, p: number, inner: string): string {
+export function wipe(clipId: string, w: number, h: number, p: number, inner: string): string {
   if (p <= 0 || !inner) return '';
   if (p >= 1) return inner;
   return `<clipPath id="${clipId}"><rect x="-40" y="-60" width="${(w + 80) * p}" height="${h + 140}"/></clipPath><g clip-path="url(#${clipId})">${inner}</g>`;

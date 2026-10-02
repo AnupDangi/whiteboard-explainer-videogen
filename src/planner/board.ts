@@ -15,6 +15,7 @@ import { RELATION_ARROWS, type RelationType } from '../run/config.js';
 import { repairRawBoard, type BoardRepairContext } from './boardRepair.js';
 import { vocabularyPromptBlock } from './visualDiscovery.js';
 import { RELATION_TYPES } from '../plan/schemas.js';
+import { diffCoercions, ledgerPreprocess, recordCoercion } from '../structured/coercionLedger.js';
 
 /**
  * S6 board planner (claude-board/v2, design 2026-09-26).
@@ -30,9 +31,9 @@ import { RELATION_TYPES } from '../plan/schemas.js';
  * S7 resolve, S8 layout, S9 timeline, and S10 renderer apply unchanged.
  */
 export const BOARD_SCHEMA_VERSION = 'claude-board/v5-representation-intent';
-export const BOARD_PROMPT_VERSION = `board-prompt-v27-visual-form+${BOARD_BANK_VERSION}`;
+export const BOARD_PROMPT_VERSION = `board-prompt-v28-generic-notation+${BOARD_BANK_VERSION}`;
 /** S6 cache stage version: bump whenever board validation or compilation changes, so cached results from older rules are never replayed. */
-export const BOARD_STAGE_VERSION = 'board-29-architecture';
+export const BOARD_STAGE_VERSION = 'board-30-generic-notation';
 export const BOARD_LAYOUTS = ['flow', 'fan_out', 'convergence', 'list', 'compare', 'cycle', 'hub', 'hierarchy_tree', 'decision_tree', 'timeline', 'rule_exception', 'claim_evidence'] as const;
 export const BOARD_ROLES = ['input', 'process', 'output', 'item', 'attribute', 'root', 'branch', 'leaf', 'outcome', 'event', 'rule', 'exception', 'consequence', 'claim', 'evidence'] as const;
 export const MAX_BOARD_NODES = 7;
@@ -172,7 +173,7 @@ export function boardSchema(enums: BoardEnums, repair?: BoardRepairContext) {
   const inner = boardSchemaStrict(enums);
   // Shape errors code can correct (unknown enum values, surplus targets, long strings) are corrected before the strict parse,
   // so they never cost the model a repair or reach the validator as a failure.
-  return repair ? z.preprocess((raw) => repairRawBoard(raw, repair).board, inner) : inner;
+  return repair ? ledgerPreprocess('board-repair', (raw) => repairRawBoard(raw, repair).board, inner) : inner;
 }
 
 function boardSchemaStrict(enums: BoardEnums) {
@@ -529,9 +530,9 @@ export function boardProblems(board: Board, input: PlannerSceneInput, enums: Boa
     : groundedVisual?.kind === 'geometry' ? (groundedVisual.sideLabels ?? []).join(' ')
     : board.visual.kind === 'array' || board.visual.kind === 'geometry' ? ''
     : board.visual.kind === 'formula'
-    // A subscript joins its symbol (d_k reads "dk" in extracted PDF text); commands and braces are notation, not words.
-    // Symbols (Q, K, V, QK, d_k, x: up to three letters) are notation that text extraction often scrambles, so only longer words
-    // (softmax, LayerNorm) must appear in the cited evidence; numbers are still checked below.
+    // A subscript joins its symbol (a subscripted symbol reads as one run in extracted PDF text); commands and braces are notation, not words.
+    // Symbols (up to three letters, optionally subscripted) are notation that text extraction often scrambles, so only longer words
+    // (named operations) must appear in the cited evidence; numbers are still checked below.
     ? board.visual.latex.replace(/([A-Za-z])_\{?([A-Za-z0-9]+)\}?/gu, '$1$2').replace(/\\[a-zA-Z]+/gu, ' ').replace(/[{}_^]/gu, ' ').replace(/(?<![A-Za-z])[A-Za-z]{1,3}(?![A-Za-z])/gu, ' ')
     : board.visual.kind === 'plot'
       ? [board.visual.fn, board.visual.xLabel ?? '', board.visual.yLabel ?? ''].join(' ')
@@ -810,11 +811,13 @@ export function validateBoard(value: unknown, input: PlannerSceneInput, options:
   const requiredConcepts = new Set([...(input.teachingContext?.relations ?? []).flatMap((relation) => [relation.from, relation.to]), ...(input.planningContext?.sceneContract.requiredConceptIds ?? [])]);
   // Model output only: fix shape errors in code so the model's bounded repairs go to real content problems.
   const repaired = options.normalizeInstances ? repairRawBoard(value, { requiredConceptCount: requiredConcepts.size, maxLabelWords: MAX_LABEL_WORDS }).board : value;
+  if (options.normalizeInstances) for (const entry of diffCoercions(value, repaired, 'board-repair')) recordCoercion(entry);
   const normalizedValue = normalizeLegacyLayoutRoles(repaired, input);
   const parsed = boardSchema(enums).safeParse(normalizedValue);
   if (!parsed.success) return { problems: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`) };
   // Model output only: direct validation keeps reporting redundant instances as problems.
   const board = options.normalizeInstances ? withDerivedIllustrativeFlag(pruneLateTargets(completeEdgeIntents(dropRedundantInstances(parsed.data as Board), input), input), input) : parsed.data as Board;
+  if (options.normalizeInstances) for (const entry of diffCoercions(parsed.data, board, 'board-normalize')) recordCoercion(entry);
   const problems = boardProblems(board, input, enums, options.lenientBinding);
   const compiled = compileBoard(board, input);
   const checked = safeParseSceneSpec(compiled.spec);
@@ -1173,7 +1176,7 @@ export function buildBoardPrompt(input: PlannerSceneInput): { system: string; us
  - role: choose the layout-specific semantic slot. Legacy layouts use input, process, output, item, or attribute. hierarchy_tree uses root, branch, and optional leaf; decision_tree uses root, branch, and outcome; timeline uses event for every node in chronological order; rule_exception uses exactly one rule and exception plus an optional consequence; claim_evidence uses exactly one claim and one or more evidence nodes. The compiler maps these roles to slots and validates required counts. For the legacy process/list layouts, include a process role when visual.kind is process.
 - visual.kind: choose process for a mechanism, comparison for two alternatives (layout must be compare), worked-example for one arithmetic example, array {tokens, highlight?, illustrative} when the lesson walks through a list of values or positions (a sorted list, a search range, steps in a sequence: highlight the cells being discussed), geometry {shape, sideLabels?, illustrative} when the idea is a figure with named sides or parts (right triangle, square, circle), formula/plot/matrix/number-line when cited scene data supports that visual, or code only when an exact source excerpt is cited. Molecule/reaction require exact explicit bracket notation in a cited quote (such as [H]-[O]-[H] or 2[H]-[H] + [O]=[O] -> 2[H]-[O]-[H]); supply the atom/bond graph and copy that notation verbatim. Linear and branched acyclic structures are supported; omit chemistry visuals for prose-only structures, rings, charges, stereochemistry or implicit hydrogens. Never invent source values or code.
  - code {language, source}: display-only; copy the exact source excerpt from one cited source evidence quote. Preserve case, spaces, punctuation, and LF line breaks. Never execute, repair, complete, or invent code. Use only if it helps explain a source-supported claim; it is limited to 14 lines / 40 characters per line, uses spaces rather than tabs, and angle brackets render as escaped text.
-- When the scene data carries visualForm array, geometry, worked-example or formula, set visual.kind to exactly that; it is the picture the teacher chose for this scene. A formula's latex uses the symbols the cited quote uses (subscripts as in d_k, functions as \\mathrm{name}); never add terms the quote does not contain. Write the equation in symbols (Q, K, V, d_k, \\mathrm{softmax}), not in \\text{words}: words must appear in the cited quote, symbols the quote shows are enough. A claim that the formula carries targets the structured picture as {"kind":"element","elementId":"visual"}.
+- When the scene data carries visualForm array, geometry, worked-example or formula, set visual.kind to exactly that; it is the picture the teacher chose for this scene. A formula's latex uses exactly the symbols the cited quote uses (keep its subscripts and function names as written); never add terms the quote does not contain. Write the equation in symbols, not in \\text{words}: words must appear in the cited quote, symbols the quote shows are enough. A claim that the formula carries targets the structured picture as {"kind":"element","elementId":"visual"}.
 - repeat: when the cited source says a part is a stack of N identical layers or N copies (for example "N = 6 identical layers"), set that node's repeat to N; code draws N stacked copies and prints ×N. Only use a number the cited evidence states. Put the parts of an architecture inside their whole by showing the whole as its own node and the parts as nodes it contains (source relation contains); the compiler draws the boundary.
 - worked-example: use a simple illustrative arithmetic example only; its computed result must be exact, and code will visibly mark it "Illustrative example".
  - formula, plot, matrix, number-line, and code values are checked against the cited concept evidence. Use only values and labels present in those source quotes.

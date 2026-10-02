@@ -4,6 +4,15 @@ import { openRouterClient, type ModelClient } from './modelClient.js';
 import type { StageFailure } from '../shared/types.js';
 import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import { PIPELINE } from '../run/config.js';
+import { createHash } from 'node:crypto';
+import { compileProviderSchema, providerForModel, type CompiledSchema, type SchemaProvider } from '../structured/providerSchema.js';
+import { normalizeNullable } from '../structured/normalizeNullable.js';
+import { silentSemanticCoercions } from '../harness/structuredMetrics.js';
+import { collectCoercions, countCoercions, type CoercionCounts, type CoercionEntry } from '../structured/coercionLedger.js';
+import { currentCallRecorder, type CallRecorder } from '../structured/recorder.js';
+import { requestHashOf } from '../structured/replayClient.js';
+import { emptyTrace, type RepairRecord, type StructuredTrace } from '../structured/trace.js';
+import { pointerFromPath, applyPatches, buildPatchRepairPrompt, decodePatchResponse, patchOutsideTargets, patchResponseJsonSchema } from '../structured/jsonPointerRepair.js';
 
 /**
  * One validated LLM call for every model stage in this track (S1b syllabus,
@@ -43,6 +52,10 @@ export function addUsage(into: CallUsage, from: CallUsage): void {
   into.repairs += from.repairs;
 }
 
+/** A semantic problem. A pointer lets the repair patch just that location; a bare string needs a full-document repair. */
+export type ValidatorProblem = string | { path: string; message: string };
+const problemText = (problem: ValidatorProblem): string => (typeof problem === 'string' ? problem : `${problem.path || '(root)'}: ${problem.message}`);
+
 export interface StructuredCallOptions<T> {
   stage: string;
   /** Used in failure messages and logs. */
@@ -54,9 +67,15 @@ export interface StructuredCallOptions<T> {
   schema: z.ZodType<T>;
   schemaName: string;
   /** Semantic checks beyond the zod shape; return a list of problems (empty = valid). */
-  validate?: (value: T) => string[];
+  validate?: (value: T) => ValidatorProblem[];
   /** Semantic repair attempts after the first response. Defaults to one for all existing stages. */
   maxRepairs?: 1 | 2;
+  /** `patch` (default): a failure with JSON pointers is repaired by patching those pointers only. `full` regenerates the document. Failures without a pointer always use the full prompt. */
+  repairMode?: 'patch' | 'full';
+  /** Widens the area a patch may touch for a rejected pointer (default: the pointer itself). A fix often belongs to the same operation or beat, not the exact field the validator named. */
+  repairScope?: (pointer: string) => string;
+  /** Where this call's raw output, errors, patches and replay fixture are retained; defaults to the run's ambient recorder. */
+  recorder?: CallRecorder;
   /** Stage-specific guidance; the full schema and validator still run after every response. */
   repairPrompt?: (args: { originalUserPrompt: string; invalidOutput: string; validatorError: string; repairIndex: number; truncated: boolean }) => string;
   maxTokens?: number;
@@ -81,11 +100,43 @@ export interface StructuredCallOptions<T> {
   sleep?: (ms: number) => Promise<void>;
 }
 
+/** What one validated call proves about itself (V2 plan Phase 1.1 / 1.5): provider, constraint truth, first-try validity. */
+export interface StructuredCallReport {
+  stage: string;
+  subject: string;
+  provider: SchemaProvider;
+  clientProvider: string;
+  model: string;
+  schemaName: string;
+  /** SHA-256 of the exact wire schema sent. */
+  schemaHash: string;
+  /** Every attempt ran under provider-enforced decoding for the whole schema. */
+  schemaConstrained: boolean;
+  /** The wire schema was compiled for strict decoding. */
+  strict: boolean;
+  droppedKeywords: Array<{ path: string; keyword: string }>;
+  attempts: number;
+  repairs: number;
+  /** The very first response parsed and validated without a repair. */
+  firstTryValid: boolean;
+  /** The call produced a validated value. */
+  succeeded: boolean;
+  /** Code-side coercions on the accepted attempt (V2 plan Phase 1.4). */
+  coercions: CoercionCounts;
+  /** Raw output / replay fixture were written to disk (V2 plan Phase 1.2). */
+  retained: { raw: boolean; replayFixture: boolean };
+  /** Semantic differences between the model's JSON and the validated value that no ledger entry covers (target: 0). */
+  silentSemanticCoercions: number;
+}
+
 export interface StructuredCallResult<T> {
   value?: T;
   usage: CallUsage;
   failures: StageFailure[];
   rawResponses: StructuredCallAttemptRecord[];
+  /** One report per model call made (a stage that fans out per scene concatenates them). */
+  reports: StructuredCallReport[];
+  trace: StructuredTrace;
 }
 
 export interface StructuredCallAttemptRecord {
@@ -96,6 +147,10 @@ export interface StructuredCallAttemptRecord {
   /** Provider finish reason ("stop", "length" = cut off at maxTokens, ...). */
   finishReason?: string;
   maxTokens?: number;
+  /** The provider enforced the schema while decoding this response. */
+  schemaConstrained?: boolean;
+  /** SHA-256 of system + prompt + schema name sent for this attempt; replay verifies it. */
+  requestHash?: string;
   routing?: { generationId?: string; selectedModel?: string; selectedProvider?: string; strategy?: string; attempt?: number };
   usage: { promptTokens: number; completionTokens: number; cachedTokens: number; costUsd: number };
 }
@@ -168,10 +223,13 @@ export function parseJsonLenient(raw: string): unknown {
 }
 
 /** Try candidates last-first (a self-correcting model settles on its final block); each must pass full validation. */
-export function parseCandidates<T>(content: string, schema: z.ZodType<T>, validate?: (value: T) => string[]): { ok: true; value: T } | { ok: false; error: string } {
+export function parseCandidates<T>(content: string, schema: z.ZodType<T>, validate?: (value: T) => ValidatorProblem[], optionalPaths: readonly string[] = []): { ok: true; value: T; coercions: CoercionEntry[]; input: unknown } | { ok: false; error: string; issues: Array<{ path: string; message: string }>; json?: unknown } {
   const candidates = extractJsonCandidates(content);
-  if (candidates.length === 0) return { ok: false, error: 'response contained no JSON object ({...}) at all' };
+  if (candidates.length === 0) return { ok: false, error: 'response contained no JSON object ({...}) at all', issues: [] };
   let lastError = 'no candidate JSON object validated';
+  // Repairs target the FIRST evaluated candidate (the model's final block), so its document and pointers are kept.
+  let firstJson: unknown;
+  let firstIssues: Array<{ path: string; message: string }> | undefined;
   for (let i = candidates.length - 1; i >= 0; i--) {
     let json: unknown;
     try {
@@ -180,19 +238,27 @@ export function parseCandidates<T>(content: string, schema: z.ZodType<T>, valida
       lastError = `[candidate ${i + 1}/${candidates.length}] invalid JSON: ${error instanceof Error ? error.message : String(error)}`;
       continue;
     }
-    const parsed = schema.safeParse(json);
-    if (!parsed.success) {
-      lastError = `[candidate ${i + 1}/${candidates.length}] ${parsed.error.issues.map((x) => `${x.path.join('.')}: ${x.message}`).join('; ')}`;
+    const normalized = normalizeNullable(json, optionalPaths);
+    // Coercers run inside zod preprocess and inside the stage validator; both write to this candidate's ledger scope.
+    const { result: outcome, entries } = collectCoercions(() => {
+      const parsed = schema.safeParse(normalized);
+      if (!parsed.success) return { kind: 'schema' as const, issues: parsed.error.issues };
+      return { kind: 'checked' as const, data: parsed.data, problems: validate?.(parsed.data) ?? [] };
+    });
+    if (outcome.kind === 'schema') {
+      lastError = `[candidate ${i + 1}/${candidates.length}] ${outcome.issues.map((x) => `${x.path.join('.')}: ${x.message}`).join('; ')}`;
+      if (firstIssues === undefined) { firstJson = json; firstIssues = outcome.issues.map((x) => ({ path: pointerFromPath(x.path), message: x.message })); }
       continue;
     }
-    const problems = validate?.(parsed.data) ?? [];
-    if (problems.length > 0) {
-      lastError = `[candidate ${i + 1}/${candidates.length}] ${problems.join('; ')}`;
+    if (outcome.problems.length > 0) {
+      lastError = `[candidate ${i + 1}/${candidates.length}] ${outcome.problems.map(problemText).join('; ')}`;
+      // Patchable only when EVERY problem names a location; otherwise some problem would survive a pointer patch.
+      if (firstIssues === undefined) { firstJson = json; firstIssues = outcome.problems.every((problem) => typeof problem !== 'string') ? outcome.problems.map((problem) => ({ path: (problem as { path: string }).path, message: (problem as { message: string }).message })) : []; }
       continue;
     }
-    return { ok: true, value: parsed.data };
+    return { ok: true, value: outcome.data, coercions: entries, input: normalized };
   }
-  return { ok: false, error: lastError };
+  return { ok: false, error: lastError, issues: firstIssues ?? [], ...(firstJson !== undefined ? { json: firstJson } : {}) };
 }
 
 /** Generic fetch/network failures never reached a model endpoint, so they retry as transport (donor RETRYABLE set covers only typed rejections). Aborts/timeouts are excluded: the request may have dispatched. */
@@ -216,16 +282,57 @@ ${validatorError}
 
 Respond with ONLY the corrected JSON object.`;
 
+interface CallTrack { firstTryValid: boolean; trace: StructuredTrace; /** The accepted model JSON after null normalization (before any coercer). */ acceptedInput?: unknown }
+
+/**
+ * One validated model call. The wrapper compiles the zod schema for the model's provider class, runs the call,
+ * and attaches a report that states what the call actually proved (constraint, first-try validity, repairs).
+ */
 export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise<StructuredCallResult<T>> {
   const { $schema: _drop, ...jsonSchema } = z.toJSONSchema(opts.schema) as Record<string, unknown>;
+  const provider = providerForModel(opts.model);
+  const client = opts.client ?? openRouterClient(opts.apiKey, opts.fetcher);
+  let compiled: CompiledSchema;
+  try {
+    compiled = compileProviderSchema(jsonSchema, provider);
+  } catch (error) {
+    const failure: StageFailure = { code: `${opts.stage}-schema-compile-failed`, stage: opts.stage, message: `${opts.subject}: ${error instanceof Error ? error.message : String(error)}`, hard: true };
+    return { usage: emptyUsage(), failures: [failure], rawResponses: [], reports: [{ stage: opts.stage, subject: opts.subject, provider, clientProvider: client.provider, model: opts.model, schemaName: opts.schemaName, schemaHash: '', schemaConstrained: false, strict: false, droppedKeywords: [], attempts: 0, repairs: 0, firstTryValid: false, succeeded: false, coercions: { total: 0, low: 0, semantic: 0 }, retained: { raw: false, replayFixture: false }, silentSemanticCoercions: 0 }], trace: emptyTrace() };
+  }
+  const track: CallTrack = { firstTryValid: false, trace: emptyTrace() };
+  const result = await runStructuredCall(opts, compiled, jsonSchema, client, track, provider);
+  const attempts = result.rawResponses.length;
+  const report: StructuredCallReport = {
+    stage: opts.stage, subject: opts.subject, provider, clientProvider: client.provider, model: opts.model, schemaName: opts.schemaName,
+    schemaHash: createHash('sha256').update(JSON.stringify(compiled.schema)).digest('hex'),
+    schemaConstrained: attempts > 0 && result.rawResponses.every((record) => record.schemaConstrained === true),
+    strict: compiled.strict, droppedKeywords: compiled.droppedKeywords, attempts, repairs: result.usage.repairs,
+    firstTryValid: track.firstTryValid, succeeded: result.value !== undefined, coercions: countCoercions(track.trace.coercions),
+    retained: { raw: false, replayFixture: false },
+    silentSemanticCoercions: result.value !== undefined && track.acceptedInput !== undefined ? silentSemanticCoercions(track.acceptedInput, result.value, track.trace.coercions) : 0,
+  };
+  const recorder = opts.recorder ?? currentCallRecorder();
+  if (recorder) {
+    try {
+      await recorder.record({ stage: opts.stage, subject: opts.subject, model: opts.model, provider: client.provider, schemaName: opts.schemaName, value: result.value, rawResponses: result.rawResponses, trace: track.trace, report, failures: result.failures });
+      report.retained = { raw: true, replayFixture: true };
+    } catch (error) {
+      result.failures.push({ code: `${opts.stage}-record-failed`, stage: opts.stage, message: `${opts.subject}: could not retain raw output (${error instanceof Error ? error.message : String(error)}); this call has no replay fixture`, hard: false });
+    }
+  }
+  return { ...result, reports: [report], trace: track.trace };
+}
+
+async function runStructuredCall<T>(opts: StructuredCallOptions<T>, compiled: CompiledSchema, originalSchema: Record<string, unknown>, client: ModelClient, track: CallTrack, provider: SchemaProvider): Promise<Omit<StructuredCallResult<T>, 'reports' | 'trace'>> {
+  const jsonSchema = compiled.schema;
   const usage = emptyUsage();
   const failures: StageFailure[] = [];
   const rawResponses: StructuredCallResult<T>['rawResponses'] = [];
 
-  const client = opts.client ?? openRouterClient(opts.apiKey, opts.fetcher);
   const pricing = opts.modelPricing ?? await client.pricing?.(opts.model).catch(() => undefined);
 
-  const call = async (userPrompt: string, attempt: number, maxTokens: number): Promise<{ content: string; finishReason: string } | null> => {
+  interface Wire { schema: Record<string, unknown>; schemaName: string; strictSchema: boolean; limitSchema?: Record<string, unknown> }
+  const call = async (userPrompt: string, attempt: number, maxTokens: number, wire?: Wire): Promise<{ content: string; finishReason: string } | null> => {
     if (usage.costUsd >= opts.remainingBudgetUsd) {
       failures.push({ code: 'cost-ceiling', stage: opts.stage, message: `${opts.subject}: skipped call #${attempt} — remaining clip budget ($${opts.remainingBudgetUsd.toFixed(4)}) exhausted`, hard: true });
       return null;
@@ -244,8 +351,10 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
         model: opts.model,
         system: opts.system,
         user: userPrompt,
-        schema: jsonSchema,
-        schemaName: opts.schemaName,
+        schema: wire?.schema ?? jsonSchema,
+        strictSchema: wire ? wire.strictSchema : compiled.strict,
+        ...(wire ? (wire.limitSchema ? { limitSchema: wire.limitSchema } : {}) : (compiled.droppedKeywords.length ? { limitSchema: originalSchema } : {})),
+        schemaName: wire?.schemaName ?? opts.schemaName,
         maxTokens,
         temperature: opts.temperature ?? 0,
         maxPriceUsdPerMillionTokens: requestPriceCeiling,
@@ -290,6 +399,8 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
       content: result.content,
       finishReason: result.finishReason,
       maxTokens,
+      schemaConstrained: result.schemaConstrained,
+      requestHash: requestHashOf(opts.system, userPrompt, wire?.schemaName ?? opts.schemaName),
       ...(result.requestPriceCeiling ? { requestPriceCeiling: result.requestPriceCeiling } : {}),
       ...(result.routing ? { routing: result.routing } : {}),
       usage: { ...result.usage },
@@ -298,10 +409,10 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
   };
 
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const callWithTransportRetry = async (userPrompt: string, attempt: number, maxTokens: number): Promise<{ content: string; finishReason: string } | null> => {
+  const callWithTransportRetry = async (userPrompt: string, attempt: number, maxTokens: number, wire?: Wire): Promise<{ content: string; finishReason: string } | null> => {
     for (let retry = 0; ; retry++) {
       try {
-        return await call(userPrompt, attempt, maxTokens);
+        return await call(userPrompt, attempt, maxTokens, wire);
       } catch (error) {
         // Only route/throttle rejections can succeed on an identical retry; a rejected request (auth, credit, bad parameters) cannot.
         // Generic fetch/network failures (undici `TypeError: fetch failed`) also never reached a model, so they retry as transport too.
@@ -315,7 +426,7 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
   };
   const parseSafely = (content: string) => {
     try {
-      return parseCandidates(content, opts.schema, opts.validate);
+      return parseCandidates(content, opts.schema, opts.validate, compiled.optionalPaths);
     } catch (error) {
       return { threw: error } as const;
     }
@@ -333,25 +444,36 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
   if (first === null) return { usage, failures, rawResponses };
   const parsed = parseSafely(first.content);
   if ('threw' in parsed) { validatorThrew(parsed.threw); return { usage, failures, rawResponses }; }
-  if (parsed.ok) return { value: parsed.value, usage, failures, rawResponses };
+  if (parsed.ok) { track.firstTryValid = true; track.trace.coercions = parsed.coercions; track.acceptedInput = parsed.input; return { value: parsed.value, usage, failures, rawResponses }; }
 
-  // Each response is fully validated. Stage-specific guidance can prioritize one
-  // defect class per attempt, but no partially repaired response is accepted.
+  // Each response is fully validated. A failure at JSON pointers is repaired by patching those pointers only; a failure with
+  // no pointer (a validator problem about the whole document) uses the stage's full-document repair prompt.
+  track.trace.validationErrors.push({ attempt: 1, error: parsed.error, issues: parsed.issues });
   let invalid = first;
   let invalidError = parsed.error;
+  let invalidJson = parsed.json;
+  let invalidIssues = parsed.issues;
   let invalidMaxTokens = maxTokens;
+  let patchWire: Wire | undefined;
   const initialError = first.finishReason === 'length' ? `response was cut off at the ${maxTokens}-token output limit (${parsed.error})` : parsed.error;
   for (let repairIndex = 1; repairIndex <= (opts.maxRepairs ?? 1); repairIndex++) {
     const truncated = invalid.finishReason === 'length';
     const error = truncated ? `response was cut off at the ${invalidMaxTokens}-token output limit (${invalidError})` : invalidError;
     if (truncated && repairIndex === 1) failures.push({ code: `${opts.stage}-truncated`, stage: opts.stage, message: `${opts.subject} attempt 1: ${error}`, hard: false });
     const repairMaxTokens = truncated ? Math.ceil(invalidMaxTokens * 1.5) : maxTokens;
-    const userPrompt = opts.repairPrompt?.({ originalUserPrompt: opts.user, invalidOutput: invalid.content, validatorError: error, repairIndex, truncated })
-      ?? buildRepairPrompt(opts.user, invalid.content, error, truncated);
+    const patchable = opts.repairMode !== 'full' && !truncated && invalidJson !== undefined && invalidIssues.length > 0;
+    if (patchable && !patchWire) {
+      const patchCompiled = compileProviderSchema(patchResponseJsonSchema(), provider);
+      patchWire = { schema: patchCompiled.schema, schemaName: 'json_patch', strictSchema: patchCompiled.strict, ...(patchCompiled.droppedKeywords.length ? { limitSchema: patchResponseJsonSchema() } : {}) };
+    }
+    const userPrompt = patchable
+      ? buildPatchRepairPrompt({ originalUserPrompt: opts.user, invalidDocument: invalidJson, issues: invalidIssues, schema: originalSchema })
+      : opts.repairPrompt?.({ originalUserPrompt: opts.user, invalidOutput: invalid.content, validatorError: error, repairIndex, truncated })
+        ?? buildRepairPrompt(opts.user, invalid.content, error, truncated);
     usage.repairs += 1;
     let response: { content: string; finishReason: string } | null;
     try {
-      response = await callWithTransportRetry(userPrompt, repairIndex + 1, repairMaxTokens);
+      response = await callWithTransportRetry(userPrompt, repairIndex + 1, repairMaxTokens, patchable ? patchWire : undefined);
     } catch (callError) {
       failures.push({ code: `${opts.stage}-repair-call-failed`, stage: opts.stage, message: `${opts.subject}: invalid (${error}); repair call failed: ${callError instanceof Error ? callError.message : String(callError)}`, hard: true });
       return { usage, failures, rawResponses };
@@ -360,11 +482,30 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
       failures.push({ code: `${opts.stage}-invalid`, stage: opts.stage, message: `${opts.subject}: invalid (${error}); repair skipped (budget)`, hard: true });
       return { usage, failures, rawResponses };
     }
-    const repaired = parseSafely(response.content);
+    const record: RepairRecord = { repairIndex, mode: patchable ? 'patch' : 'full', targets: patchable ? [...new Set(invalidIssues.map((issue) => opts.repairScope?.(issue.path) ?? issue.path))] : [], patches: [] };
+    track.trace.repairs.push(record);
+    let candidate = response;
+    if (patchable) {
+      try {
+        record.patches = decodePatchResponse(response.content, originalSchema as Record<string, unknown>);
+        const stray = patchOutsideTargets(record.patches, record.targets);
+        if (stray) throw new Error(`patch ${stray.path} is outside the rejected fields (${record.targets.join(', ')}); accepted content must not change`);
+        candidate = { content: JSON.stringify(applyPatches(invalidJson, record.patches)), finishReason: 'stop' };
+      } catch (patchError) {
+        // The document is unchanged; the unusable patch still cost this repair.
+        record.error = patchError instanceof Error ? patchError.message : String(patchError);
+        invalidError = `repair patch unusable: ${record.error} (still invalid: ${invalidError})`;
+        continue;
+      }
+    }
+    const repaired = parseSafely(candidate.content);
     if ('threw' in repaired) { validatorThrew(repaired.threw); return { usage, failures, rawResponses }; }
-    if (repaired.ok) return { value: repaired.value, usage, failures, rawResponses };
-    invalid = response;
+    if (repaired.ok) { track.trace.coercions = repaired.coercions; track.acceptedInput = repaired.input; return { value: repaired.value, usage, failures, rawResponses }; }
+    track.trace.validationErrors.push({ attempt: repairIndex + 1, error: repaired.error, issues: repaired.issues });
+    invalid = candidate;
     invalidError = repaired.error;
+    invalidJson = repaired.json;
+    invalidIssues = repaired.issues;
     invalidMaxTokens = repairMaxTokens;
   }
   const finalError = invalid.finishReason === 'length' ? `response was cut off at the ${invalidMaxTokens}-token output limit (${invalidError})` : invalidError;

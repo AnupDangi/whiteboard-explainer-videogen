@@ -1,3 +1,8 @@
+import { runBeatStages } from '../teaching/beat-pipeline.js';
+import type { TeachingBeat } from '../teaching/beat-plan/types.js';
+import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
+import type { NarrationContext } from '../narration/beat-narration/validate.js';
+import type { ModelClient } from '../llm/modelClient.js';
 import { discoverVisualVocabulary, type VisualVocabulary } from '../planner/visualDiscovery.js';
 import { catalogVersion as enabledCatalogVersion } from '../assets/registry.js';
 import { sha256, stableJson } from '../shared/artifacts.js';
@@ -42,6 +47,10 @@ export interface PreparedLesson {
   /** Visual Discovery (S3b) output per section id, and lesson concept -> validated catalog entry. Locked with the lesson. */
   visualVocabularies?: Record<string, VisualVocabulary>;
   validatedByConcept?: Record<string, string>;
+  /** Beat mode (TEACHING_BEATS_V2): teaching beats and beat narration per section id (module-prefixed). */
+  beatPlans?: Record<string, TeachingBeat[]>;
+  beatNarrations?: Record<string, CompiledSceneNarration>;
+  beatNarrationContexts?: Record<string, NarrationContext>;
   usage: CallUsage;
   failures: StageFailure[];
   rawResponses: Record<string, StructuredCallAttemptRecord[]>;
@@ -54,7 +63,7 @@ export interface PreparedLesson {
 export type ContentStage = 'syllabus' | 'concepts' | 'plan' | 'script';
 const CONTENT_STAGE_FOR: Array<[prefix: string, stage: ContentStage]> = [['S1-syllabus', 'syllabus'], ['S2-concepts', 'concepts'], ['S3-teaching-plan', 'plan'], ['S4-narration-script', 'script']];
 
-export async function prepareLesson(req: LessonRequest, m: { model: string; stageModels?: Partial<Record<ContentStage, string>>; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; visionModel?: string; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number }): Promise<PreparedLesson> {
+export async function prepareLesson(req: LessonRequest, m: { model: string; stageModels?: Partial<Record<ContentStage, string>>; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; visionModel?: string; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number; /** Plan beats and write beat narration instead of the marker script (V2 plan Phases 2-3). */ beats?: boolean; beatClient?: ModelClient }): Promise<PreparedLesson> {
   const sourceStartedAtMs = Date.now();
   const sourceDocs = !req.sourceDoc && req.sources?.length ? await Promise.all(req.sources.map(async (source) => {
     if (source.kind === 'document') return loadSourceDoc(source.path);
@@ -130,6 +139,9 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
   const lessonClaimIds = new Set<string>();
   const vocabularies: Record<string, VisualVocabulary> = {};
   const validatedByConcept: Record<string, string> = {};
+  const beatPlans: Record<string, TeachingBeat[]> = {};
+  const beatNarrations: Record<string, CompiledSceneNarration> = {};
+  const beatNarrationContexts: Record<string, NarrationContext> = {};
   /** S3b Visual Discovery: decide how every scene concept will be drawn BEFORE narration is written. */
   const discoverFor = async (tag: string, graph: ConceptGraph, plan: TeachingPlan, sectionPrefix = ''): Promise<Record<string, VisualVocabulary>> => {
     const run = await runCached(`S3b-visual-discovery${tag}`, { graph, plan, catalog: enabledCatalogVersion(), domain: process.env.ASSET_USAGE_CONTEXT ?? 'production' }, 'claude-visual-discovery/v1', 'S3b-discovery-v3-vision-check', () => discoverVisualVocabulary({ plan, graph, model: modelFor('plan'), apiKey: m.apiKey, ...(m.visionModel ? { visionModel: m.visionModel } : {}), remainingBudgetUsd: budget(), ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}) }), 'S3b-visual-discovery-prompt-v1');
@@ -139,7 +151,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
     return run.result.vocabularies;
   };
 
-  const preparedResult = (extra: Partial<PreparedLesson>): PreparedLesson => ({ sourceDoc, ...(Object.keys(vocabularies).length ? { visualVocabularies: vocabularies, validatedByConcept } : {}), ...(sourceBundle ? { sourceBundle } : {}), usage, failures, rawResponses, cacheHits, stageArtifacts, stageRuns, ...extra });
+  const preparedResult = (extra: Partial<PreparedLesson>): PreparedLesson => ({ sourceDoc, ...(Object.keys(beatPlans).length ? { beatPlans, beatNarrations, beatNarrationContexts } : {}), ...(Object.keys(vocabularies).length ? { visualVocabularies: vocabularies, validatedByConcept } : {}), ...(sourceBundle ? { sourceBundle } : {}), usage, failures, rawResponses, cacheHits, stageArtifacts, stageRuns, ...extra });
 
   if (isSupportedLessonDuration(groundedRequest.targetDurationSec)) {
     const requestedDurationSec = groundedRequest.targetDurationSec;
@@ -211,8 +223,10 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       for (const finding of contractFindings) failures.push({ code: finding.code, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: true });
       for (const finding of analysis.findings) failures.push({ code: `${finding.code}:${finding.check}`, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: finding.severity === 'error' });
       if (!analysis.ok || contractFindings.length) return preparedResult({ syllabus, graph, plan: modulePlan, analysis, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
-      const moduleVocabulary = await discoverFor(`:${moduleTag}`, graph, modulePlan, `${moduleTag}_`);
-      const scriptRun = await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, vocabulary: moduleVocabulary }, 'claude-script/v1', 'S4-module-script-v9-claim-markers', () => writeScript(moduleRequest, graph, modulePlan, { visualVocabulary: moduleVocabulary, model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const moduleVocabulary = m.beats ? {} : await discoverFor(`:${moduleTag}`, graph, modulePlan, `${moduleTag}_`);
+      // Beat mode: the teaching beats and their speech replace Visual Discovery and the marker script (flag TEACHING_BEATS_V2).
+      const beatRun = m.beats ? await runCached(`S3b-beats:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-beats/v1', 'S3b-beats-v1-teaching-beats', () => runBeatStages({ plan: modulePlan, graph, sourceDoc: scopedSource }, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.beatClient ? { client: m.beatClient } : {}) })) : undefined;
+      const scriptRun = beatRun ? { result: { value: beatRun.result.value?.script, usage: beatRun.result.usage, failures: beatRun.result.failures, rawResponses: beatRun.result.rawResponses } } : await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, vocabulary: moduleVocabulary }, 'claude-script/v1', 'S4-module-script-v9-claim-markers', () => writeScript(moduleRequest, graph, modulePlan, { visualVocabulary: moduleVocabulary, model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, scriptRun.result.usage); failures.push(...scriptRun.result.failures); rawResponses[`script:${moduleTag}`] = scriptRun.result.rawResponses;
       if (!scriptRun.result.value) return preparedResult({ syllabus, graph, plan: modulePlan, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const sectionPrefix = `${moduleTag}_`;
@@ -221,6 +235,11 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       allSections.push(...prefixedSections);
       allScenes.push(...prefixedScenes);
       moduleGraphs.push(graph);
+      if (beatRun?.result.value) for (const id of Object.keys(beatRun.result.value.beatPlans)) {
+        beatPlans[`${sectionPrefix}${id}`] = beatRun.result.value.beatPlans[id]!;
+        beatNarrations[`${sectionPrefix}${id}`] = beatRun.result.value.narrations[id]!;
+        beatNarrationContexts[`${sectionPrefix}${id}`] = beatRun.result.value.narrationContexts[id]!;
+      }
       const completed: ModulePlan = { moduleId: module.id, title: module.title, goal: module.goal, budgetSec: effectiveModule.budgetSec, requestedBudgetSec: module.budgetSec, conceptIds: [...module.conceptIds], graph, plan: { ...modulePlan, sections: prefixedSections }, script: { scenes: prefixedScenes } };
       if (m.speechAligner) {
         const alignStartedAtMs = Date.now();

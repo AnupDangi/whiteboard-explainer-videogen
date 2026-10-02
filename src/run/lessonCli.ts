@@ -9,6 +9,11 @@ import { MATH_LESSONS } from '../fixtures/mathLessons.js';
 import { loadOpenRouterEnv } from '../planner/env.js';
 import { lessonToLiveInput, prepareLesson } from './lesson.js';
 import { runHypothesisLive } from './runLive.js';
+import { FileCallRecorder, setAmbientCallRecorder } from '../structured/recorder.js';
+import { buildScorecard } from '../harness/scorecard.js';
+import { FEATURE_FLAGS, TEACHING_COMPILER_VERSION } from './featureFlags.js';
+import { runLessonV2 } from '../pipeline-v2/runLessonV2.js';
+import { encodeLockedLessonV2Clips } from '../pipeline-v2/clipsV2.js';
 import { loadAlignmentCalibration } from '../shared/alignment/calibration.js';
 import { closeSpeechWorkers, synthesizeAndAlign } from '../shared/alignment/align.js';
 import { intakeWarningFailures, loadSourceDocFromBytes, loadSourceDocFromUrl, planSourceIntake } from '../intake/sourceIntake.js';
@@ -109,7 +114,13 @@ async function main(): Promise<void> {
   const lockPath = arg('from');
   if (lockPath) {
     const outputDir = path.dirname(path.resolve(lockPath));
-    if (path.basename(lockPath) !== 'lesson.lock.json') throw new Error('--from must point to lesson.lock.json');
+    if (!['lesson.lock.json', 'lesson.lock.v2.json'].includes(path.basename(lockPath))) throw new Error('--from must point to lesson.lock.json or lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(path.resolve(lockPath), 'utf8')) as { schemaVersion?: string };
+    if (lock.schemaVersion === 'lesson.lock/v5-teaching-compiler-v2') {
+      const videoPath = path.join(outputDir, 'video.replay.mp4');
+      console.log({ videoPath, ...await encodeLockedLessonV2Clips(outputDir, videoPath) });
+      return;
+    }
     console.log(await renderVideoFromLessonLock(outputDir));
     return;
   }
@@ -241,13 +252,16 @@ async function main(): Promise<void> {
     };
     const requestedBudgetUsd = lessonCostCapUsd(lesson.targetDurationSec);
     const budgetLedger = new PersistentBudgetLedger(path.join(outputDir, 'budget-ledger.json'), requestedBudgetUsd);
+    // Every model call of this run keeps its raw output, errors, patches and replay fixture under <run>/structured/.
+    const callRecorder = new FileCallRecorder(outputDir);
+    setAmbientCallRecorder(callRecorder);
     const artifactStore = new ContentAddressedArtifactStore(sharedStageCache ?? path.join(outBase, lesson.id, 'stage-cache'), cacheMode);
     console.log(`\n=== ${lesson.id} (content: ${contentModel}, planner: ${plannerModel}) ===`);
     const ragStartedAtMs = Date.now();
     const ragOutcome = lesson.sourceBundle && lesson.sourceDoc
       ? await indexSourceBundleWithRag({ sourceDoc: lesson.sourceDoc, sourceBundle: lesson.sourceBundle, query: lesson.instruction ?? lesson.title, workingDir: path.join(outBase, lesson.id, 'rag-index', lesson.sourceBundle.bundleId), ledger: budgetLedger, remainingBudgetUsd: Math.max(0, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd), providerEnv: env.ragSidecarEnv })
       : undefined;
-    const prepared = await prepareLesson(lesson, { model: contentModel, stageModels: argValue(args, 'content') ? {} : env.stageModels, apiKey: env.apiKey, budgetUsd: requestedBudgetUsd, budgetLedger, artifactStore, ...(env.visionModel ? { visionModel: env.visionModel } : {}), speechAligner: synthesizeAndAlign, speechLanguage: 'en', alignmentCalibrationMedianErrorMs: calibration.status === 'measured' ? calibration.medianAbsoluteBoundaryErrorMs! : undefined });
+    const prepared = await prepareLesson(lesson, { model: contentModel, stageModels: argValue(args, 'content') ? {} : env.stageModels, apiKey: env.apiKey, budgetUsd: requestedBudgetUsd, budgetLedger, artifactStore, ...(env.visionModel ? { visionModel: env.visionModel } : {}), speechAligner: synthesizeAndAlign, speechLanguage: 'en', alignmentCalibrationMedianErrorMs: calibration.status === 'measured' ? calibration.medianAbsoluteBoundaryErrorMs! : undefined, beats: FEATURE_FLAGS.enabled.TEACHING_BEATS_V2 });
     if (ragOutcome) prepared.stageRuns.push({ stage: 'S1-rag-index', kind: ragOutcome.estimatedCostUsd > 0 || ragOutcome.cacheHit ? 'provider' : 'local', status: ['completed', 'disabled', 'skipped'].includes(ragOutcome.status) ? 'completed' : 'failed', ...(ragOutcome.skipReason ? { skipReason: ragOutcome.skipReason } : {}), durationMs: ragOutcome.elapsedMs, startedAt: new Date(ragStartedAtMs).toISOString(), completedAt: new Date().toISOString(), apiCostUsd: ragOutcome.estimatedCostUsd, ...(ragOutcome.artifactEstimatedCostUsd ? { artifactApiCostUsd: ragOutcome.artifactEstimatedCostUsd } : {}), ...(ragOutcome.estimatedCostUsd > 0 || ragOutcome.artifactEstimatedCostUsd ? { costEstimated: true } : {}), cacheHit: ragOutcome.cacheHit, fallbackCount: 0, ...(ragOutcome.actualUsage ? { usage: { calls: ragOutcome.actualUsage.callAttempts, promptTokens: ragOutcome.actualUsage.promptTokens, completionTokens: ragOutcome.actualUsage.completionTokens, cachedTokens: 0, costUsd: ragOutcome.estimatedCostUsd, repairs: 0, fallbacks: 0, cacheHits: ragOutcome.cacheHit ? 1 : 0 } } : {}), failures: ragOutcome.error ? [{ code: ragOutcome.retrievalStatus === 'miss' ? 'rag-exact-span-retrieval-miss' : ragOutcome.status === 'partial' ? 'rag-index-partial' : 'rag-index-failed', stage: 'S1-rag-index', message: ragOutcome.error, hard: false }] : [] });
     const sourceArtifactList = sourceArtifacts.get(lesson.id);
     if (sourceArtifactList) {
@@ -282,6 +296,18 @@ async function main(): Promise<void> {
       continue;
     }
     for (const f of prepFailures) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
+    if (FEATURE_FLAGS.enabled.BOARD_OPS_V2) {
+      // Teaching Compiler V2: beats -> real audio -> board operations -> persistent board -> frames. No V1 board planner.
+      const v2 = await runLessonV2({ lessonId: lesson.id, outputDir, prepared, plannerModel, apiKey: env.apiKey, budgetLedger, artifactStore, language: 'en', ...(calibration.status === 'measured' ? { calibrationMedianErrorMs: calibration.medianAbsoluteBoundaryErrorMs! } : {}), remainingBudgetUsd: Math.max(0.01, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd) });
+      const v2Hard = v2.failures.filter((f) => f.hard);
+      const v2CompletedAtMs = Date.now();
+      await writeFile(path.join(outputDir, 'scorecard.json'), `${JSON.stringify(buildScorecard({ compilerVersion: TEACHING_COMPILER_VERSION, reports: [...callRecorder.reports()], coverageMetrics: v2.metrics }), null, 2)}\n`, 'utf8');
+      console.log(`status=${v2.status} scenes=${v2.scenes}/${v2.planned} hard=${v2Hard.length} ops=${v2.metrics['v2.ops'] ?? 0} stateChanging=${v2.metrics['v2.stateChangingOps'] ?? 0} late=${v2.metrics['v2.lateOps'] ?? 0} cost=$${(prepared.usage.costUsd + v2.usage.costUsd).toFixed(4)} wall=${Math.round((v2CompletedAtMs - executionStartedAtMs) / 1000)}s video=${v2.videoPath ?? 'none'} encodedDuration=${(v2.durationMs / 1000).toFixed(3)}s`);
+      for (const f of v2Hard) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
+      summary.push({ lesson: lesson.id, runId, outputDir, status: v2.status, scenes: v2.scenes, planned: v2.planned, compiler: 'v2', hardFailures: v2Hard.length, failureDetails: v2Hard.map(({ code, stage, message }) => ({ code, stage, message })), metrics: v2.metrics, costUsd: prepared.usage.costUsd + v2.usage.costUsd, video: v2.videoPath ?? null, durationMs: v2.durationMs, startedAt: new Date(executionStartedAtMs).toISOString(), completedAt: new Date(v2CompletedAtMs).toISOString(), wallMs: v2CompletedAtMs - executionStartedAtMs });
+      activeRunFailureContext = undefined;
+      continue;
+    }
     const options: HypothesisRunOptions = {
       mode: 'live',
       outputDir,
@@ -309,6 +335,8 @@ async function main(): Promise<void> {
         instructionSha256: benchmarkAttempt.instructionSha256,
       } } : {}) }, options, { openRouterApiKey: env.apiKey, plannerModel, budgetLedger, artifactStore, promptArm, exampleOrder, planDespiteAlignmentFailure, scenePlanner, executionTiming: { startedAtMs: executionStartedAtMs, pipelineStartedAtMs } });
       const hard = result.failures.filter((f) => f.hard);
+      // Scorecard (V2 plan §5/§6): measured values and blockers only; unmeasured conditions are listed, never passed.
+      await writeFile(path.join(outputDir, 'scorecard.json'), `${JSON.stringify(buildScorecard({ compilerVersion: TEACHING_COMPILER_VERSION, reports: callRecorder.reports(), coverageMetrics: result.evaluationBundle.metrics }), null, 2)}\n`, 'utf8');
       const cost = prepared.usage.costUsd + result.evaluationBundle.usage.costUsd + (ragOutcome?.estimatedCostUsd ?? 0);
       const completedAtMs = Date.now();
       console.log(`status=${result.status} scenes=${result.scenes.length}/${prepared.plan!.sections.length} hard=${hard.length} fallbacks=${result.evaluationBundle.usage.fallbacks} cost=$${cost.toFixed(4)} wall=${((completedAtMs - executionStartedAtMs) / 1000).toFixed(0)}s video=${result.videoPath ?? 'NONE'} encodedDuration=${result.encodedVideoDurationMs === undefined ? 'UNKNOWN' : `${(result.encodedVideoDurationMs / 1000).toFixed(3)}s`}`);

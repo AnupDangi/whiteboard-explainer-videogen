@@ -490,3 +490,25 @@ test('replay refuses captions that differ from the locked captions hash and acce
     await assert.rejects(renderVideoFromLessonLock(dir, encode as never), /regenerated captions hash .* differs from locked captions hash/);
   } finally { await cleanup(); }
 });
+
+test('pipeline source drift blocks replay by default; an explicit cross-commit allowance drops only that problem', async () => {
+  const { dir, cleanup } = await fixtureDir();
+  try {
+    const lock = await buildLessonLock({
+      runId: 'pipeline-drift', status: 'renderable', outputDir: dir, sourceFiles: ['source-doc.json'], assets: { usageContext: 'production' },
+      scenes: [{ sceneId: 'lock_test', assetRefs: [], audioFile: 'scene-audio/0000.wav', alignmentHash: sha256('alignment') }],
+      inputs: { requestHash: sha256('request'), settingsHash: sha256('settings') },
+      modelSettings: lockedModelSettings,
+      render: { width: 1920, height: 1080, fps: 30, durationMs: 12000 },
+    });
+    lock.versions.pipeline = 'deadbeef+0000';
+    lock.versions.ffmpeg = 'ffmpeg version 0.0.0 other';
+    lock.contentHash = lockContentHash(lock);
+    await writeFile(path.join(dir, 'lesson.lock.json'), `${stableJson(lock)}\n`);
+    const strict = await verifyLessonLock(dir);
+    assert.ok(strict.some((problem) => problem.includes('pipeline tool version drift')), JSON.stringify(strict));
+    const allowed = await verifyLessonLock(dir, { allowPipelineDrift: true });
+    assert.ok(!allowed.some((problem) => problem.includes('pipeline tool version drift')), JSON.stringify(allowed));
+    assert.ok(allowed.some((problem) => problem.includes('ffmpeg tool version drift')), 'other tool drift stays a problem');
+  } finally { await cleanup(); }
+});

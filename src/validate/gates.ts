@@ -203,9 +203,20 @@ export interface ClaimDepiction {
   selectionBases: Array<ResolutionRecord['selectionBasis']>;
   encodedRelations: string[];
   diagramFirst: boolean;
+  /** V2 accounting: the claim has a labelled box or text on the board. R10/R11 count here and nowhere stronger. */
+  textSupported: boolean;
+  /** V2 accounting: at least one depicting target is a real drawing (icon, semantic core, structured primitive), never an R10 box. */
+  drawnCoverage: boolean;
+  /** V2 accounting: at least one depicting target shows a mechanism (diagram, semantic core, topology, structured primitive). */
+  mechanismCoverage: boolean;
+  /** V2 accounting: the claim has a visual intent whose only depictions are R10 labelled boxes or plain text. */
+  r10Only: boolean;
 }
 
 /** Procedural prims are drawings by construction (Simi-style labelled boxes included). */
+/** Primitives that carry structure (not just a label): their geometry shows a relation, quantity or mechanism. */
+const STRUCTURED_PRIMS = new Set(['tokenStrip', 'operator', 'meter', 'matrix', 'formula', 'container', 'cylinder', 'stack', 'axis', 'hill', 'plot', 'numberLine', 'shape', 'code', 'molecule', 'reaction']);
+const MECHANISM_STRATEGIES = new Set(['R1-diagram', 'R2-semantic-core', 'R9-state-topology']);
 const DRAWN_PRIMS = new Set(['box', 'pill', 'tokenStrip', 'operator', 'meter', 'matrix', 'formula', 'container', 'cylinder', 'stack', 'axis', 'hill', 'plot', 'numberLine', 'shape', 'code', 'molecule', 'reaction']);
 
 export function depictClaims(scene: LaidOutScene, coverage: ClaimCoverageInput): ClaimDepiction[] {
@@ -249,6 +260,21 @@ export function depictClaims(scene: LaidOutScene, coverage: ClaimCoverageInput):
     const depictedStateChanges = claim.relations.filter((relation) => relation.type === 'transforms'
       && encodedRelations.includes(`${relation.from}|${relation.type}|${relation.to}`)).length;
     const drawnTargets = drawnFlags.filter(Boolean).length;
+    // V2 truthful accounting: an R10 labelled box or plain text is text support, not drawing and not mechanism.
+    const isMeaningful = (id: string): boolean => {
+      const strategy = resolutionByElement.get(id)?.strategy;
+      if (strategy === 'R10-labelled-primitive' || strategy === 'R11-minimal-text') return false;
+      const prim = primByElement.get(id) ?? '';
+      if (STRUCTURED_PRIMS.has(prim)) return true;
+      const rung = resolutionByElement.get(id)?.rung;
+      return prim === 'object' && rung !== undefined && rung !== 4;
+    };
+    const isMechanism = (id: string): boolean => {
+      const strategy = resolutionByElement.get(id)?.strategy;
+      return (strategy !== undefined && MECHANISM_STRATEGIES.has(strategy)) || (strategy !== 'R10-labelled-primitive' && STRUCTURED_PRIMS.has(primByElement.get(id) ?? ''));
+    };
+    const drawnCoverage = depictionElementIds.some(isMeaningful);
+    const mechanismCoverage = depictionElementIds.some(isMechanism);
     const textTargets = depictionElementIds.filter((id) => primByElement.get(id) === 'text'
       || resolutionByElement.get(id)?.strategy === 'R11-minimal-text').length;
     return {
@@ -269,6 +295,10 @@ export function depictClaims(scene: LaidOutScene, coverage: ClaimCoverageInput):
       selectionBases,
       encodedRelations,
       diagramFirst: claim.conceptIds.some((cid) => bridgeConceptFor(cid)?.preferredStrategies[0] === 'diagram'),
+      textSupported: depictionElementIds.length > 0,
+      drawnCoverage,
+      mechanismCoverage,
+      r10Only: links.length > 0 && depictionElementIds.length > 0 && !drawnCoverage,
     };
   });
 }
@@ -301,6 +331,12 @@ export function semanticCoverageMetrics(depictions: ClaimDepiction[], scenes: Ar
   }
   const ratio = (n: number): number => (major ? Math.round((n / major) * 1000) / 1000 : 1);
   return {
+    // V2 truthful accounting (plan Phase 0): R10 labelled boxes are text support, not meaningful or mechanism coverage.
+    // The legacy keys below keep V1's definition so baseline runs stay comparable.
+    'semantic.textSupportedClaims': depictions.filter((d) => d.textSupported).length,
+    'semantic.meaningfulClaimCoverage': ratio(depictions.filter((d) => d.drawnCoverage).length),
+    'semantic.mechanismClaimCoverage': ratio(depictions.filter((d) => d.mechanismCoverage).length),
+    'semantic.r10OnlyMajorClaims': depictions.filter((d) => d.r10Only).length,
     'semantic.majorClaims': major,
     'semantic.depictedClaims': depicted,
     'semantic.majorClaimVisualCoverage': ratio(depicted),

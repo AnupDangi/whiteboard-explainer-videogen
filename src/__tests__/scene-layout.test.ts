@@ -1,0 +1,99 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { BoardOpSchema, type BoardOp } from '../visual-v2/board-ops/types.js';
+import { applyOp, emptyBoardState } from '../visual-v2/board-state/reducer.js';
+import type { BoardState } from '../visual-v2/board-state/types.js';
+import { layoutScene, validateSceneGeometry, CONTENT_RECT } from '../visual-v2/layout/sceneLayout.js';
+import { contains, overlaps } from '../visual-v2/kits/geometry.js';
+
+const add = (id: string, element: unknown, at: unknown, beat = 'b1') => BoardOpSchema.parse({ op: 'add', opId: `${beat}.${id}`, beatId: beat, id, element, at });
+const kit = (kitName: string, paramsJson: string, label?: string) => ({ type: 'kit', kit: kitName, paramsJson, ...(label ? { label } : {}), provenance: 'metaphorical' });
+const token = (text: string) => ({ type: 'token', text, provenance: 'illustrative' });
+
+function statesOf(ops: BoardOp[], groupBy: (op: BoardOp) => string = (op) => op.beatId): BoardState[] {
+  const states: BoardState[] = [];
+  let state = emptyBoardState();
+  let current = '';
+  for (const op of ops) {
+    const key = groupBy(op);
+    state = applyOp(state, op).state;
+    if (key !== current) { states.push(state); current = key; } else states[states.length - 1] = state;
+  }
+  return states;
+}
+
+const recursion: BoardOp[] = [
+  add('stack1', kit('stack', '{}', 'call stack'), { region: 'center' }, 'b0'),
+  ...[4, 3, 2, 1].map((n, i) => add(`f${n}`, token(`f(${n})`), { region: 'center', container: 'stack1', slot: 'top' }, `b${i + 1}`)),
+  ...[1, 2, 3, 4].map((n, i) => BoardOpSchema.parse({ op: 'remove', opId: `b${i + 5}.pop`, beatId: `b${i + 5}`, target: `f${n}` })),
+];
+
+test('a stack scene reserves its slots up front: every child keeps one rect for the whole scene', () => {
+  const states = statesOf(recursion);
+  const geometry = layoutScene(states);
+  const f4 = states.filter((s) => s.elements.f4 && !s.elements.f4.lifecycle.removedAtBeat).map((s) => geometry.rectFor(s, 'f4')!);
+  assert.ok(f4.length >= 2);
+  for (const rect of f4) assert.deepEqual(rect, f4[0]);
+  const f3 = geometry.rectFor(states[2]!, 'f3')!;
+  assert.ok(f3.y < f4[0]!.y, 'the second item sits above the first');
+  const stack = geometry.rectFor(states[0]!, 'stack1')!;
+  for (const n of [4, 3, 2, 1]) assert.ok(contains(stack, geometry.rectFor(states[4]!, `f${n}`)!), `f${n} inside the stack`);
+});
+
+test('layout is deterministic and keeps everything inside the safe area without overlaps', () => {
+  const states = statesOf(recursion);
+  const a = layoutScene(states);
+  const b = layoutScene(states);
+  assert.equal(JSON.stringify(a.allRects()), JSON.stringify(b.allRects()));
+  assert.deepEqual(validateSceneGeometry(a, states), []);
+  for (const rect of a.allRects()) assert.ok(contains(CONTENT_RECT, rect.rect), `${rect.id} inside the content area`);
+});
+
+test('semantic regions become separate areas: left, center and right do not overlap and keep reading order', () => {
+  const ops = [
+    add('src', kit('queue', '{"capacity":3}', 'in'), { region: 'left' }),
+    add('mid', { type: 'entity', conceptId: 'worker', label: 'worker', provenance: 'source' }, { region: 'center' }),
+    add('dst', kit('queue', '{"capacity":3}', 'out'), { region: 'right' }),
+  ];
+  const states = statesOf(ops, () => 'b1');
+  const g = layoutScene(states);
+  const [l, m, r] = ['src', 'mid', 'dst'].map((id) => g.rectFor(states[0]!, id)!);
+  assert.ok(l!.x + l!.w <= m!.x + 1 && m!.x + m!.w <= r!.x + 1, 'left < center < right');
+  assert.equal(overlaps(l!, r!), false);
+  assert.deepEqual(validateSceneGeometry(g, states), []);
+});
+
+test('zoned kits place children by zone and index, and capacity follows the busiest moment of the scene', () => {
+  const cell = kit('compartment', '{"zones":["outside","inside"],"zoneLabels":["OUT","IN"]}', 'cell');
+  const ops: BoardOp[] = [add('cell', cell, { region: 'center' }, 'b0')];
+  for (let i = 1; i <= 6; i++) ops.push(add(`p${i}`, token(String(i)), { region: 'center', container: 'cell', zone: i <= 4 ? 'outside' : 'inside' }, 'b1'));
+  ops.push(BoardOpSchema.parse({ op: 'move', opId: 'b2.m', beatId: 'b2', target: 'p1', to: { region: 'center', container: 'cell', zone: 'inside' } }));
+  const states = statesOf(ops);
+  const g = layoutScene(states);
+  const last = states[states.length - 1]!;
+  const outside = g.rectFor(last, 'p2')!;
+  const inside = g.rectFor(last, 'p1')!;
+  assert.ok(outside.x < inside.x, 'outside is left of inside');
+  assert.deepEqual(validateSceneGeometry(g, states), []);
+});
+
+test('an element that moves between slots has a rect in both places, so the move can be drawn', () => {
+  const ops: BoardOp[] = [
+    add('q1', kit('queue', '{"capacity":3}'), { region: 'left' }, 'b0'), add('q2', kit('queue', '{"capacity":3}'), { region: 'right' }, 'b0'),
+    add('x', token('x'), { region: 'left', container: 'q1', slot: 'end' }, 'b1'),
+    BoardOpSchema.parse({ op: 'move', opId: 'b2.m', beatId: 'b2', target: 'x', to: { region: 'right', container: 'q2', slot: 'end' } }),
+  ];
+  const states = statesOf(ops);
+  const g = layoutScene(states);
+  const before = g.rectFor(states[1]!, 'x')!;
+  const after = g.rectFor(states[2]!, 'x')!;
+  assert.ok(after.x > before.x + 300);
+});
+
+test('geometry validation reports overflow, overlap and unreadable size instead of hiding them', () => {
+  const states = statesOf([add('a', kit('stack', '{}'), { region: 'center' }, 'b0')], () => 'b0');
+  const g = layoutScene(states);
+  const rect = g.rectFor(states[0]!, 'a')!;
+  const broken = { ...g, rectFor: () => ({ ...rect, x: -50 }), allRects: () => [{ id: 'a', rect: { ...rect, x: -50 } }] } as unknown as typeof g;
+  assert.ok(validateSceneGeometry(broken, states).some((p) => /outside the safe area/.test(p)));
+});

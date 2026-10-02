@@ -23,10 +23,18 @@ test('no benchmark topic name appears in production TypeScript outside fixtures,
 
 // liveCli.ts is the developer CLI that selects NAMED FIXTURE cases (labelled fixtures, never counted as generated
 // lessons, see CLAUDE.md); it dispatches on the case the user typed and contains no lesson logic.
-const CASE_SELECTOR_CLIS = new Set(['v1_claude/liveCli.ts']);
+const CASE_SELECTOR_CLIS = new Set(['run/liveCli.ts']);
 
 test('production code has no conditional on a run, scene or case id literal', () => {
   const pattern = /(?:sceneId|caseId|runId|lessonId)\s*===?\s*['"`][^'"`]+['"`]/;
   const offenders = sourceFiles(ROOT).filter((file) => pattern.test(readFileSync(file, 'utf8'))).map((file) => relative(ROOT, file)).filter((file) => !CASE_SELECTOR_CLIS.has(file));
+  assert.deepEqual(offenders, []);
+});
+
+// Teaching Compiler V2 plan §Phase 0: a source paper's own notation must never be taught to a production prompt.
+const BENCHMARK_NOTATION = /\bd_k\b|\bQ,\s*K,\s*V\b|\bQKV\b|LayerNorm|mathrm\{softmax\}/;
+
+test('no benchmark source notation (Q/K/V, d_k, LayerNorm, softmax) appears in production prompts or comments', () => {
+  const offenders = sourceFiles(ROOT).filter((file) => BENCHMARK_NOTATION.test(readFileSync(file, 'utf8'))).map((file) => relative(ROOT, file));
   assert.deepEqual(offenders, []);
 });

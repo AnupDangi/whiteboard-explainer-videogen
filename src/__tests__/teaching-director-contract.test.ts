@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { continuityProblems, deriveTeachingPlan, teachingDirectorProblems } from '../plan/contracts.js';
 import { TeachingPlanDraftSchema, type ConceptGraph } from '../plan/schemas.js';
+import { collectCoercions } from '../structured/coercionLedger.js';
 
 const graph: ConceptGraph = {
   concepts: [
@@ -99,4 +100,13 @@ test('continuity: a recap scene may bring an earlier claim back together', () =>
     section('s2', ['a', 'b'], 'Alpha thing drives the beta thing strongly.', { ...director('s2', ['a', 'b']), kind: 'recap' }),
   ]), graph, 'learner');
   assert.deepEqual(continuityProblems(plan), []);
+});
+
+test('claim evidence spans the graph does not back are dropped and the graph-backed ones added, both in the coercion ledger', () => {
+  const claim = { id: 's1_c', statement: 'Alpha thing drives the beta thing.', conceptIds: ['a', 'b'], relations: [{ from: 'a', to: 'b', type: 'causes' as const }], evidenceSpanIds: ['s1', 'zzz'] };
+  const { result: plan, entries } = collectCoercions(() => deriveTeachingPlan(draft([section('s1', ['a', 'b'], 'x', { essentialClaims: [claim] })]), graph, 'learner'));
+  assert.deepEqual(plan.sections[0]!.contract!.essentialClaims[0]!.evidenceSpanIds, ['s1', 's2']);
+  const byReason = (reason: string) => entries.filter((entry) => entry.reason === reason);
+  assert.deepEqual(byReason('claim-evidence-span-not-backed-by-graph').map((entry) => [entry.path, entry.semanticRisk]), [['/essentialClaims/s1_c/evidenceSpanIds/zzz', 'semantic']]);
+  assert.deepEqual(byReason('claim-evidence-span-added-from-graph').map((entry) => [entry.path, entry.semanticRisk]), [['/essentialClaims/s1_c/evidenceSpanIds/s2', 'low']]);
 });

@@ -246,9 +246,13 @@ test('S2 drops a self-relation at once and an unanchored relation only after the
   });
   assert.equal(calls, 2, 'the unanchored relation is asked about once');
   assert.deepEqual(result.value?.relations.map((relation) => `${relation.from}>${relation.to}`), ['pump>water']);
+  // Dropping a relation is a semantic change, so it is in the ledger (V2 plan 1.4), not silent.
+  const dropped = result.trace.coercions.filter((entry) => entry.semanticRisk === 'semantic').map((entry) => entry.reason).sort();
+  assert.deepEqual(dropped, ['self-or-duplicate-relation-dropped', 'unanchored-relation-dropped']);
 });
 
 import { normalizeClaimAnchors, trimMarkers } from '../plan/stages.js';
+import { collectCoercions } from '../structured/coercionLedger.js';
 
 test('claim anchors are completed by code: unknown and repeated ids dropped, a missing claim takes its best-matching sentence', () => {
   const plain = 'First the query meets every key. Then softmax turns scores into weights. Finally the values are summed.';
@@ -267,4 +271,19 @@ test('surplus markers are unwrapped (words kept), outside-claim markers first an
   assert.match(trimmed, /\[\[c\|gamma\]\]/);
   assert.match(trimmed, /\[\[a\|Alpha\]\]/);
   assert.ok(trimmed.includes('epsilon') && !trimmed.includes('[[e|') && !trimmed.includes('[[d|'));
+});
+
+test('anchor completion and marker trimming are written to the coercion ledger', () => {
+  const plain = 'First the query meets every key. Then softmax turns scores into weights. Finally the values are summed.';
+  const expected = [{ id: 'scores', statement: 'The query meets every key' }, { id: 'weights', statement: 'Softmax turns scores into weights' }];
+  const anchored = collectCoercions(() => normalizeClaimAnchors(plain, [{ claimId: 'scores', sentenceIndex: 0 }, { claimId: 'scores', sentenceIndex: 2 }, { claimId: 'ghost', sentenceIndex: 1 }], expected));
+  const byReason = (reason: string) => anchored.entries.filter((entry) => entry.reason === reason);
+  assert.equal(byReason('claim-anchor-dropped-unknown-or-repeated').length, 2);
+  assert.ok(byReason('claim-anchor-dropped-unknown-or-repeated').every((entry) => entry.semanticRisk === 'semantic'));
+  assert.deepEqual(byReason('claim-anchor-completed-from-best-sentence').map((entry) => [entry.path, entry.semanticRisk]), [['/claimSpans/weights', 'low']]);
+  const raw = '[[a|Alpha]] opens. The claim names [[b|beta]] and [[c|gamma]]. Then [[d|delta]] and [[e|epsilon]] close.';
+  const trimmed = collectCoercions(() => trimMarkers(raw, [], 3));
+  assert.deepEqual(trimmed.entries.map((entry) => [entry.reason, entry.semanticRisk]), [['markers-trimmed-to-limit', 'low']]);
+  assert.equal(trimmed.entries[0]!.oldValue, 5);
+  assert.equal(trimmed.entries[0]!.newValue, 3);
 });

@@ -35,6 +35,10 @@ export interface ChatRequest {
   signal?: AbortSignal;
   /** Per-request timeout. It starts when the request gets a provider slot, not while it queues. */
   timeoutMs?: number;
+  /** The schema was already compiled for strict decoding on this route (structured/providerSchema.ts); send it strict. */
+  strictSchema?: boolean;
+  /** The pre-compile schema: its length/count limits are stated in the prompt when the strict compile had to drop them. */
+  limitSchema?: object;
 }
 
 export interface ChatResult {
@@ -310,8 +314,8 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
   // Too large for Anthropic's grammar compiler: fall back to the prompt's JSON contract; the caller
   // still validates the full zod schema and gets its one repair, so nothing is accepted unchecked.
   const constrained = !anthropic || countOptional(anthropicSchema) <= ANTHROPIC_MAX_OPTIONAL;
-  const strict = !STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix));
-  const limits = strict ? [] : schemaLimitLines(req.schema);
+  const strict = req.strictSchema === true || !STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix));
+  const limits = strict && !req.limitSchema ? [] : schemaLimitLines(req.limitSchema ?? req.schema);
   const system = limits.length ? `${req.system}\n\nField limits (validated; a response that breaks one is rejected):\n${limits.map((line) => `- ${line}`).join('\n')}` : req.system;
   const reasoning = {
     ...(reasoningModel ? { max_tokens: Math.min(1200, Math.max(200, Math.round(req.maxTokens / 4))) } : {}),
@@ -358,7 +362,8 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
     content,
     finishReason: data.choices?.[0]?.finish_reason ?? 'stop',
     temperatureApplied: !anthropic,
-    schemaConstrained: constrained,
+    // A non-strict json_schema request is a prompt hint, not constrained decoding: never report it as constrained.
+    schemaConstrained: constrained && strict,
     ...(routingTrace(data) ? { routing: routingTrace(data) } : {}),
     usage: {
       promptTokens,

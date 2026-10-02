@@ -1,3 +1,4 @@
+import { recordCoercion } from '../structured/coercionLedger.js';
 import type { ConceptGraph, TeachingPlan, TeachingPlanDraft } from './schemas.js';
 import { fitBudgetsToTarget, rebalanceSceneBudgets } from './analyze.js';
 
@@ -238,6 +239,9 @@ export function deriveTeachingPlan(rawDraft: TeachingPlanDraft, graph: ConceptGr
                 ...claim.conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence.map((ref) => ref.spanId) ?? []),
                 ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence.map((ref) => ref.spanId) ?? []),
               ])];
+              const given = claim.evidenceSpanIds;
+              for (const spanId of given) if (!backed.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: spanId, newValue: undefined, reason: 'claim-evidence-span-not-backed-by-graph', semanticRisk: 'semantic' });
+              for (const spanId of backed) if (!given.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: undefined, newValue: spanId, reason: 'claim-evidence-span-added-from-graph', semanticRisk: 'low' });
               return [...new Set([...claim.evidenceSpanIds.filter((spanId) => backed.includes(spanId)), ...backed])].slice(0, 96);
             })(),
           })),

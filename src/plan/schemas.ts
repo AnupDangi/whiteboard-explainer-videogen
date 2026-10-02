@@ -2,6 +2,7 @@ import { clampText } from './clamp.js';
 import { z } from 'zod';
 import type { SourceEvidenceRef } from '../intake/sourceDoc.js';
 import { MAX_TITLE_WORDS } from '../render/style.js';
+import { ledgerPreprocess } from '../structured/coercionLedger.js';
 
 /**
  * S2 ConceptGraph and S3 TeachingPlan (claude_pipeline.md §3 /
@@ -50,7 +51,7 @@ function coerceConceptGraph(raw: unknown): unknown {
   };
 }
 
-const conceptGraphSchema = (concept: z.ZodType<z.infer<typeof ConceptSchema>>) => z.preprocess(coerceConceptGraph, z
+const conceptGraphSchema = (concept: z.ZodType<z.infer<typeof ConceptSchema>>) => ledgerPreprocess('concept-graph-coerce', coerceConceptGraph, z
   .object({
     concepts: z.array(concept).min(1).max(14),
     relations: z.array(z.object({ from: id(), to: id(), type: z.enum(RELATION_TYPES), evidence: z.array(EvidenceQuoteSchema).min(1).max(3) }).strict()).max(24),
@@ -268,7 +269,7 @@ function coerceAdvisoryFields(raw: unknown): unknown {
   }) };
 }
 
-export const TeachingPlanDraftSchema = z.preprocess((raw) => coerceAdvisoryFields(liftLegacyPlan(raw)), z.object({
+export const TeachingPlanDraftSchema = ledgerPreprocess('plan-advisory-coerce', (raw) => coerceAdvisoryFields(liftLegacyPlan(raw)), z.object({
   targetDurationSec: z.number().positive(),
   intro: z.object({ sourceTitle: z.string().min(1).max(80), sections: z.array(z.string().min(1).max(80)).max(12) }).strict(),
   /** Optional broad subject label, used only as a low-weight example-retrieval signal. */

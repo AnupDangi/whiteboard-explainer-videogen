@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from '../llm/structuredCall.js';
+import { emptyTrace, mergeTraces } from '../structured/trace.js';
+import { recordCoercion } from '../structured/coercionLedger.js';
 import { ensureClaimMarkers, parseMarkers, resolveClaimSpans, stripStrayMarkerBrackets } from '../narration/markers.js';
 import { spokenForm } from '../narration/spokenForm.js';
 import { vocabularyPromptBlock, type VisualVocabulary } from '../planner/visualDiscovery.js';
@@ -12,7 +14,7 @@ import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
 import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import { continuityProblems, deriveTeachingPlan, teachingContractProblems, teachingDirectorProblems } from './contracts.js';
 import { CONCEPT_STRUCTURE_GUIDANCE, PLAN_COMPONENT_GUIDANCE, relationalGraphProblems } from './goalShape.js';
-import { schemaKeywordLeaks } from '../planner/promptBuilder.js';
+import { schemaKeywordLeaks } from '../planner/builder.js';
 
 /**
  * S2 -> S3 -> S4 (claude_pipeline.md §1-§4). Mid-tier ("flash") model; every
@@ -101,10 +103,10 @@ ${spanExcerptPrompt(sourceDoc, { maxChars: S2_SOURCE_MAX_CHARS })}`;
       // not anchor is first reported to the model (a fixable quote); if it is still unanchored after that ask, it is dropped
       // (the concepts stay) rather than failing the lesson. Evidence is never rewritten.
       const seenRelations = new Set<string>();
-      g.relations = g.relations.flatMap((relation) => {
+      g.relations = g.relations.flatMap((relation, index) => {
         const key = `${relation.from}|${relation.type}|${relation.to}`;
-        if (relation.from === relation.to || seenRelations.has(key)) return [];
-        if (relationQuotesAsked && !relation.evidence.some((ref) => anchorQuote(sourceDoc, ref.spanId, ref.quote))) return [];
+        if (relation.from === relation.to || seenRelations.has(key)) { recordCoercion({ path: `/relations/${index}`, oldValue: key, newValue: undefined, reason: 'self-or-duplicate-relation-dropped', semanticRisk: 'semantic' }); return []; }
+        if (relationQuotesAsked && !relation.evidence.some((ref) => anchorQuote(sourceDoc, ref.spanId, ref.quote))) { recordCoercion({ path: `/relations/${index}`, oldValue: key, newValue: undefined, reason: 'unanchored-relation-dropped', semanticRisk: 'semantic' }); return []; }
         seenRelations.add(key);
         return [relation.evidence.length && relationQuotesAsked ? { ...relation, evidence: relation.evidence.filter((ref) => anchorQuote(sourceDoc, ref.spanId, ref.quote)) } : relation];
       });
@@ -383,7 +385,7 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
   // A graph that cannot support the request is an S2 problem the S3 model cannot repair: fail before calling it.
   const graphProblems = relationalGraphProblems(req.instruction, graph.concepts.length, graph.relations.length, Boolean(req.conceptScope?.length));
   if (graphProblems.length) {
-    return { usage: emptyUsage(), rawResponses: [], failures: [{ code: 'plan-graph-not-relational', stage: 'plan', message: `teaching plan not attempted: ${graphProblems.join('; ')}`, hard: true }] };
+    return { usage: emptyUsage(), rawResponses: [], reports: [], trace: emptyTrace(), failures: [{ code: 'plan-graph-not-relational', stage: 'plan', message: `teaching plan not attempted: ${graphProblems.join('; ')}`, hard: true }] };
   }
   const scenes = sceneCountFor(req.targetDurationSec);
   const audience = req.audience ?? 'general learner';
@@ -441,7 +443,7 @@ const WORD_TOLERANCE = 0.4;
  * cited spans. Sending only these (not the whole source to every parallel scene call) keeps
  * each S4 prompt small and on-topic; a section with no cited spans falls back to the bounded source.
  */
-function sectionSourcePrompt(doc: SourceDoc, section: TeachingPlan['sections'][number], graph: ConceptGraph): string {
+export function sectionSourcePrompt(doc: SourceDoc, section: TeachingPlan['sections'][number], graph: ConceptGraph): string {
   const ids = new Set(section.contract?.evidenceSpanIds ?? section.conceptIds.flatMap((conceptId) => graph.concepts.find((concept) => concept.id === conceptId)?.evidence.map((ref) => ref.spanId) ?? []));
   const spans = doc.spans.filter((span) => ids.has(span.id));
   return spanExcerptPrompt(doc, spans.length ? { spans, maxChars: S2_SOURCE_MAX_CHARS } : { maxChars: S2_SOURCE_MAX_CHARS });
@@ -552,7 +554,12 @@ const claimTokenSet = (value: string): Set<string> => new Set((value.toLowerCase
 export function normalizeClaimAnchors(plainText: string, anchors: ReadonlyArray<ClaimAnchor>, expected: ReadonlyArray<{ id: string; statement: string }>): ClaimAnchor[] {
   const known = new Set(expected.map((claim) => claim.id));
   const seen = new Set<string>();
-  const kept = anchors.filter((anchor) => known.has(anchor.claimId) && !seen.has(anchor.claimId) && (seen.add(anchor.claimId), true));
+  const kept = anchors.filter((anchor, index) => {
+    const ok = known.has(anchor.claimId) && !seen.has(anchor.claimId);
+    if (ok) seen.add(anchor.claimId);
+    else recordCoercion({ path: `/claimSpans/${index}`, oldValue: anchor, newValue: undefined, reason: 'claim-anchor-dropped-unknown-or-repeated', semanticRisk: 'semantic' });
+    return ok;
+  });
   const sentences = splitSpokenSentences(plainText);
   const used = new Set(kept.flatMap((anchor) => (anchor.sentenceIndex !== undefined ? [anchor.sentenceIndex] : [])));
   for (const claim of expected) {
@@ -561,6 +568,7 @@ export function normalizeClaimAnchors(plainText: string, anchors: ReadonlyArray<
     const score = (index: number): number => { const tokens = claimTokenSet(sentences[index]!); return [...wanted].filter((token) => tokens.has(token)).length; };
     const order = sentences.map((_, index) => index).sort((a, b) => Number(used.has(a)) - Number(used.has(b)) || score(b) - score(a) || a - b);
     kept.push({ claimId: claim.id, sentenceIndex: order[0]! });
+    recordCoercion({ path: `/claimSpans/${claim.id}`, oldValue: undefined, newValue: { claimId: claim.id, sentenceIndex: order[0]! }, reason: 'claim-anchor-completed-from-best-sentence', semanticRisk: 'low' });
     used.add(order[0]!);
     seen.add(claim.id);
   }
@@ -575,6 +583,7 @@ export function trimMarkers(rawText: string, claimSpans: ReadonlyArray<{ plainSt
   const order = [...mentions].map((mention, index) => ({ mention, index })).sort((a, b) => Number(inClaim(b.mention)) - Number(inClaim(a.mention)) || a.index - b.index);
   // In-claim markers come first and are kept longest; among the rest the earliest are kept, the latest dropped first.
   const drop = new Set(order.slice(max).map((entry) => entry.mention.id));
+  recordCoercion({ path: '/text/markers', oldValue: mentions.length, newValue: max, reason: 'markers-trimmed-to-limit', semanticRisk: 'low' });
   return rawText.replace(/\[\[([a-zA-Z0-9_.-]+)\|([^\]|]*)\]\]/g, (full, id: string, phrase: string) => (drop.has(id) ? phrase : full));
 }
 
@@ -665,6 +674,8 @@ ${sectionSourcePrompt(sourceDoc, section, graph)}`;
   const usage = emptyUsage();
   const failures = results.flatMap(({ result }) => result.failures);
   const rawResponses = results.flatMap(({ result }) => result.rawResponses);
+  const reports = results.flatMap(({ result }) => result.reports);
+  const trace = mergeTraces(results.map(({ result }) => result.trace));
   for (const { result } of results) addUsage(usage, result.usage);
   const sceneStageRuns: StageRunRecord[] = results.map(({ section, result, startedAtMs, completedAtMs }) => ({
     stage: `S4-narration-script:${section.id}`,
@@ -679,10 +690,10 @@ ${sectionSourcePrompt(sourceDoc, section, graph)}`;
     usage: { ...result.usage, fallbacks: 0, cacheHits: 0 },
     failures: result.failures.map((failure) => ({ code: failure.code, stage: failure.stage, message: failure.message, hard: failure.hard })),
   }));
-  if (results.some(({ result }) => !result.value)) return { usage, failures, rawResponses, sceneStageRuns };
+  if (results.some(({ result }) => !result.value)) return { usage, failures, rawResponses, reports, trace, sceneStageRuns };
   const script: Script = { scenes: results.map(({ section, result }) => {
     const done = makeFinalize(section)(result.value!);
     return { sectionId: section.id, text: done.text, claimSpans: materializeClaimSpans(done.text, done.claimSpans) };
   }) };
-  return { value: script, usage, failures, rawResponses, sceneStageRuns };
+  return { value: script, usage, failures, rawResponses, reports, trace, sceneStageRuns };
 }

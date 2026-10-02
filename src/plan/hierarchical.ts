@@ -8,6 +8,7 @@ import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import { relationalGoalNeedsComponents, SYLLABUS_COMPONENT_GUIDANCE } from './goalShape.js';
 
 import { clampText } from './clamp.js';
+import { ledgerPreprocess, recordCoercion } from '../structured/coercionLedger.js';
 import { isSupportedLessonDuration, LESSON_COST_CAP_USD, LESSON_DURATIONS_SEC, lessonCostCapUsd, type LessonDurationSec } from '../run/config.js';
 
 export { clampText };
@@ -52,7 +53,7 @@ export function normalizeConceptLabel(value: unknown): unknown {
   return (content.length >= 2 ? content : all).slice(0, SYLLABUS_CONCEPT_LABEL_MAX_WORDS).join(' ');
 }
 
-export const SyllabusOutputSchema = z.preprocess((input) => {
+export const SyllabusOutputSchema = ledgerPreprocess('syllabus-normalize', (input) => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
   const raw = input as Record<string, unknown>;
   return {
@@ -268,11 +269,14 @@ export async function buildSyllabus(req: LessonRequest, model: StageModel, ledge
       // The model is asked about an unanchorable quote once; if it is still unanchorable on a later pass, the cited span's
       // closest sentence is cited instead (verbatim source text) and the snap is recorded.
       if (quotesAsked) {
-        for (const concept of raw.concepts) for (const evidence of concept.evidence) {
-          if (anchorQuote(sourceDoc, evidence.spanId, evidence.quote)) continue;
+        raw.concepts.forEach((concept, conceptIndex) => concept.evidence.forEach((evidence, evidenceIndex) => {
+          if (anchorQuote(sourceDoc, evidence.spanId, evidence.quote)) return;
           const sentence = nearestSpanSentence(sourceDoc, evidence.spanId, `${evidence.quote} ${concept.label} ${concept.definition}`);
-          if (sentence) { evidence.quote = sentence; snapped.push(concept.id); }
-        }
+          if (sentence) {
+            recordCoercion({ path: `/concepts/${conceptIndex}/evidence/${evidenceIndex}/quote`, oldValue: evidence.quote, newValue: sentence, reason: 'syllabus-evidence-snapped', semanticRisk: 'semantic' });
+            evidence.quote = sentence; snapped.push(concept.id);
+          }
+        }));
       }
       if (raw.concepts.some((concept) => concept.evidence.some((evidence) => !anchorQuote(sourceDoc, evidence.spanId, evidence.quote)))) quotesAsked = true;
       for (const concept of raw.concepts) for (const evidence of concept.evidence) if (!anchorQuote(sourceDoc, evidence.spanId, evidence.quote)) problems.push(`concept ${concept.id} evidence quote is absent from source span ${evidence.spanId}`);
