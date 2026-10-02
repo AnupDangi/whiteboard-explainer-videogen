@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "teaching-compiler-v1-development-set/v1",
+  "setId": "teaching-compiler-v1-dev-set-v1",
+  "frozenAt": "2026-09-30",
+  "sourceOfTopicSet": "final_plan/04_VALIDATION_HARNESS_AND_SIMI_PARITY.md#10",
+  "targetDurationSec": 60,
+  "instruction": "Create an introductory lesson for an adult learner that teaches the key learning objective supported by this source. Stay within the evidence and prioritize the source's central concepts, mechanisms, and relationships. Do not add claims beyond the source.",
+  "topics": [
+    { "topicId": "osmosis", "sourcePath": "bench/sources/osmosis.md", "sourceSha256": "bfc28122ae1803f7ef32c7888b958d49241d63d8aa5aff3ca4af0c79cd2ece2b" },
+    { "topicId": "thermostat-feedback", "sourcePath": "bench/sources/thermostat.md", "sourceSha256": "4ab48be0c5d45930ab10efb625c3fb53b4b304508db06e4b21bafb71fa710290" },
+    { "topicId": "vaccination", "sourcePath": "bench/sources/vaccination.md", "sourceSha256": "7dcdf5ef24fae724ff063114b482bcd2f9a141fe203f95b38873c10994d46802" },
+    { "topicId": "drug-half-life", "sourcePath": "bench/sources/half-life.md", "sourceSha256": "14c2d6b1ebdc0a1b6ddfeecb27a023f0bc639b1a1b94dbe9fd4d839414f42c0d" },
+    { "topicId": "spaced-repetition", "sourcePath": "bench/sources/spaced-repetition.md", "sourceSha256": "40dc2858c1e101969ee78b1729c16a4552f5060764a98262ce2cc83a63347327" }
+  ],
+  "plannedAttempts": [
+    { "attemptId": "osmosis-trial-1", "topicId": "osmosis", "trial": 1, "cache": "cold" },
+    { "attemptId": "osmosis-trial-2", "topicId": "osmosis", "trial": 2, "cache": "cold" },
+    { "attemptId": "osmosis-trial-3", "topicId": "osmosis", "trial": 3, "cache": "cold" },
+    { "attemptId": "thermostat-feedback-trial-1", "topicId": "thermostat-feedback", "trial": 1, "cache": "cold" },
+    { "attemptId": "thermostat-feedback-trial-2", "topicId": "thermostat-feedback", "trial": 2, "cache": "cold" },
+    { "attemptId": "thermostat-feedback-trial-3", "topicId": "thermostat-feedback", "trial": 3, "cache": "cold" },
+    { "attemptId": "vaccination-trial-1", "topicId": "vaccination", "trial": 1, "cache": "cold" },
+    { "attemptId": "vaccination-trial-2", "topicId": "vaccination", "trial": 2, "cache": "cold" },
+    { "attemptId": "vaccination-trial-3", "topicId": "vaccination", "trial": 3, "cache": "cold" },
+    { "attemptId": "drug-half-life-trial-1", "topicId": "drug-half-life", "trial": 1, "cache": "cold" },
+    { "attemptId": "drug-half-life-trial-2", "topicId": "drug-half-life", "trial": 2, "cache": "cold" },
+    { "attemptId": "drug-half-life-trial-3", "topicId": "drug-half-life", "trial": 3, "cache": "cold" },
+    { "attemptId": "spaced-repetition-trial-1", "topicId": "spaced-repetition", "trial": 1, "cache": "cold" },
+    { "attemptId": "spaced-repetition-trial-2", "topicId": "spaced-repetition", "trial": 2, "cache": "cold" },
+    { "attemptId": "spaced-repetition-trial-3", "topicId": "spaced-repetition", "trial": 3, "cache": "cold" }
+  ]
+}

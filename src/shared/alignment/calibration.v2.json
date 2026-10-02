@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "alignment-calibration/v2",
+  "status": "unmeasured",
+  "id": "stable-ts-base-current-source-generated",
+  "voiceEngine": "voice-engine",
+  "voiceProvider": "supertonic",
+  "aligner": "stable-ts",
+  "alignerModel": "base",
+  "boundarySamples": 0,
+  "independentClips": 0,
+  "medianAbsoluteBoundaryErrorMs": null,
+  "meanAbsoluteBoundaryErrorMs": null,
+  "minimumAbsoluteBoundaryErrorMs": null,
+  "maximumAbsoluteBoundaryErrorMs": null,
+  "groundTruthMethod": "Two independent human annotations of complete words in source-generated scene audio; collection is pending.",
+  "measurementSource": "word-boundary-review.py; no completed annotation report exists",
+  "limitations": "Unmeasured. The single eligible source-generated lesson is only a pilot and cannot calibrate or promote an aligner."
+}

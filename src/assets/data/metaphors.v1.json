@@ -1,0 +1,510 @@
+{
+ "schemaVersion": "approved-metaphors/v1",
+ "note": "Reviewed concept -> role/topology mappings. Each states the structure it preserves (Simi \u00a739) and the real term to reconnect to (Simi \u00a740). Data only; generic abstractions, no lesson topics.",
+ "entries": [
+  {
+   "concept": "feedback",
+   "structure": "the output of a system returns to influence its own input",
+   "reconnectTerm": "feedback loop",
+   "role": "loop"
+  },
+  {
+   "concept": "negative feedback",
+   "structure": "a measured gap pushes the system back toward its target",
+   "reconnectTerm": "negative feedback",
+   "topology": "feedback"
+  },
+  {
+   "concept": "positive feedback",
+   "structure": "each change amplifies the next change",
+   "reconnectTerm": "positive feedback",
+   "role": "increase"
+  },
+  {
+   "concept": "regularization",
+   "structure": "a penalty bounds how large the model may grow",
+   "reconnectTerm": "regularization",
+   "role": "limit"
+  },
+  {
+   "concept": "overfitting",
+   "structure": "a model hugs the training side of a boundary and fails beyond it",
+   "reconnectTerm": "overfitting",
+   "role": "boundary"
+  },
+  {
+   "concept": "opportunity cost",
+   "structure": "choosing one option gives up the weighed alternative",
+   "reconnectTerm": "opportunity cost",
+   "role": "balance"
+  },
+  {
+   "concept": "trade-off",
+   "structure": "improving one side lowers the other",
+   "reconnectTerm": "trade-off",
+   "role": "balance"
+  },
+  {
+   "concept": "bottleneck",
+   "structure": "a wide flow is squeezed through one narrow stage",
+   "reconnectTerm": "bottleneck",
+   "topology": "bottleneck"
+  },
+  {
+   "concept": "constraint",
+   "structure": "a flow is stopped by a wall",
+   "reconnectTerm": "constraint",
+   "role": "constraint"
+  },
+  {
+   "concept": "threshold",
+   "structure": "nothing changes until a level is crossed",
+   "reconnectTerm": "threshold",
+   "topology": "threshold"
+  },
+  {
+   "concept": "tipping point",
+   "structure": "a small push past a level flips the whole state",
+   "reconnectTerm": "tipping point",
+   "topology": "threshold"
+  },
+  {
+   "concept": "filter",
+   "structure": "a wide stream enters and only matching items pass",
+   "reconnectTerm": "filter",
+   "role": "filter"
+  },
+  {
+   "concept": "selection",
+   "structure": "several options compete and one is chosen",
+   "reconnectTerm": "selection",
+   "role": "selector"
+  },
+  {
+   "concept": "routing",
+   "structure": "one input is sent to one of several destinations",
+   "reconnectTerm": "routing",
+   "topology": "routing"
+  },
+  {
+   "concept": "branching",
+   "structure": "one path splits into alternatives",
+   "reconnectTerm": "branching",
+   "role": "fork"
+  },
+  {
+   "concept": "merging",
+   "structure": "several streams combine into one",
+   "reconnectTerm": "merging",
+   "topology": "merge"
+  },
+  {
+   "concept": "aggregation",
+   "structure": "several inputs are combined into one output",
+   "reconnectTerm": "aggregation",
+   "role": "mixer"
+  },
+  {
+   "concept": "accumulation",
+   "structure": "a level rises as input keeps arriving",
+   "reconnectTerm": "accumulation",
+   "topology": "accumulation"
+  },
+  {
+   "concept": "buffer",
+   "structure": "a holding area absorbs bursts between producer and consumer",
+   "reconnectTerm": "buffer",
+   "role": "buffer"
+  },
+  {
+   "concept": "queue",
+   "structure": "items wait in order for a single server",
+   "reconnectTerm": "queue",
+   "role": "queue"
+  },
+  {
+   "concept": "pipeline",
+   "structure": "stages in series pass work forward",
+   "reconnectTerm": "pipeline",
+   "role": "pipeline"
+  },
+  {
+   "concept": "hierarchy",
+   "structure": "one parent over nested children",
+   "reconnectTerm": "hierarchy",
+   "topology": "tree"
+  },
+  {
+   "concept": "decision",
+   "structure": "a question splits the path into outcomes",
+   "reconnectTerm": "decision",
+   "topology": "decision_tree"
+  },
+  {
+   "concept": "state machine",
+   "structure": "a system moves between named states by rules",
+   "reconnectTerm": "state machine",
+   "topology": "state_machine"
+  },
+  {
+   "concept": "timeline",
+   "structure": "events ordered along one axis",
+   "reconnectTerm": "timeline",
+   "topology": "timeline"
+  },
+  {
+   "concept": "dependency",
+   "structure": "one step needs another to exist first",
+   "reconnectTerm": "dependency",
+   "role": "dependency"
+  },
+  {
+   "concept": "prerequisite",
+   "structure": "a required step that comes first",
+   "reconnectTerm": "prerequisite",
+   "role": "prerequisite"
+  },
+  {
+   "concept": "evidence",
+   "structure": "a cited source supports a claim",
+   "reconnectTerm": "evidence",
+   "role": "evidence"
+  },
+  {
+   "concept": "claim",
+   "structure": "a statement held up by supporting sources",
+   "reconnectTerm": "claim",
+   "topology": "claim_evidence"
+  },
+  {
+   "concept": "contradiction",
+   "structure": "two statements pull in opposite directions and cannot both hold",
+   "reconnectTerm": "contradiction",
+   "role": "contradiction"
+  },
+  {
+   "concept": "exception",
+   "structure": "a rule covers a group except one member",
+   "reconnectTerm": "exception",
+   "topology": "rule_exception"
+  },
+  {
+   "concept": "uncertainty",
+   "structure": "the outcome is unknown, drawn as an open question",
+   "reconnectTerm": "uncertainty",
+   "role": "uncertain"
+  },
+  {
+   "concept": "risk",
+   "structure": "a hazard attached to a path",
+   "reconnectTerm": "risk",
+   "role": "risk"
+  },
+  {
+   "concept": "success",
+   "structure": "the target outcome was reached",
+   "reconnectTerm": "success",
+   "role": "success"
+  },
+  {
+   "concept": "failure",
+   "structure": "the target outcome was missed",
+   "reconnectTerm": "failure",
+   "role": "failure"
+  },
+  {
+   "concept": "transformation",
+   "structure": "one form becomes another",
+   "reconnectTerm": "transformation",
+   "role": "transformation"
+  },
+  {
+   "concept": "conversion",
+   "structure": "input of one type leaves as another type",
+   "reconnectTerm": "conversion",
+   "role": "transformation"
+  },
+  {
+   "concept": "comparison",
+   "structure": "two items side by side on shared dimensions",
+   "reconnectTerm": "comparison",
+   "topology": "comparison"
+  },
+  {
+   "concept": "before and after",
+   "structure": "a state, a change, and the resulting state",
+   "reconnectTerm": "before and after",
+   "topology": "before_after"
+  },
+  {
+   "concept": "cycle",
+   "structure": "a sequence whose last step leads back to the first",
+   "reconnectTerm": "cycle",
+   "topology": "cycle"
+  },
+  {
+   "concept": "recursion",
+   "structure": "a process calls a smaller copy of itself",
+   "reconnectTerm": "recursion",
+   "role": "loop"
+  },
+  {
+   "concept": "iteration",
+   "structure": "the same step repeats until a condition holds",
+   "reconnectTerm": "iteration",
+   "role": "loop"
+  },
+  {
+   "concept": "context window",
+   "structure": "a fixed-size window holds only part of the material",
+   "reconnectTerm": "context window",
+   "role": "container"
+  },
+  {
+   "concept": "abstraction",
+   "structure": "detail is hidden beneath simpler layers",
+   "reconnectTerm": "abstraction",
+   "role": "layers"
+  },
+  {
+   "concept": "emergence",
+   "structure": "a group shows behaviour no member has alone",
+   "reconnectTerm": "emergence",
+   "role": "group"
+  },
+  {
+   "concept": "homeostasis",
+   "structure": "a corrective loop holds a value near its set point",
+   "reconnectTerm": "homeostasis",
+   "topology": "feedback"
+  },
+  {
+   "concept": "equilibrium",
+   "structure": "opposing forces cancel so nothing net changes",
+   "reconnectTerm": "equilibrium",
+   "role": "balance"
+  },
+  {
+   "concept": "gradient",
+   "structure": "a level falls steadily in one direction",
+   "reconnectTerm": "gradient",
+   "role": "decrease"
+  },
+  {
+   "concept": "diffusion",
+   "structure": "particles spread from crowded to sparse regions",
+   "reconnectTerm": "diffusion",
+   "topology": "fan_out"
+  },
+  {
+   "concept": "permeability",
+   "structure": "a wall that lets only some things cross",
+   "reconnectTerm": "permeability",
+   "role": "gate"
+  },
+  {
+   "concept": "immunity",
+   "structure": "protection that blocks a known threat",
+   "reconnectTerm": "immunity",
+   "role": "shield"
+  },
+  {
+   "concept": "memory",
+   "structure": "information is stored and recalled later",
+   "reconnectTerm": "memory",
+   "role": "buffer"
+  },
+  {
+   "concept": "latency",
+   "structure": "time between a request and its response",
+   "reconnectTerm": "latency",
+   "role": "clock"
+  },
+  {
+   "concept": "scalability",
+   "structure": "capacity grows with demand",
+   "reconnectTerm": "scalability",
+   "role": "increase"
+  },
+  {
+   "concept": "membrane",
+   "structure": "a wall separating two sides that controls what crosses",
+   "reconnectTerm": "membrane",
+   "role": "boundary"
+  },
+  {
+   "concept": "selective membrane",
+   "structure": "a wall with an opening that lets only some things through",
+   "reconnectTerm": "selective membrane",
+   "role": "gate"
+  },
+  {
+   "concept": "semipermeable membrane",
+   "structure": "a wall with an opening that lets only some things through",
+   "reconnectTerm": "semipermeable membrane",
+   "role": "gate"
+  },
+  {
+   "concept": "barrier",
+   "structure": "a wall that stops movement",
+   "reconnectTerm": "barrier",
+   "role": "block"
+  },
+  {
+   "concept": "concentration",
+   "structure": "how much of something is packed into a space; more means higher",
+   "reconnectTerm": "concentration",
+   "role": "increase"
+  },
+  {
+   "concept": "concentration gradient",
+   "structure": "a level that falls steadily from crowded to sparse",
+   "reconnectTerm": "concentration gradient",
+   "role": "decrease"
+  },
+  {
+   "concept": "pressure",
+   "structure": "a force pushing against a limit",
+   "reconnectTerm": "pressure",
+   "role": "constraint"
+  },
+  {
+   "concept": "passive transport",
+   "structure": "movement that follows a slope without spending energy",
+   "reconnectTerm": "passive transport",
+   "role": "flow"
+  },
+  {
+   "concept": "active transport",
+   "structure": "movement against a slope that needs energy",
+   "reconnectTerm": "active transport",
+   "role": "increase"
+  },
+  {
+   "concept": "reaction",
+   "structure": "inputs turn into different outputs",
+   "reconnectTerm": "reaction",
+   "role": "transformation"
+  },
+  {
+   "concept": "chemical reaction",
+   "structure": "inputs turn into different outputs",
+   "reconnectTerm": "chemical reaction",
+   "role": "transformation"
+  },
+  {
+   "concept": "energy",
+   "structure": "a quantity that drives change",
+   "reconnectTerm": "energy",
+   "role": "increase"
+  },
+  {
+   "concept": "signal",
+   "structure": "a message travelling from a sender to a receiver",
+   "reconnectTerm": "signal",
+   "role": "flow"
+  },
+  {
+   "concept": "response",
+   "structure": "what comes out after an input arrives",
+   "reconnectTerm": "response",
+   "role": "output"
+  },
+  {
+   "concept": "stimulus",
+   "structure": "what goes in and starts a response",
+   "reconnectTerm": "stimulus",
+   "role": "input"
+  },
+  {
+   "concept": "surplus",
+   "structure": "more supply than is taken, so a pile builds up",
+   "reconnectTerm": "surplus",
+   "role": "increase"
+  },
+  {
+   "concept": "shortage",
+   "structure": "less supply than is wanted, so the pile runs out",
+   "reconnectTerm": "shortage",
+   "role": "decrease"
+  },
+  {
+   "concept": "demand",
+   "structure": "the pull of buyers wanting more",
+   "reconnectTerm": "demand",
+   "role": "input"
+  },
+  {
+   "concept": "supply",
+   "structure": "the push of sellers offering more",
+   "reconnectTerm": "supply",
+   "role": "output"
+  },
+  {
+   "concept": "price",
+   "structure": "the level where buying and selling meet",
+   "reconnectTerm": "price",
+   "role": "threshold"
+  },
+  {
+   "concept": "learning",
+   "structure": "knowledge building up over repeated practice",
+   "reconnectTerm": "learning",
+   "role": "increase"
+  },
+  {
+   "concept": "forgetting",
+   "structure": "knowledge fading as time passes",
+   "reconnectTerm": "forgetting",
+   "role": "decrease"
+  },
+  {
+   "concept": "decay",
+   "structure": "an amount shrinking by a steady share each step",
+   "reconnectTerm": "decay",
+   "role": "decrease"
+  },
+  {
+   "concept": "growth",
+   "structure": "an amount rising step by step",
+   "reconnectTerm": "growth",
+   "role": "increase"
+  },
+  {
+   "concept": "interval",
+   "structure": "the stretch of time between two events",
+   "reconnectTerm": "interval",
+   "role": "clock"
+  },
+  {
+   "concept": "error",
+   "structure": "the gap between what happened and what was wanted",
+   "reconnectTerm": "error",
+   "role": "failure"
+  },
+  {
+   "concept": "target",
+   "structure": "the level the system aims for",
+   "reconnectTerm": "target",
+   "role": "target"
+  },
+  {
+   "concept": "setpoint",
+   "structure": "the level the system aims for",
+   "reconnectTerm": "setpoint",
+   "role": "target"
+  },
+  {
+   "concept": "sensor",
+   "structure": "a part that measures and reports",
+   "reconnectTerm": "sensor",
+   "role": "input"
+  },
+  {
+   "concept": "controller",
+   "structure": "a part that compares and decides what to do",
+   "reconnectTerm": "controller",
+   "role": "selector"
+  }
+ ]
+}

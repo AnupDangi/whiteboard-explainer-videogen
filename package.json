@@ -1,0 +1,62 @@
+{
+  "name": "explain-canvas-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hypothesis-driven whiteboard explainer engine: scene data, deterministic playback, progressive delivery and MP4 export",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
+    "typecheck": "tsc --noEmit",
+    "voice-engine:setup": "sh -c 'cd voice-engine && npm run setup'",
+    "typecheck:hypothesis": "tsc --noEmit -p tsconfig.json",
+    "test:hypothesis": "npm run build && node scripts/shared-manifest.mjs --check && node --test dist/src/__tests__/*.test.js && python3 -m unittest discover -s src/shared/alignment -p 'test_*.py' && python3 -m unittest discover -s rag-engine -p 'test_*.py'",
+    "fixture:hypothesis": "npm run test:hypothesis",
+    "run:hypothesis": "npm run build && node dist/src/run/cli.js",
+    "preview:hypothesis": "npm run build && node dist/src/export/player/previewCli.js",
+    "run:hypothesis:live": "npm run build && node dist/src/run/liveCli.js",
+    "run:lesson": "npm run build && node dist/src/run/lessonCli.js",
+    "video:render": "npm run build && node dist/src/run/lessonCli.js",
+    "asset-bridge:freeze": "npm run build && node dist/src/assets/bridgeExportCli.js",
+    "video:one-shot": "node scripts/one-shot-video.mjs",
+    "catalog:build": "node scripts/build-catalog.mjs && node scripts/embed-catalog.mjs",
+    "catalog:e4:calibrate": "npm run build && node dist/src/assets/e4CalibrationCli.js",
+    "plan:calibrate": "npm run build && node dist/src/harness/planCalibrationCli.js",
+    "scene:calibrate": "npm run build && node dist/src/harness/sceneCalibrationCli.js",
+    "icons:ingest": "npm run build && node scripts/ingest-icon-library.mjs",
+    "reliability:run": "npm run build && node dist/src/harness/reliabilityCli.js",
+    "reference:lamina": "node scripts/lamina-reference.mjs ../lamina-labs-video harness/reference/lamina",
+    "judge:hypothesis": "node dist/src/harness/judgeCli.js",
+    "judge:human:hypothesis": "npm run build && node dist/src/harness/humanReviewCli.js",
+    "judge:human:pack:hypothesis": "npm run build && node dist/src/harness/humanReviewPackCli.js",
+    "judge:e5:human:hypothesis": "npm run build && node dist/src/harness/e5HumanReviewCli.js",
+    "judge:e5:human:pack:hypothesis": "npm run build && node dist/src/harness/e5HumanReviewPackCli.js",
+    "strip:scene": "node scripts/render-strip.mjs",
+    "baseline:freeze": "node scripts/baselines.mjs --freeze",
+    "baseline:verify": "node scripts/baselines.mjs",
+    "metrics:boards": "npm run build && node dist/src/harness/boardMetricsCli.js",
+    "validate:batch": "npm run build && node dist/src/harness/validationBatchCli.js",
+    "release:gates": "npm run build && node dist/src/harness/releaseGateCli.js",
+    "manifest:shared": "node scripts/shared-manifest.mjs",
+    "assets:sync": "cd ../Assest-Library/asset-lab && npm run bridge-v2 && cd ../../hypothesis_claude && cp ../Assest-Library/asset-lab/out/asset-bridge-v2/bridge.json src/assets/data/asset-bridge-v2.json && npm run build && node scripts/ingest-bridge-assets.mjs ../Assest-Library/asset-lab/out/asset-bridge-v2/bridge.json ../Assest-Library/asset-lab && node scripts/embed-catalog.mjs",
+    "audit:run": "npm run build && node dist/src/harness/auditCli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "domhandler": "^5.0.3",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "cheerio": "^1.2.0",
+    "ipaddr.js": "^2.5.0",
+    "mathjax-full": "^3.2.1",
+    "svg-path-properties": "^2.1.0",
+    "zod": "^4.6.5",
+    "roughjs": "4.6.6"
+  }
+}

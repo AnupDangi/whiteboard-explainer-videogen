@@ -1,0 +1,32 @@
+{
+  "bridgeCatalogVersion": "0c1405ba61da3a54",
+  "families": {
+    "flaticon-local": {
+      "accepted": 4272,
+      "rejected": {
+        "transform": 391,
+        "too-many-paths": 46,
+        "unsupported-element": 2
+      }
+    },
+    "iconify": {
+      "accepted": 210,
+      "rejected": {
+        "bad-geometry": 1
+      }
+    },
+    "streamline": {
+      "accepted": 7,
+      "rejected": {
+        "unsupported-element": 42
+      }
+    },
+    "sketchi": {
+      "accepted": 0,
+      "rejected": {
+        "unsupported-element": 238,
+        "transform": 70
+      }
+    }
+  }
+}

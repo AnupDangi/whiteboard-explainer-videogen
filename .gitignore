@@ -1,0 +1,27 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.data/
+output/
+*.log
+.DS_Store
+
+dist/
+.claude/worktrees/
+
+# python build artifacts
+__pycache__/
+*.pyc
+.venv/
+.venv
+parse-engine/models/
+rag-engine/models/
+
+# local tooling artifacts
+.playwright-mcp/
+app.server.out
+*.scenes/
+.agents/
+.claude/
+graphify-out/

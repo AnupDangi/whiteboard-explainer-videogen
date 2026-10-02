@@ -1,0 +1,228 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createHash } from 'node:crypto';
+import { readFile, readdir, realpath, stat } from 'node:fs/promises';
+import path from 'node:path';
+import type { AlignedAudio, LaidOutScene, Timeline } from '../../shared/types.js';
+import type { VideoScene } from '../frame.js';
+import type { EvaluationBundle } from '../../shared/contracts.js';
+
+export interface BrowserPreviewPayload {
+  schemaVersion: 'hypothesis-browser-preview/v1';
+  status: EvaluationBundle['status'];
+  runClass: EvaluationBundle['runClass'];
+  durationMs: number;
+  scenes: VideoScene[];
+  alignedWords: AlignedAudio['sceneWords'][string];
+  events: ScenePlayableEvent[];
+  sceneAudio: SceneAudioReference[];
+  streaming: boolean;
+  eventUrl: string;
+  audioUrl?: string;
+  captionsUrl?: string;
+}
+
+export interface SceneAudioReference {
+  sceneId: string;
+  path: string;
+  contentHash: string;
+  startMs: number;
+  endMs: number;
+}
+
+export interface ScenePlayableEvent {
+  type: 'scene.playable';
+  schemaVersion: 'hypothesis-scene-event/v1';
+  runId: string;
+  moduleId: string;
+  sceneId: string;
+  sequence: number;
+  durationMs: number;
+  artifactHash: string;
+  previewLocation: string;
+}
+
+const ID = /^[a-zA-Z0-9_-]{1,100}$/;
+
+function isSafeRunRelativePath(value: string): boolean {
+  if (!value || value.startsWith('/') || value.includes('\\') || value.includes('\0')) return false;
+  return value.split('/').every((part) => part.length > 0 && part !== '.' && part !== '..');
+}
+
+async function readSceneEvents(dir: string): Promise<ScenePlayableEvent[]> {
+  const raw = await readFile(path.join(dir, 'scene-events.jsonl'), 'utf8').catch(() => '');
+  const events: ScenePlayableEvent[] = [];
+  for (const [index, line] of raw.split(/\r?\n/).entries()) {
+    if (!line.trim()) continue;
+    let event: ScenePlayableEvent;
+    try { event = JSON.parse(line) as ScenePlayableEvent; }
+    catch { throw new Error(`Malformed scene event on line ${index + 1}`); }
+    if (event.type !== 'scene.playable' || event.schemaVersion !== 'hypothesis-scene-event/v1' || !ID.test(event.runId) || !ID.test(event.moduleId) || !ID.test(event.sceneId) || !Number.isSafeInteger(event.sequence) || event.sequence !== events.length || !Number.isFinite(event.durationMs) || event.durationMs <= 0 || !/^[a-f0-9]{64}$/i.test(event.artifactHash) || !isSafeRunRelativePath(event.previewLocation)) {
+      throw new Error(`Invalid scene event on line ${index + 1}`);
+    }
+    events.push(event);
+  }
+  return events;
+}
+
+/** Load renderer outputs only; do not accept source code, arbitrary SVG, or model-produced paths. */
+export async function loadBrowserPreview(runDir: string): Promise<BrowserPreviewPayload> {
+  const dir = path.resolve(runDir);
+  const [manifestRaw, evaluationRaw, audioRaw, names, events] = await Promise.all([
+    readFile(path.join(dir, 'run-manifest.json'), 'utf8').catch(() => undefined),
+    readFile(path.join(dir, 'evaluation-bundle.json'), 'utf8').catch(() => undefined),
+    readFile(path.join(dir, 'aligned-audio.json'), 'utf8').catch(() => undefined),
+    readdir(dir),
+    readSceneEvents(dir),
+  ]);
+  const eventStreamPresent = await stat(path.join(dir, 'scene-events.jsonl')).then(() => true, () => false);
+  const manifest = manifestRaw ? JSON.parse(manifestRaw) as { schemaVersion?: string; status?: EvaluationBundle['status']; runClass?: EvaluationBundle['runClass'] } : undefined;
+  const evaluation = evaluationRaw ? JSON.parse(evaluationRaw) as EvaluationBundle : undefined;
+  const audio = audioRaw ? JSON.parse(audioRaw) as AlignedAudio : undefined;
+  if (manifest && manifest.schemaVersion !== 'hypothesis-run/v1') throw new Error('Unsupported run manifest artifact version');
+  if (evaluation && !['evaluation-bundle/v1', 'evaluation-bundle/v2'].includes(evaluation.schemaVersion)) throw new Error('Unsupported evaluation bundle artifact version');
+  if (manifest && evaluation && (!['draft', 'failed', 'passed'].includes(evaluation.status) || evaluation.status !== manifest.status || evaluation.runClass !== manifest.runClass)) throw new Error('Run manifest and evaluation status do not agree');
+  if (audio && (!Number.isFinite(audio.durationMs) || audio.durationMs <= 0 || !audio.sceneWords || typeof audio.sceneWords !== 'object')) throw new Error('Aligned audio clock is invalid');
+
+  const sceneIds = names.flatMap((name) => {
+    const match = /^layout\.([a-zA-Z0-9_-]{1,100})\.json$/.exec(name);
+    return match ? [match[1]] : [];
+  });
+  if (sceneIds.length === 0 && events.length === 0 && !eventStreamPresent) throw new Error('No laid-out scenes or playable scene event stream found in run directory');
+  const staticScenes = await Promise.all(sceneIds.map(async (sceneId): Promise<VideoScene> => {
+    if (!ID.test(sceneId)) throw new Error(`Unsafe scene identifier: ${sceneId}`);
+    const [layoutRaw, timelineRaw] = await Promise.all([
+      readFile(path.join(dir, `layout.${sceneId}.json`), 'utf8'),
+      readFile(path.join(dir, `timeline.${sceneId}.json`), 'utf8'),
+    ]);
+    const laidOut = JSON.parse(layoutRaw) as LaidOutScene;
+    const timeline = JSON.parse(timelineRaw) as Timeline;
+    if (laidOut.sceneId !== sceneId || timeline.sceneId !== sceneId || !Array.isArray(laidOut.elements) || !Array.isArray(timeline.events)) throw new Error(`Malformed scene artifacts for ${sceneId}`);
+    if (!Number.isFinite(timeline.sceneStartMs) || !Number.isFinite(timeline.sceneEndMs) || timeline.sceneEndMs <= timeline.sceneStartMs) throw new Error(`Invalid timeline bounds for ${sceneId}`);
+    return { laidOut, timeline, startMs: timeline.sceneStartMs, endMs: timeline.sceneEndMs };
+  }));
+  const eventScenes = await Promise.all(events.map(async (event): Promise<VideoScene> => {
+    const filePath = path.resolve(dir, event.previewLocation);
+    if (!filePath.startsWith(dir + path.sep)) throw new Error(`Scene event path escapes the run directory: ${event.previewLocation}`);
+    const [actualPath, rawBytes] = await Promise.all([realpath(filePath), readFile(filePath)]);
+    if (!actualPath.startsWith(`${await realpath(dir)}${path.sep}`)) throw new Error(`Scene event path resolves outside the run directory: ${event.previewLocation}`);
+    if (createHash('sha256').update(rawBytes).digest('hex') !== event.artifactHash.toLowerCase()) throw new Error(`Scene preview descriptor hash does not match event ${event.sceneId}`);
+    const descriptor = JSON.parse(rawBytes.toString('utf8')) as { schemaVersion?: string; runId?: string; moduleId?: string; sceneId?: string; sequence?: number; durationMs?: number; laidOut?: LaidOutScene; timeline?: Timeline; audio?: { startMs?: number; endMs?: number; scenePath?: string; sceneContentHash?: string }; alignment?: { words?: AlignedAudio['sceneWords'][string] } };
+    const sceneAudio = descriptor.audio;
+    if (descriptor.schemaVersion !== 'hypothesis-scene-preview/v1' || descriptor.runId !== event.runId || descriptor.moduleId !== event.moduleId || descriptor.sceneId !== event.sceneId || descriptor.sequence !== event.sequence || descriptor.durationMs !== event.durationMs || descriptor.laidOut?.sceneId !== event.sceneId || descriptor.timeline?.sceneId !== event.sceneId || !sceneAudio || !Number.isFinite(sceneAudio.startMs) || !Number.isFinite(sceneAudio.endMs) || !sceneAudio.scenePath || !isSafeRunRelativePath(sceneAudio.scenePath) || !/^[a-f0-9]{64}$/i.test(sceneAudio.sceneContentHash ?? '')) throw new Error(`Scene preview descriptor does not match event ${event.sceneId}`);
+    const startMs = sceneAudio.startMs!;
+    const endMs = sceneAudio.endMs!;
+    if (endMs <= startMs) throw new Error(`Scene event has invalid audio bounds: ${event.sceneId}`);
+    const audioPath = path.resolve(dir, sceneAudio.scenePath!);
+    if (!audioPath.startsWith(dir + path.sep)) throw new Error(`Scene audio path escapes the run directory: ${event.sceneId}`);
+    const [actualAudioPath, audioBytes] = await Promise.all([realpath(audioPath), readFile(audioPath)]);
+    if (!actualAudioPath.startsWith(`${await realpath(dir)}${path.sep}`) || createHash('sha256').update(audioBytes).digest('hex') !== sceneAudio.sceneContentHash!.toLowerCase()) throw new Error(`Scene audio artifact is missing or has an invalid hash: ${event.sceneId}`);
+    return { laidOut: descriptor.laidOut!, timeline: descriptor.timeline!, startMs, endMs };
+  }));
+  const scenesById = new Map<string, VideoScene>();
+  for (const scene of staticScenes) scenesById.set(scene.laidOut.sceneId, scene);
+  for (const scene of eventScenes) scenesById.set(scene.laidOut.sceneId, scene);
+  const scenes = [...scenesById.values()].sort((a, b) => a.startMs - b.startMs);
+  const audioUrl = manifest ? await stat(path.join(dir, 'audio.wav')).then(() => '/audio.wav', () => undefined) : undefined;
+  const captionsUrl = await stat(path.join(dir, 'captions.vtt')).then(() => '/captions.vtt', () => undefined);
+  const alignedWords = audio ? Object.values(audio.sceneWords).flat().sort((a, b) => a.startMs - b.startMs) : [];
+  const sceneAudio = await Promise.all(events.map(async (event): Promise<SceneAudioReference> => {
+    const descriptor = JSON.parse(await readFile(path.join(dir, event.previewLocation), 'utf8')) as { audio: { scenePath: string; sceneContentHash: string; startMs: number; endMs: number } };
+    return { sceneId: event.sceneId, path: descriptor.audio.scenePath, contentHash: descriptor.audio.sceneContentHash, startMs: descriptor.audio.startMs, endMs: descriptor.audio.endMs };
+  }));
+  if (!alignedWords.length && events.length) {
+    for (const event of events) {
+      const descriptor = JSON.parse(await readFile(path.join(dir, event.previewLocation), 'utf8')) as { audio: { startMs: number }; alignment?: { words?: AlignedAudio['sceneWords'][string] } };
+      for (const word of descriptor.alignment?.words ?? []) alignedWords.push({ ...word, startMs: word.startMs + descriptor.audio.startMs, endMs: word.endMs + descriptor.audio.startMs });
+    }
+    alignedWords.sort((a, b) => a.startMs - b.startMs);
+  }
+  const status = evaluation?.status ?? manifest?.status ?? 'draft';
+  const runClass = evaluation?.runClass ?? manifest?.runClass ?? 'generated-lesson';
+  const durationMs = audio?.durationMs ?? Math.max(0, ...scenes.map((scene) => scene.endMs));
+  return {
+    schemaVersion: 'hypothesis-browser-preview/v1',
+    status,
+    runClass,
+    durationMs,
+    scenes,
+    alignedWords,
+    events,
+    sceneAudio,
+    streaming: !manifest,
+    eventUrl: '/scene-events.jsonl',
+    ...(audioUrl ? { audioUrl } : {}),
+    ...(captionsUrl ? { captionsUrl } : {}),
+  };
+}
+
+function send(res: import('node:http').ServerResponse, code: number, type: string, body: string | Buffer): void {
+  res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self'; object-src 'none'; base-uri 'none'" });
+  res.end(body);
+}
+
+export async function createBrowserPreviewServer(runDir: string, repoRoot = process.cwd()): Promise<Server> {
+  const payload = await loadBrowserPreview(runDir);
+  const htmlPath = path.resolve(repoRoot, 'src/export/player/index.html');
+  const html = await readFile(htmlPath);
+  const runPath = path.resolve(runDir);
+  const distRoot = path.resolve(repoRoot, 'dist');
+  const fontPath = path.resolve(repoRoot, 'src/run/assets/fonts/Kalam-Bold.ttf');
+  return createServer(createBrowserPreviewHandler(payload, runPath, distRoot, html, fontPath, () => loadBrowserPreview(runPath)));
+}
+
+/** Request handler is exported separately so route/security behavior can be tested without opening a socket. */
+export function createBrowserPreviewHandler(payload: BrowserPreviewPayload, runPath: string, distRoot: string, html: Buffer, fontPath = path.resolve(process.cwd(), 'src/assets/fonts/Kalam-Bold.ttf'), refresh?: () => Promise<BrowserPreviewPayload>) {
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    try {
+      const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+      if (req.method !== 'GET') return send(res, 405, 'text/plain; charset=utf-8', 'Method not allowed');
+      if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', html);
+      if (url.pathname === '/run.json') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(refresh ? await refresh() : payload));
+      if (url.pathname === '/scene-events.jsonl') return send(res, 200, 'application/x-ndjson; charset=utf-8', await readFile(path.join(runPath, 'scene-events.jsonl'), 'utf8').catch(() => ''));
+      if (url.pathname.startsWith('/artifact/')) {
+        const relative = decodeURIComponent(url.pathname.slice('/artifact/'.length));
+        if (!isSafeRunRelativePath(relative)) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        const file = path.resolve(runPath, relative);
+        if (!file.startsWith(path.resolve(runPath) + path.sep)) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        const [actualPath, rootPath] = await Promise.all([realpath(file), realpath(runPath)]);
+        if (!actualPath.startsWith(`${rootPath}${path.sep}`)) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        const content = await readFile(actualPath);
+        const events = await readSceneEvents(runPath);
+        let expectedHash: string | undefined;
+        for (const event of events) {
+          if (event.previewLocation === relative) {
+            expectedHash = event.artifactHash;
+            break;
+          }
+          const descriptorPath = path.resolve(runPath, event.previewLocation);
+          const descriptorBytes = await readFile(descriptorPath).catch(() => undefined);
+          if (!descriptorBytes || createHash('sha256').update(descriptorBytes).digest('hex') !== event.artifactHash.toLowerCase()) continue;
+          const descriptor = JSON.parse(descriptorBytes.toString('utf8')) as { audio?: { scenePath?: string; sceneContentHash?: string } };
+          if (descriptor.audio?.scenePath === relative) {
+            expectedHash = descriptor.audio.sceneContentHash;
+            break;
+          }
+        }
+        if (!expectedHash || createHash('sha256').update(content).digest('hex') !== expectedHash.toLowerCase()) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        return send(res, 200, relative.endsWith('.json') ? 'application/json; charset=utf-8' : 'application/octet-stream', content);
+      }
+      if (url.pathname === '/fonts/Kalam-Bold.ttf') return send(res, 200, 'font/ttf', await readFile(fontPath));
+      if (url.pathname === '/audio.wav' || url.pathname === '/captions.vtt') {
+        const file = path.join(runPath, url.pathname.slice(1));
+        if (!await stat(file).then(() => true, () => false)) return send(res, 404, 'text/plain; charset=utf-8', 'Artifact not found');
+        return send(res, 200, url.pathname.endsWith('.vtt') ? 'text/vtt; charset=utf-8' : 'audio/wav', await readFile(file));
+      }
+      if (url.pathname.startsWith('/dist/')) {
+        const relative = decodeURIComponent(url.pathname.slice('/dist/'.length));
+        if (!relative.startsWith('src/')) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        const file = path.resolve(distRoot, relative);
+        if (!file.startsWith(distRoot + path.sep)) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        if (!await stat(file).then((st) => st.isFile(), () => false)) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        return send(res, 200, 'text/javascript; charset=utf-8', await readFile(file));
+      }
+      return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+    } catch (error) {
+      send(res, 500, 'text/plain; charset=utf-8', error instanceof Error ? error.message : String(error));
+    }
+  };
+}

@@ -1,0 +1,143 @@
+{
+  "generatedAt": "2026-09-26T02:39:20.678Z",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "sources": [
+    "ocean-tides",
+    "bicycle-balance",
+    "composting",
+    "rainbow-formation",
+    "mirror-images"
+  ],
+  "repeatsPerSource": 2,
+  "variants": [
+    {
+      "variant": "v5-fully-worked-example",
+      "attempts": 10,
+      "passed": 2,
+      "passRate": 0.2,
+      "failureCodeCounts": {
+        "S3_CALL_FAILED": 8
+      },
+      "totalCostUsd": 0.0372908688
+    }
+  ],
+  "attempts": [
+    {
+      "sourceId": "ocean-tides",
+      "variant": "v5-fully-worked-example",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.003479588,
+      "durationMs": 83614,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "ocean-tides",
+      "variant": "v5-fully-worked-example",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.002983736,
+      "durationMs": 87201,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "bicycle-balance",
+      "variant": "v5-fully-worked-example",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0037887808,
+      "durationMs": 84636,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "bicycle-balance",
+      "variant": "v5-fully-worked-example",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0030682903999999997,
+      "durationMs": 80408,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "composting",
+      "variant": "v5-fully-worked-example",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0031327407999999996,
+      "durationMs": 70638,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "composting",
+      "variant": "v5-fully-worked-example",
+      "attempt": 2,
+      "passed": true,
+      "repairs": 1,
+      "costUsd": 0.002828028,
+      "durationMs": 71709,
+      "failureCodes": []
+    },
+    {
+      "sourceId": "rainbow-formation",
+      "variant": "v5-fully-worked-example",
+      "attempt": 1,
+      "passed": true,
+      "repairs": 1,
+      "costUsd": 0.0116664,
+      "durationMs": 24406,
+      "failureCodes": []
+    },
+    {
+      "sourceId": "rainbow-formation",
+      "variant": "v5-fully-worked-example",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 0,
+      "costUsd": 0,
+      "durationMs": 180008,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "mirror-images",
+      "variant": "v5-fully-worked-example",
+      "attempt": 1,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0032866624000000002,
+      "durationMs": 70331,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    },
+    {
+      "sourceId": "mirror-images",
+      "variant": "v5-fully-worked-example",
+      "attempt": 2,
+      "passed": false,
+      "repairs": 1,
+      "costUsd": 0.0030566424,
+      "durationMs": 71125,
+      "failureCodes": [
+        "S3_CALL_FAILED"
+      ]
+    }
+  ],
+  "skippedSources": []
+}

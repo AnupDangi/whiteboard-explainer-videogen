@@ -1,0 +1,225 @@
+{
+  "schemaVersion": "baseline-inventory/v1",
+  "baselineVersion": 1,
+  "frozenAt": "2026-09-23T18:21:32.787Z",
+  "immutable": true,
+  "entries": [
+    {
+      "path": "src/experimental/hypothesis/shared/fixtures.ts",
+      "sha256": "c29fa95a6aec22d864c0c941c0583bd4fbbc999bcf20d7537b5366f8609f83b4",
+      "role": "hand-authored-fixture-input"
+    },
+    {
+      "path": "src/experimental/hypothesis/v1_claude/fixtures/attentionScenes.ts",
+      "sha256": "af6856c8bad382476774a4bcacdf672977337ee3001b4746be0737df694fcc78",
+      "role": "hand-authored-fixture-input"
+    },
+    {
+      "path": "src/experimental/hypothesis/v1_claude/fixtures/liveNarrationScripts.ts",
+      "sha256": "dc8c8398da0ceb09517a27e3383125019fffa60ed124284d73c7b2a89e437d31",
+      "role": "hand-authored-fixture-input"
+    },
+    {
+      "path": "src/experimental/hypothesis/v1_claude/fixtures/mathLessons.ts",
+      "sha256": "6107986106bb7202e209c3fa3b7fb0412a8e0c663b294da841f74345ed9668de",
+      "role": "hand-authored-fixture-input"
+    },
+    {
+      "path": "src/experimental/hypothesis/v1_claude/fixtures/mathScenes.ts",
+      "sha256": "915aa0a1561cdce41dc8a4f9108c07d9f5b33f9a47e187e2f950b789ed01eb2b",
+      "role": "hand-authored-fixture-input"
+    },
+    {
+      "path": "harness/reference/lamina/OBSERVATIONS.md",
+      "sha256": "06ee0d384528438952ab1456f9eb8c0e5db3f6a52513cbef61c0665033ed49eb",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/index.json",
+      "sha256": "30670d2112a0d1fd4f3a01d819f2cea9facb68cff7d3a77f091a5ecc4e7c6cac",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene01.png",
+      "sha256": "814408dedb65a734d19a362f912d06097503a2676d168d20286f3e61aa3fb53b",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene02.png",
+      "sha256": "4f02bbd02534095b32540755e404533f99e8fabafee8dd322db8a6e7594ddc4b",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene03.png",
+      "sha256": "b400953b8b26d0077abd42de30e8098fd7298aa0a018c283e74bfe763552fb61",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/lamina-video-ec6c5e81-291c-4917-93f5-7820f50b4213-1-scene04.png",
+      "sha256": "15006e789843283ccf06dbdf692023ca568871869ae819599a7cb973f201d4fa",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/simi-scene01.png",
+      "sha256": "03c557b3cd7757f2002e488f79f758e232f310042c8a371a8eefcf0f02b73f2e",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/simi-scene02.png",
+      "sha256": "0fe5c2a55057645e4c7257c39a1f1c7cf4b64b2db50d35f718cec868192b7cf5",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/simi-scene03.png",
+      "sha256": "c6c50456807192aaac51d482b7d8e35076b61b837172de98aef29447f9df14ca",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/simi-scene04.png",
+      "sha256": "876aab82a200b878e1df2c5298fd6b6e59d45c54d8caa99959b31455ead45e7c",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene01.png",
+      "sha256": "32f2732cb5ba69d3b67306d219b7069cbbeaf00ee8a437fa3406f3a3276eb1ac",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene02.png",
+      "sha256": "c77eb64b133fe6cd6e065161e015498a34ba8ed3e9c2a6402ffff3cbcfb6d712",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene03.png",
+      "sha256": "bb7ddd8491d308d1cf38ed2e66cd6318e52bc306dfa175370b7563b8e979870d",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene04.png",
+      "sha256": "577d191253dd18f0c85daf030f2b3e7588225bc30b43a4b563efe0f8df65bb7a",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene05.png",
+      "sha256": "f0c1fbb3684889d1e96297bd3073d79215d4d1834990920341f5c07bfd3b1bce",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene06.png",
+      "sha256": "58ae900394cb76e18ba3ec374cd30484771d571a9b627ce4a5f24e1257f61fe9",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene07.png",
+      "sha256": "fe151d59085d52b95a7f27b77740a6724e4be0e653f5b2357b7fb9882008d4a7",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789986843490-scene08.png",
+      "sha256": "88ff5f298f9b93380a960026f12fa193355955117c5ef54953c1b4a83d6fadae",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene01.png",
+      "sha256": "44579918f6eb751dab3407b3b458df588b45d45b663c8d696bab7a0d15da7ad2",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene02.png",
+      "sha256": "b11c873f2cbb5b7847670898cb38357894f4aa40ebac5031911086d075322d1d",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene03.png",
+      "sha256": "de82207470c70b7a4e37fbc9ab4d5d21b2b36af014fe42d66c9e0ca9d14b172c",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene04.png",
+      "sha256": "223aa0bfae17ea53ef12768eac6c14f0ebd6deb1cf81838bffabc7333059fa8a",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene05.png",
+      "sha256": "c9df6dd2656b93dadeabbe6b51790c4a994446d10f98dc97db60c0fd181d112e",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene06.png",
+      "sha256": "0428f97b32fb787392dcb6120e1affe6fe359876361b9858a7b23920ee477de5",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene07.png",
+      "sha256": "12ab6aab9dc1863caf982c80921ec75a3a2d5c7b354522d74a87d5540628dd91",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene08.png",
+      "sha256": "df2ab7e7dab1cbe7c62cb845696238b1c6e9798a1986751f943fbf7568039d73",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene09.png",
+      "sha256": "e1b56d545dd7e6830b3efc742abeee5ec9e75c6a6db58bafaf2156ed17b297d0",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene10.png",
+      "sha256": "0244db1da1a2a500c320d4b180cc604999955bee016ba1c257f812801058dff8",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene11.png",
+      "sha256": "41a4262af299b5052df9ba9e8dfd21302be7ad8db4f66d9e7abb108053870606",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene12.png",
+      "sha256": "194ebabdd69ff8efecead730727297cd8c2ae499a945981d05cd6c2e9326b92d",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene13.png",
+      "sha256": "2fb73fd8f9755afe90c6e0a4c883cf25903c152ac2bf34302d01ffe8ac4be92e",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene14.png",
+      "sha256": "6800f22c6aab969008770788793e2acfe570db5293473b792e200a3bb8664588",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene15.png",
+      "sha256": "bc9a9657d61cadda4def7bb1d7413a7fba74afbd54cf3cd4c45cd544435a53d2",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene16.png",
+      "sha256": "052d369ee1c717167eea7504f46d0ae3b53a7f76cb6de8b29c38aca82738a85f",
+      "role": "reference-only"
+    },
+    {
+      "path": "harness/reference/lamina/ssstwitter-com-1789987782899-scene17.png",
+      "sha256": "fd4e94046ae9393dbd3a9aa858ce54ff231a3e8cd145a1003488a647d0dbca66",
+      "role": "reference-only"
+    }
+  ],
+  "missingSets": [
+    {
+      "id": "G-10",
+      "status": "partial",
+      "reason": "This checkout has four shared live goldens and five math lessons, not the planned ten-lesson frozen corpus."
+    },
+    {
+      "id": "G-DOC",
+      "status": "missing",
+      "reason": "The five planned real-document inputs are not present in this checkout."
+    },
+    {
+      "id": "G-LONG",
+      "status": "missing",
+      "reason": "The four planned long-form input fixtures are not present in this checkout."
+    }
+  ]
+}

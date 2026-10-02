@@ -1,0 +1,3 @@
+# Supply and demand
+
+In a market, buyers decide how much to purchase at each price, and sellers decide how much to offer. When the price rises, buyers purchase less, so the quantity demanded falls. When the price rises, sellers offer more, so the quantity supplied rises. The market price settles where the quantity demanded equals the quantity supplied, called the equilibrium price. If the price is above equilibrium, sellers have a surplus and lower the price. If the price is below equilibrium, buyers face a shortage and the price rises. A change in consumer income or in production costs shifts the demand or supply and moves the equilibrium.

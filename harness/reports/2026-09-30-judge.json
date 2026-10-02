@@ -1,0 +1,124 @@
+{
+  "judgeModel": "qwen/qwen3-vl-32b-instruct",
+  "promptVersion": "judge/v3",
+  "topic": null,
+  "referenceMode": "style-only",
+  "referenceTopicMapVersion": "lamina-reference-topics/v1",
+  "referenceTopicMapSha256": "fdf8020b33b8c955fa1b292685cd0dd97979fc818d2143ea5a3a027d19233356",
+  "referenceFrames": [],
+  "spentUsd": 0.000326248,
+  "judgeCache": {
+    "directory": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.data/hypothesis-runs/judge-cache",
+    "hits": 11,
+    "misses": 1
+  },
+  "results": {
+    "2026-09-30T11-08-51-682Z-8663b4b8-6061-48df-8ff0-5246888e5fe3": [
+      {
+        "sceneId": "01-module_1_selective_membrane",
+        "atSec": 13.362,
+        "errors": [],
+        "clarity": {
+          "clarity": 3,
+          "type": "list",
+          "fix": "Show water molecules moving through membrane while solutes are blocked, illustrating the net movement."
+        },
+        "style": {
+          "score": 4,
+          "offenders": [
+            "the orange curved line under 'SOLUTES'",
+            "the gray rounded rectangle with 'OSMOSIS'",
+            "the thin vertical line separating the blue and yellow rectangles"
+          ]
+        },
+        "timed": {
+          "score": 4,
+          "sequenceCoherent": true,
+          "mechanismVisible": true,
+          "issues": [
+            "The diagram introduces 'osmosis' as a box on the left, which may be misleading as it's presented as a starting point rather than a process occurring across the membrane. The concept of 'net movement' is not visually represented in any frame, which limits the full mechanism visibility. Also, solutes are introduced late (third frame), after the word 'sugars' is spoken at 13526ms, which could cause timing mismatch if the diagram doesn't fully reveal until then."
+          ]
+        }
+      },
+      {
+        "sceneId": "01-module_1_follow_potential",
+        "atSec": 31.116,
+        "errors": [],
+        "clarity": {
+          "clarity": 2,
+          "type": "list",
+          "fix": "Show water molecules moving from low solute to high solute side across membrane, with arrows indicating direction based on potential gradient."
+        },
+        "style": {
+          "score": 3,
+          "offenders": [
+            "The dashed line with colored dots (green and red) has a different stroke style and adds color not seen elsewhere.",
+            "The text 'CONCENTRATED SOLUTI' is cut off and inconsistently spaced, breaking the lettering style.",
+            "The membrane illustration uses solid color fills (blue and yellow) which contrast with the otherwise monochrome palette."
+          ]
+        },
+        "timed": {
+          "score": 4,
+          "sequenceCoherent": true,
+          "mechanismVisible": true,
+          "issues": [
+            "The 'SOLUTE' box appears too late, after the concept of water moving toward higher solute concentration has been verbally explained. The diagram should have introduced solute earlier to support the explanation that dissolved solute lowers water potential."
+          ]
+        }
+      },
+      {
+        "sceneId": "01-module_1_no_energy_needed",
+        "atSec": 46.223,
+        "errors": [],
+        "clarity": {
+          "clarity": 3,
+          "type": "list",
+          "fix": "Add arrows showing water moving from high to low potential, linking gradient to osmosis."
+        },
+        "style": {
+          "score": 4,
+          "offenders": [
+            "WATER MOLECULES text (handwritten style differs from other labels)",
+            "gray box (lacks fill color consistency with other boxes)",
+            "arrowheads (slightly inconsistent thickness and shape)"
+          ]
+        },
+        "timed": {
+          "score": 4,
+          "sequenceCoherent": true,
+          "mechanismVisible": true,
+          "issues": [
+            "The phrase 'NO ENERGY INPUT NEEDED' appears too early in the sequence, before the concept of passive transport is introduced. This may confuse learners who are not yet aware that this statement refers to osmosis as a form of passive transport. The diagram should first establish the core mechanism (water moving down a gradient) before labeling it as passive."
+          ]
+        }
+      },
+      {
+        "sceneId": "01-module_1_osmosis_recap",
+        "atSec": 58.683,
+        "errors": [],
+        "clarity": {
+          "clarity": 2,
+          "type": "list",
+          "fix": "Add arrows showing water moving across the membrane down the gradient, with solutes blocked."
+        },
+        "style": {
+          "score": 4,
+          "offenders": [
+            "The dashed line with colored dots (green and red) in the 'WATER-POTENTIAL GRADIENT' element",
+            "The bracket symbol used for 'PASSIVE TRANSPORT' which has a different stroke weight and style compared to other arrows",
+            "The title text 'PUT THE PROCESS TOGETHER' uses a slightly bolder, more uneven hand-lettering style compared to the other labels"
+          ]
+        },
+        "timed": {
+          "score": 4,
+          "sequenceCoherent": true,
+          "mechanismVisible": true,
+          "issues": [
+            "The diagram begins with only a corner, which may confuse viewers before any context is given. While the subsequent frames build logically, the initial frame lacks any meaningful content to support the narration starting at 'osmosis,' creating a slight delay in visual reinforcement."
+          ]
+        }
+      }
+    ]
+  },
+  "skipped": {}
+}

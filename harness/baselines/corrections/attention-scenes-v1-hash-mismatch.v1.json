@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "baseline-correction-review/v1",
+  "recordId": "attention-scenes-v1-hash-mismatch",
+  "status": "proposed-unreviewed",
+  "createdAt": "2026-09-29",
+  "scope": "Record the pre-existing v1 attention fixture hash mismatch without changing immutable manifest.v1.json.",
+  "baseline": {
+    "manifest": "harness/baselines/manifest.v1.json",
+    "path": "src/experimental/hypothesis/v1_claude/fixtures/attentionScenes.ts",
+    "frozenSha256": "af6856c8bad382476774a4bcacdf672977337ee3001b4746be0737df694fcc78"
+  },
+  "observed": {
+    "commit": "34ad3f1b014b0aca0e2ea6fb64a768650f711e53",
+    "sha256": "3ab6fc62b3d6d41462c7b198ac3a592e9c459bfa16529fb6424a1009a76c184c",
+    "workingTreeModified": false,
+    "verification": "npm run baseline:verify reports only this path; HEAD and the working-tree bytes have the same observed hash."
+  },
+  "proposedCorrection": {
+    "action": "If maintainers confirm the committed fixture is the intended frozen input, publish a separately versioned baseline correction/review record and a new baseline manifest version. Do not rewrite manifest.v1.json.",
+    "newBaselineManifestCreated": false
+  },
+  "review": {
+    "reviewers": [],
+    "decision": null,
+    "reviewedAt": null,
+    "notes": "Awaiting independent maintainer review. This record does not authorize a baseline update."
+  }
+}

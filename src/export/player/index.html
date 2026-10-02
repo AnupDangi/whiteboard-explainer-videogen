@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Claude hypothesis · browser preview</title>
+  <style>
+    @font-face { font-family: Kalam; font-style: normal; font-weight: 700; src: url('/fonts/Kalam-Bold.ttf') format('truetype'); font-display: block; }
+    :root { color-scheme: light; font: 16px/1.45 system-ui,sans-serif; color: #25231f; background: #f4f2ec; }
+    body { max-width: 1180px; margin: 32px auto; padding: 0 20px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+    h1 { font-size: 1.3rem; margin: 0; } .muted { color: #625e55; font-size: .9rem; }
+    #message { padding: 8px 12px; border-radius: 8px; background: #e9e5dc; width: fit-content; }
+    #message[data-state="failed"] { color: #8b1e1e; background: #f8dede; }
+    #message[data-state="draft"] { color: #66480a; background: #fff0c2; }
+    #stage { background: #fdfdfb; border: 1px solid #d6d1c7; border-radius: 12px; overflow: hidden; }
+    #board { aspect-ratio: 16 / 9; width: 100%; } #board svg { display: block; width: 100%; height: 100%; }
+    #caption { min-height: 1.5em; text-align: center; font-size: 1.1rem; font-weight: 600; margin: 8px 0 0; }
+    .controls { display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center; margin: 14px 0; }
+    button,select { font: inherit; padding: 8px 12px; } input[type=range] { width: 100%; }
+    audio { width: 100%; margin: 8px 0; } [hidden] { display:none!important; }
+    @media (max-width:700px) { header { display:block; } .controls { grid-template-columns:auto 1fr; } }
+  </style>
+</head>
+<body>
+  <header><div><h1>Claude hypothesis · renderer preview</h1><div class="muted">Plays validated scene and timeline data with the deterministic renderer.</div></div></header>
+  <p id="message" role="status">Loading run…</p>
+  <main id="stage"><div id="board" role="img" aria-label="Timed whiteboard scene preview"></div></main>
+  <p id="caption" aria-live="polite"></p>
+  <div class="controls">
+    <button id="play" type="button" aria-label="Play explanation">Play</button>
+    <input id="seek" type="range" min="0" max="1" value="0" step="10" aria-label="Seek explanation" disabled>
+    <output id="clock">0:00 / 0:00</output>
+    <select id="speed" aria-label="Playback speed"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+  </div>
+  <audio id="audio" controls hidden><track id="captions" kind="captions" srclang="en" label="Captions"></audio>
+  <script type="module" src="/dist/src/export/player/client.js"></script>
+</body>
+</html>

@@ -1,0 +1,1149 @@
+{
+  "resultClass": "diagnostic-calibration",
+  "generatedAt": "2026-09-25T13:07:38.932Z",
+  "model": "anthropic/claude-sonnet-5",
+  "arms": [
+    {
+      "arm": "zero",
+      "attempts": 28,
+      "valid": 0,
+      "validRate": 0,
+      "failureCodeCounts": {
+        "planner-call-failed": 22,
+        "planner-transport-retry": 22,
+        "scene-context-invalid": 6
+      },
+      "richness": {
+        "scenes": 0,
+        "meanElements": 0,
+        "meanObjectShare": 0,
+        "meanEdges": 0,
+        "listSceneRate": 0,
+        "templateDiversity": 0,
+        "primitiveDiversity": 0,
+        "textFallbackShare": 0
+      },
+      "totalCostUsd": 0
+    },
+    {
+      "arm": "mechanism",
+      "attempts": 28,
+      "valid": 0,
+      "validRate": 0,
+      "failureCodeCounts": {
+        "planner-call-failed": 22,
+        "planner-transport-retry": 22,
+        "scene-context-invalid": 6
+      },
+      "richness": {
+        "scenes": 0,
+        "meanElements": 0,
+        "meanObjectShare": 0,
+        "meanEdges": 0,
+        "listSceneRate": 0,
+        "templateDiversity": 0,
+        "primitiveDiversity": 0,
+        "textFallbackShare": 0
+      },
+      "totalCostUsd": 0
+    },
+    {
+      "arm": "diverse",
+      "attempts": 28,
+      "valid": 0,
+      "validRate": 0,
+      "failureCodeCounts": {
+        "planner-call-failed": 22,
+        "planner-transport-retry": 22,
+        "scene-context-invalid": 6
+      },
+      "richness": {
+        "scenes": 0,
+        "meanElements": 0,
+        "meanObjectShare": 0,
+        "meanEdges": 0,
+        "listSceneRate": 0,
+        "templateDiversity": 0,
+        "primitiveDiversity": 0,
+        "textFallbackShare": 0
+      },
+      "totalCostUsd": 0
+    }
+  ],
+  "attempts": [
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "intro",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "rotation_tide_cycle",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "solar_influence",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "recap",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s1",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s2",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s3",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s4",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s5",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_1",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_2",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_3",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_4",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_5",
+      "arm": "zero",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "intro",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "rotation_tide_cycle",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "solar_influence",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "recap",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s1",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s2",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s3",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s4",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s5",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_1",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_2",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_3",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_4",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_5",
+      "arm": "zero",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "intro",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "rotation_tide_cycle",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "solar_influence",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "recap",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s1",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s2",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s3",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s4",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s5",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_1",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_2",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_3",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_4",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_5",
+      "arm": "mechanism",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "intro",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "rotation_tide_cycle",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "solar_influence",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "recap",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s1",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s2",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s3",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s4",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s5",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_1",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_2",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_3",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_4",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_5",
+      "arm": "mechanism",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "intro",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "rotation_tide_cycle",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "solar_influence",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "recap",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s1",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s2",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s3",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s4",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s5",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_1",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_2",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_3",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_4",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_5",
+      "arm": "diverse",
+      "attempt": 1,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "intro",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "rotation_tide_cycle",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "solar_influence",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "ocean-tides-60s-mixed",
+      "sceneId": "recap",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s1",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s2",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s3",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s4",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "bicycle-balance-60s-mixed",
+      "sceneId": "s5",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_1",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_2",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_3",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_4",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "planner-call-failed",
+        "planner-transport-retry"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    },
+    {
+      "caseId": "composting-60s-mixed3",
+      "sceneId": "sec_5",
+      "arm": "diverse",
+      "attempt": 2,
+      "valid": false,
+      "failureCodes": [
+        "scene-context-invalid"
+      ],
+      "repairs": 0,
+      "costUsd": 0
+    }
+  ]
+}
