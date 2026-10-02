@@ -219,3 +219,17 @@ test('a missing target names the elements that are on the board, and the scene p
   const { user } = buildBoardPrompt({ sceneId: 's', title: 'T', beats: [], narration: [], concepts: [], initial: removed });
   assert.match(user, /never reuse one, including removed elements[^\n]*: alpha/);
 });
+
+test('an arrow can be highlighted, dimmed, struck or removed by its own id, like an element', () => {
+  let state = applyOp(applyOp(emptyBoardState(), add('o.a', 'b0', 'a', token('a'), { region: 'left' })).state, add('o.b', 'b0', 'b', token('b'), { region: 'right' })).state;
+  state = applyOp(state, BoardOpSchema.parse({ op: 'connect', opId: 'c', beatId: 'b1', id: 'flow', from: 'a', to: 'b', relation: 'causes' })).state;
+  const emphasise = (kind: 'highlight' | 'deemphasize' | 'strike') => BoardOpSchema.parse({ op: kind, opId: `e.${kind}`, beatId: 'b2', target: 'flow' });
+  assert.equal(applyOp(state, emphasise('highlight')).state.edges.flow!.emphasis, 'highlight');
+  assert.equal(applyOp(state, emphasise('deemphasize')).state.edges.flow!.emphasis, 'dim');
+  assert.equal(applyOp(state, emphasise('strike')).state.edges.flow!.emphasis, 'struck');
+  assert.deepEqual(validateBoardOps([BoardOpSchema.parse({ op: 'add', opId: 'x', beatId: 'b0', id: 'p', element: token('p'), at: { region: 'left' } }), BoardOpSchema.parse({ op: 'add', opId: 'y', beatId: 'b0', id: 'q', element: token('q'), at: { region: 'right' } }), BoardOpSchema.parse({ op: 'connect', opId: 'z', beatId: 'b1', id: 'arrow', from: 'p', to: 'q', relation: 'causes' }), BoardOpSchema.parse({ op: 'highlight', opId: 'h', beatId: 'b2', target: 'arrow' })], emptyBoardState()), []);
+  const removed = applyOp(state, BoardOpSchema.parse({ op: 'remove', opId: 'rm', beatId: 'b2', target: 'flow' })).state;
+  assert.notEqual(removed.edges.flow!.lifecycle.removedAtBeat, undefined);
+  assert.throws(() => applyOp(removed, emphasise('highlight')), /does not exist/);
+  assert.notEqual(hashBoardState(applyOp(state, emphasise('highlight')).state), hashBoardState(state), 'emphasis changes the state hash');
+});

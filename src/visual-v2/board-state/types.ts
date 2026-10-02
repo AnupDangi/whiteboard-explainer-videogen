@@ -21,7 +21,7 @@ export interface BoardElement {
   lifecycle: Lifecycle;
 }
 
-export interface BoardEdge { id: string; from: string; to: string; relation: string; label?: string; weight?: number; lifecycle: Lifecycle }
+export interface BoardEdge { id: string; from: string; to: string; relation: string; label?: string; weight?: number; /** An arrow can be emphasised, dimmed or struck out like an element. */ emphasis?: 'highlight' | 'dim' | 'struck'; lifecycle: Lifecycle }
 
 /**
  * The persistent semantic board (V2 plan Phase 5). Elements keep their id for the whole lesson: a removed id stays in the

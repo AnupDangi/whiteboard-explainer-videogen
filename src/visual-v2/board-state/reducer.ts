@@ -8,6 +8,7 @@ export function emptyBoardState(): BoardState {
 
 const clone = (state: BoardState): BoardState => structuredClone(state);
 const isLive = (el: BoardElement | undefined): el is BoardElement => el !== undefined && el.lifecycle.removedAtBeat === undefined;
+const isLiveEdge = (edge: BoardEdge | undefined): edge is BoardEdge => edge !== undefined && edge.lifecycle.removedAtBeat === undefined;
 
 /** Ordered live child ids of a container. */
 export const containerContents = (state: BoardState, containerId: string): string[] => [...(state.containers[containerId] ?? [])];
@@ -25,9 +26,9 @@ function liveIds(state: BoardState): string {
 function explain(condition: Condition, state: BoardState): string | undefined {
   const el = (id: string) => state.elements[id];
   switch (condition.kind) {
-    case 'exists': return isLive(el(condition.id)) ? undefined : `${condition.id} does not exist${liveIds(state)}`;
+    case 'exists': return isLive(el(condition.id)) || isLiveEdge(state.edges[condition.id]) ? undefined : `${condition.id} does not exist${liveIds(state)}`;
     case 'absentEver': return el(condition.id) || state.edges[condition.id] ? `${condition.id} is already used; ids are never reused, pick a new id` : undefined;
-    case 'removed': return isLive(el(condition.id)) ? `${condition.id} is still on the board` : undefined;
+    case 'removed': return isLive(el(condition.id)) || isLiveEdge(state.edges[condition.id]) ? `${condition.id} is still on the board` : undefined;
     case 'container': {
       const target = el(condition.id);
       if (!isLive(target)) return `${condition.id} does not exist${liveIds(state)}`;
@@ -134,8 +135,19 @@ export function applyOp(input: BoardState, op: BoardOp): { state: BoardState; ef
       addElement(state, op.id, op.element, { ...at, ...(index >= 0 ? { slot: index } : {}) }, beat, op.opId, persistence, effects);
       break;
     }
-    case 'remove': removeCascade(state, op.target, beat, effects, op.opId); break;
+    case 'remove': {
+      const edge = state.edges[op.target];
+      if (!state.elements[op.target] && isLiveEdge(edge)) { edge.lifecycle.removedAtBeat = beat; effects.push({ kind: 'remove', opId: op.opId, targetId: edge.id, from: { region: 'center' } }); } else removeCascade(state, op.target, beat, effects, op.opId);
+      break;
+    }
     case 'highlight': case 'deemphasize': case 'strike': {
+      const edge = state.edges[op.target];
+      if (!state.elements[op.target] && isLiveEdge(edge)) {
+        edge.emphasis = op.op === 'highlight' ? 'highlight' : op.op === 'strike' ? 'struck' : 'dim';
+        edge.lifecycle.updatedAtBeat.push(beat);
+        effects.push({ kind: 'emphasize', opId: op.opId, targetId: edge.id, emphasis: edge.emphasis === 'struck' ? 'struck' : edge.emphasis === 'highlight' ? 'highlight' : 'dim' });
+        break;
+      }
       const el = state.elements[op.target]!;
       el.emphasis = op.op === 'highlight' ? 'highlight' : op.op === 'strike' ? 'struck' : 'dim';
       touch(el, beat);

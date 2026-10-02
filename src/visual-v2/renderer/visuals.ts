@@ -91,8 +91,9 @@ export function strikeVisual(rect: Rect): PrimitiveVisual {
 export function edgeVisual(edge: BoardEdge, from: Rect, to: Rect): PrimitiveVisual {
   const a = borderPoint(from, center(to), 8);
   const b = borderPoint(to, center(from), 8);
-  const width = 3 + 7 * (edge.weight ?? 0.3);
-  const paths = arrowPaths(a.x, a.y, b.x, b.y, 22).map((p) => ({ ...p, width }));
+  const width = 3 + 7 * (edge.weight ?? 0.3) + (edge.emphasis === 'highlight' ? 5 : 0);
+  const color = edge.emphasis === 'highlight' ? STYLE.palette.orange : edge.emphasis === 'struck' ? STYLE.palette.red : undefined;
+  const paths = arrowPaths(a.x, a.y, b.x, b.y, 22).map((p) => ({ ...p, width, ...(color ? { color } : {}) }));
   const texts = edge.label ? [textRun((a.x + b.x) / 2, (a.y + b.y) / 2 - 16, edge.label, STYLE.font.sizes.note)] : [];
   return { paths, fills: [], texts };
 }

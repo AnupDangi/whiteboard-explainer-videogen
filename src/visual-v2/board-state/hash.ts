@@ -12,7 +12,7 @@ export function hashBoardState(state: BoardState): string {
     .sort((a, b) => (a.id < b.id ? -1 : 1));
   const edges = Object.values(state.edges)
     .filter((edge) => edge.lifecycle.removedAtBeat === undefined)
-    .map(({ id, from, to, relation, label, weight }) => ({ id, from, to, relation, label: label ?? null, weight: weight ?? null }))
+    .map(({ id, from, to, relation, label, weight, emphasis }) => ({ id, from, to, relation, label: label ?? null, weight: weight ?? null, emphasis: emphasis ?? null }))
     .sort((a, b) => (a.id < b.id ? -1 : 1));
   const containers = Object.fromEntries(Object.entries(state.containers).filter(([, ids]) => ids.length).sort(([a], [b]) => (a < b ? -1 : 1)));
   return canonicalHash({ elements, edges, containers, regions: state.regions, camera: state.scene?.camera ?? null });
