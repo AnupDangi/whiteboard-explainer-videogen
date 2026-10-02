@@ -191,3 +191,12 @@ test('an op waits for the op that draws its target, and a beat pause makes the b
   assert.ok(think.ops[2]!.deadlineMs < none.ops[2]!.deadlineMs, 'a think pause pulls the last op deadline earlier');
   assert.ok(think.ops[2]!.deadlineMs <= tight.endMs - PAUSE_MS.think + 1 || think.ops[2]!.deadlineMs <= think.ops[2]!.anchorMs + 1000);
 });
+
+test('a label too wide for one line wraps onto up to three lines before it is called an overflow', async () => {
+  const { fitText } = await import('../visual-v2/layout/textFit.js');
+  const wrapped = fitText('Lower solute concentration', 230, 120);
+  assert.ok(wrapped.fits && wrapped.lines.length >= 2 && wrapped.lines.length <= 3, JSON.stringify(wrapped));
+  assert.equal(wrapped.lines.join(' '), 'Lower solute concentration');
+  assert.equal(fitText('Supercalifragilisticexpialidocious', 100, 60).fits, false, 'one long word cannot be wrapped');
+  assert.deepEqual(fitText('Short', 300, 60).lines, ['Short']);
+});

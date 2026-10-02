@@ -1,6 +1,6 @@
 import type { PrimitiveVisual, StrokePath } from '../../shared/types.js';
 import { STYLE } from '../../render/style.js';
-import { fitFont } from '../layout/textFit.js';
+import { fitFont, fitText, lineBaselines } from '../layout/textFit.js';
 import { typesetTex } from '../../render/math.js';
 import type { BoardEdge, BoardElement } from '../board-state/types.js';
 import type { SceneGeometry } from '../layout/sceneLayout.js';
@@ -17,10 +17,16 @@ export const entityFill = (conceptId: string): string => ENTITY_FILLS[Number.par
 
 export { fitFont };
 
+/** A label centred in its rectangle, wrapped onto up to three lines when one line would be too small to read. */
+function fittedRuns(rect: Rect, text: string, width: number, base?: number) {
+  const fitted = fitText(text, width, rect.h - 8, base);
+  const ys = lineBaselines(rect.y + rect.h / 2, fitted);
+  return fitted.lines.map((line, i) => textRun(rect.x + rect.w / 2, ys[i]!, line, fitted.size));
+}
+
 function labelledBox(rect: Rect, label: string, fill: string): PrimitiveVisual {
   const path = boxPath(rect, 18);
-  const size = fitFont(label, rect.w - 16);
-  return { paths: [path], fills: [fillOf(path, fill)], texts: [textRun(rect.x + rect.w / 2, rect.y + rect.h / 2 + size * 0.35, label, size)] };
+  return { paths: [path], fills: [fillOf(path, fill)], texts: fittedRuns(rect, label, rect.w - 16) };
 }
 
 /** An element's drawing at full reveal, in canvas coordinates. Pictures for entities come from the resolver; this is the typed fallback. */
@@ -39,13 +45,11 @@ export function elementVisual(el: BoardElement, rect: Rect, geometry: SceneGeome
     case 'value': {
       const path = boxPath(rect, rect.h / 2);
       const text = `${spec.label}: ${String(el.value ?? spec.value)}${spec.unit ? ` ${spec.unit}` : ''}`;
-      const size = fitFont(text, rect.w - 40);
-      return { paths: [path], fills: [fillOf(path, toneOf(el, PROVENANCE_FILL[spec.provenance] ?? STYLE.palette.grey))], texts: [textRun(rect.x + rect.w / 2, rect.y + rect.h / 2 + size * 0.35, text, size)] };
+      return { paths: [path], fills: [fillOf(path, toneOf(el, PROVENANCE_FILL[spec.provenance] ?? STYLE.palette.grey))], texts: fittedRuns(rect, text, rect.w - 40) };
     }
     case 'text': {
       const base = spec.role === 'title' ? STYLE.font.sizes.title : spec.role === 'label' ? STYLE.font.sizes.label : 30;
-      const size = fitFont(spec.text, rect.w, base);
-      return { paths: [], fills: [], texts: [textRun(rect.x + rect.w / 2, rect.y + rect.h / 2 + size * 0.35, spec.text, size)] };
+      return { paths: [], fills: [], texts: fittedRuns(rect, spec.text, rect.w, base) };
     }
     case 'equation': {
       // The whole derivation: every step on its own line, earlier lines dimmed, the rule that produced each line beside it.

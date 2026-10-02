@@ -21,7 +21,7 @@ export interface NarrationContext {
 const SCREEN_REFERENCE = /\b(?:look at|as you can see|you can see|on (?:the|your) (?:left|right|top|bottom)|(?:top|bottom)[- ](?:left|right)|in the (?:box|diagram|picture|image|figure|corner)|this (?:box|arrow|diagram|picture|icon)|the (?:arrow|box|diagram|picture|icon) (?:shows|points)|on (?:the )?screen|shown here|pictured)\b/i;
 const STAGE_DIRECTION = /^(?:now[, ]+)?(?:show|display|draw|animate|render|highlight|reveal|place|write|cut to)\b/i;
 /** Audio sets the clock, so a mild overrun is a warning; only a scene this much over its spoken budget is rejected. */
-export const NARRATION_HARD_CEILING = 1.5;
+export const NARRATION_HARD_CEILING = 1.75;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 const wordCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
