@@ -2459,3 +2459,9 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Git:** main checkout `explain-canvas-lab` was deleted externally; no history survived. Fresh `git init`, remote `https://github.com/AnupDangi/Lamina-Labs-Clone.git`, initial commit. v2 worktree pointer still orphaned — untouched per instruction.
 - **Verification:** typecheck clean; `test:hypothesis` exit 0 — **964 pass, alignment + 12 RAG OK**; manifest 22/22.
 - **Video (new layout):** `root-flat-verify` half-life 60s: **draft 4/4, 0 hard, 0 fallbacks, $0.0076, 76s wall, 69.3s 1080p H264+AAC**, copies in `output/goal-videos/root-flat-verify-half-life.*`.
+
+## Continuation — 2026-10-03, root cleanup round 2: docs/spec/output prune
+
+- **Deleted:** `.superpowers/` (1.0M SDD history, zero code refs), `hypothesis/v1_claude/` (spec pack 00-05; only comment section-citations remain, now noted in CLAUDE.md/ARCHITECTURE.md). `bench/` kept whole (64K: frozen dev-set manifest + pinned sources + probes feed live runs). `harness/{baselines,reference,reports}` kept (judge/boardMetrics read reference; baselines.mjs reads baselines/; reports are cited evidence). `docs/` now: ARCHITECTURE, HANDOFF, 2 AUDITs, SIMI-60-BENCHMARK, archive/, superpowers/plans (plan-lock frozen intact).
+- **Output:** 100 -> 30 files, 10 video sets kept: tfm12-1800 (30min), tfm10/11/13/14/15/16, fix10-half-life, root-flat-verify, root-cleanup-verify. Rich/goal/older batches removed (run dirs in .data retained).
+- **Verification:** `test:hypothesis` exit 0, 964 pass. v2 worktree untouched.

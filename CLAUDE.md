@@ -1,6 +1,6 @@
 # Claude hypothesis track — project instructions
 
-This repository is an independent research prototype, not Lamina Labs source code. Follow the hypothesis in `claude_pipeline.md` and `hypothesis/v1_claude/00-README.md` through `05-GEMINI-AUDIT-AND-SIMI-HYPOTHESES.md`. Read `docs/HANDOFF.md`, then `docs/ARCHITECTURE.md`, before implementation work.
+This repository is an independent research prototype, not Lamina Labs source code. Follow the hypothesis in `claude_pipeline.md` (the `hypothesis/v1_claude/` spec pack was archived and removed after implementation; section citations like `01 §3` in code comments refer to it). Read `docs/HANDOFF.md`, then `docs/ARCHITECTURE.md`, before implementation work.
 
 ## Content must come from data, never topic-specific runtime branches
 

@@ -1,6 +1,6 @@
 # Architecture — Claude hypothesis track (`src/`)
 
-This is the implementation of the hypothesis in `claude_pipeline.md` and `hypothesis/v1_claude/*.md`. All pipeline code lives under `src/`; the unreachable legacy runtime (`src/core`, `src/domain`, `src/gateway`,
+This is the implementation of the hypothesis in `claude_pipeline.md` (original `hypothesis/v1_claude/` spec pack archived and removed post-implementation). All pipeline code lives under `src/`; the unreachable legacy runtime (`src/core`, `src/domain`, `src/gateway`,
 `src/ingest`) was removed on 2026-09-27. `docs/AUDIT-2026-09-27.md` is the developer report: findings, what was
 fixed, and how to extend each part (template, planner, model, document reader).
 
