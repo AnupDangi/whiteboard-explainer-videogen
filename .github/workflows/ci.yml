@@ -38,8 +38,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system tools (ffmpeg for encode tests)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
+
+      - name: Restore frozen-plan read-only bit (git tracks content, not mode)
+        run: chmod 444 docs/superpowers/plans/2026-09-25-visual-richness-and-deterministic-generation.md
 
       - name: Typecheck
         run: pnpm run typecheck:hypothesis
