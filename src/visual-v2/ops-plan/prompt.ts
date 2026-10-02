@@ -42,7 +42,7 @@ Kits:
 ${kits}
 Scene start: transition.mode = clean (empty board), retain-all (keep everything already drawn, for a scene that continues the same picture), or retain-regions (keep only the listed regions; give regions). Prefer retain-all when the scene builds on the same mechanism.
 Rules: a kit goes in a region, never inside another kit (a kit's slots only hold tokens, entities, values and short text); a scene draws at most 10 elements in total and a kit holds at most 6 children, so reuse, move and restyle what is already on the board (the board is a few big clear things, not a crowd); cover every beat that shows a change; every concept a beat names must be on the board by the end of that beat; labels are short memory anchors, the speech does the explaining; use the beat's representationFamily, stateBefore/stateAfter and visualInvariant to choose what to draw; paramsJson must be valid JSON for the kit.
-Return ONE JSON object { "transition": {...}, "ops": [...] }.`;
+Leave out the optional expects field of every op; the board is checked by code. Return ONE JSON object { "transition": {...}, "ops": [...] }.`;
   const beatBlocks = ctx.beats.map((beat) => {
     const speech = ctx.narration.find((n) => n.beatId === beat.beatId)?.sentences ?? [];
     return `BEAT ${beat.beatId} [${beat.beatType}; ${beat.cognitiveOperation}; family ${beat.representationFamily}]${beat.narrationOnly ? ' (narration only: no board change needed)' : ''}

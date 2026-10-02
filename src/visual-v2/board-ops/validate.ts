@@ -76,7 +76,7 @@ function equationProblems(spec: ElementSpec, path: string, grounding?: Grounding
   const verdict = verifyEquation(latex);
   if (verdict.status === 'verified') return [];
   const description = spec.provenance === 'illustrative' ? 'illustrative example' : `${spec.provenance} equation`;
-  return [{ path: pointer, message: verdict.status === 'refuted' ? `this ${description} is wrong (${verdict.detail}); give a correct example` : `could not verify this ${description} (${verdict.detail}); use a supported equation or provide source evidence` }];
+  return [{ path: pointer, message: verdict.status === 'refuted' ? `this ${description} is wrong (${verdict.detail}); give a correct example` : `could not verify this ${description} (${verdict.detail}); if the source states this equation, set provenance source and copy evidence {spanId, quote} from the SOURCE EVIDENCE list; otherwise use a numeric example the checker can evaluate` }];
 }
 
 function stepProblems(op: BoardOp, state: BoardState, at: string, grounding?: Grounding): ValidatorProblem[] {
