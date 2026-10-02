@@ -4,6 +4,7 @@
 //   node scripts/v2-benchmark.mjs verify <set>            fail if a source changed since it was frozen
 //   node scripts/v2-benchmark.mjs run <set> [--cases=a,b] [--trials=n]   cold, paid; each trial is a fresh lessonCli process
 //   node scripts/v2-benchmark.mjs report <set>            Stage A gates from recorded trials
+// Set V2_BENCH_PLANNER=<openrouter model id> to override the S6 board planner for every trial (recorded in the run provenance).
 // <set> is cold-v1 or heldout-v1. Run `npm run build` first. Provider keys come from .env; nothing here edits sources or code.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -40,7 +41,7 @@ if (command === 'freeze') {
         if (existsSync(out)) { console.log(`skip ${item.id} t${trial}: already recorded`); continue; }
         console.log(`run ${item.id} t${trial}`);
         const env = { ...process.env, TEACHING_COMPILER_VERSION: 'v2', TEACHING_BEATS_V2: '1', BOARD_OPS_V2: '1', PERSISTENT_BOARD_V2: '1', TYPE_RESOLVER_V2: '1', LAYOUT_V2: '1', RENDER_PLAN_V2: '1' };
-        const r = spawnSync('node', ['dist/src/run/lessonCli.js', `--source=${path.join(DIR, item.sourceFile)}`, `--instruction=${instruction}`, `--duration=${durationSec}`, `--id=${item.id}`, '--cache=cold', `--out=${out}`], { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+        const r = spawnSync('node', ['dist/src/run/lessonCli.js', `--source=${path.join(DIR, item.sourceFile)}`, `--instruction=${instruction}`, `--duration=${durationSec}`, `--id=${item.id}`, '--cache=cold', `--out=${out}`, ...(process.env.V2_BENCH_PLANNER ? [`--planner=${process.env.V2_BENCH_PLANNER}`] : [])], { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
         writeFileSync(path.join(runRoot, `${item.id}-t${trial}.log`), `${r.stdout}\n${r.stderr}`);
         console.log(`  exit=${r.status}`);
       }
