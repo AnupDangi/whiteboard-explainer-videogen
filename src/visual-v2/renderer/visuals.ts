@@ -19,7 +19,7 @@ export { fitFont };
 
 function labelledBox(rect: Rect, label: string, fill: string): PrimitiveVisual {
   const path = boxPath(rect, 18);
-  const size = fitFont(label, rect.w - 24);
+  const size = fitFont(label, rect.w - 16);
   return { paths: [path], fills: [fillOf(path, fill)], texts: [textRun(rect.x + rect.w / 2, rect.y + rect.h / 2 + size * 0.35, label, size)] };
 }
 

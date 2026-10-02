@@ -3,7 +3,7 @@ import { measureTextWidth } from '../../layout/measure.js';
 import type { BoardElement } from '../board-state/types.js';
 import type { Rect } from '../kits/geometry.js';
 
-export const MIN_FONT = 28;
+export const MIN_FONT = 24;
 
 /** The largest font up to `base` that fits `text` on one line in `width`; below MIN_FONT it stops, so `fitsWidth` decides legality. */
 export function fitFont(text: string, width: number, base: number = STYLE.font.sizes.body): number {
@@ -18,8 +18,8 @@ export const fitsWidth = (text: string, width: number, base: number = STYLE.font
 export function textSlot(el: BoardElement, rect: Rect): { text: string; width: number; base: number } | undefined {
   const spec = el.spec;
   switch (spec.type) {
-    case 'token': return { text: spec.text, width: rect.w - 24, base: STYLE.font.sizes.body };
-    case 'entity': return { text: spec.label, width: rect.w - 24, base: STYLE.font.sizes.body };
+    case 'token': return { text: spec.text, width: rect.w - 16, base: STYLE.font.sizes.body };
+    case 'entity': return { text: spec.label, width: rect.w - 16, base: STYLE.font.sizes.body };
     case 'value': return { text: `${spec.label}: ${String(el.value ?? spec.value)}${spec.unit ? ` ${spec.unit}` : ''}`, width: rect.w - 40, base: STYLE.font.sizes.body };
     case 'text': return { text: spec.text, width: rect.w, base: spec.role === 'title' ? STYLE.font.sizes.title : spec.role === 'label' ? STYLE.font.sizes.label : 30 };
     default: return undefined;

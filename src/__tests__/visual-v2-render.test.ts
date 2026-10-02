@@ -167,7 +167,7 @@ test('text that cannot fit its slot at the smallest readable font is reported, t
   const el = timeline.states[1]!.elements.a!;
   assert.equal(textOverflow(el, { x: 0, y: 0, w: 900, h: 100 }), undefined);
   assert.equal(textOverflow(el, { x: 0, y: 0, w: 120, h: 100 }), 'transformer layers');
-  assert.equal(fitFont('transformer layers', 120), 28, 'the font floor is unchanged; legality is decided by fitsWidth');
+  assert.equal(fitFont('transformer layers', 120), 24, 'the font floor is unchanged; legality is decided by fitsWidth');
 });
 
 test('an arrow whose straight path crosses an unrelated element is a geometry problem; a clear arrow is not', () => {

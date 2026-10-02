@@ -145,3 +145,9 @@ test('bare text for a string pointer is accepted as that string; for non-strings
   assert.throws(() => decodePatchResponse(patches('five', '/qty'), schema), /not valid JSON text/);
   assert.throws(() => decodePatchResponse(patches('A plain sentence.', '/title')), /not valid JSON text/, 'without a schema nothing is guessed');
 });
+
+test('a remove patch may carry a null valueJson (strict providers send every key)', () => {
+  const patches = decodePatchResponse(JSON.stringify({ patches: [{ op: 'remove', path: '/items/0', valueJson: null }] }));
+  assert.deepEqual(patches, [{ op: 'remove', path: '/items/0' }]);
+  assert.throws(() => decodePatchResponse(JSON.stringify({ patches: [{ op: 'replace', path: '/title', valueJson: null }] })), /valueJson is required/);
+});

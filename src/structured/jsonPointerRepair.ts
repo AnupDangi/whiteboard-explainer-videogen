@@ -14,7 +14,7 @@ export const JsonPatchResponseSchema = z.object({
   patches: z.array(z.object({
     op: z.enum(['replace', 'add', 'remove']),
     path: z.string().min(1).max(300),
-    valueJson: z.string().max(6000).optional(),
+    valueJson: z.string().max(6000).nullish(),
   }).strict()).min(1).max(MAX_PATCHES_PER_REPAIR),
 }).strict();
 
@@ -83,7 +83,7 @@ export function decodePatchResponse(content: string, schema?: Record<string, unk
   if (!parsed.success) throw new Error(`patch response invalid: ${parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`);
   return parsed.data.patches.map((patch) => {
     if (patch.op === 'remove') return { op: 'remove', path: patch.path };
-    if (patch.valueJson === undefined) throw new Error(`patch ${patch.path}: valueJson is required for ${patch.op}`);
+    if (patch.valueJson == null) throw new Error(`patch ${patch.path}: valueJson is required for ${patch.op}`);
     try { return { op: patch.op, path: patch.path, value: JSON.parse(patch.valueJson) as unknown }; } catch {
       // A model often writes a replacement sentence as bare text. When the schema says this pointer holds a string, bare text is the string.
       if (schema && schemaAtPointer(schema, patch.path)?.type === 'string' && patch.valueJson.trim() && !/^[[{]/.test(patch.valueJson.trim())) return { op: patch.op, path: patch.path, value: patch.valueJson.trim().replace(/^"|"$/g, '') };
