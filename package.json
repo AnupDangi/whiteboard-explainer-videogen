@@ -1,6 +1,6 @@
 {
   "name": "explain-canvas-lab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Hypothesis-driven whiteboard explainer engine: scene data, deterministic playback, progressive delivery and MP4 export",
