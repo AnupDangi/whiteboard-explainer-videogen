@@ -16,20 +16,26 @@ function touch(el: BoardElement, beatId: string): void {
   if (el.lifecycle.updatedAtBeat[el.lifecycle.updatedAtBeat.length - 1] !== beatId) el.lifecycle.updatedAtBeat.push(beatId);
 }
 
+/** The live element ids, so a message about a missing one tells the model what it can name instead. */
+function liveIds(state: BoardState): string {
+  const ids = Object.values(state.elements).filter((e) => isLive(e)).map((e) => e.id);
+  return ids.length ? ` (elements on the board now: ${ids.slice(-14).join(', ')})` : ' (the board is empty at this point)';
+}
+
 function explain(condition: Condition, state: BoardState): string | undefined {
   const el = (id: string) => state.elements[id];
   switch (condition.kind) {
-    case 'exists': return isLive(el(condition.id)) ? undefined : `${condition.id} does not exist`;
+    case 'exists': return isLive(el(condition.id)) ? undefined : `${condition.id} does not exist${liveIds(state)}`;
     case 'absentEver': return el(condition.id) || state.edges[condition.id] ? `${condition.id} is already used; ids are never reused, pick a new id` : undefined;
     case 'removed': return isLive(el(condition.id)) ? `${condition.id} is still on the board` : undefined;
     case 'container': {
       const target = el(condition.id);
-      if (!isLive(target)) return `${condition.id} does not exist`;
+      if (!isLive(target)) return `${condition.id} does not exist${liveIds(state)}`;
       return target.spec.type === 'kit' && CONTAINER_KITS.has(target.spec.kit) ? undefined : `${condition.id} is not a container (only kits hold children)`;
     }
     case 'inContainer': return (state.containers[condition.container] ?? []).includes(condition.id) ? undefined : `${condition.id} is not in ${condition.container}`;
-    case 'isValue': return isLive(el(condition.id)) && el(condition.id)!.spec.type === 'value' ? undefined : isLive(el(condition.id)) ? `${condition.id} is not a value element` : `${condition.id} does not exist`;
-    case 'isEquation': return isLive(el(condition.id)) && el(condition.id)!.spec.type === 'equation' ? undefined : isLive(el(condition.id)) ? `${condition.id} is not an equation element` : `${condition.id} does not exist`;
+    case 'isValue': return isLive(el(condition.id)) && el(condition.id)!.spec.type === 'value' ? undefined : isLive(el(condition.id)) ? `${condition.id} is not a value element` : `${condition.id} does not exist${liveIds(state)}`;
+    case 'isEquation': return isLive(el(condition.id)) && el(condition.id)!.spec.type === 'equation' ? undefined : isLive(el(condition.id)) ? `${condition.id} is not an equation element` : `${condition.id} does not exist${liveIds(state)}`;
   }
 }
 

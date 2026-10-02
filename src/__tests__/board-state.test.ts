@@ -210,3 +210,12 @@ test('a zone of a zoned kit holds at most 4 children', () => {
   const problems = validateBoardOps([add('o.cell', 'b0', 'cell', comp, { region: 'center' }), ...[0, 1, 2, 3, 4].map(inZone)], emptyBoardState()) as Array<{ path: string; message: string }>;
   assert.equal(problems.length, 1); assert.equal(problems[0]!.path, '/ops/5'); assert.match(problems[0]!.message, /zone left of cell would hold more than 4/);
 });
+
+test('a missing target names the elements that are on the board, and the scene prompt lists every id already used', async () => {
+  const state = applyOp(emptyBoardState(), add('o.a', 'b0', 'alpha', token('a'), { region: 'center' })).state;
+  assert.throws(() => applyOp(state, BoardOpSchema.parse({ op: 'highlight', opId: 'h', beatId: 'b1', target: 'betta' })), /betta does not exist \(elements on the board now: alpha\)/);
+  const { buildBoardPrompt } = await import('../visual-v2/ops-plan/prompt.js');
+  const removed = applyOp(state, BoardOpSchema.parse({ op: 'remove', opId: 'r', beatId: 'b1', target: 'alpha' })).state;
+  const { user } = buildBoardPrompt({ sceneId: 's', title: 'T', beats: [], narration: [], concepts: [], initial: removed });
+  assert.match(user, /never reuse one, including removed elements[^\n]*: alpha/);
+});

@@ -56,10 +56,12 @@ ${speech.map((sentence, i) => `    ${i}: ${sentence}`).join('\n')}`;
   }).join('\n');
   const inherited = Object.values(ctx.initial.elements).filter((el) => el.lifecycle.removedAtBeat === undefined);
   const cites = ctx.concepts.flatMap((c) => (c.evidence ?? []).map((e) => `  [${e.spanId}] ${e.quote}`));
+  const usedIds = [...Object.keys(ctx.initial.elements), ...Object.keys(ctx.initial.edges)];
   const user = `SCENE ${ctx.sceneId}: "${ctx.title}"
 Concepts of this scene: ${JSON.stringify(ctx.concepts.map(({ id, label }) => ({ id, label })))}
 SOURCE EVIDENCE you may cite (spanId in brackets, quote verbatim):
 ${cites.length ? cites.join('\n') : '  (none: do not use provenance source for equations)'}
+Ids already used in the lesson (never reuse one, including removed elements; give every new element and arrow a fresh id): ${usedIds.length ? usedIds.join(', ') : '(none)'}
 Board inherited from the previous scene: ${inherited.length ? JSON.stringify(inherited.map((el) => ({ id: el.id, type: el.spec.type, region: el.placement.region, ...(el.placement.container ? { container: el.placement.container } : {}) }))) : '(empty)'}
 ${beatBlocks}`;
   return { system, user };
