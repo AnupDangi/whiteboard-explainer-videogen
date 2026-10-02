@@ -21,7 +21,7 @@ Never edit frozen source inputs, Simi references, expected outputs, or golden ha
 - Hard schema, factual provenance, alignment, layout, readability, license, audio/video sync, or budget failures block `passed`; diagnostic previews may still be retained as drafts.
 - Keys stay in `.env`; media and job outputs stay in `.data/`; exports stay in `output/`. Never add secrets or uploaded competitor videos to Git.
 - A local result establishes feasibility of this implementation, not how Lamina works. Use primary disclosures for claims about Lamina.
-- Do not commit, push, publish, or change the production runtime unless the user explicitly requests it.
+- Do not push, publish, or change the production runtime unless the user explicitly requests it. Local commits on branch `teaching-compiler-v2` are authorized (user, 2026-10-02: "keep on committing"): commit after each completed, verified task (typecheck + tests green), small atomic commits, never commit secrets or `.data/`, never rewrite frozen plan files.
 
 ## Verification and evidence log
 

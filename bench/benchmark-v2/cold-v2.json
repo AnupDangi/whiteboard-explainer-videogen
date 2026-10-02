@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "benchmark-v2/v1",
+  "name": "cold-v2",
+  "trialsPerCase": 3,
+  "instruction": "Teach the main idea of this source to a beginner.",
+  "durationSec": 60,
+  "cases": [
+    {
+      "id": "dijkstra",
+      "domain": "computer science",
+      "capability": "state progression",
+      "sourceFile": "cold2/dijkstra.md"
+    },
+    {
+      "id": "mitosis",
+      "domain": "biology",
+      "capability": "stage sequence",
+      "sourceFile": "cold2/mitosis.md"
+    },
+    {
+      "id": "doppler-effect",
+      "domain": "physics",
+      "capability": "wave and formula",
+      "sourceFile": "cold2/doppler-effect.md"
+    },
+    {
+      "id": "compound-interest",
+      "domain": "mathematics",
+      "capability": "growth and formula",
+      "sourceFile": "cold2/compound-interest.md"
+    },
+    {
+      "id": "ohms-law-series",
+      "domain": "physics",
+      "capability": "circuit and quantities",
+      "sourceFile": "cold2/ohms-law-series.md"
+    }
+  ]
+}

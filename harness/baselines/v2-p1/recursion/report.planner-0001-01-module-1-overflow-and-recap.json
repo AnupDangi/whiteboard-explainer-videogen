@@ -1,0 +1,164 @@
+{
+  "stage": "planner",
+  "subject": "01-module_1_overflow_and_recap",
+  "provider": "openai-strict",
+  "clientProvider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "schemaName": "board",
+  "schemaHash": "1aa21c4db0a3854a5321b1ad2207873cb45f39f892c55322494ff2ef9135bdd2",
+  "schemaConstrained": true,
+  "strict": true,
+  "droppedKeywords": [
+    {
+      "path": "/title",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/title",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/nodes/*/label",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/nodes/*/label",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/nodes/*/branchCondition",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/nodes/*/branchCondition",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/latex",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/latex",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/source",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/source",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/molecule/bonds/*/from",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/molecule/bonds/*/to",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/structureNotation",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/structureNotation",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/reaction/reactants/*/molecule/bonds/*/from",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/reaction/reactants/*/molecule/bonds/*/to",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/reaction/products/*/molecule/bonds/*/from",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/reaction/products/*/molecule/bonds/*/to",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/structureNotation",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/structureNotation",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/xLabel",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/yLabel",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/tokens/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/tokens/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/sideLabels/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/sideLabels/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/rows/*/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/points/*/label",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visualIntents/*/claimId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/elementId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/evidenceSpanIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/fromElementId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/toElementId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/evidenceSpanIds/*",
+      "keyword": "minLength"
+    }
+  ],
+  "attempts": 1,
+  "repairs": 0,
+  "firstTryValid": true,
+  "succeeded": true,
+  "coercions": {
+    "total": 1,
+    "low": 0,
+    "semantic": 1
+  },
+  "retained": {
+    "raw": true,
+    "replayFixture": true
+  },
+  "silentSemanticCoercions": 0,
+  "failures": []
+}

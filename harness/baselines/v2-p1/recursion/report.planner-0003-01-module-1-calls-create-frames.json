@@ -1,0 +1,170 @@
+{
+  "stage": "planner",
+  "subject": "01-module_1_calls_create_frames",
+  "provider": "openai-strict",
+  "clientProvider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "schemaName": "board",
+  "schemaHash": "459745176526f1f1642a0f773f4a5b76915eecf0b6ea067ab616e72eb903cc79",
+  "schemaConstrained": true,
+  "strict": true,
+  "droppedKeywords": [
+    {
+      "path": "/title",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/title",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/nodes/*/label",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/nodes/*/label",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/nodes/*/branchCondition",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/nodes/*/branchCondition",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/latex",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/latex",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/source",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/source",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/molecule/bonds/*/from",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/molecule/bonds/*/to",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/structureNotation",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/structureNotation",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/reaction/reactants/*/molecule/bonds/*/from",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/reaction/reactants/*/molecule/bonds/*/to",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/reaction/products/*/molecule/bonds/*/from",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/reaction/products/*/molecule/bonds/*/to",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/structureNotation",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/structureNotation",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/xLabel",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/yLabel",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/tokens/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/tokens/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/sideLabels/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visual/sideLabels/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/rows/*/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visual/points/*/label",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/visualIntents/*/claimId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/elementId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/evidenceSpanIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/fromElementId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/toElementId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/visualIntents/*/targets/*/evidenceSpanIds/*",
+      "keyword": "minLength"
+    }
+  ],
+  "attempts": 2,
+  "repairs": 1,
+  "firstTryValid": false,
+  "succeeded": true,
+  "coercions": {
+    "total": 0,
+    "low": 0,
+    "semantic": 0
+  },
+  "retained": {
+    "raw": true,
+    "replayFixture": true
+  },
+  "silentSemanticCoercions": 0,
+  "failures": [
+    {
+      "code": "planner-truncated",
+      "message": "01-module_1_calls_create_frames attempt 1: response was cut off at the 2500-token output limit (response contained no JSON object ({...}) at all)",
+      "hard": false
+    }
+  ]
+}

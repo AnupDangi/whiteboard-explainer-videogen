@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "benchmark-v2/v1",
+  "name": "dev-v1",
+  "trialsPerCase": 1,
+  "instruction": "Teach the main idea of this source to a beginner.",
+  "durationSec": 60,
+  "cases": [
+    {
+      "id": "binary-search",
+      "domain": "computer science",
+      "capability": "iterative narrowing",
+      "sourceFile": "dev/binary-search.md"
+    },
+    {
+      "id": "osmosis",
+      "domain": "biology",
+      "capability": "directional flow",
+      "sourceFile": "dev/osmosis.md"
+    },
+    {
+      "id": "newton-second-law",
+      "domain": "physics",
+      "capability": "quantity relation",
+      "sourceFile": "dev/newton-second-law.md"
+    }
+  ]
+}

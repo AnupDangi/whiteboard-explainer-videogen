@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "benchmark-v2/v1",
+  "name": "cold-v1",
+  "trialsPerCase": 3,
+  "instruction": "Teach the main idea of this source to a beginner.",
+  "durationSec": 60,
+  "cases": [
+    { "id": "completing-the-square", "domain": "mathematics", "capability": "equation transformation", "sourceFile": "sources/completing-the-square.md" },
+    { "id": "action-potential", "domain": "biology", "capability": "state transition", "sourceFile": "sources/action-potential.md" },
+    { "id": "lru-cache", "domain": "computer science", "capability": "state and data movement", "sourceFile": "sources/lru-cache.md" },
+    { "id": "tcp-congestion-window", "domain": "systems", "capability": "feedback and timeline", "sourceFile": "sources/tcp-congestion-window.md" },
+    { "id": "rc-circuit-charging", "domain": "physics", "capability": "quantity, plot and causality", "sourceFile": "sources/rc-circuit-charging.md" }
+  ]
+}

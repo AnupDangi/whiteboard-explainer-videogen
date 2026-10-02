@@ -1,0 +1,44 @@
+{
+  "stage": "script",
+  "subject": "scene returns_unwind",
+  "provider": "openai-strict",
+  "clientProvider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "schemaName": "scene_narration",
+  "schemaHash": "dbf240f2e2ecd40f4abe3057d7ff1a52329c4a1c6221a8dbb29b1caaecc3a4ad",
+  "schemaConstrained": true,
+  "strict": true,
+  "droppedKeywords": [
+    {
+      "path": "/text",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/text",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/claimSpans/*/exactText",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/claimSpans/*/exactText",
+      "keyword": "maxLength"
+    }
+  ],
+  "attempts": 1,
+  "repairs": 0,
+  "firstTryValid": true,
+  "succeeded": true,
+  "coercions": {
+    "total": 0,
+    "low": 0,
+    "semantic": 0
+  },
+  "retained": {
+    "raw": true,
+    "replayFixture": true
+  },
+  "silentSemanticCoercions": 0,
+  "failures": []
+}

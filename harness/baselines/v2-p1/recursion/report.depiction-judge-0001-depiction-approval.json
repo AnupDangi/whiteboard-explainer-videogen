@@ -1,0 +1,27 @@
+{
+  "stage": "depiction-judge",
+  "subject": "depiction approval",
+  "provider": "openai-strict",
+  "clientProvider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "schemaName": "depiction_verdicts",
+  "schemaHash": "ca661680ee9e58ec4e72ce38228a718144a7719d9f3511ed7fe6a563219f43c9",
+  "schemaConstrained": true,
+  "strict": true,
+  "droppedKeywords": [],
+  "attempts": 1,
+  "repairs": 0,
+  "firstTryValid": true,
+  "succeeded": true,
+  "coercions": {
+    "total": 0,
+    "low": 0,
+    "semantic": 0
+  },
+  "retained": {
+    "raw": true,
+    "replayFixture": true
+  },
+  "silentSemanticCoercions": 0,
+  "failures": []
+}

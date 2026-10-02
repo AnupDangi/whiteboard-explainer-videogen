@@ -1,0 +1,120 @@
+{
+  "stage": "concepts",
+  "subject": "concept graph",
+  "provider": "openai-strict",
+  "clientProvider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "schemaName": "concept_graph",
+  "schemaHash": "c99695418b281df5d53d025ae5f8a790a52c682d2c2b8faa664d73c92321781a",
+  "schemaConstrained": true,
+  "strict": true,
+  "droppedKeywords": [
+    {
+      "path": "/concepts/*/id",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/id",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/label",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/label",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/definition",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/definition",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/evidence/*/spanId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/evidence/*/spanId",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/evidence/*/quote",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/evidence/*/quote",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/latex",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/relations/*/from",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/relations/*/from",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/relations/*/to",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/relations/*/to",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/relations/*/evidence/*/spanId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/relations/*/evidence/*/spanId",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/relations/*/evidence/*/quote",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/relations/*/evidence/*/quote",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/prerequisites/*/concept",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/prerequisites/*/concept",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/prerequisites/*/needs",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/prerequisites/*/needs",
+      "keyword": "maxLength"
+    }
+  ],
+  "attempts": 1,
+  "repairs": 0,
+  "firstTryValid": true,
+  "succeeded": true,
+  "coercions": {
+    "total": 0,
+    "low": 0,
+    "semantic": 0
+  },
+  "retained": {
+    "raw": true,
+    "replayFixture": true
+  },
+  "silentSemanticCoercions": 0,
+  "failures": []
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "benchmark-v2/v1",
+  "name": "heldout-v1",
+  "trialsPerCase": 1,
+  "instruction": "Teach the main idea of this source to a beginner.",
+  "durationSec": 60,
+  "cases": [
+    { "id": "bayes-rule", "domain": "mathematics", "capability": "probability update", "sourceFile": "heldout/bayes-rule.md" },
+    { "id": "photosynthesis-light-reactions", "domain": "life science", "capability": "process with energy flow", "sourceFile": "heldout/photosynthesis-light-reactions.md" },
+    { "id": "seasons", "domain": "physical science", "capability": "geometry and causality", "sourceFile": "heldout/seasons.md" },
+    { "id": "hash-table-collisions", "domain": "computer science", "capability": "data structure behaviour", "sourceFile": "heldout/hash-table-collisions.md" },
+    { "id": "supply-and-demand", "domain": "economics (non-STEM)", "capability": "curves and equilibrium", "sourceFile": "heldout/supply-and-demand.md" }
+  ]
+}

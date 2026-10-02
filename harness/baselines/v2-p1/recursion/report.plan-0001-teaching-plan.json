@@ -1,0 +1,188 @@
+{
+  "stage": "plan",
+  "subject": "teaching plan",
+  "provider": "openai-strict",
+  "clientProvider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "schemaName": "teaching_plan",
+  "schemaHash": "fc1efb61c83c87a209465ce9e39237b4dd92091460ee6540c99743223f9f75ce",
+  "schemaConstrained": true,
+  "strict": true,
+  "droppedKeywords": [
+    {
+      "path": "/intro/sourceTitle",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/intro/sourceTitle",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/intro/sections/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/intro/sections/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/domain",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/domain",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/id",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/id",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/title",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/title",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/goal",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/goal",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/conceptIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/conceptIds/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/id",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/id",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/statement",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/statement",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/conceptIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/conceptIds/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/relations/*/from",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/relations/*/from",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/relations/*/to",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/relations/*/to",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/evidenceSpanIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/essentialClaims/*/evidenceSpanIds/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/mentalModel",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/mentalModel",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/misconceptionRisk/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/misconceptionRisk/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/semanticVisualIntents/*/claimId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/semanticVisualIntents/*/claimId",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/semanticVisualIntents/*/conceptIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/semanticVisualIntents/*/conceptIds/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/semanticVisualIntents/*/roles/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/semanticVisualIntents/*/roles/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/sections/*/semanticVisualIntents/*/topology",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/sections/*/semanticVisualIntents/*/topology",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/recap/keyPoints/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/recap/keyPoints/*",
+      "keyword": "maxLength"
+    }
+  ],
+  "attempts": 1,
+  "repairs": 0,
+  "firstTryValid": true,
+  "succeeded": true,
+  "coercions": {
+    "total": 2,
+    "low": 2,
+    "semantic": 0
+  },
+  "retained": {
+    "raw": true,
+    "replayFixture": true
+  },
+  "silentSemanticCoercions": 0,
+  "failures": []
+}

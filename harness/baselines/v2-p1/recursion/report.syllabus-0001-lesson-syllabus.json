@@ -1,0 +1,156 @@
+{
+  "stage": "syllabus",
+  "subject": "lesson syllabus",
+  "provider": "openai-strict",
+  "clientProvider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "schemaName": "lesson_syllabus",
+  "schemaHash": "be83c28016b172f28ce14ff4a1647670d200927446d56b9770930707bf8db996",
+  "schemaConstrained": true,
+  "strict": true,
+  "droppedKeywords": [
+    {
+      "path": "/coverageReason",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/coverageReason",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/learningObjective",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/learningObjective",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/audienceAssumptions/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/audienceAssumptions/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/id",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/id",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/label",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/label",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/definition",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/definition",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/evidence/*/spanId",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/evidence/*/spanId",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/concepts/*/evidence/*/quote",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/concepts/*/evidence/*/quote",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/prerequisites/*/concept",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/prerequisites/*/concept",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/prerequisites/*/needs",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/prerequisites/*/needs",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/modules/*/id",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/modules/*/id",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/modules/*/title",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/modules/*/title",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/modules/*/goal",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/modules/*/goal",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/modules/*/conceptIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/modules/*/conceptIds/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/modules/*/evidenceSpanIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/modules/*/evidenceSpanIds/*",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/modules/*/recallOfModuleIds/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/modules/*/recallOfModuleIds/*",
+      "keyword": "maxLength"
+    }
+  ],
+  "attempts": 1,
+  "repairs": 0,
+  "firstTryValid": true,
+  "succeeded": true,
+  "coercions": {
+    "total": 0,
+    "low": 0,
+    "semantic": 0
+  },
+  "retained": {
+    "raw": true,
+    "replayFixture": true
+  },
+  "silentSemanticCoercions": 0,
+  "failures": []
+}

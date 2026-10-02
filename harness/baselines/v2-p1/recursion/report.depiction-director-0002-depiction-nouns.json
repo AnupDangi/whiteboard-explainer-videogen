@@ -1,0 +1,44 @@
+{
+  "stage": "depiction-director",
+  "subject": "depiction nouns",
+  "provider": "openai-strict",
+  "clientProvider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "schemaName": "depiction_nouns",
+  "schemaHash": "f26397bd6bf3338a829a658df10e56e15d917a14e7bbc19c1e67a073288dab7b",
+  "schemaConstrained": true,
+  "strict": true,
+  "droppedKeywords": [
+    {
+      "path": "/items/*/referent",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/items/*/referent",
+      "keyword": "maxLength"
+    },
+    {
+      "path": "/items/*/nouns/*",
+      "keyword": "minLength"
+    },
+    {
+      "path": "/items/*/nouns/*",
+      "keyword": "maxLength"
+    }
+  ],
+  "attempts": 1,
+  "repairs": 0,
+  "firstTryValid": true,
+  "succeeded": true,
+  "coercions": {
+    "total": 0,
+    "low": 0,
+    "semantic": 0
+  },
+  "retained": {
+    "raw": true,
+    "replayFixture": true
+  },
+  "silentSemanticCoercions": 0,
+  "failures": []
+}

@@ -1,0 +1,173 @@
+{
+  "schemaVersion": "scorecard/v1",
+  "compilerVersion": "v1",
+  "structured": {
+    "metrics": {
+      "calls": 19,
+      "constrainedRate": 1,
+      "firstTryValid": {
+        "S3": {
+          "calls": 1,
+          "valid": 1,
+          "rate": 1
+        },
+        "S4": {
+          "calls": 4,
+          "valid": 4,
+          "rate": 1
+        },
+        "S6": {
+          "calls": 4,
+          "valid": 2,
+          "rate": 0.5
+        }
+      },
+      "maxRepairsPerCall": 2,
+      "lowCoercions": 2,
+      "semanticCoercions": 2,
+      "silentSemanticCoercions": 0,
+      "rawRetainedRate": 1,
+      "replayFixtureRate": 1
+    },
+    "gates": {
+      "passed": false,
+      "gates": [
+        {
+          "name": "schema-constrained",
+          "value": 1,
+          "threshold": ">= 1",
+          "status": "pass"
+        },
+        {
+          "name": "silent-semantic-coercions",
+          "value": 0,
+          "threshold": "== 0",
+          "status": "pass"
+        },
+        {
+          "name": "repairs-per-unit",
+          "value": 2,
+          "threshold": "<= 2",
+          "status": "pass"
+        },
+        {
+          "name": "first-try-valid-S3",
+          "value": 1,
+          "threshold": ">= 0.95",
+          "status": "pass"
+        },
+        {
+          "name": "first-try-valid-S4",
+          "value": 1,
+          "threshold": ">= 0.98",
+          "status": "pass"
+        },
+        {
+          "name": "first-try-valid-S6",
+          "value": 0.5,
+          "threshold": ">= 0.95",
+          "status": "fail"
+        },
+        {
+          "name": "raw-outputs-retained",
+          "value": 1,
+          "threshold": ">= 1",
+          "status": "pass"
+        },
+        {
+          "name": "replay-fixtures-emitted",
+          "value": 1,
+          "threshold": ">= 1",
+          "status": "pass"
+        }
+      ]
+    }
+  },
+  "coverage": {
+    "rung4": 4,
+    "rung2": 1,
+    "resolver.R0": 0,
+    "resolver.R1": 0,
+    "resolver.R2": 0,
+    "resolver.R3": 0,
+    "resolver.R4": 0,
+    "resolver.R5": 1,
+    "resolver.R6": 0,
+    "resolver.R7": 0,
+    "resolver.R8": 0,
+    "resolver.R9": 0,
+    "resolver.R10": 4,
+    "resolver.R11": 0,
+    "ambiguousMentions": 3,
+    "sceneCount": 4,
+    "meanOccupancy": 0.5374162808641976,
+    "realNarratedMs": 65361,
+    "targetDurationMs": 60000,
+    "durationBudgetDeltaMs": 5361,
+    "trailingPadMs": 1400,
+    "module.module_1.audioMs": 65361,
+    "sourceClaimEvidenceRefs": 22,
+    "visualEvidenceRefs": 71,
+    "timing.alignmentMs": 13,
+    "timing.scenePlanningLayoutMs": 75994,
+    "timing.encodeMs": 23884,
+    "video.missingSceneCount": 0,
+    "video.encodedDurationMs": 66785,
+    "video.audioDurationDeltaMs": 24,
+    "timing.captionsMs": 1,
+    "semantic.textSupportedClaims": 5,
+    "semantic.meaningfulClaimCoverage": 0,
+    "semantic.mechanismClaimCoverage": 0,
+    "semantic.r10OnlyMajorClaims": 5,
+    "semantic.majorClaims": 5,
+    "semantic.depictedClaims": 5,
+    "semantic.majorClaimVisualCoverage": 1,
+    "semantic.textFallbackClaims": 0,
+    "semantic.visuallyRepresentableClaims": 5,
+    "semantic.lastResortTextRate": 0,
+    "semantic.requiredRelations": 6,
+    "semantic.depictedRelations": 6,
+    "semantic.requiredRelationCoverage": 1,
+    "semantic.requiredStateChanges": 0,
+    "semantic.depictedStateChanges": 0,
+    "semantic.stateChangeCoverage": 1,
+    "semantic.weakMechanismClaims": 0,
+    "semantic.meaningfulReveals": 36,
+    "semantic.meaningfulRevealsPerClaim": 7.2,
+    "semantic.meanAssetConfidence": 0.9,
+    "semantic.finalBoardOccupancy": 0.537,
+    "timing.pipelineWallMs": 100561,
+    "timing.totalPipelineMs": 100561,
+    "cost.apiUsd": 0.018057125,
+    "cost.estimatedApiUsd": 0,
+    "cost.sharedPreparationApiUsd": 0,
+    "cost.scenePlannerApiUsd": 0.00919922,
+    "cost.scenePlannerApiUsdPerScene": 0.002299805,
+    "cost.sceneApiUsd": 0.013962795000000002,
+    "cost.sceneApiUsdPerScene": 0.0017453493750000002,
+    "cost.scene.recursion_and_cases.apiUsd": 0.00154905,
+    "cost.scene.calls_create_frames.apiUsd": 0.0009493,
+    "cost.scene.returns_unwind.apiUsd": 0.000866675,
+    "cost.scene.overflow_and_recap.apiUsd": 0.00139855,
+    "cost.scene.01-module_1_recursion_and_cases.apiUsd": 0.00306241,
+    "cost.scene.01-module_1_calls_create_frames.apiUsd": 0.0028692099999999996,
+    "cost.scene.01-module_1_returns_unwind.apiUsd": 0.0017443,
+    "cost.scene.01-module_1_overflow_and_recap.apiUsd": 0.0015233,
+    "timing.firstPlayableSceneMs": 76313,
+    "timing.executionWallMs": 196724,
+    "timing.preparationMs": 96158
+  },
+  "blockers": [
+    "major-claim-r10-only"
+  ],
+  "unmeasured": [
+    "unsupported-major-claims",
+    "wrong-semantic-icons",
+    "hard-overlap-clipping",
+    "meaning-changing-truncation",
+    "major-narration-visual-mismatch",
+    "asset-provenance-licensing",
+    "deterministic-replay"
+  ],
+  "releaseCandidate": false
+}
