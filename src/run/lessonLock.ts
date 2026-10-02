@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash as createNodeHash, randomUUID } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -156,7 +156,8 @@ export function probeToolVersions(): { node: string; pipeline: string; resvg: st
       .split('\n').filter(Boolean).filter((file) =>
         file.startsWith('src/run/') ||
         file.startsWith('src/shared/') ||
-        file === 'package.json' || file === 'package-lock.json' || file === 'npm-shrinkwrap.json');
+        file === 'package.json' || file === 'pnpm-lock.yaml' || file === 'package-lock.json' || file === 'npm-shrinkwrap.json')
+      .filter((file) => existsSync(path.join(root, file)));
     const digest = createNodeHash('sha256');
     for (const file of files.sort()) {
       digest.update(file).update('\0').update(readFileSync(path.join(root, file))).update('\0');

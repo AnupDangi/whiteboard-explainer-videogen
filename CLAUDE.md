@@ -25,7 +25,7 @@ Never edit frozen source inputs, Simi references, expected outputs, or golden ha
 
 ## Verification and evidence log
 
-Use the commands present in `package.json`: `npm run typecheck:hypothesis` and `npm run test:hypothesis`. The `test:hypothesis` command builds `dist/` before running the offline suite. Paid provider and judge runs must be reported separately from offline tests, with quota/provider failures preserved.
+Use the commands present in `package.json`: `pnpm run typecheck:hypothesis` and `pnpm run test:hypothesis`. The `test:hypothesis` command builds `dist/` before running the offline suite. Paid provider and judge runs must be reported separately from offline tests, with quota/provider failures preserved.
 
 After a material change, update the existing hypothesis plan/validation docs and append exact commands, results, limitations, and the next bounded task to `docs/HANDOFF.md`. Track each acceptance item as `implemented`, `tested`, `passed`, `failed`, or `unmeasured`; implementation alone is not a pass.
 

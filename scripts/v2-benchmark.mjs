@@ -5,7 +5,7 @@
 //   node scripts/v2-benchmark.mjs run <set> [--cases=a,b] [--trials=n]   cold, paid; each trial is a fresh lessonCli process
 //   node scripts/v2-benchmark.mjs report <set>            Stage A gates from recorded trials
 // Set V2_BENCH_PLANNER=<openrouter model id> to override the S6 board planner for every trial (recorded in the run provenance).
-// <set> is cold-v1 or heldout-v1. Run `npm run build` first. Provider keys come from .env; nothing here edits sources or code.
+// <set> is cold-v1 or heldout-v1. Run `pnpm run build` first. Provider keys come from .env; nothing here edits sources or code.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

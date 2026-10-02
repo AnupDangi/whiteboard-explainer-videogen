@@ -5,7 +5,7 @@
 // draws it with the same deterministic renderer the video uses; nothing is
 // re-planned or re-laid-out. Hand-authored fixture scenes are not accepted
 // (CLAUDE.md: fixtures cannot establish visual quality).
-// Usage: npm run build && node scripts/render-strip.mjs <preview-scene.json> <out.png> [frames=6]
+// Usage: pnpm run build && node scripts/render-strip.mjs <preview-scene.json> <out.png> [frames=6]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Resvg } from '@resvg/resvg-js';
 import { renderSceneBody } from '../dist/src/render/renderScene.js';

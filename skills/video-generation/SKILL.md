@@ -19,14 +19,14 @@ drawing code, no Manim.
 ## Prerequisites
 
 `.env` with `OPENROUTER_API_KEY`, `OPENROUTER_CONTENT_MODEL`, `OPENROUTER_SCENE_MODEL` (+ optional `OPENROUTER_VISION_MODEL` for judge).
-FFmpeg + `npm install` (sharp) required for MP4 export. Local voice-engine
-narration needs no speech key (one-time `npm run voice-engine:setup`). Never
+FFmpeg + `pnpm install` (sharp) required for MP4 export. Local voice-engine
+narration needs no speech key (one-time `pnpm run voice-engine:setup`). Never
 commit `.env`, `.data/`, or `output/`.
 
 ## Voice-engine setup (free, local, no key, all languages)
 
 ```bash
-npm run voice-engine:setup        # = cd voice-engine && npm run setup
+pnpm run voice-engine:setup        # = cd voice-engine && pnpm run setup
 ```
 
 Creates `voice-engine/.venv` with Supertonic + Piper and downloads the default
@@ -42,8 +42,8 @@ Word timings are **estimated** uniformly over the synthesized audio duration
 ## Quick evaluations (JSON + thumbnail, no MP4)
 
 ```bash
-npm run build
-npm run test:live -- --minutes 1 --voice --tts voice-engine --budget 0.5 \
+pnpm run build
+pnpm run test:live -- --minutes 1 --voice --tts voice-engine --budget 0.5 \
   --prompt "Your rich topic prompt here"
 # --minutes 1|5|10|30 · --tts voice-engine|elevenlabs · --budget USD cap
 # --prompt TEXT | --url URL | --pdf FILE
@@ -55,11 +55,11 @@ Output: `.data/JOB/job.json` + `output/evaluations/JOB.json|.png`.
 ## Full MP4 videos from any source (demo default: voice-engine)
 
 ```bash
-npm run build
-npm run voice-engine:setup   # once — venv + default Piper voices
-npm run generate-video -- --url https://arxiv.org/pdf/1512.03385 --minutes 1
-npm run generate-video -- --pdf ./paper.pdf --minutes 1 --model google/gemini-3.7-flash
-npm run generate-video -- --prompt "Explain how a refrigerator works" --minutes 1
+pnpm run build
+pnpm run voice-engine:setup   # once — venv + default Piper voices
+pnpm run generate-video -- --url https://arxiv.org/pdf/1512.03385 --minutes 1
+pnpm run generate-video -- --pdf ./paper.pdf --minutes 1 --model google/gemini-3.7-flash
+pnpm run generate-video -- --prompt "Explain how a refrigerator works" --minutes 1
 # --minutes accepts 1,5,10,30 (comma list allowed: 1,5,10)
 # --model overrides OPENROUTER_MODEL per run · --tts voice-engine is the default
 #   (no flag needed) · --tts piper|supertonic pins a provider · --language <code>
@@ -82,7 +82,7 @@ planner enforces 110–160 narration words per chapter.
 
 ## Verify before delivering
 
-1. `npm test` — suite green, including the language/voice-engine contract tests
+1. `pnpm test` — suite green, including the language/voice-engine contract tests
    (no live TTS needed for the core tests).
 2. Job status `complete`; scene count = 2 × minutes; narration word count
    ≈ 110–160/chapter; shapes mixed (not all-box — check
