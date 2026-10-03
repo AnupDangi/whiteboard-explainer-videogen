@@ -12,6 +12,7 @@ import { referentKeys } from './referent.js';
 import { isExemptFamily } from './sceneFamily.js';
 import { classifyDiagramAdapter } from './diagramAdapters.js';
 import { loadApprovedMetaphors, type ApprovedMetaphor } from './metaphors.js';
+import { ENABLED_LIBRARIES } from './registry.js';
 export { classifyDiagramAdapter } from './diagramAdapters.js';
 
 /** Lexical starting points only; experiment E4 has not calibrated these values. */
@@ -40,6 +41,34 @@ export function semanticScore(concept: string, entry: CatalogEntry): number {
   const q = tokenize(concept);
   const bag = tokenize([...entry.names, ...entry.tags, entry.meaning].join(' '));
   return jaccard(q, bag);
+}
+
+const stemToken = (t: string): string => (t.length > 3 && t.endsWith('s') && !t.endsWith('ss') ? t.slice(0, -1) : t);
+/** Content tokens of a name: numbered-variant suffixes ("call center 13", "baby 0609m") are not meaning. */
+const coreTokens = (name: string): string[] => (name.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((t) => !/\d/.test(t)).map(stemToken);
+
+/**
+ * Unvalidated similarity may bind only a near-synonym: the same content tokens (numbering ignored), a containing/contained
+ * name at cosine >= 0.80 ("gauge" -> "gauge full"), or a very close cosine (>= 0.85) that is not a one-word substitution
+ * ("male condom" for "female condom", "blood ab n" for "blood ab p" differ by one word and mean the opposite). Everything
+ * else needs the Depiction Director + validation, or becomes an honest label. Pure token/score logic; no topic knowledge.
+ */
+export function similarityAdmissible(request: string | readonly string[], entryNames: readonly string[], score: number): boolean {
+  return (typeof request === 'string' ? [request] : request).some((requested) => admissibleFor(requested, entryNames, score));
+}
+
+function admissibleFor(request: string, entryNames: readonly string[], score: number): boolean {
+  const want = new Set(coreTokens(request));
+  if (want.size === 0) return false;
+  return entryNames.some((name) => {
+    const have = new Set(coreTokens(name));
+    if (have.size === 0) return false;
+    const shared = [...want].filter((t) => have.has(t)).length;
+    if (shared === want.size && shared === have.size) return true;
+    if (shared === Math.min(want.size, have.size) && score >= 0.8) return true;
+    const substitution = shared > 0 && want.size - shared === 1 && have.size - shared === 1;
+    return score >= 0.85 && !substitution;
+  });
 }
 
 export interface ObjectResolution {
@@ -135,14 +164,30 @@ function requestConcept(visual: Pick<VisualRequest, 'conceptId'>, concept: strin
  */
 export function typeCompatible(requestType: string | undefined, entry: CatalogEntry, requestInferred = false): boolean {
   if (!requestType || requestInferred) return false;
-  const entryConcept = entry.conceptId ? uniqueBridgeConcept(entry.conceptId) : uniqueBridgeConcept(entry.names[0] ?? '');
-  return Boolean(entryConcept && !entryConcept.inferred && entryConcept.conceptType && requestType === entryConcept.conceptType);
+  const { type, inferred } = entryTypeOf(entry);
+  return Boolean(type && !inferred && requestType === type);
 }
 
-const APPROVED_SOURCE_CLASSES = new Set([
-  'assetlab-sketchy-downshift', 'flaticon', 'bridge-iconify', 'bridge-streamline', 'streamline', 'sketchi', 'generated',
-]);
+/**
+ * Concept type of what an entry depicts: its Bridge concept when it has one, else the curated type its
+ * library declared at ingest (vendored pictorial sets only draw concrete objects: `entity`).
+ */
+function entryTypeOf(entry: CatalogEntry): { type: string | undefined; inferred: boolean; domain?: string } {
+  const concept = entry.conceptId ? uniqueBridgeConcept(entry.conceptId) : uniqueBridgeConcept(entry.names[0] ?? '');
+  if (concept) return { type: concept.conceptType, inferred: concept.inferred, domain: concept.domain };
+  return { type: entry.conceptType, inferred: false };
+}
+
+const APPROVED_SOURCE_CLASSES = new Set(['flaticon', 'streamline', 'sketchi', 'generated']);
+/** Vendored provider catalogs are named by family prefix; the registry (not this list) decides which are loaded. */
+const APPROVED_SOURCE_PREFIXES = ['assetlab-', 'bridge-', 'iconify-'];
 const sourceClassOf = (entry: CatalogEntry): string => entry.source.split(':', 1)[0] ?? '';
+/** Registry position of the entry's library: equal-name literals resolve in retrieval order, not alphabetical id order. */
+const libraryRank = (entry: CatalogEntry): number => {
+  const index = ENABLED_LIBRARIES.findIndex((library) => library.libraryId === sourceClassOf(entry));
+  return index < 0 ? ENABLED_LIBRARIES.length : index;
+};
+const approvedSourceClass = (sourceClass: string): boolean => APPROVED_SOURCE_CLASSES.has(sourceClass) || APPROVED_SOURCE_PREFIXES.some((prefix) => sourceClass.startsWith(prefix));
 
 export interface AssetEligibilityContext {
   conceptId?: string;
@@ -158,7 +203,7 @@ export interface AssetEligibilityContext {
 /** Candidate eligibility runs before literal, pin, validation and similarity ranking. */
 export function assetEligibilityProblems(entry: CatalogEntry, request: AssetEligibilityContext): string[] {
   const problems: string[] = [];
-  if (!APPROVED_SOURCE_CLASSES.has(sourceClassOf(entry))) problems.push(`unapproved source class: ${sourceClassOf(entry) || '(missing)'}`);
+  if (!approvedSourceClass(sourceClassOf(entry))) problems.push(`unapproved source class: ${sourceClassOf(entry) || '(missing)'}`);
   problems.push(...normalizeCatalogEntry(entry).reasons);
 
   if (request.sceneFamily) {
@@ -169,31 +214,30 @@ export function assetEligibilityProblems(entry: CatalogEntry, request: AssetElig
 
   const validated = request.validatedAssetId === entry.id;
   const requestConcept = request.conceptId ? uniqueBridgeConcept(request.conceptId) : undefined;
-  const entryConcept = entry.conceptId ? uniqueBridgeConcept(entry.conceptId) : uniqueBridgeConcept(entry.names[0] ?? '');
-  const trustedEntryType = Boolean(entryConcept && !entryConcept.inferred && entryConcept.conceptType);
-  const exactLiteral = request.exactReferent === true && entry.names.some((name) => normalizedName(name) === request.exactReferentName);
+  const entryType = entryTypeOf(entry);
+  const trustedEntryType = Boolean(entryType.type && !entryType.inferred);
+  const exactLiteral = request.exactReferent === true && entry.names.some((name) => normalizedName(name) === request.exactReferentName || singular(normalizedName(name)) === request.exactReferentName);
   if ((!requestConcept || requestConcept.inferred || !requestConcept.conceptType) && !exactLiteral && !validated) {
     problems.push('request concept type metadata is missing or inferred');
   }
-  if (entryConcept?.inferred) problems.push('candidate concept type metadata is inferred');
-  else if ((!entryConcept || !entryConcept.conceptType) && !exactLiteral) problems.push('candidate concept type metadata is missing');
+  if (entryType.inferred) problems.push('candidate concept type metadata is inferred');
+  else if (!entryType.type && !exactLiteral) problems.push('candidate concept type metadata is missing');
   if (validated && !trustedEntryType) problems.push('validated candidate has missing or inferred concept type metadata');
-  if (requestConcept && !requestConcept.inferred && requestConcept.conceptType && entryConcept && !entryConcept.inferred && entryConcept.conceptType
-    && requestConcept.conceptType !== entryConcept.conceptType) problems.push(`candidate concept type ${entryConcept.conceptType} does not match ${requestConcept.conceptType}`);
+  if (requestConcept && !requestConcept.inferred && requestConcept.conceptType && trustedEntryType
+    && requestConcept.conceptType !== entryType.type) problems.push(`candidate concept type ${entryType.type} does not match ${requestConcept.conceptType}`);
 
-  const candidateDomain = entry.domain ?? entryConcept?.domain;
-  const requestedConceptDomain = requestConcept?.domain;
+  // Taxonomy domain is a preference, not a wall: most of the library is 'general' (no specific domain), and an
+  // icon of a concrete object stays eligible in any lesson (a "heart" tagged medicine still draws a heart in a
+  // biology lesson). Matching-domain icons rank first (domainMatches). Only fuzzy similarity picks are kept out
+  // of a DIFFERENT specific domain; exact-name literals and validator-confirmed picks are not.
+  const candidateDomain = entry.domain ?? entryType.domain ?? 'general';
   const specific = (domain: string | undefined): domain is string => Boolean(domain && domain.toLowerCase() !== 'general');
-  if (specific(requestedConceptDomain)) {
-    if (specific(candidateDomain) && requestedConceptDomain.toLowerCase() !== candidateDomain.toLowerCase()) {
-      problems.push(`candidate taxonomy domain ${candidateDomain} does not match concept domain ${requestedConceptDomain}`);
-    }
+  if (specific(requestConcept?.domain) && specific(candidateDomain) && requestConcept.domain.toLowerCase() !== candidateDomain.toLowerCase()) {
+    problems.push(`candidate taxonomy domain ${candidateDomain} does not match concept domain ${requestConcept.domain}`);
   }
-  if (request.lessonDomain) {
-    if (!specific(candidateDomain)) problems.push('candidate taxonomy domain metadata is missing or too broad');
-    else if (!domainMatches({ domain: candidateDomain }, request.lessonDomain)) problems.push(`candidate taxonomy domain ${candidateDomain} does not match lesson domain ${request.lessonDomain}`);
+  if (request.lessonDomain && !exactLiteral && !validated && specific(candidateDomain) && !domainMatches({ domain: candidateDomain }, request.lessonDomain)) {
+    problems.push(`candidate taxonomy domain ${candidateDomain} does not match lesson domain ${request.lessonDomain}`);
   }
-  if (validated && !candidateDomain) problems.push('validated candidate has missing taxonomy domain metadata');
   return [...new Set(problems)];
 }
 
@@ -204,7 +248,7 @@ export function resolveObject(
 ): ObjectResolution {
   const conceptLower = normalizedName(concept);
   const wanted = new Set([conceptLower, singular(conceptLower), ...referentKeys(conceptLower).slice(0, 1)]);
-  const exactOf = (entry: CatalogEntry): boolean => entry.names.some((name) => wanted.has(normalizedName(name)));
+  const exactOf = (entry: CatalogEntry): boolean => entry.names.some((name) => wanted.has(normalizedName(name)) || wanted.has(singular(normalizedName(name))));
   // Filter every candidate before any resolution rung ranks or accepts it. A same-name literal is
   // allowed through when old provider catalogs predate Bridge type fields; it is still an exact,
   // source-approved referent. Similarity and validator-selected assets need explicit Bridge types.
@@ -289,23 +333,25 @@ export function resolveObject(
 
   const usable = (entry: CatalogEntry): boolean => !opts.avoidAssetIds?.has(entry.id) && normalizeCatalogEntry(entry).ok;
   const exact = (source: (entry: CatalogEntry) => boolean): CatalogEntry | undefined => exactAllowed
-    ? catalog.filter((entry) => usable(entry) && source(entry) && exactCompatible(entry)).sort((a, b) => Number(domainMatches(b, opts.lessonDomain)) - Number(domainMatches(a, opts.lessonDomain)) || a.id.localeCompare(b.id))[0]
+    ? catalog.filter((entry) => usable(entry) && source(entry) && exactCompatible(entry)).sort((a, b) => Number(domainMatches(b, opts.lessonDomain)) - Number(domainMatches(a, opts.lessonDomain)) || libraryRank(a) - libraryRank(b) || a.id.localeCompare(b.id))[0]
     : undefined;
+  // The planner label and the Bridge concept it is bound to (id + aliases) all name the same referent.
+  const requestNames = [conceptLower, ...(bConcept ? [normalizedName(bConcept.conceptId), ...bConcept.aliases.map(normalizedName)] : [])];
   const typed = (entry: CatalogEntry): boolean => typeCompatible(bConcept?.conceptType, entry, bConcept?.inferred ?? true);
   const similarity = (source: (entry: CatalogEntry) => boolean): { entry: CatalogEntry; score: number; rung: 2 | 3 } | undefined => {
     const candidateScores = new Map((opts.candidates ?? []).map((candidate) => [candidate.id, candidate.score]));
     return catalog.filter((entry) => usable(entry) && source(entry) && !exactOf(entry) && typed(entry))
       .map((entry) => ({ entry, score: candidateScores.get(entry.id) ?? (opts.candidates?.length ? 0 : semanticScore(conceptLower, entry)) }))
-      .filter(({ entry, score }) => score >= (opts.candidates?.length ? TAU_MID_EMB : TAU_MID)
+      .filter(({ entry, score }) => (!opts.candidates?.length || similarityAdmissible(requestNames, entry.names, score)) && score >= (opts.candidates?.length ? TAU_MID_EMB : TAU_MID)
         // Mid-confidence similarity additionally needs the taxonomy domain to agree with the lesson (§17).
         && (score >= (opts.candidates?.length ? TAU_HIGH_EMB : TAU_HIGH) || domainMatches(entry, opts.lessonDomain)))
-      .sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id))
+      .sort((a, b) => b.score - a.score || libraryRank(a.entry) - libraryRank(b.entry) || a.entry.id.localeCompare(b.entry.id))
       .map(({ entry, score }) => ({ entry, score, rung: score >= (opts.candidates?.length ? TAU_HIGH_EMB : TAU_HIGH) ? 2 as const : 3 as const }))[0];
   };
   const downshift = (entry: CatalogEntry): boolean => entry.source.startsWith('assetlab-sketchy-downshift:');
   const flaticon = (entry: CatalogEntry): boolean => entry.source.startsWith('flaticon:');
-  const streamline = (entry: CatalogEntry): boolean => entry.source.startsWith('streamline:');
-  const sketchi = (entry: CatalogEntry): boolean => entry.source.startsWith('sketchi:');
+  const streamline = (entry: CatalogEntry): boolean => ['streamline', 'bridge-streamline'].includes(sourceClassOf(entry));
+  const sketchi = (entry: CatalogEntry): boolean => ['sketchi', 'bridge-sketchi'].includes(sourceClassOf(entry));
 
   // R0 continuity is accepted only for a renderable, semantically compatible
   // referent. The independent B4 gate still judges the resulting depiction.
@@ -422,6 +468,8 @@ export function resolveObject(
     if (sketchiExact) return renderEntry(sketchiExact, 1, 2, 'R7-technical-brand');
     const sketchiMatch = similarity(sketchi);
     if (sketchiMatch) return renderEntry(sketchiMatch.entry, sketchiMatch.score, sketchiMatch.rung, 'R7-technical-brand', 'similarity');
+    const flaticonMatch = similarity(flaticon);
+    if (flaticonMatch) return renderEntry(flaticonMatch.entry, flaticonMatch.score, flaticonMatch.rung, 'R4-curated-flaticon', 'similarity');
   }
 
   // R8 — other approved catalog assets. Keep literal exactness before any

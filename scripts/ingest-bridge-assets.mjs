@@ -21,6 +21,11 @@ const LIBRARIES = {
   sketchi: { libraryId: 'bridge-sketchi', file: 'bridge-sketchi.json', reviewLicense: 'Review-local-dev', brand: true },
 };
 const report = {};
+/** Credits name the upstream collections that actually supplied icons (sorted, deduplicated). */
+const bridgeAttribution = (family, entries) => {
+  const collections = [...new Set(entries.map((entry) => entry.author).filter(Boolean))].sort();
+  return `Asset Lab bridge ${bridge.catalogVersion}: ${family}${collections.length ? `; collections: ${collections.join(', ')}` : ''}`;
+};
 for (const [family, lib] of Object.entries(LIBRARIES)) {
   const entries = [];
   const rejected = {};
@@ -33,10 +38,14 @@ for (const [family, lib] of Object.entries(LIBRARIES)) {
     if (!license) { rejected['no-license'] = (rejected['no-license'] ?? 0) + 1; continue; }
     const id = `${lib.libraryId}:${slug(asset.ref)}`;
     const result = ingestSvg(svg, { id, set: 'local', name, tags: [...new Set((concept?.aliases ?? []).map(norm).filter((a) => a !== name))], category: null, license }, { allowFillOnly: true });
-    if (result.ok) entries.push({ ...result.entry, conceptId: asset.conceptId, houseFamily: asset.houseFamily, domain: concept?.domain ?? 'general' });
+    if (result.ok) {
+      const collection = asset.provenance?.collection;
+      entries.push({ ...result.entry, conceptId: asset.conceptId, houseFamily: asset.houseFamily, domain: concept?.domain ?? 'general',
+        ...(collection ? { author: collection } : {}), ...(asset.provenance?.providerId ? { providerId: asset.provenance.providerId } : {}) });
+    }
     else { const key = result.reason.split(':')[0]; rejected[key] = (rejected[key] ?? 0) + 1; }
   }
-  const catalog = { schemaVersion: 'claude-catalog/v2', libraryId: lib.libraryId, version: createHash('sha256').update(JSON.stringify(entries.map((e) => e.contentHash))).digest('hex').slice(0, 16), license: 'mixed', attribution: `Asset Lab bridge ${bridge.catalogVersion}: ${family}`, entries };
+  const catalog = { schemaVersion: 'claude-catalog/v2', libraryId: lib.libraryId, version: createHash('sha256').update(JSON.stringify(entries.map((e) => e.contentHash))).digest('hex').slice(0, 16), license: 'mixed', attribution: bridgeAttribution(family, entries), entries };
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, lib.file), `${JSON.stringify(catalog)}\n`);
   report[family] = { accepted: entries.length, rejected };

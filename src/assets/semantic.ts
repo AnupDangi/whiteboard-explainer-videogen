@@ -36,7 +36,32 @@ export function createRetryingLazyLoader<T>(load: () => Promise<T>): () => Promi
 export interface Candidate {
   id: string;
   name: string;
+  /** Pure cosine similarity (what the E4 thresholds are defined on); ranking additionally uses lexical/domain boosts. */
   score: number;
+}
+
+/** At most this many entries per depicted name survive in a top-k, so duplicate icons from many libraries cannot crowd out other concepts. */
+const MAX_PER_NAME = 2;
+const LEXICAL_EXACT_BOOST = 0.25;
+const LEXICAL_TOKEN_BOOST = 0.1;
+const DOMAIN_BOOST = 0.05;
+const tokens = (text: string): string[] => (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((token) => token.length > 1);
+const inDomain = (entry: { domain?: string }, lessonDomain: string): boolean => {
+  const domain = entry.domain?.toLowerCase();
+  return Boolean(domain && domain !== 'general' && (lessonDomain.toLowerCase().includes(domain) || domain.includes(lessonDomain.toLowerCase())));
+};
+const stem = (token: string): string => (token.length > 3 && token.endsWith('s') && !token.endsWith('ss') ? token.slice(0, -1) : token);
+
+let tokenIndex: Array<{ name: string; names: Set<string>; bag: Set<string> }> | undefined;
+function entryTokens(entries: CatalogEntry[]): NonNullable<typeof tokenIndex> {
+  if (!tokenIndex || tokenIndex.length !== entries.length) {
+    tokenIndex = entries.map((entry) => ({
+      name: entry.names.map((name) => tokens(name).map(stem).join(' ')).find(Boolean) ?? '',
+      names: new Set(entry.names.flatMap((name) => tokens(name).map(stem))),
+      bag: new Set([...entry.names, ...entry.tags].flatMap((text) => tokens(text).map(stem))),
+    }));
+  }
+  return tokenIndex;
 }
 
 const DIMS = 384;
@@ -70,7 +95,7 @@ const getEmbedder = createRetryingLazyLoader<Embedder>(async () => {
 });
 
 /** Top-k enabled-library candidates per query by cosine similarity (vectors are unit-normalized). */
-export async function rankConcepts(queries: string[], k = 8, cache?: QueryEmbeddingCache): Promise<Map<string, Candidate[]>> {
+export async function rankConcepts(queries: string[], k = 8, cache?: QueryEmbeddingCache, options: { domain?: string } = {}): Promise<Map<string, Candidate[]>> {
   const unique = [...new Set(queries.map((q) => q.trim().toLowerCase()).filter(Boolean))];
   const out = new Map<string, Candidate[]>();
   if (unique.length === 0) return out;
@@ -97,16 +122,32 @@ export async function rankConcepts(queries: string[], k = 8, cache?: QueryEmbedd
     });
   }
 
+  const index = entryTokens(entries);
   unique.forEach((query, qi) => {
     const queryVector = vectors.get(query);
     if (!queryVector) throw new Error(`missing query embedding for ${query} at index ${qi}`);
-    const scores: Candidate[] = entries.map((e, ei) => {
+    const queryTokens = tokens(query).map(stem);
+    const queryName = queryTokens.join(' ');
+    const ranked = entries.map((e, ei) => {
       let dot = 0;
       for (let d = 0; d < DIMS; d++) dot += queryVector[d] * m[ei * DIMS + d];
-      return { id: e.id, name: e.names[0], score: dot };
+      const t = index[ei];
+      const lexical = queryName && t.name === queryName ? LEXICAL_EXACT_BOOST
+        : queryTokens.length > 0 && queryTokens.every((token) => t.names.has(token)) ? LEXICAL_TOKEN_BOOST : 0;
+      const domain = options.domain && inDomain(e, options.domain) ? DOMAIN_BOOST : 0;
+      return { candidate: { id: e.id, name: e.names[0], score: dot } as Candidate, rank: dot + lexical + domain };
     });
-    scores.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
-    out.set(query, scores.slice(0, k));
+    ranked.sort((a, b) => b.rank - a.rank || a.candidate.id.localeCompare(b.candidate.id));
+    const perName = new Map<string, number>();
+    const picked: Candidate[] = [];
+    for (const { candidate } of ranked) {
+      const seen = perName.get(candidate.name) ?? 0;
+      if (seen >= MAX_PER_NAME) continue;
+      perName.set(candidate.name, seen + 1);
+      picked.push(candidate);
+      if (picked.length >= k) break;
+    }
+    out.set(query, picked);
   });
   return out;
 }

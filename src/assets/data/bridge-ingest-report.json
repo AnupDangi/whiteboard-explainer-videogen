@@ -2,11 +2,10 @@
   "bridgeCatalogVersion": "0c1405ba61da3a54",
   "families": {
     "flaticon-local": {
-      "accepted": 4272,
+      "accepted": 4687,
       "rejected": {
-        "transform": 391,
-        "too-many-paths": 46,
-        "unsupported-element": 2
+        "unsupported-element": 1,
+        "too-many-paths": 23
       }
     },
     "iconify": {
@@ -16,16 +15,16 @@
       }
     },
     "streamline": {
-      "accepted": 7,
-      "rejected": {
-        "unsupported-element": 42
-      }
+      "accepted": 49,
+      "rejected": {}
     },
     "sketchi": {
-      "accepted": 0,
+      "accepted": 237,
       "rejected": {
-        "unsupported-element": 238,
-        "transform": 70
+        "no-ink": 8,
+        "unsupported-element": 61,
+        "unsupported-paint": 1,
+        "too-many-paths": 1
       }
     }
   }

@@ -37,6 +37,7 @@ interface RawEntry {
   conceptId?: string;
   houseFamily?: string;
   domain?: string;
+  conceptType?: string;
 }
 
 interface RawCatalog {
@@ -162,6 +163,7 @@ export function loadCatalogLibraries(libraries: readonly CatalogLibrary[] = ENAB
       ...(entry.conceptId ? { conceptId: entry.conceptId } : {}),
       houseFamily: entry.houseFamily ?? defaultHouseFamily(library.libraryId),
       ...(entry.domain ? { domain: entry.domain } : {}),
+      ...(entry.conceptType ? { conceptType: entry.conceptType } : {}),
       render: (size, fill) => renderRaw(entry, size, fill),
     })));
   }

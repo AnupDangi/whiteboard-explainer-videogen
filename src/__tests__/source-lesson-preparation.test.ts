@@ -14,7 +14,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
   const graph = {
     concepts: [
       { id: 'leaf', label: 'Leaf', kind: 'entity', definition: 'The leaf uses light to build sugar.', evidence, level: 'one-step' },
-      { id: 'sugar', label: 'Sugar', kind: 'entity', definition: 'Sugar is built by the leaf using light.', evidence, level: 'one-step' },
+      { id: 'sugar', label: 'Starch granule', kind: 'entity', definition: 'Sugar is built by the leaf using light.', evidence, level: 'one-step' },
     ],
     relations: [{ from: 'leaf', to: 'sugar', type: 'produces', evidence }],
     prerequisites: [],
@@ -22,7 +22,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
   const plan = {
     targetDurationSec: 15,
     intro: { sourceTitle: 'Light and leaves', sections: ['Building sugar'] },
-    lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Sugar' }], persistentConceptIds: [] },
+    lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Starch granule' }], persistentConceptIds: [] },
     sections: [{
       id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 15,
       contract: {
@@ -124,7 +124,7 @@ test('S3 rejects a model plan that omits its teaching decisions (skill and visua
   const graph = {
     concepts: [
       { id: 'leaf', label: 'Leaf', kind: 'entity', definition: 'The leaf uses light to build sugar.', evidence, level: 'one-step' },
-      { id: 'sugar', label: 'Sugar', kind: 'entity', definition: 'Sugar is built by the leaf using light.', evidence, level: 'one-step' },
+      { id: 'sugar', label: 'Starch granule', kind: 'entity', definition: 'Sugar is built by the leaf using light.', evidence, level: 'one-step' },
     ],
     relations: [{ from: 'leaf', to: 'sugar', type: 'produces', evidence }],
     prerequisites: [],
@@ -132,7 +132,7 @@ test('S3 rejects a model plan that omits its teaching decisions (skill and visua
   const planMissingContract = {
     targetDurationSec: 15,
     intro: { sourceTitle: 'Light and leaves', sections: ['Building sugar'] },
-    lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Sugar' }], persistentConceptIds: [] },
+    lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Starch granule' }], persistentConceptIds: [] },
     sections: [{ id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 15 }],
     recap: { keyPoints: ['Leaves use light to build sugar'] },
   };
@@ -171,7 +171,7 @@ test('S3 never trusts a relation the model writes: contract relations are derive
   const graph = {
     concepts: [
       { id: 'leaf', label: 'Leaf', kind: 'entity', definition: 'The leaf uses light to build sugar.', evidence, level: 'one-step' },
-      { id: 'sugar', label: 'Sugar', kind: 'entity', definition: 'Sugar is built by the leaf using light.', evidence, level: 'one-step' },
+      { id: 'sugar', label: 'Starch granule', kind: 'entity', definition: 'Sugar is built by the leaf using light.', evidence, level: 'one-step' },
     ],
     relations: [{ from: 'leaf', to: 'sugar', type: 'produces', evidence }],
     prerequisites: [],
@@ -179,7 +179,7 @@ test('S3 never trusts a relation the model writes: contract relations are derive
   const planUnsupportedRelation = {
     targetDurationSec: 15,
     intro: { sourceTitle: 'Light and leaves', sections: ['Building sugar'] },
-    lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Sugar' }], persistentConceptIds: [] },
+    lessonBible: { audience: 'general learner', domain: 'biology', terminology: [{ conceptId: 'leaf', label: 'Leaf' }, { conceptId: 'sugar', label: 'Starch granule' }], persistentConceptIds: [] },
     sections: [{
       id: 'build_sugar', title: 'Building sugar', goal: 'Explain how leaves build sugar', kind: 'explain', conceptIds: ['leaf', 'sugar'], budgetSec: 15,
       contract: {

@@ -35,9 +35,9 @@ test('duotone icons map fills to main, white, and ink roles', () => {
 
 test('bad files are rejected individually with reasons', () => {
   const { catalog, rejected } = ingestLibrary(manifest, (file) => files[file]);
-  assert.deepEqual(catalog.entries.map((entry) => entry.id), ['testlib:box', 'testlib:clock']);
+  assert.deepEqual(catalog.entries.map((entry) => entry.id), ['testlib:box', 'testlib:clock', 'testlib:moved']);
   assert.deepEqual(Object.fromEntries(rejected.map((item) => [item.file, item.reason.split(':')[0]])), {
-    'grad.svg': 'unsupported-paint', 'moved.svg': 'transform', 'noink.svg': 'no-ink', 'ref.svg': 'unsupported-element',
+    'grad.svg': 'unsupported-paint', 'noink.svg': 'no-ink', 'ref.svg': 'unsupported-element',
   });
 });
 
@@ -53,7 +53,8 @@ test('a non-allowlisted license rejects the whole library', () => {
 });
 
 test('icons over the path budget are rejected', () => {
-  const many = `<svg viewBox="0 0 24 24">${Array.from({ length: 41 }, (_, index) => `<path d="M${index} 0h1" stroke="#000"/>`).join('')}</svg>`;
+  // Alternating stroke widths: neighbouring paints differ, so flatten cannot merge them under the budget.
+  const many = `<svg viewBox="0 0 24 24">${Array.from({ length: 41 }, (_, index) => `<path d="M${index} 0h1" stroke="#000" stroke-width="${1 + (index % 2)}"/>`).join('')}</svg>`;
   const result = ingestSvg(many, meta('many'));
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.reason, /^too-many-paths/);
@@ -74,4 +75,35 @@ test('an icon whose only strokes are coloured details is still rejected: the rev
   const detailOnly = '<svg viewBox="0 0 24 24"><path d="M0 0h10v10z" fill="#8fbffa"/><path d="M2 2h5" fill="none" stroke="#ffffff"/></svg>';
   const result = ingestSvg(detailOnly, meta('detail'));
   assert.equal(result.ok, false);
+});
+
+test('flatten recovers transforms: translate is baked into path data and the viewBox origin is shifted to 0', () => {
+  const result = ingestSvg('<svg viewBox="10 10 24 24"><g transform="translate(2 3) scale(2)"><path d="M0 0h5" stroke="#000" stroke-width="1"/></g></svg>', meta('moved'));
+  assert.ok(result.ok);
+  if (!result.ok) return;
+  assert.deepEqual(result.entry.vb, { w: 24, h: 24 });
+  assert.equal(result.entry.strokes.length, 1);
+  assert.equal(result.entry.strokes[0].d, 'M-8-7H2', 'M0 0h5 scaled x2, translated (2,3), shifted by the (10,10) origin');
+  assert.equal(result.entry.strokes[0].w, 2, 'stroke width follows the uniform scale');
+});
+
+test('flatten resolves CSS classes, style attributes and gradient fills to plain paint', () => {
+  const svg = '<svg viewBox="0 0 24 24"><title>t</title><style>.a{fill:#8fbffa}</style><defs><linearGradient id="g"><stop offset="0" stop-color="#ffd36e"/><stop offset="1" stop-color="#ffd36e"/></linearGradient></defs>'
+    + '<path class="a" d="M0 0h10v10z"/><path d="M0 0h8v8z" fill="url(#g)"/><path d="M1 1h5" style="stroke:#000;stroke-width:2;fill:none"/></svg>';
+  const result = ingestSvg(svg, meta('dialect'));
+  assert.ok(result.ok);
+  if (!result.ok) return;
+  assert.equal(result.entry.fills.find((fill) => fill.d === 'M0 0h10v10z')?.color, '#8fbffa');
+  assert.equal(result.entry.fills.find((fill) => fill.d === 'M0 0h8v8z')?.color, '#ffd36e');
+  assert.equal(result.entry.strokes[0].w, 2);
+});
+
+test('flatten merges neighbouring same-paint paths so a rich icon fits the budget, and still refuses clip content', () => {
+  const rich = `<svg viewBox="0 0 24 24">${Array.from({ length: 60 }, (_, index) => `<path d="M${index % 24} 0h1v1z" fill="#8fbffa"/>`).join('')}<path d="M0 0h24" stroke="#000"/></svg>`;
+  const merged = ingestSvg(rich, meta('rich'));
+  assert.ok(merged.ok, merged.ok ? '' : merged.reason);
+  const clipped = ingestSvg('<svg viewBox="0 0 24 24"><clipPath id="c"><circle cx="5" cy="5" r="3"/></clipPath><g clip-path="url(#c)"><path d="M0 0h20" stroke="#000"/></g></svg>', meta('clipped'));
+  assert.equal(clipped.ok, false);
+  const frameClip = ingestSvg('<svg viewBox="0 0 24 24"><clipPath id="c"><rect width="24" height="24"/></clipPath><g clip-path="url(#c)"><path d="M0 0h20" stroke="#000"/></g></svg>', meta('frame'));
+  assert.ok(frameClip.ok, 'a clip that spans the whole frame clips nothing');
 });

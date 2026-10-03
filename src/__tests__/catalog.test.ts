@@ -53,7 +53,7 @@ test('ladder: an explicitly supplied catalog is the only pool searched', () => {
 });
 
 test('ladder: an inferred embedding candidate falls back to a truthful label', () => {
-  const { resolution } = resolveObject('android', { size: { w: 150, h: 220 }, candidates: [{ id: 'assetlab-sketchy-downshift:svg-robot-sketchy-downshift-robot-svg', name: 'robot', score: 0.7 }] });
+  const { resolution } = resolveObject('zorblax', { size: { w: 150, h: 220 }, candidates: [{ id: 'assetlab-sketchy-downshift:svg-robot-sketchy-downshift-robot-svg', name: 'robot', score: 0.7 }] });
   assert.equal(resolution.assetId, null);
   assert.equal(resolution.strategy, 'R10-labelled-primitive');
 });

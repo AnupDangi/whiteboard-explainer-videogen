@@ -26,6 +26,8 @@ export interface CatalogEntry {
   conceptId?: string;
   houseFamily?: string;
   domain?: string;
+  /** Curated concept type of the depicted thing when the entry has no Bridge concept (vendored sets). */
+  conceptType?: string;
   /** Source evidence carried through catalogue ingest for export attribution. */
   contentHash?: string;
   attribution?: string;

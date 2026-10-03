@@ -439,13 +439,27 @@ function isHttpUrl(value: string): boolean {
 }
 
 /** Find a concept by id or case-insensitive alias. */
+const conceptIndexes = new WeakMap<object, Map<string, BridgeConcept[]>>();
+
+/** Lower-cased id/alias -> concepts, built once per loaded bridge (resolution calls this per catalog entry). */
+function conceptIndex(bridge: ReturnType<typeof loadBridge>): Map<string, BridgeConcept[]> {
+  let index = conceptIndexes.get(bridge);
+  if (!index) {
+    index = new Map();
+    for (const concept of bridge.concepts) {
+      for (const key of new Set([concept.conceptId.toLowerCase(), ...concept.aliases.map((alias) => alias.toLowerCase())])) {
+        const list = index.get(key);
+        if (list) list.push(concept); else index.set(key, [concept]);
+      }
+    }
+    conceptIndexes.set(bridge, index);
+  }
+  return index;
+}
+
 export function bridgeConceptFor(conceptIdOrAlias: string): BridgeConcept | undefined {
-  const bridge = loadBridge();
-  const want = conceptIdOrAlias.trim().toLowerCase();
-  const matches = bridge.concepts.filter(
-    (c) => c.conceptId.toLowerCase() === want || c.aliases.some((a) => a.toLowerCase() === want),
-  );
-  return matches.length === 1 ? matches[0] : undefined;
+  const matches = conceptIndex(loadBridge()).get(conceptIdOrAlias.trim().toLowerCase());
+  return matches?.length === 1 ? matches[0] : undefined;
 }
 
 /** Approved asset entries backing a concept id (exact id match). */

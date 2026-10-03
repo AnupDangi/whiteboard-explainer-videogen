@@ -1,6 +1,6 @@
 {
   "schemaVersion": "claude-enabled-libraries/v1",
-  "note": "Retrieval order. Generated lessons use one icon family (board schema v2 design, 2026-09-26). Disabled catalogs stay on disk for rollback.",
+  "note": "Retrieval order (ties between equal-name literals resolve by this order). Generated lessons use one icon family per scene. devOnly libraries load only under ASSET_USAGE_CONTEXT=local-dev. Disabled catalogs stay on disk for rollback.",
   "libraries": [
     {
       "libraryId": "assetlab-sketchy-downshift",
@@ -27,14 +27,13 @@
       "embeddings": "bridge-streamline.emb.bin",
       "house": false,
       "devOnly": true
-    }
-  ],
-  "disabled": [
+    },
     {
-      "libraryId": "streamline",
-      "file": "streamline.json",
-      "embeddings": "streamline.emb.bin",
-      "house": true
+      "libraryId": "bridge-sketchi",
+      "file": "bridge-sketchi.json",
+      "embeddings": "bridge-sketchi.emb.bin",
+      "house": false,
+      "devOnly": true
     },
     {
       "libraryId": "assetlab-mit",
@@ -47,6 +46,56 @@
       "file": "assetlab-isc.json",
       "embeddings": "assetlab-isc.emb.bin",
       "house": false
+    },
+    {
+      "libraryId": "iconify-lucide",
+      "file": "iconify-lucide.json",
+      "embeddings": "iconify-lucide.emb.bin",
+      "house": false
+    },
+    {
+      "libraryId": "iconify-tabler",
+      "file": "iconify-tabler.json",
+      "embeddings": "iconify-tabler.emb.bin",
+      "house": false
+    },
+    {
+      "libraryId": "iconify-ph",
+      "file": "iconify-ph.json",
+      "embeddings": "iconify-ph.emb.bin",
+      "house": false
+    },
+    {
+      "libraryId": "iconify-healthicons",
+      "file": "iconify-healthicons.json",
+      "embeddings": "iconify-healthicons.emb.bin",
+      "house": false
+    },
+    {
+      "libraryId": "iconify-carbon",
+      "file": "iconify-carbon.json",
+      "embeddings": "iconify-carbon.emb.bin",
+      "house": false
+    },
+    {
+      "libraryId": "iconify-mdi",
+      "file": "iconify-mdi.json",
+      "embeddings": "iconify-mdi.emb.bin",
+      "house": false
+    },
+    {
+      "libraryId": "iconify-noto",
+      "file": "iconify-noto.json",
+      "embeddings": "iconify-noto.emb.bin",
+      "house": false
+    }
+  ],
+  "disabled": [
+    {
+      "libraryId": "streamline",
+      "file": "streamline.json",
+      "embeddings": "streamline.emb.bin",
+      "house": true
     }
   ]
 }

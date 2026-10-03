@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { svgPathProperties } from 'svg-path-properties';
 import { LICENSE_ALLOWLIST } from './normalize.js';
+import { flattenSvg, shapeToPath } from './svgFlatten.js';
 
 /** Offline deterministic SVG ingest into the house raw catalog format. */
 export const MAX_ICON_PATHS = 40;
@@ -31,6 +32,8 @@ export interface LibraryRawEntry {
   conceptId?: string;
   houseFamily?: string;
   domain?: string;
+  /** Curated concept type of what the icon depicts (vendored pictorial sets: `entity`); lets similarity compare types without a Bridge concept. */
+  conceptType?: string;
 }
 
 export interface LibraryCatalog {
@@ -49,7 +52,6 @@ const ATTR = /([a-zA-Z:-]+)="([^"]*)"/g;
 const INHERITED = ['fill', 'stroke', 'stroke-width', 'fill-rule'];
 const attrMap = (source: string): Record<string, string> => Object.fromEntries([...source.matchAll(ATTR)].map((match) => [match[1], match[2]]));
 const number = (value: string | undefined, fallback = 0): number => value === undefined || value === '' ? fallback : Number(value);
-const r3 = (value: number): string => String(Math.round(value * 1000) / 1000);
 
 function unsupportedTag(svg: string): string | undefined {
   for (const match of svg.matchAll(/<\s*([a-z][\w:-]*)\b/gi)) {
@@ -58,37 +60,6 @@ function unsupportedTag(svg: string): string | undefined {
     if (FORBIDDEN_TAGS.has(tag.toLowerCase())) return tag;
   }
   return undefined;
-}
-
-function shapeToPath(tag: string, attrs: Record<string, string>): string | undefined {
-  switch (tag.toLowerCase()) {
-    case 'path': return attrs.d;
-    case 'circle': {
-      const cx = number(attrs.cx), cy = number(attrs.cy), r = number(attrs.r);
-      return `M${r3(cx - r)} ${r3(cy)}a${r3(r)} ${r3(r)} 0 1 0 ${r3(2 * r)} 0a${r3(r)} ${r3(r)} 0 1 0 ${r3(-2 * r)} 0z`;
-    }
-    case 'ellipse': {
-      const cx = number(attrs.cx), cy = number(attrs.cy), rx = number(attrs.rx), ry = number(attrs.ry);
-      return `M${r3(cx - rx)} ${r3(cy)}a${r3(rx)} ${r3(ry)} 0 1 0 ${r3(2 * rx)} 0a${r3(rx)} ${r3(ry)} 0 1 0 ${r3(-2 * rx)} 0z`;
-    }
-    case 'rect': {
-      const x = number(attrs.x), y = number(attrs.y), width = number(attrs.width), height = number(attrs.height);
-      const rx = Math.min(number(attrs.rx, number(attrs.ry)), width / 2);
-      const ry = Math.min(number(attrs.ry, number(attrs.rx)), height / 2);
-      if (!rx && !ry) return `M${r3(x)} ${r3(y)}h${r3(width)}v${r3(height)}h${r3(-width)}z`;
-      return `M${r3(x + rx)} ${r3(y)}h${r3(width - 2 * rx)}a${r3(rx)} ${r3(ry)} 0 0 1 ${r3(rx)} ${r3(ry)}v${r3(height - 2 * ry)}a${r3(rx)} ${r3(ry)} 0 0 1 ${r3(-rx)} ${r3(ry)}h${r3(-(width - 2 * rx))}a${r3(rx)} ${r3(ry)} 0 0 1 ${r3(-rx)} ${r3(-ry)}v${r3(-(height - 2 * ry))}a${r3(rx)} ${r3(ry)} 0 0 1 ${r3(rx)} ${r3(-ry)}z`;
-    }
-    case 'line': return `M${r3(number(attrs.x1))} ${r3(number(attrs.y1))}L${r3(number(attrs.x2))} ${r3(number(attrs.y2))}`;
-    case 'polyline':
-    case 'polygon': {
-      const points = (attrs.points ?? '').trim().split(/[\s,]+/).map(Number);
-      if (points.length < 4 || points.length % 2 !== 0 || points.some((point) => !Number.isFinite(point))) return undefined;
-      let d = `M${r3(points[0])} ${r3(points[1])}`;
-      for (let i = 2; i + 1 < points.length; i += 2) d += `L${r3(points[i])} ${r3(points[i + 1])}`;
-      return tag.toLowerCase() === 'polygon' ? `${d}z` : d;
-    }
-    default: return undefined;
-  }
 }
 
 /** `var(--token, #hex)` resolves to its literal fallback, which is the designed colour. */
@@ -126,7 +97,24 @@ function pathLength(d: string): number {
   }
 }
 
-export function ingestSvg(svg: string, meta: { id: string; set: string; name: string; tags: string[]; category: string | null; license: string }, options: { allowFillOnly?: boolean } = {}): { ok: true; entry: LibraryRawEntry } | { ok: false; reason: string } {
+type IngestMeta = { id: string; set: string; name: string; tags: string[]; category: string | null; license: string };
+type IngestResult = { ok: true; entry: LibraryRawEntry } | { ok: false; reason: string };
+
+/** Failures a deterministic flatten (transforms, CSS, gradients, metadata, origin shift, path merge) can recover from. */
+const RECOVERABLE = /^(transform|unsupported-element|unsupported-paint|unknown-color|too-many-paths|no-viewbox|no-ink)\b/;
+
+/**
+ * Strict-subset ingest with a deterministic flatten fallback. Files the strict parser already accepts stay
+ * byte-identical (so frozen catalogs keep their content hashes); only rejected files get flattened and retried.
+ */
+export function ingestSvg(svg: string, meta: IngestMeta, options: { allowFillOnly?: boolean; flatten?: boolean } = {}): IngestResult {
+  const strict = ingestStrict(svg, meta, options);
+  if (strict.ok || options.flatten === false || !RECOVERABLE.test(strict.reason)) return strict;
+  const flat = flattenSvg(svg);
+  return flat.ok ? ingestStrict(flat.svg, meta, options) : flat;
+}
+
+function ingestStrict(svg: string, meta: IngestMeta, options: { allowFillOnly?: boolean } = {}): IngestResult {
   const badTag = unsupportedTag(svg);
   if (badTag) return { ok: false, reason: `unsupported-element: <${badTag}>` };
   if (/\stransform\s*=/i.test(svg)) return { ok: false, reason: 'transform: flatten transforms before ingest' };

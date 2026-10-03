@@ -6,11 +6,14 @@ import path from 'node:path';
 import { ALL_LIBRARIES, ENABLED_LIBRARIES, catalogVersion, isHouseSource } from '../assets/registry.js';
 import { CATALOG_DATA_DIR, attributionForSources, loadCatalogLibraries, loadStreamlineCatalog } from '../assets/streamline.js';
 
-test('production enables the house family plus the allowed bridge family; review-licence libraries are local-dev only', () => {
+const VENDORED = ['iconify-lucide', 'iconify-tabler', 'iconify-ph', 'iconify-healthicons', 'iconify-carbon', 'iconify-mdi', 'iconify-noto'];
+
+test('production enables the house family plus every permissively licensed library; review-licence libraries are local-dev only', () => {
   // One primary family per SCENE is enforced at resolution time (final_plan/02 §19), not by
   // disabling libraries; review-licence libraries load only under ASSET_USAGE_CONTEXT=local-dev.
-  assert.deepEqual(ENABLED_LIBRARIES.map((library) => [library.libraryId, library.house]), [['assetlab-sketchy-downshift', true], ['bridge-iconify', false]]);
-  assert.deepEqual(ALL_LIBRARIES.map((library) => library.libraryId), ['assetlab-sketchy-downshift', 'bridge-iconify', 'streamline', 'assetlab-mit', 'assetlab-isc']);
+  assert.deepEqual(ENABLED_LIBRARIES.map((library) => library.libraryId), ['assetlab-sketchy-downshift', 'bridge-iconify', 'assetlab-mit', 'assetlab-isc', ...VENDORED]);
+  assert.deepEqual(ENABLED_LIBRARIES.filter((library) => library.house).map((library) => library.libraryId), ['assetlab-sketchy-downshift']);
+  assert.deepEqual(ALL_LIBRARIES.map((library) => library.libraryId).sort(), ['assetlab-isc', 'assetlab-mit', 'assetlab-sketchy-downshift', 'bridge-iconify', 'streamline', ...VENDORED].sort());
   assert.equal(isHouseSource('assetlab-sketchy-downshift:assetlab-sketchy-downshift'), true);
   assert.equal(isHouseSource('streamline:plump-color'), false);
   assert.equal(isHouseSource('generated'), false);
@@ -18,7 +21,7 @@ test('production enables the house family plus the allowed bridge family; review
 
 test('the default load contains only enabled-family entries; Streamline stays loadable for rollback', () => {
   const sources = new Set(loadCatalogLibraries().entries.map((entry) => entry.source.split(':')[0]));
-  assert.deepEqual([...sources].sort(), ['assetlab-sketchy-downshift', 'bridge-iconify']);
+  assert.deepEqual([...sources].sort(), ['assetlab-isc', 'assetlab-mit', 'assetlab-sketchy-downshift', 'bridge-iconify', ...VENDORED].sort());
   assert.ok(loadStreamlineCatalog().entries.length > 1500);
 });
 
@@ -49,7 +52,7 @@ test('every enabled library is licensed and loads every accepted entry with an i
   const allEntries = loadCatalogLibraries().entries;
   for (const lib of ENABLED_LIBRARIES) {
     const loaded = allEntries.filter((entry) => entry.source.startsWith(`${lib.libraryId}:`));
-    assert.ok(loaded.length > 100, `${lib.libraryId} must load its accepted entries, got ${loaded.length}`);
+    assert.ok(loaded.length >= 10, `${lib.libraryId} must load its accepted entries, got ${loaded.length}`);
     for (const entry of loaded) {
       assert.ok(['MIT', 'ISC', 'Apache-2.0', 'CC0-1.0', 'CC-BY-4.0'].includes(entry.license), entry.id);
       assert.ok(entry.strokePaths > 0, entry.id);
