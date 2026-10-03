@@ -1,0 +1,31 @@
+{
+  "snapshotId": "elevenlabs-cap-2026-10-03",
+  "capturedAt": "2026-10-03T10:52:04.303Z",
+  "models": [
+    {
+      "id": "eleven_flash_v2_5",
+      "creditsPerChar": 0.5,
+      "languages": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "eleven_multilingual_v2",
+      "creditsPerChar": 1,
+      "languages": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "eleven_v3",
+      "creditsPerChar": 1,
+      "languages": [
+        "en",
+        "hi",
+        "ne"
+      ]
+    }
+  ]
+}
