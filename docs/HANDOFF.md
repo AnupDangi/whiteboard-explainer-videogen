@@ -2706,3 +2706,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Attempt 2:** scene 1/4 boarded; fail dangling `water_marker` + zoneLabels "A"/"B" as source facts. Fix: zoneLabel-verbatim + target-existence rules.
 - **Attempt 3:** scene 1/6 boarded; fail missing bindings (all ops) + derived value mutation without verifier. Rule exhausted (3 attempts): MISSING stands.
 - **Pattern:** cheap planner omits required bindings despite schema+prompt+3 repairs; failures vary per run (no convergence). Board convergence with this planner class is unproven; equation-heavy topics (math) may fare better. Next: math-squares.
+
+## Continuation — 2026-10-03, math-squares attempts 1–3 (driver)
+
+- **Attempt 1:** infra — provider omitted usage accounting, ledger fail-closed all scenes. Reran (transient class).
+- **Attempt 2:** audio 65.7s vs 75s request (-9.3s, outside ±6s). Undershoot beyond trailing absorption.
+- **Built for diagnosis:** V2 `--diagnostic-video` mode (evidence video despite hard duration finding; status stays failed; release still gated) + relative lesson-clock tolerance (10%, floor 500ms; duration-gate test preserved unedited).
+- **Attempt 3 (diagnostic on):** died earlier at S4 recap — 55 words vs 25 stated, repair converged to 27 vs 25 and exhausted. Recap scenes cannot cover a whole lesson in ~12 words/beat. MISSING stands. Open hypothesis: recap minimum budgets scale with scenes summarized (S1b owner).
+- **Next:** physics-rc attempt 1.
