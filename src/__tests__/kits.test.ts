@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { KIT_REGISTRY, parseKitParams } from '../visual-v2/kits/registry.js';
 import { KIT_NAMES, type KitName } from '../visual-v2/board-ops/types.js';
 import { contains, overlaps, type Rect } from '../visual-v2/kits/geometry.js';
+import { layoutCompoundGraph, COMPOUND_GRAPH_OPTIONS } from '../visual-v2/kits/graph.js';
 
 const PARAMS: Record<KitName, unknown> = {
   stack: { capacity: 5 }, queue: { capacity: 4 }, array: { length: 6 }, compartment: { zones: ['out', 'in'], boundary: 'semipermeable', zoneLabels: ['OUTSIDE', 'INSIDE'] },
@@ -81,6 +82,28 @@ test('zones are separate areas', () => {
   assert.ok(geometry.slotRect('out', 0).x + geometry.slotRect('out', 0).w <= geometry.slotRect('in', 0).x + 1);
   const links = layoutOf('weighted-links').geometry;
   assert.ok(links.slotRect('left', 0).x < links.slotRect('right', 0).x);
+});
+
+test('compound graph layout uses stable ranks and fixed spacing regardless of input ordering', () => {
+  const area = { x: 100, y: 120, w: 900, h: 600 };
+  const nodes = [
+    { id: 'a', seq: 0, preferred: { w: 140, h: 100 } },
+    { id: 'b', seq: 1, preferred: { w: 140, h: 100 } },
+    { id: 'c', seq: 2, preferred: { w: 140, h: 100 } },
+    { id: 'd', seq: 3, preferred: { w: 140, h: 100 } },
+  ];
+  const edges = [{ id: 'ac', from: 'a', to: 'c' }, { id: 'bc', from: 'b', to: 'c' }, { id: 'cd', from: 'c', to: 'd' }];
+  const first = layoutCompoundGraph(area, { nodes, edges });
+  const shuffled = layoutCompoundGraph(area, { nodes: [...nodes].reverse(), edges: [...edges].reverse() });
+  assert.deepEqual([...first], [...shuffled]);
+  assert.equal(COMPOUND_GRAPH_OPTIONS.direction, 'right');
+  assert.ok(first.get('a')!.x < first.get('c')!.x && first.get('c')!.x < first.get('d')!.x);
+  assert.ok(first.get('b')!.x < first.get('c')!.x);
+  for (const rect of first.values()) assert.ok(contains(area, rect));
+  const slots = [...first.values()];
+  for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) assert.equal(overlaps(slots[i]!, slots[j]!), false);
+  const cycle = layoutCompoundGraph(area, { nodes: nodes.slice(0, 2), edges: [{ id: 'ab', from: 'a', to: 'b' }, { id: 'ba', from: 'b', to: 'a' }] });
+  assert.deepEqual([...cycle], [...layoutCompoundGraph(area, { nodes: nodes.slice(0, 2).reverse(), edges: [{ id: 'ba', from: 'b', to: 'a' }, { id: 'ab', from: 'a', to: 'b' }] })]);
 });
 
 test('the kits know no topic: no kit source names a lesson subject', async () => {

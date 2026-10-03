@@ -15,6 +15,8 @@ export interface KitLayoutInput<P> {
   capacity: number;
   /** For zoned kits: largest simultaneous children per zone. */
   zoneCapacity: Record<string, number>;
+  /** Complete scene graph for graph kits: direct children and links between them, including links to descendants. */
+  graph?: { nodes: Array<{ id: string; seq: number; preferred: { w: number; h: number } }>; edges: Array<{ id: string; from: string; to: string }> };
 }
 
 export interface KitGeometry {
@@ -22,6 +24,8 @@ export interface KitGeometry {
   frame: PrimitiveVisual;
   /** Where the child at `index` of `zone` sits. Slots never overlap and always lie inside the kit's rect. */
   slotRect(zone: string | undefined, index: number): Rect;
+  /** Stable identity lookup for compound layouts when container membership changes between states. */
+  slotRectForChild?(id: string): Rect | undefined;
   /** Slots this layout provides (per zone for zoned kits). */
   slotCount(zone: string | undefined): number;
 }

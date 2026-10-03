@@ -164,6 +164,18 @@ const nestingContext: BoardContext = { ...ctx, beats: [beat(1, { entities: [] })
 const boardAdd = (id: string, element: unknown, at: unknown) => ({ op: 'add', opId: `add-${id}`, beatId: 'sc.b1', id, element: element && typeof element === 'object' ? { ...element as Record<string, unknown>, bindings } : element, at });
 const token = { type: 'token', text: 'x', provenance: 'illustrative', bindings };
 
+test('only compound graph kits may nest inside a compound graph kit', () => {
+  const graph = { type: 'kit', kit: 'graph', paramsJson: '{"nodes":2,"layout":"compound"}', provenance: 'metaphorical', bindings };
+  const nested = draft({ transition: { mode: 'clean' }, ops: [
+    boardAdd('outer', graph, { region: 'center' }),
+    boardAdd('inner', graph, { region: 'center', container: 'outer', slot: 'end' }),
+    boardAdd('child', token, { region: 'center', container: 'inner', slot: 'end' }),
+  ] });
+  assert.deepEqual(validateSceneBoard(nested, nestingContext), []);
+  const invalid = draft({ ...nested, ops: [nested.ops[0]!, boardAdd('inner', { ...graph, paramsJson: '{"nodes":2,"layout":"ring"}' }, { region: 'center', container: 'outer', slot: 'end' })] });
+  assert.ok(validateSceneBoard(invalid, nestingContext).some((problem) => typeof problem !== 'string' && problem.path === '/ops/1/at/container'));
+});
+
 for (const scenario of [
   {
     name: 'a kit added earlier in the scene is moved into a kit, even if moved out again later',
@@ -249,5 +261,5 @@ test('geometry problems are condensed to a few per element with one actionable h
 test('the prompt lists each kit\'s exact parameter fields and enumerations from its own schema', async () => {
   const { describeKitParams } = await import('../visual-v2/ops-plan/prompt.js');
   assert.match(describeKitParams('axes-plot'), /fn: one of linear\|quadratic\|cubic\|sine\|exp\|log\|normal/);
-  assert.match(describeKitParams('graph'), /layout\?: one of ring\|grid/);
+  assert.match(describeKitParams('graph'), /layout\?: one of ring\|grid\|compound/);
 });

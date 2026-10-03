@@ -81,6 +81,12 @@ function nestedKitProblems(op: BoardOp, state: BoardState, at: string): Validato
   return placed.flatMap(({ id, path }) => {
     const el = state.elements[id];
     if (!el || el.lifecycle.removedAtBeat !== undefined || el.spec.type !== 'kit' || !el.placement.container) return [];
+    const parent = state.elements[el.placement.container];
+    if (el.spec.kit === 'graph' && parent?.spec.type === 'kit' && parent.spec.kit === 'graph') {
+      try {
+        if (JSON.parse(el.spec.paramsJson)?.layout === 'compound' && JSON.parse(parent.spec.paramsJson)?.layout === 'compound') return [];
+      } catch { /* invalid params are reported by the BoardOp schema validator */ }
+    }
     const hint = op.op === 'replace'
       ? `the replacement inherits ${op.target}'s slot in ${el.placement.container}; use a non-kit replacement or add the kit in its own region`
       : "give it its own region (a kit's slots only hold tokens, entities, values and short text)";

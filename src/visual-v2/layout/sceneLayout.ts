@@ -151,6 +151,31 @@ function layoutCore(states: readonly BoardState[], pins: ReadonlyMap<string, Rec
   }
   const capacityOf = (id: string): number => containerPeak.get(id) ?? stepsPeak.get(id) ?? 0;
   const zoneCapacityOf = (id: string): Record<string, number> => Object.fromEntries(zonePeak.get(id) ?? []);
+  const graphOf = (id: string) => {
+    const nodes = new Map<string, { id: string; seq: number; preferred: { w: number; h: number } }>();
+    const edges = new Map<string, { id: string; from: string; to: string }>();
+    const directChild = (state: BoardState, endpoint: string): string | undefined => {
+      let child = endpoint;
+      const visited = new Set<string>();
+      for (let parent = state.elements[child]?.placement.container; parent; parent = state.elements[child]?.placement.container) {
+        if (visited.has(child)) return undefined;
+        visited.add(child);
+        if (parent === id) return child;
+        child = parent;
+      }
+      return undefined;
+    };
+    for (const state of states) {
+      for (const el of Object.values(state.elements)) if (live(el) && el.placement.container === id) nodes.set(el.id, { id: el.id, seq: el.seq, preferred: preferredSize(el.spec, capacityOf(el.id)) });
+      for (const edge of Object.values(state.edges)) {
+        if (edge.lifecycle.removedAtBeat !== undefined) continue;
+        const from = directChild(state, edge.from); const to = directChild(state, edge.to);
+        if (from && to && from !== to) edges.set(edge.id, { id: edge.id, from, to });
+      }
+    }
+    const compareId = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
+    return { nodes: [...nodes.values()].sort((a, b) => a.seq - b.seq || compareId(a.id, b.id)), edges: [...edges.values()].sort((a, b) => compareId(a.id, b.id)) };
+  };
 
   // 2. Top-level items per region, in creation order, and the rectangle each region gets.
   const byRegion = new Map<RegionId, Known[]>();
@@ -183,13 +208,18 @@ function layoutCore(states: readonly BoardState[], pins: ReadonlyMap<string, Rec
     if (!parsed.ok) return;
     const def = KIT_REGISTRY[entry.spec.kit as KitName];
     kitRects.set(id, rect);
-    kitGeometries.set(id, def.layout({ id, params: parsed.value, ...(entry.spec.label ? { label: entry.spec.label } : {}), rect, capacity: capacityOf(id), zoneCapacity: zoneCapacityOf(id) }));
+    kitGeometries.set(id, def.layout({ id, params: parsed.value, ...(entry.spec.label ? { label: entry.spec.label } : {}), rect, capacity: capacityOf(id), zoneCapacity: zoneCapacityOf(id), ...(entry.spec.kit === 'graph' ? { graph: graphOf(id) } : {}) }));
   };
   for (const [id, byRegionRect] of topRects) { const first = [...byRegionRect.values()][0]; if (first) buildKit(id, first); }
-  for (const state of states) for (const el of Object.values(state.elements)) {
-    if (!live(el) || !el.placement.container || el.spec.type !== 'kit') continue;
-    const parent = kitGeometries.get(el.placement.container);
-    if (parent) buildKit(el.id, parent.slotRect(el.placement.zone, Math.max(0, indexIn(state, el.placement.container, el))));
+  // Resolve nested kits by dependency depth, independent of object insertion order in inherited states.
+  for (let pass = 0; pass < known.size; pass++) {
+    const before = kitGeometries.size;
+    for (const state of states) for (const el of Object.values(state.elements)) {
+      if (!live(el) || !el.placement.container || el.spec.type !== 'kit') continue;
+      const parent = kitGeometries.get(el.placement.container);
+      if (parent) buildKit(el.id, parent.slotRectForChild?.(el.id) ?? parent.slotRect(el.placement.zone, Math.max(0, indexIn(state, el.placement.container, el))));
+    }
+    if (kitGeometries.size === before) break;
   }
 
   const rectFor = (state: BoardState, id: string): Rect | undefined => {
@@ -199,7 +229,7 @@ function layoutCore(states: readonly BoardState[], pins: ReadonlyMap<string, Rec
     const parent = kitGeometries.get(el.placement.container);
     if (!parent) return undefined;
     if (el.spec.type === 'kit') return kitRects.get(id);
-    return parent.slotRect(el.placement.zone, Math.max(0, indexIn(state, el.placement.container, el)));
+    return parent.slotRectForChild?.(el.id) ?? parent.slotRect(el.placement.zone, Math.max(0, indexIn(state, el.placement.container, el)));
   };
 
   const allRects = (): PlacedRect[] => {

@@ -174,6 +174,29 @@ test('a shaft through unrelated text emits an edge and text diagnostic', () => {
   assert.ok(diagnostics.some((d) => d.code === 'edge_text_collision' && d.edgeId === 'edge' && d.elementIds.includes('word')));
 });
 
+test('compound graph places nested groups by their links and keeps child identities fixed', () => {
+  const ops: BoardOp[] = [
+    add('outer', kit('graph', '{"nodes":2,"layout":"compound"}'), { region: 'center' }, 'b0'),
+    add('group', kit('graph', '{"nodes":2,"layout":"compound"}'), { region: 'center', container: 'outer', slot: 'end' }, 'b0'),
+    add('peer', token('peer'), { region: 'center', container: 'outer', slot: 'end' }, 'b0'),
+    add('inside', token('inside'), { region: 'center', container: 'group', slot: 'end' }, 'b1'),
+    add('other', token('other'), { region: 'center', container: 'group', slot: 'end' }, 'b1'),
+    BoardOpSchema.parse({ op: 'connect', opId: 'b2.link', beatId: 'b2', id: 'link', from: 'inside', to: 'peer', relation: 'causes' }),
+  ];
+  const states = statesOf(ops);
+  const geometry = layoutScene(states);
+  const final = states.at(-1)!;
+  const group = geometry.rectFor(final, 'group')!;
+  const peer = geometry.rectFor(final, 'peer')!;
+  assert.ok(group.x < peer.x, 'descendant link promotes its containing group to the source rank');
+  assert.ok(contains(group, geometry.rectFor(final, 'inside')!));
+  assert.ok(contains(group, geometry.rectFor(final, 'other')!));
+  assert.deepEqual(geometry.rectFor(states[0]!, 'group'), group);
+  assert.deepEqual(geometry.rectFor(states[0]!, 'peer'), peer);
+  assert.deepEqual(geometry.rectFor(final, 'group'), layoutScene(states).rectFor(final, 'group'));
+  assert.deepEqual(validateSceneGeometry(geometry, states), []);
+});
+
 test('the pinned arrowhead and its own label cannot occupy the same ink', () => {
   const ops: BoardOp[] = [
     add('a', token('A'), { region: 'left' }, 'b0'), add('b', token('B'), { region: 'right' }, 'b0'),
