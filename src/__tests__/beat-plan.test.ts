@@ -96,7 +96,7 @@ test('the prompt states the scene contract, claim ids, misconception ids and the
   assert.match(system, /beat/i);
   assert.match(user, /c1/);
   assert.match(user, /m1/);
-  assert.match(user, /2-5 beats/);
+  assert.match(user, /2-4 beats/);
   assert.match(user, /Calls push, returns pop\./);
 });
 
