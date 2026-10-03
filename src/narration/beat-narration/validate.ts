@@ -44,8 +44,8 @@ const VIDEO_REFERENCE = /\bin this video\b/i;
 /** Ceilings are tight because the fixed-duration gate downstream allows only 200 ms of slack: a scene that overshoots its spoken budget fails the run, so the repair loop must cut early at S4 instead. */
 /** Gap-aware spoken budget: the scene clock includes the silent gap after the scene (1400 ms between scenes, 1200 ms trailing), which carries no speech. The stated word count subtracts it, so hitting the stated number lands the fixed clock. */
 export const DEFAULT_GAP_AFTER_MS = 1400;
-export const NARRATION_PROMPT_CEILING = 1.05;
-export const NARRATION_HARD_CEILING = 1.1;
+export const NARRATION_PROMPT_CEILING = 1.0;
+export const NARRATION_HARD_CEILING = 1.0;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 

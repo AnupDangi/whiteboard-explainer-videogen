@@ -54,7 +54,7 @@ test('a scene far over its spoken budget is a problem; a mild overrun is only a 
   const long = Array.from({ length: 4 }, (_, i) => `Sentence number ${i} says that a call pushes one frame onto the stack and then waits for the base case to return a value.`);
   const over = draft([{ sentences: long, claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }] }, { sentences: long.map((s) => `${s} More.`), claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }] }]);
   assert.ok(validateSceneNarration(over, { ...ctx, allowedNumbers: new Set(['0', '1', '2', '3']), durationSec: 10 }).some((p) => (p as { path: string }).path === '/beats' && /too long/.test((p as { message: string }).message)));
-  assert.deepEqual(validateSceneNarration(draft(), { ...ctx, durationSec: 12 }), [], 'about 25 words in 12 s is within the 1.5x ceiling');
+  assert.deepEqual(validateSceneNarration(draft(), { ...ctx, durationSec: 13 }), [], '25 words in 13 s hits the gap-aware budget exactly');
 });
 
 test('compile joins sentences into one scene text with exact beat and sentence spans, and derives claim spans from the anchors', () => {
@@ -154,13 +154,13 @@ test('the spoken-word budget scales with the language: Hindi gets more words per
     { sentences: [words(n)], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }] },
     { sentences: [words(n)], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }] },
   ];
-  // 8 s English: stated budget 15, hard ceiling 18. 2x7 words fit; 2x10 do not.
+  // 8 s English: stated budget 15, exact ceiling. 2x7 words fit; 2x10 do not.
   const tooLong = (beatsOver: Parameters<typeof draft>[0], extra: Partial<NarrationContext> = {}): boolean =>
     validateSceneNarration(draft(beatsOver), { ...ctx, durationSec: 8, ...extra }).some((p) => typeof p !== 'string' && /too long/.test(p.message));
   assert.ok(!tooLong(beats(7)));
   assert.ok(tooLong(beats(10)));
-  // Same 22 words fit Hindi (stated 20, ceiling 23): the rate difference is real.
-  assert.ok(!tooLong(beats(11), { language: 'hi' }));
+  // Same 20 words fit Hindi (stated 20): the rate difference is real.
+  assert.ok(!tooLong(beats(10), { language: 'hi' }));
 });
 
 test('CJK narration uses Intl word segmentation for its spoken-word budget', () => {
