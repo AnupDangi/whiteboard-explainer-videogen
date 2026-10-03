@@ -2636,3 +2636,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Verification:** build + typecheck clean, shared manifest verified. Full `test:hypothesis` not rerun (long suite; targeted suites green).
 - **Honest limits:** structural preconditions only; semantic correctness (is the repair right?) stays with human/VLM judges. Ops-level checks (state-changing ops present) deferred to T7.
 - **Next:** T2 S3b Teaching Strategy Director.
+
+## Continuation — 2026-10-03, T2 S3b Teaching Strategy Director (wt/stcc/charter)
+
+- **Built:** `src/teaching/strategy/{types,select,plan}.ts` — 13 canonical strategies, deterministic `selectStrategy` policy v1 over S3-derived inputs (skill, kind, misconceptions, novelty, claims, budget, boundary/state flags), `compileStrategyPlan` (pure, no LLM/I/O, policy version pinned).
+- **Gates:** `src/__tests__/strategy.test.ts` — plain scenes select `direct` (no forced examples), 9 pressure→treatment mappings, determinism, plan validation. 9/9 pass; with pedagogy suite 16/16.
+- **Verification:** build + typecheck clean, shared manifest verified. Not yet wired into beat pipeline (T3 consumes).
+- **Honest limits:** deterministic starting policy, not model judgment; rare strategies (counterexample, faded, example-nonexample) schema-valid but unselected by policy.
+- **Next:** T3 Teaching Move Library.
