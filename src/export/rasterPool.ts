@@ -19,7 +19,7 @@ export class RasterPool {
   private stopped?: Error;
   private closing = false;
 
-  constructor(size = Math.max(1, Math.min(4, availableParallelism() - 1))) {
+  constructor(size = Math.max(1, Math.min(8, availableParallelism() - 1))) {
     if (!Number.isInteger(size) || size < 1 || size > 8) throw new Error('RasterPool size must be an integer from 1 to 8');
     const workerUrl = new URL('./rasterWorker.js', import.meta.url);
     this.slots = Array.from({ length: size }, () => {

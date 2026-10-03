@@ -9,7 +9,7 @@ import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import { compileSceneTimeline } from '../visual-v2/timeline/compile.js';
 import { compileScene } from '../visual-v2/renderer/frame.js';
 import { compareReplayDigests, canonicalHash } from '../harness/replayDeterminism.js';
-import { writeLessonLockV2, verifyLessonLockV2, replayLessonV2, encodeLockedLessonV2, type LessonLockV2 } from '../pipeline-v2/lockV2.js';
+import { writeLessonLockV2, verifyLessonLockV2, verifiedRasterInputs, replayLessonV2, encodeLockedLessonV2, type LessonLockV2 } from '../pipeline-v2/lockV2.js';
 
 // Synthetic contract data, never visual-quality or live-performance evidence.
 async function fixture(dir: string): Promise<LessonLockV2> {
@@ -55,6 +55,25 @@ test('V2 freezes a deduplicated frame-range plan, context, semantic scene data, 
     assert.equal(await readFile(path.join(dir, 'lesson.lock.json'), 'utf8'), await readFile(path.join(dir, 'lesson.lock.v2.json'), 'utf8'));
     assert.deepEqual(await verifyLessonLockV2(dir), []);
     await assert.rejects(fixture(dir), /exist|published|lock/i, 'a published lock cannot be silently regenerated');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('raster-only verification tolerates known Node and pipeline drift but keeps renderer pins strict', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'v2-raster-bench-'));
+  try {
+    const lock = await fixture(dir);
+    lock.versions.node = 'v0.0.0-benchmark-old-node';
+    lock.versions.pipeline = 'old-pipeline-for-benchmark';
+    await resign(dir, lock);
+    assert.deepEqual(await verifyLessonLockV2(dir), ['node tool version drift or unknown pin', 'pipeline tool version drift or unknown pin']);
+    const inputs = await verifiedRasterInputs(dir);
+    assert.equal(inputs.svgs.size, lock.svgAssets.length);
+    assert.deepEqual(inputs.toleratedToolDrift.map(({ tool }) => tool), ['node', 'pipeline']);
+    assert.equal(inputs.toleratedToolDrift.every(({ pinned, current }) => pinned !== 'unknown' && current !== 'unknown'), true);
+
+    lock.versions.resvg = 'different-resvg-version';
+    await resign(dir, lock);
+    await assert.rejects(verifiedRasterInputs(dir), /resvg tool version drift or unknown pin/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

@@ -438,8 +438,10 @@ export async function writeLessonLockV2(input: { outputDir: string; lessonId: st
 }
 
 interface VerifiedLock { lock: LessonLockV2; captured: CapturedScene[]; semantic: unknown[]; context: Buffer; alignment: Buffer; audio: Buffer[]; svgs: Map<string, string>; fontPath: string }
-async function inspectLock(outputDir: string): Promise<{ problems: string[]; verified?: VerifiedLock }> {
+interface RasterToolDrift { tool: 'node' | 'pipeline'; pinned: string; current: string }
+async function inspectLock(outputDir: string, options: { allowRasterOnlyToolDrift?: boolean } = {}): Promise<{ problems: string[]; verified?: VerifiedLock; toleratedToolDrift: RasterToolDrift[] }> {
   const problems: string[] = [];
+  const toleratedToolDrift: RasterToolDrift[] = [];
   let lock: LessonLockV2;
   try {
     const primary = await readFile(await confinedPath(outputDir, 'lesson.lock.json'));
@@ -453,13 +455,17 @@ async function inspectLock(outputDir: string): Promise<{ problems: string[]; ver
       } catch (error) { problems.push(`V2 compatibility alias unreadable: ${error instanceof Error ? error.message : String(error)}`); }
     }
     const parsed = LockSchema.safeParse(JSON.parse(primary.toString('utf8')));
-    if (!parsed.success) return { problems: [...problems, `V2 lock structure invalid: ${parsed.error.message}`] };
+    if (!parsed.success) return { problems: [...problems, `V2 lock structure invalid: ${parsed.error.message}`], toleratedToolDrift };
     lock = parsed.data;
-  } catch (error) { return { problems: [`V2 lesson lock unreadable: ${error instanceof Error ? error.message : String(error)}`] }; }
+  } catch (error) { return { problems: [`V2 lesson lock unreadable: ${error instanceof Error ? error.message : String(error)}`], toleratedToolDrift }; }
   if (lockHash(lock) !== lock.contentHash) problems.push('lock content hash mismatch');
   const current = probeToolVersions();
   for (const tool of ['node', 'pipeline', 'resvg', 'roughjs', 'ffmpeg'] as const) {
-    if (lock.versions[tool] === 'unknown' || current[tool] === 'unknown' || lock.versions[tool] !== current[tool]) problems.push(`${tool} tool version drift or unknown pin`);
+    if (lock.versions[tool] === 'unknown' || current[tool] === 'unknown' || lock.versions[tool] !== current[tool]) {
+      if (options.allowRasterOnlyToolDrift && (tool === 'node' || tool === 'pipeline') && lock.versions[tool] !== 'unknown' && current[tool] !== 'unknown') {
+        toleratedToolDrift.push({ tool, pinned: lock.versions[tool], current: current[tool] });
+      } else problems.push(`${tool} tool version drift or unknown pin`);
+    }
   }
   if (lock.versions.kalamSha256 !== KALAM_FONT_SHA256 || lock.font.hash !== KALAM_FONT_SHA256) problems.push('font content hash drift');
   try { if (bytesHash(await readFile(KALAM_BOLD_FILE)) !== lock.font.hash) problems.push('bundled font content hash drift'); } catch { problems.push('bundled font missing'); }
@@ -530,8 +536,8 @@ async function inspectLock(outputDir: string): Promise<{ problems: string[]; ver
     if (!lock.samples.some((sample) => sample.sceneId === sceneId && sample.kind === 'final')) problems.push(`scene ${sceneId} requires a final raster sample`);
     if (lock.renderPlan.some((segment) => segment.sceneId === sceneId && segment.kind === 'transition') && !lock.samples.some((sample) => sample.sceneId === sceneId && sample.kind === 'transition')) problems.push(`scene ${sceneId} requires a transition raster sample`);
   }
-  if (problems.length || !context || !alignment) return { problems };
-  return { problems, verified: { lock, captured, semantic, context, alignment, audio, svgs, fontPath: await confinedPath(outputDir, lock.font.file) } };
+  if (problems.length || !context || !alignment) return { problems, toleratedToolDrift };
+  return { problems, toleratedToolDrift, verified: { lock, captured, semantic, context, alignment, audio, svgs, fontPath: await confinedPath(outputDir, lock.font.file) } };
 }
 
 /** Fail closed on byte drift, unknown tool/font pins, incomplete frame ranges or unsafe references. */
@@ -540,6 +546,18 @@ export async function verifiedInputs(outputDir: string): Promise<VerifiedLock> {
   const { problems, verified } = await inspectLock(outputDir);
   if (problems.length || !verified) throw new Error(`V2 lesson lock verification failed: ${problems.join('; ')}`);
   return verified;
+}
+
+/**
+ * Verify hash-pinned inputs for a raster-only benchmark. Only known Node and
+ * compiler-version drift is tolerated: renderer libraries, font, canvas,
+ * locked SVGs, samples, and every other lock invariant remain strict. Normal
+ * playback, replay, and export must use `verifiedInputs` instead.
+ */
+export async function verifiedRasterInputs(outputDir: string): Promise<{ lock: LessonLockV2; svgs: Map<string, string>; toleratedToolDrift: RasterToolDrift[] }> {
+  const { problems, verified, toleratedToolDrift } = await inspectLock(outputDir, { allowRasterOnlyToolDrift: true });
+  if (problems.length || !verified) throw new Error(`V2 raster benchmark input verification failed: ${problems.join('; ')}`);
+  return { lock: verified.lock, svgs: verified.svgs, toleratedToolDrift };
 }
 
 /** Recompute digests from captured bytes; fresh Resvg runs check representative PNG pins on every replay. This is sample evidence, not full decoded-video equality. */
