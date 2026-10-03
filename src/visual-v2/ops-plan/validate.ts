@@ -1,5 +1,6 @@
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { TeachingBeat } from '../../teaching/beat-plan/types.js';
+import type { TeachingMove } from '../../teaching/moves/types.js';
 import type { BoardOp, ElementSpec } from '../board-ops/types.js';
 import { validateBoardOps } from '../board-ops/validate.js';
 import { applyOpAfter, startScene } from '../board-state/reducer.js';
@@ -22,6 +23,8 @@ export interface BoardContext {
   prior?: PriorLayout;
   /** Resolves source citations; without it no equation may claim `source` provenance. */
   grounding?: Grounding;
+  /** Scene teaching moves (T7): the board must honor the treatment, not just the entities. */
+  moves?: TeachingMove[];
   /** Test seam: replaces the layout solver check. */
   geometryCheck?: (states: BoardState[]) => GeometryDiagnostic[];
 }
@@ -123,6 +126,13 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
   problems.push(...opProblems);
 
   for (const beat of ctx.beats) if (!beat.narrationOnly && !lastOpOfBeat.has(beat.beatId)) problems.push({ path: '/ops', message: `beat ${beat.beatId} shows a change (${beat.visualInvariant}), so it needs at least one op` });
+
+  // A mechanism treatment must change the board, not just add boxes and arrows (STCC §15).
+  const CHANGING_MOVES = new Set(['TraceMechanism', 'WorkExample', 'ForkCorrectIncorrect', 'PredictNextStep', 'TestBoundary', 'FadeSupport', 'RepairMisconception', 'ExplainDivergence']);
+  const CHANGING_OPS = new Set(['move', 'transform', 'replace', 'remove', 'updateValue', 'split', 'merge', 'equationStep', 'strike', 'revealRegion', 'clearRegion']);
+  if ((ctx.moves ?? []).some((m) => CHANGING_MOVES.has(m.move)) && !draft.ops.some((op) => CHANGING_OPS.has(op.op))) {
+    problems.push({ path: '/ops', message: `scene treatment includes ${ctx.moves!.filter((m) => CHANGING_MOVES.has(m.move)).map((m) => m.move).join(', ')} but the board only adds or connects; show the mechanism as a state change (move, transform, value, equation step, strike, reveal)` });
+  }
 
   // Every concept a beat names must be on the board by the end of that beat (an element that shows it or carries its label).
   const states: BoardState[] = [initial];

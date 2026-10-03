@@ -2676,3 +2676,12 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Verification:** V2 timeline/render/encode/lock/clips/player suites all green (17+2+7+4+3+3+3+10), typecheck clean, manifest verified. No timing regressions.
 - **Honest limits:** reveal-after-question is structural (pause respected + question asked); whether the reveal answers the question stays with judges.
 - **Next:** T7 S6 Visual Teaching Model for moves.
+
+## Continuation — 2026-10-03, T7 S6 Visual Teaching Model (wt/stcc/charter)
+
+- **Built:** `src/visual-v2/intent/{types,compile}.ts` — per-beat Visual Teaching Model derived by compiler (question from narrationGoal, reveal order entities→endpoints, states from before/after, moves attached). `BoardContext` gains scene `moves`; board prompt renders treatment block with no-boxes-only rule; new validator gate: mechanism moves (trace/work/fork/predict/boundary/fade/repair/divergence) with an add/connect-only board fail.
+- **Wired:** `runLessonV2` passes `beatNarrationContexts[].moves` into board planning (T4 output consumed downstream).
+- **Gates:** `src/__tests__/visual-model.test.ts` — derivation, gate fires on add-only, silent under definition treatment, prompt renders treatment. 4/4 pass.
+- **Verification:** ops-plan 20/20, lesson-v2 8/8; typecheck clean, manifest verified.
+- **Honest limits:** scene-level moves (per-beat distribution needs S3b-before-beats reordering — recorded, not done); whether the state change teaches stays with judges.
+- **Next:** T8 improvement loop, then paid proof runs when credits allow.

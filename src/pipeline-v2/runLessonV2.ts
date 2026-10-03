@@ -193,6 +193,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     const beatTimings: BeatTiming[] = intervals.map((interval) => ({ beatId: interval.beatId, startMs: interval.startMs, endMs: interval.endMs, sentences: interval.sentences.map((s) => ({ startMs: s.startMs, endMs: s.endMs })), pauseIntent: narration.beatSpans.find((span) => span.beatId === interval.beatId)?.pauseIntent ?? 'none' }));
     timings.push(beatTimings);
     const beats = prepared.beatPlans![section.id]!;
+    const speechContext = prepared.beatNarrationContexts?.[section.id];
     const ctx: BoardContext = {
       sceneId: section.id, title: section.title, beats,
       narration: narration.beatSpans.map((span) => ({ beatId: span.beatId, sentences: span.sentenceSpans.map((s) => narration.text.slice(s.charStart, s.charEnd)) })),
@@ -200,6 +201,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       grounding: { verify: (spanId, quote) => anchorQuote(prepared.sourceDoc, spanId, quote)?.ref.quote },
       initial: carried,
       ...(prior ? { prior } : {}),
+      ...(speechContext?.moves?.length ? { moves: speechContext.moves } : {}),
     };
     const result = await planSceneBoard({ ctx }, { model: input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: input.remainingBudgetUsd ?? 0.2, ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}) });
     addUsage(usage, result.usage); failures.push(...result.failures); reports.push(...result.reports);
