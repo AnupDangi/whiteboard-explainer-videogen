@@ -21,8 +21,10 @@ const CATALOG = [
 
 const rung = (concept: string, extra: Record<string, unknown> = {}, catalog = CATALOG) => resolveObject(concept, { size: SIZE, label: concept, ...extra }, catalog).resolution;
 
-test('literal exact: house literal is R3, curated Flaticon literal is R4', () => {
-  assert.equal(rung('lamp').strategy, 'R3-house-literal');
+test('a literal without bridge type/domain metadata fails closed and a typed Flaticon literal remains eligible', () => {
+  const lamp = rung('lamp');
+  assert.equal(lamp.strategy, 'R10-labelled-primitive');
+  assert.ok(lamp.eligibilityNotes?.some((note) => note.includes('concept type metadata is missing')));
   assert.equal(rung('beaker').strategy, 'R4-curated-flaticon');
 });
 test('metaphor approved: R5 with its reconnect term', () => {
@@ -52,9 +54,9 @@ test('duplicate concept: an ambiguous name fails closed to R10', () => {
   assert.equal(rung('apple', { conceptId: 'apple' }, dup).strategy, 'R10-labelled-primitive');
 });
 test('pin reuse: a collected pin is reused as R0 for the same referent and never for another', () => {
-  const first = resolveObject('lamp', { size: SIZE, label: 'lamp' }, CATALOG);
-  const pins = collectPins({ elements: [{ element: { prim: 'object', concept: 'lamp', conceptIds: ['c1'] } as never, resolution: first.resolution, visual: first.visual, intrinsicSize: SIZE, strokeLength: 0 }] } as never, new Map(), true);
+  const first = resolveObject('beaker', { size: SIZE, label: 'beaker' }, CATALOG);
+  const pins = collectPins({ elements: [{ element: { prim: 'object', concept: 'beaker', conceptIds: ['beaker'] } as never, resolution: first.resolution, visual: first.visual, intrinsicSize: SIZE, strokeLength: 0 }] } as never, new Map(), true);
   const pin = [...pins.values()][0]!;
-  assert.equal(rung('lamp', { pin }).strategy, 'R0-verified-pin');
-  assert.notEqual(rung('beaker', { pin }).strategy, 'R0-verified-pin');
+  assert.equal(rung('beaker', { pin }).strategy, 'R0-verified-pin');
+  assert.notEqual(rung('lamp', { pin }).strategy, 'R0-verified-pin');
 });

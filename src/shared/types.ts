@@ -341,6 +341,8 @@ export interface ResolutionRecord {
   diagramRef?: string;
   /** Bridge catalogVersion backing this resolution (provenance + cache identity). */
   bridgeVersion?: string;
+  /** Why catalog candidates were excluded before selection, when a label fallback is required. */
+  eligibilityNotes?: string[];
 }
 
 /** A single drawable stroke path in an element's local coordinate space (origin top-left, sized to `intrinsicSize`). */

@@ -135,8 +135,56 @@ function requestConcept(visual: Pick<VisualRequest, 'conceptId'>, concept: strin
  */
 export function typeCompatible(requestType: string | undefined, entry: CatalogEntry, requestInferred = false): boolean {
   if (!requestType || requestInferred) return false;
-  const entryConcept = uniqueBridgeConcept(entry.names[0] ?? '');
+  const entryConcept = entry.conceptId ? uniqueBridgeConcept(entry.conceptId) : uniqueBridgeConcept(entry.names[0] ?? '');
   return Boolean(entryConcept && !entryConcept.inferred && entryConcept.conceptType && requestType === entryConcept.conceptType);
+}
+
+const APPROVED_SOURCE_CLASSES = new Set([
+  'assetlab-sketchy-downshift', 'flaticon', 'bridge-iconify', 'bridge-streamline', 'streamline', 'sketchi', 'generated',
+]);
+const sourceClassOf = (entry: CatalogEntry): string => entry.source.split(':', 1)[0] ?? '';
+
+export interface AssetEligibilityContext {
+  conceptId?: string;
+  lessonDomain?: string;
+  sceneFamily?: string;
+}
+
+/** Candidate eligibility runs before literal, pin, validation and similarity ranking. */
+export function assetEligibilityProblems(entry: CatalogEntry, request: AssetEligibilityContext): string[] {
+  const problems: string[] = [];
+  if (!APPROVED_SOURCE_CLASSES.has(sourceClassOf(entry))) problems.push(`unapproved source class: ${sourceClassOf(entry) || '(missing)'}`);
+  problems.push(...normalizeCatalogEntry(entry).reasons);
+
+  if (request.sceneFamily) {
+    const exempt = entry.source === 'generated' || (entry.houseFamily !== undefined && isExemptFamily(entry.houseFamily));
+    if (!entry.houseFamily && entry.source !== 'generated') problems.push('candidate family metadata is missing');
+    else if (!exempt && entry.houseFamily !== request.sceneFamily) problems.push(`candidate family does not match scene family ${request.sceneFamily}`);
+  }
+
+  const requestConcept = request.conceptId ? uniqueBridgeConcept(request.conceptId) : undefined;
+  if (!request.conceptId || !requestConcept || requestConcept.inferred || !requestConcept.conceptType) {
+    problems.push('request concept type metadata is missing or inferred');
+  }
+  const entryConcept = entry.conceptId ? uniqueBridgeConcept(entry.conceptId) : uniqueBridgeConcept(entry.names[0] ?? '');
+  if (!entryConcept || entryConcept.inferred || !entryConcept.conceptType) problems.push('candidate concept type metadata is missing or inferred');
+  if (requestConcept && !requestConcept.inferred && requestConcept.conceptType && entryConcept && !entryConcept.inferred && entryConcept.conceptType
+    && requestConcept.conceptType !== entryConcept.conceptType) problems.push(`candidate concept type ${entryConcept.conceptType} does not match ${requestConcept.conceptType}`);
+
+  const candidateDomain = entry.domain ?? entryConcept?.domain;
+  const requestedConceptDomain = requestConcept?.domain;
+  const specific = (domain: string | undefined): domain is string => Boolean(domain && domain.toLowerCase() !== 'general');
+  if (specific(requestedConceptDomain)) {
+    if (!specific(candidateDomain)) problems.push('candidate taxonomy domain metadata is missing or too broad');
+    else if (requestedConceptDomain.toLowerCase() !== candidateDomain.toLowerCase()) {
+      problems.push(`candidate taxonomy domain ${candidateDomain} does not match concept domain ${requestedConceptDomain}`);
+    }
+  }
+  if (request.lessonDomain) {
+    if (!specific(candidateDomain)) problems.push('candidate taxonomy domain metadata is missing or too broad');
+    else if (!domainMatches({ domain: candidateDomain }, request.lessonDomain)) problems.push(`candidate taxonomy domain ${candidateDomain} does not match lesson domain ${request.lessonDomain}`);
+  }
+  return [...new Set(problems)];
 }
 
 export function resolveObject(
@@ -144,8 +192,18 @@ export function resolveObject(
   opts: VisualRequest,
   fullCatalog: CatalogEntry[] = allCatalogEntries(),
 ): ObjectResolution {
-  // Filter before ranking (final_plan/02 §17, §19): other-family assets never compete inside a scene.
-  const catalog = opts.sceneFamily ? fullCatalog.filter((entry) => isExemptFamily(entry.houseFamily) || entry.houseFamily === opts.sceneFamily) : fullCatalog;
+  // Filter every candidate before any resolution rung ranks or accepts it. Missing type/domain/family metadata fails closed.
+  const eligibilityNotes = new Set<string>();
+  const eligibilityContext: AssetEligibilityContext = {
+    ...((opts.conceptId ?? uniqueBridgeConcept(concept)?.conceptId) ? { conceptId: opts.conceptId ?? uniqueBridgeConcept(concept)!.conceptId } : {}),
+    ...(opts.lessonDomain ? { lessonDomain: opts.lessonDomain } : {}),
+    ...(opts.sceneFamily ? { sceneFamily: opts.sceneFamily } : {}),
+  };
+  const catalog = fullCatalog.filter((entry) => {
+    const problems = assetEligibilityProblems(entry, eligibilityContext);
+    if (problems.length) problems.forEach((problem) => eligibilityNotes.add(problem));
+    return problems.length === 0;
+  });
   const conceptLower = normalizedName(concept);
   // Exact literals match the full referent after determiner/plural normalisation only. Head-noun
   // suffixes (keys[1..]) are deliberately NOT exact keys: "passive transport" must not resolve to
@@ -392,6 +450,7 @@ export function resolveObject(
       rung: 4, assetId: null, score: opts.candidates?.[0]?.score ?? 0, license: 'manual',
       lane: labelled ? 'labelled-primitive' : 'text-only', source: 'generated',
       strategy: labelled ? 'R10-labelled-primitive' : 'R11-minimal-text', selectionBasis: 'procedural', ...(diagramRejection ? { diagramRejection } : {}), ...base,
+      ...(eligibilityNotes.size ? { eligibilityNotes: [...eligibilityNotes].sort().slice(0, 16) } : {}),
     },
   };
 }

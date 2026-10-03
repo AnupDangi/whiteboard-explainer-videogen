@@ -173,6 +173,31 @@ test('curated same-type retrieval uses R6; missing or mismatched types fall to R
   });
 });
 
+test('type, domain, family and source eligibility filter candidates before score ranking', () => {
+  withCuratedTypes(() => {
+    const matchingType = entry('type-ok', 'abacus', 'streamline:color');
+    const wrongType = entry('type-wrong', 'acceleration', 'streamline:color');
+    const typeResult = resolveObject('unseen referent', {
+      size: SIZE, conceptId: 'abacus',
+      candidates: [{ id: 'type-wrong', name: 'acceleration', score: 0.99 }, { id: 'type-ok', name: 'abacus', score: 0.76 }],
+    }, [matchingType, wrongType]);
+    assert.equal(typeResult.resolution.assetId, 'type-ok', 'the higher-scoring different type is excluded before ranking');
+
+    const bio = { ...entry('domain-ok', 'cell', 'streamline:color'), domain: 'biology' };
+    const physics = { ...entry('domain-wrong', 'cell', 'streamline:color'), domain: 'physics' };
+    const domainResult = resolveObject('unseen cell referent', {
+      size: SIZE, conceptId: 'cell', lessonDomain: 'biology',
+      candidates: [{ id: 'domain-wrong', name: 'cell', score: 0.99 }, { id: 'domain-ok', name: 'cell', score: 0.75 }],
+    }, [bio, physics]);
+    assert.equal(domainResult.resolution.assetId, 'domain-ok', 'the wrong-domain asset cannot win on score');
+
+    const unapprovedSource = entry('unknown-source', 'key', 'unreviewed-library:local');
+    const rejected = resolveObject('key', { size: SIZE, conceptId: 'key' }, [unapprovedSource]);
+    assert.equal(rejected.resolution.assetId, null);
+    assert.ok(rejected.resolution.eligibilityNotes?.some((note) => note.includes('unapproved source class')));
+  });
+});
+
 test('ambiguous exact referents and incompatible pins are rejected', () => {
   const apple = entry('apple-icon', 'apple');
   const ambiguous = resolveObject('apple', { size: SIZE, pin: { assetId: apple.id, rung: 2, score: 1 } }, [apple]);
