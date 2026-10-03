@@ -2693,3 +2693,9 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Verification:** typecheck clean, manifest verified.
 - **Teaching track T1–T8 now complete as offline architecture** (evals → strategy → moves → narration → error-contrast → prediction → visual model → loop). Live proof (paid runs, cold grid, muted review) blocked on ElevenLabs credits; local-TTS proof runs remain available.
 - **Next:** paid proof when credits allow, or S7 icon-universe offline work.
+
+## Continuation — 2026-10-03, full offline regression (wt/stcc/charter)
+
+- **Full `pnpm run test:hypothesis`: PASS** — 1276 Node + 2 audit + alignment/RAG Python suites, exit 0.
+- **Incidental fix:** frozen 2026-09-25 plan arrived 644 from fresh checkout; restored local 444 to match v2b (mode only, bytes untouched, plan-lock 3/3 green).
+- **Track status:** T1–T8 complete as offline architecture, all committed. Paid proof blocked on ElevenLabs credits (KEY_1: 1, KEY_2: dead, KEY_3: 32/10000).
