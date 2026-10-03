@@ -47,7 +47,8 @@ const VIDEO_REFERENCE = /\bin this video\b/i;
 /** Gap-aware spoken budget: the scene clock includes the silent gap after the scene (1400 ms between scenes, 1200 ms trailing), which carries no speech. The stated word count subtracts it, so hitting the stated number lands the fixed clock. */
 export const DEFAULT_GAP_AFTER_MS = 1400;
 export const NARRATION_PROMPT_CEILING = 1.0;
-export const NARRATION_HARD_CEILING = 1.0;
+/** Repair needs one word of slack to converge (models rewrite whole beats and land ±2 words); the stated budget stays exact and the ±6 s lesson tolerance absorbs the slack. */
+export const NARRATION_HARD_CEILING = 1.1;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 

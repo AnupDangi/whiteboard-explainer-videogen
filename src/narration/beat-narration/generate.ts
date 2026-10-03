@@ -11,7 +11,7 @@ export async function writeBeatNarration(input: { ctx: NarrationContext; scene: 
   const { system, user } = buildNarrationPrompt(ctx, input.scene, input.sourceExcerpt);
   const result = await structuredCall({
     stage: 'beat-narration', subject: `scene ${ctx.sceneId}`, model: m.model, apiKey: m.apiKey, system, user, schema: SceneNarrationDraftSchema, schemaName: 'beat_narration',
-    maxTokens: 4000, maxRepairs: 2, remainingBudgetUsd: m.remainingBudgetUsd, ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.client ? { client: m.client } : {}),
+    maxTokens: 6000, maxRepairs: 2, remainingBudgetUsd: m.remainingBudgetUsd, ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.client ? { client: m.client } : {}),
     validate: (draft) => validateSceneNarration(draft, ctx),
     repairScope: (pointer) => pointer.replace(/^(\/beats\/\d+)(\/.*)?$/, '$1'),
   });
