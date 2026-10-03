@@ -183,7 +183,7 @@ function poolFor(env: ElevenLabsEnv, fetcher: FetchLike): ElevenKeyPool {
 }
 
 /** Characters with start/end times to words: maximal runs of non-space characters, each with a positive, ordered interval. */
-export function wordsFromCharacterTimes(alignment: { characters: string[]; character_start_times_seconds: number[]; character_end_times_seconds: number[] }, durationMs: number): AlignedWord[] {
+export function wordsFromCharacterTimes(alignment: { characters: string[]; character_start_times_seconds: number[]; character_end_times_seconds: number[] }, durationMs: number, language = 'und'): AlignedWord[] {
   const { characters, character_start_times_seconds: starts, character_end_times_seconds: ends } = alignment;
   if (characters.length === 0 || starts.length !== characters.length || ends.length !== characters.length) throw new Error('ElevenLabs alignment is empty or inconsistent');
   if (!Number.isFinite(durationMs) || durationMs <= 0) throw new Error('ElevenLabs audio duration is invalid');
@@ -195,6 +195,29 @@ export function wordsFromCharacterTimes(alignment: { characters: string[]; chara
     if (char.trim() && end - start < 1) throw new Error(`ElevenLabs returned a zero-length character interval at character ${i}`);
     lastStart = start; lastEnd = end;
   });
+  const joined = characters.join('');
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(joined)) {
+    const ranges: Array<{ start: number; end: number; startMs: number; endMs: number }> = [];
+    let offset = 0;
+    characters.forEach((char, i) => {
+      const end = offset + char.length;
+      ranges.push({ start: offset, end, startMs: starts[i]! * 1000, endMs: ends[i]! * 1000 });
+      offset = end;
+    });
+    const segmented = [...new Intl.Segmenter(language, { granularity: 'word' }).segment(joined)]
+      .filter((part) => part.isWordLike)
+      .map((part) => {
+        const end = part.index + part.segment.length;
+        const covered = ranges.filter((range) => range.start < end && range.end > part.index);
+        if (covered.length === 0) throw new Error('ElevenLabs CJK word segment has no character clock coverage');
+        const startMs = Math.round(Math.min(...covered.map((range) => range.startMs)));
+        const endMs = Math.round(Math.max(...covered.map((range) => range.endMs)));
+        if (endMs <= startMs || endMs > durationMs + 2) throw new Error(`ElevenLabs CJK word clock is malformed for "${part.segment}"`);
+        return { word: part.segment, startMs, endMs: Math.min(endMs, durationMs) };
+      });
+    for (let i = 1; i < segmented.length; i++) if (segmented[i]!.startMs < segmented[i - 1]!.endMs) throw new Error(`ElevenLabs CJK word clock overlaps at word ${i}`);
+    return segmented;
+  }
   const words: AlignedWord[] = [];
   let text = ''; let from = -1; let to = -1;
   const flush = (): void => {
@@ -230,7 +253,8 @@ export function pcmToWav(pcm: Buffer, sampleRate: number): Buffer {
 
 const wavDurationMs = (wav: Buffer): number => { const rate = wav.readUInt32LE(24); const bytes = wav.readUInt32LE(40); return Math.round((bytes / 2 / rate) * 1000); };
 
-interface Attempt { wav: Buffer; alignment: { characters: string[]; character_start_times_seconds: number[]; character_end_times_seconds: number[] }; model: string; credits: number; voice: string; capabilitySnapshotId?: string }
+interface ProviderAlignment { characters: string[]; character_start_times_seconds: number[]; character_end_times_seconds: number[] }
+interface Attempt { wav: Buffer; alignment: ProviderAlignment; normalizedAlignment?: ProviderAlignment; model: string; credits: number; voice: string; capabilitySnapshotId?: string }
 
 export interface CharacterClock { characters: string[]; startTimesSeconds: number[]; endTimesSeconds: number[] }
 
@@ -302,12 +326,12 @@ async function synthesize(text: string, opts: ElevenLabsOptions): Promise<Attemp
       }
       if (res.ok) {
         try {
-          const body = await res.json() as { audio_base64: string; alignment?: Attempt['alignment'] | null };
+          const body = await res.json() as { audio_base64: string; alignment?: ProviderAlignment | null; normalized_alignment?: ProviderAlignment | null };
           if (!body.alignment || typeof body.audio_base64 !== 'string') throw new Error('ElevenLabs response omitted audio or character alignment');
           reservation.settle(credits);
           workingModel.set(normalizeLanguageCode(opts.language), model.id);
           opts.onUsage?.({ status: 'succeeded', language: opts.language, model: model.id, voice, credits });
-          return { wav: pcmToWav(Buffer.from(body.audio_base64, 'base64'), 24000), alignment: body.alignment, model: model.id, credits, voice, capabilitySnapshotId: capabilities.snapshotId };
+          return { wav: pcmToWav(Buffer.from(body.audio_base64, 'base64'), 24000), alignment: body.alignment, ...(body.normalized_alignment ? { normalizedAlignment: body.normalized_alignment } : {}), model: model.id, credits, voice, capabilitySnapshotId: capabilities.snapshotId };
         } catch (error) { reservation.cancel(); throw error; }
       }
       const detail = await res.text();
@@ -334,13 +358,15 @@ export async function synthesizeWithElevenLabs(text: string, opts: ElevenLabsOpt
   if (!text.trim()) throw new Error('synthesizeWithElevenLabs: text is required');
   const result = await synthesize(text, opts);
   const durationMs = wavDurationMs(result.wav);
-  const words = wordsFromCharacterTimes(result.alignment, durationMs);
   const normalizedText = text.normalize('NFKC').replace(/\s+/gu, ' ').trim();
   const alignedText = result.alignment.characters.join('').normalize('NFKC').replace(/\s+/gu, ' ').trim();
   if (normalizedText !== alignedText) throw new Error('ElevenLabs timestamp transcript does not map exactly to submitted text after NFKC whitespace normalization');
   const rawCharacterClock = { characters: result.alignment.characters, startTimesSeconds: result.alignment.character_start_times_seconds, endTimesSeconds: result.alignment.character_end_times_seconds };
-  const mappedClock = normalizedCharacterClock(rawCharacterClock);
+  const mappedClock = result.normalizedAlignment
+    ? { characters: result.normalizedAlignment.characters, startTimesSeconds: result.normalizedAlignment.character_start_times_seconds, endTimesSeconds: result.normalizedAlignment.character_end_times_seconds }
+    : normalizedCharacterClock(rawCharacterClock);
   if (mappedClock.characters.join('') !== normalizedText) throw new Error('ElevenLabs normalized character clock does not map to submitted text');
+  const words = wordsFromCharacterTimes(result.normalizedAlignment ?? result.alignment, durationMs, opts.language);
   const dir = await mkdtemp(path.join(tmpdir(), 'elevenlabs-'));
   const audioPath = path.join(dir, 'speech.wav');
   await writeFile(audioPath, result.wav);

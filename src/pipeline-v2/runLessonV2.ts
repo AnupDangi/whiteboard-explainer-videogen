@@ -128,21 +128,33 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   // 1. Real audio and alignment for each scene's speech: the master clock.
   const audios = await mapLimit(plan.sections, Math.max(1, input.audioConcurrency ?? 1), async (section) => {
     const narration = prepared.beatNarrations![section.id]!;
-    const audio = await synthesizeSceneAudio({ sceneId: section.id, text: narration.text, language, ...(input.voice ? { voice: input.voice } : {}), ...(input.calibrationMedianErrorMs !== undefined ? { calibrationMedianErrorMs: input.calibrationMedianErrorMs } : {}) }, { ...(input.artifactStore ? { artifactStore: input.artifactStore } : {}), ...(input.aligner ? { aligner: input.aligner } : {}), onElevenLabsUsage: (event) => { providerUsageEvents.push(event); input.onElevenLabsUsage?.(event); } });
-    if (audio.providerMetadata) speechUsage.push({ sceneId: section.id, model: audio.providerMetadata.model, voice: audio.providerMetadata.voice, credits: audio.providerMetadata.credits, cacheHit: audio.cacheHit, ...(audio.providerMetadata.capabilitySnapshotId ? { capabilitySnapshotId: audio.providerMetadata.capabilitySnapshotId } : {}) });
-    return { section, narration, audio };
+    const speechContext = prepared.beatNarrationContexts?.[section.id];
+    try {
+      const audio = await synthesizeSceneAudio({ sceneId: section.id, text: narration.text, language: speechContext?.language ?? language, ...(input.voice ? { voice: input.voice } : {}), ...(speechContext?.speechLanguagePolicy === 'native-plus-english-terms' ? { languagePolicy: 'native-plus-english-terms/v1' as const } : {}), ...(speechContext?.terminology?.length ? { terminology: speechContext.terminology } : {}), ...(input.calibrationMedianErrorMs !== undefined ? { calibrationMedianErrorMs: input.calibrationMedianErrorMs } : {}) }, { ...(input.artifactStore ? { artifactStore: input.artifactStore } : {}), ...(input.aligner ? { aligner: input.aligner } : {}), onElevenLabsUsage: (event) => { providerUsageEvents.push(event); input.onElevenLabsUsage?.(event); } });
+      if (audio.providerMetadata) speechUsage.push({ sceneId: section.id, model: audio.providerMetadata.model, voice: audio.providerMetadata.voice, credits: audio.providerMetadata.credits, cacheHit: audio.cacheHit, ...(audio.providerMetadata.capabilitySnapshotId ? { capabilitySnapshotId: audio.providerMetadata.capabilitySnapshotId } : {}) });
+      return { ok: true as const, section, narration, audio };
+    } catch (error) {
+      return { ok: false as const, section, message: error instanceof Error ? error.message : String(error) };
+    }
   });
+  const failedAudio = audios.filter((result) => !result.ok);
+  if (failedAudio.length) {
+    for (const result of failedAudio) failures.push({ code: 'v2-audio-generation-failed', stage: 'align', message: `${result.section.id}: ${result.message}`, hard: true });
+    return finish('failed');
+  }
+  const readyAudios = audios.filter((result) => result.ok);
+  const audioScenes = readyAudios.map(({ section, narration, audio }) => ({ section, narration, audio }));
 
   // Preserve the complete measured word clock, including aligner/repair/calibration metadata.
   // Beat token matching alone cannot establish valid intervals.
-  await dump('alignment.json', { schemaVersion: 'v2-alignment/v1', scenes: audios.map(({ section, audio }) => ({
+  await dump('alignment.json', { schemaVersion: 'v2-alignment/v1', scenes: audioScenes.map(({ section, audio }) => ({
     sceneId: section.id, durationMs: audio.durationMs, words: audio.words,
     aligner: audio.aligner, repairedWordIndexes: audio.repairedWordIndexes,
     calibration: input.calibrationMedianErrorMs === undefined
       ? { status: 'unmeasured' }
       : { status: 'measured', medianAbsoluteBoundaryErrorMs: input.calibrationMedianErrorMs },
   })) });
-  for (const { section, audio } of audios) {
+  for (const { section, audio } of audioScenes) {
     const problems = !Number.isFinite(audio.durationMs) || audio.durationMs <= 0
       ? ['audio duration must be finite and positive']
       : alignedWordTimingProblems(audio.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })), audio.durationMs);
@@ -153,6 +165,18 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     return finish('failed');
   }
 
+  // The requested runtime is a hard prerequisite for paid board planning. Check it
+  // as soon as all audio clocks are known, before spending on any BoardOps calls.
+  const gap = PIPELINE.sceneGapMs;
+  const trailing = 1200;
+  const requestedDurationMs = (prepared.requestedDurationSec ?? plan.targetDurationSec) * 1000;
+  const totalMs = audioScenes.reduce((sum, { audio }, i) => sum + audio.durationMs + (i < audioScenes.length - 1 ? gap : trailing), 0);
+  metrics['v2.requestedDurationMs'] = requestedDurationMs;
+  metrics['v2.actualDurationDeltaMs'] = totalMs - requestedDurationMs;
+  const durationProblems = audioDurationProblems(totalMs, requestedDurationMs, 200);
+  for (const message of durationProblems) failures.push({ code: 'v2-fixed-duration', stage: 'audio', message, hard: true });
+  if (durationProblems.length) return finish('failed', { durationMs: totalMs });
+
   timing['v2.audioMs'] = Date.now() - startedAt;
   const conceptIndex = new Map(graph.concepts.map((c) => [c.id, { id: c.id, label: c.label, kind: c.kind } as ConceptInfo]));
 
@@ -160,7 +184,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   let carried: BoardState = emptyBoardState();
   let prior: PriorLayout | undefined;
   const timings: BeatTiming[][] = [];
-  for (const { section, narration, audio } of audios) {
+  for (const { section, narration, audio } of audioScenes) {
     let intervals;
     try { intervals = beatIntervals(narration, audio.words.map((w) => ({ w: w.word, startMs: w.startMs, endMs: w.endMs }))); } catch (error) {
       failures.push({ code: 'v2-alignment-mismatch', stage: 'align', message: `${section.id}: ${error instanceof Error ? error.message : String(error)}`, hard: true });
@@ -231,19 +255,11 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const sceneDir = path.join(outputDir, 'scene-audio');
   await mkdir(sceneDir, { recursive: true });
   const wavPaths: string[] = [];
-  for (const { section, audio } of audios) { const p = path.join(sceneDir, `${section.id}.wav`); await writeFile(p, audio.audio); wavPaths.push(p); }
-  const gap = PIPELINE.sceneGapMs;
-  const trailing = 1200;
+  for (const { section, audio } of audioScenes) { const p = path.join(sceneDir, `${section.id}.wav`); await writeFile(p, audio.audio); wavPaths.push(p); }
   const masterAudio = path.join(outputDir, 'audio.wav');
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   let cursor = 0;
-  const placements = audios.map(({ audio }, i) => { const startMs = cursor; cursor += audio.durationMs + (i < audios.length - 1 ? gap : trailing); return { startMs, endMs: cursor }; });
-  const totalMs = cursor;
-  const requestedDurationMs = (prepared.requestedDurationSec ?? plan.targetDurationSec) * 1000;
-  const durationProblems = audioDurationProblems(totalMs, requestedDurationMs, 200);
-  metrics['v2.requestedDurationMs'] = requestedDurationMs;
-  metrics['v2.actualDurationDeltaMs'] = totalMs - requestedDurationMs;
-  for (const message of durationProblems) failures.push({ code: 'v2-fixed-duration', stage: 'audio', message, hard: true });
+  const placements = audioScenes.map(({ audio }, i) => { const startMs = cursor; cursor += audio.durationMs + (i < audioScenes.length - 1 ? gap : trailing); return { startMs, endMs: cursor }; });
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = prepared.beatNarrations![scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
   await dump('lesson-context.json', { sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: prepared.beatNarrations });

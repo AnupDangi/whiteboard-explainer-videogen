@@ -2,6 +2,7 @@ import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { TeachingBeat } from '../../teaching/beat-plan/types.js';
 import { wordsPerSec } from '../../plan/analyze.js';
 import type { SceneNarrationDraft } from './types.js';
+import { tokenizeWords } from '../align.js';
 
 export interface NarrationContext {
   sceneId: string;
@@ -30,7 +31,7 @@ export const NARRATION_PROMPT_CEILING = 1.5;
 export const NARRATION_HARD_CEILING = 2.5;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
-const wordCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
+const wordCount = (text: string, language?: string): number => tokenizeWords(text, language ?? 'und').length;
 
 /** Greek letters, arrows and maths operators: the speech engine and the aligner cannot read them. */
 // Greek is a supported writing system (and Greek letter names are speakable).
@@ -46,7 +47,7 @@ const asciiDigits = (value: string): string => [...value].map((char) => {
 }).join('');
 
 export function narrationLengthWarning(draft: SceneNarrationDraft, ctx: NarrationContext): string | undefined {
-  const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence), 0), 0);
+  const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
   const budget = ctx.durationSec * wordsPerSec(ctx.language);
   return words > budget ? `${words} spoken words against a ${Math.round(budget)}-word budget; audio sets the clock` : undefined;
 }
@@ -79,7 +80,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
     });
     for (const claim of planClaims) if (!anchored.has(claim)) problems.push({ path: `${at}/claimSentences`, message: `claim ${claim} must be anchored to the sentence of this beat that states it` });
   });
-  const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence), 0), 0);
+  const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
   const ceiling = Math.round(ctx.durationSec * wordsPerSec(ctx.language) * NARRATION_HARD_CEILING);
   if (words > ceiling) problems.push({ path: '/beats', message: `too long: ${words} spoken words, at most ${ceiling} for a ${ctx.durationSec}s scene (about ${Math.max(6, Math.floor(ceiling / Math.max(1, draft.beats.length)))} words per beat for ${draft.beats.length} beats); cut or merge the longest sentences` });
   return problems;

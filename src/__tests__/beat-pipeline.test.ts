@@ -30,11 +30,17 @@ function client(handler: (schemaName: string, user: string) => string): ModelCli
 }
 
 test('every scene gets beats and beat narration, keyed by scene id, and the script carries plain text with claim spans', async () => {
+  const terminology = [{ term: 'Frame' }, { term: 'Stack' }];
   const c = client((schema, user) => {
     const scene = /SCENE (\w+)/.exec(user)?.[1] ?? '';
+    if (schema === 'beat_narration') {
+      assert.match(user, /Lesson terminology/);
+      assert.match(user, /- Frame/);
+      assert.match(user, /- Stack/);
+    }
     return schema === 'teaching_beats' ? beatJson(`${scene}_c`) : narrationJson(`${scene}.b1`, `${scene}_c`);
   });
-  const result = await runBeatStages({ plan, graph, sourceDoc: doc }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client: c });
+  const result = await runBeatStages({ plan, graph, sourceDoc: doc, terminology }, { language: 'hi', model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client: c });
   assert.ok(result.value, JSON.stringify(result.failures));
   assert.deepEqual(Object.keys(result.value!.beatPlans).sort(), ['one', 'two']);
   assert.equal(result.value!.beatPlans.one![0]!.beatId, 'one.b1');
@@ -43,6 +49,8 @@ test('every scene gets beats and beat narration, keyed by scene id, and the scri
   assert.deepEqual(result.value!.script.scenes[0]!.claimSpans, [{ claimId: 'one_c', exactText: 'Every call pushes a frame onto the stack, up to 3 steps deep.' }]);
   assert.equal(result.reports.filter((r) => r.stage === 'beats').length, 2);
   assert.equal(result.reports.filter((r) => r.stage === 'beat-narration').length, 2);
+  assert.deepEqual(result.value!.narrationContexts.one!.terminology, terminology);
+  assert.equal(result.value!.narrationContexts.one!.speechLanguagePolicy, 'native-plus-english-terms');
 });
 
 test('a number the source never states is rejected in narration, and a scene that cannot be written fails the stage instead of being skipped', async () => {

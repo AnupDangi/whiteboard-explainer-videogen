@@ -41,8 +41,8 @@ function lessonPosition(plan: TeachingPlan, sceneId: string): NonNullable<Narrat
 const numbersIn = (texts: readonly string[]): Set<string> => new Set(texts.flatMap((text) => text.match(/\d+(?:\.\d+)?/g) ?? []));
 
 /** S3b + S4 in beat mode: per scene, plan the teaching beats, then write the speech of each beat. Scenes run in parallel. */
-export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptGraph; sourceDoc: SourceDoc }, m: BeatStageModel): Promise<BeatStagesResult> {
-  const { plan, graph, sourceDoc } = input;
+export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptGraph; sourceDoc: SourceDoc; terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }> }, m: BeatStageModel): Promise<BeatStagesResult> {
+  const { plan, graph, sourceDoc, terminology } = input;
   const perScene = m.remainingBudgetUsd / Math.max(1, plan.sections.length);
   const outcomes = await Promise.all(plan.sections.map((section) => withHostResourcePermit('provider-beats', BEAT_PROVIDER_CONCURRENCY, async () => {
     const stage = { ...m, remainingBudgetUsd: perScene };
@@ -58,6 +58,8 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
       allowedNumbers: numbersIn([...claims.map((claim) => claim.statement), ...evidence, ...definitions, sourceExcerpt]),
       emphasisCandidates: section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.label ?? []),
       ...(m.language ? { language: m.language } : {}),
+      ...(m.language && m.language.toLowerCase() !== 'en' ? { speechLanguagePolicy: 'native-plus-english-terms' as const } : {}),
+      ...(terminology?.length ? { terminology } : {}),
       lesson: lessonPosition(plan, section.id),
     };
     const narration = await writeBeatNarration({ ctx, scene: { title: section.title, goal: section.goal }, sourceExcerpt }, stage);

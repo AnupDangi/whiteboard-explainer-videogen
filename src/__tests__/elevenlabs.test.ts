@@ -19,6 +19,10 @@ test('character times become positive, ordered words that keep the narration tok
     assert.deepEqual(words.flatMap((w) => tokenizeWords(w.word)), tokenizeWords(text));
     words.forEach((w, i) => { assert.ok(w.endMs > w.startMs); if (i) assert.ok(w.startMs >= words[i - 1]!.endMs); assert.ok(w.endMs <= 5000); });
   }
+  const mandarin = '你好世界，欢迎大家。';
+  const cjkWords = wordsFromCharacterTimes(chars(mandarin, 0.05), 5000, 'zh').map((word) => word.word);
+  assert.ok(cjkWords.length > 1, 'CJK speech needs segmented word clocks, not one sentence-sized token');
+  assert.deepEqual(cjkWords, tokenizeWords(mandarin, 'zh'));
   assert.throws(() => wordsFromCharacterTimes({ characters: [], character_start_times_seconds: [], character_end_times_seconds: [] }, 1000), /empty/);
 });
 
@@ -115,4 +119,22 @@ test('normalized character clocks map composed Unicode and collapsed whitespace 
   assert.equal(mapped.characters.join(''), 'é x');
   assert.deepEqual(mapped.startTimesSeconds, [0, 0.1, 0.2]);
   assert.deepEqual(mapped.endTimesSeconds, [0.05, 0.18, 0.3]);
+});
+
+test('provider normalized_alignment drives normalized word clocks while raw clocks remain preserved', async () => {
+  const text = 'Hello there.';
+  const raw = chars(text, 0.05);
+  raw.character_start_times_seconds = raw.character_start_times_seconds.map((time) => time + 0.2);
+  raw.character_end_times_seconds = raw.character_end_times_seconds.map((time) => time + 0.2);
+  const normalized = chars(text, 0.025);
+  const fetcher: FetchLike = async (url) => url.endsWith('/user/subscription')
+    ? reply(200, { character_count: 0, character_limit: 10_000 })
+    : reply(200, { audio_base64: pcm(1000).toString('base64'), alignment: raw, normalized_alignment: normalized });
+  const result = await synthesizeWithElevenLabs(text, {
+    language: 'en', fetcher, env: { ELEVENLABS_API_KEY_1: 'normalized-clock-test' },
+    capabilities: { snapshotId: 'normalized-clock-v1', capturedAt: '2026-10-03T00:00:00Z', models: [{ id: 'flash', creditsPerChar: 0.5, languages: ['en'] }] },
+  });
+  assert.equal(result.rawCharacterClock.startTimesSeconds[0], 0.2);
+  assert.equal(result.normalizedCharacterClock.startTimesSeconds[0], 0);
+  assert.equal(result.words[0]!.startMs, 0);
 });

@@ -16,6 +16,7 @@ import { replayLessonV2, verifyLessonLockV2 } from '../pipeline-v2/lockV2.js';
 import { compareReplayDigests } from '../harness/replayDeterminism.js';
 import { canonicalHash } from '../harness/replayDeterminism.js';
 import { sha256 } from '../shared/artifacts.js';
+import { PIPELINE } from '../run/config.js';
 
 // A contract test for the V2 runner with injected model and aligner. The lesson content is synthetic test data, not a generated lesson.
 const claims = (id: string) => [{ id: `${id}_c`, statement: 'x', conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: ['s1'] }];
@@ -33,6 +34,10 @@ const graph = { concepts: [{ id: 'frame', label: 'Frame', kind: 'entity', defini
 const prepared = { plan, graph, beatPlans, beatNarrations: narrations } as unknown as PreparedLesson;
 const oneBindings = { conceptIds: ['frame', 'stack'], claimIds: ['one_c'] };
 const twoBindings = { conceptIds: ['frame', 'stack'], claimIds: ['two_c'] };
+const fixtureDurationSec = (perWordMs: number, sceneOverheadMs: number): number => (
+  Object.values(narrations).reduce((sum, narration) => sum + tokenizeWords(narration.text).length * perWordMs + sceneOverheadMs, 0)
+  + PIPELINE.sceneGapMs + 1200
+) / 1000;
 
 const board: Record<string, unknown> = {
   one: { transition: { mode: 'clean' }, ops: [
@@ -61,7 +66,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       return { durationMs, words, aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
     };
     const out = path.join(dir, 'run');
-    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, fps: 8 });
+    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...prepared, requestedDurationSec: fixtureDurationSec(300, 100) }, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, fps: 8 });
     assert.equal(result.status, 'draft', JSON.stringify(result.failures));
     assert.equal(result.scenes, 2);
     assert.equal(result.metrics['v2.ops'], 6);
@@ -95,10 +100,25 @@ test('a scene whose board cannot be planned fails the run and nothing is rendere
       await runFfmpeg(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', String(durationMs / 1000), audioPath]);
       return { durationMs, words: t.map((word, i) => ({ word, startMs: i * 200, endMs: i * 200 + 150 })), aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
     };
-    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: path.join(dir, 'run'), prepared, plannerModel: 'google/x', apiKey: 'k', client: bad, aligner: aligner as never, fps: 8 });
+    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: path.join(dir, 'run'), prepared: { ...prepared, requestedDurationSec: fixtureDurationSec(200, 100) }, plannerModel: 'google/x', apiKey: 'k', client: bad, aligner: aligner as never, fps: 8 });
     assert.equal(result.status, 'failed');
     assert.equal(result.videoPath, undefined);
     assert.ok(result.failures.some((f) => f.code === 'v2-board-failed' && f.hard));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('V2 reports audio synthesis exceptions as failed runs', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-audio-fail-'));
+  try {
+    const result = await runLessonV2({
+      lessonId: 'audio-fail', outputDir: path.join(dir, 'run'), prepared, plannerModel: 'google/x', apiKey: 'k', client,
+      aligner: (async () => { throw new Error('scripted provider timeout'); }) as never,
+      onElevenLabsUsage: () => undefined,
+    });
+    assert.equal(result.status, 'failed');
+    assert.ok(result.failures.some((failure) => failure.code === 'v2-audio-generation-failed' && /scripted provider timeout/.test(failure.message)));
+    assert.ok(Array.isArray(result.providerUsageEvents));
+    assert.equal(result.scenes, 0);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -128,6 +148,29 @@ test('invalid V2 word clocks stop before paid board planning and cannot publish 
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('a measured audio duration outside the request stops before paid board planning', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-duration-gate-'));
+  try {
+    const audioPath = path.join(dir, 'speech.wav');
+    await runFfmpeg(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', '2', audioPath]);
+    let boardCalls = 0;
+    const model: ModelClient = { ...client, chat: async (request) => { boardCalls++; return client.chat(request); } };
+    const aligner = async (text: string) => {
+      const words = tokenizeWords(text).map((word, i) => ({ word, startMs: i * 100, endMs: i * 100 + 80 }));
+      return { durationMs: 2000, words, aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
+    };
+    const result = await runLessonV2({
+      lessonId: 'duration-gate', outputDir: path.join(dir, 'run'), prepared: { ...prepared, requestedDurationSec: 1 },
+      plannerModel: 'google/x', apiKey: 'k', client: model, aligner: aligner as never, skipEncode: true,
+    });
+    assert.equal(result.status, 'failed');
+    assert.equal(boardCalls, 0);
+    assert.ok(result.failures.some((failure) => failure.code === 'v2-fixed-duration' && failure.hard));
+    assert.ok(result.metrics['v2.actualDurationDeltaMs']! > 200);
+    await assert.rejects(stat(path.join(dir, 'run', 'lesson.lock.v2.json')), { code: 'ENOENT' });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 async function fixtureRun(dir: string): Promise<string> {
   const aligner = async (text: string) => {
     const tokens = tokenizeWords(text);
@@ -137,7 +180,7 @@ async function fixtureRun(dir: string): Promise<string> {
     return { durationMs, words: tokens.map((word, i) => ({ word, startMs: i * 300, endMs: i * 300 + 260 })), aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
   };
   const out = path.join(dir, 'run');
-  const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, skipEncode: true });
+  const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...prepared, requestedDurationSec: fixtureDurationSec(300, 100) }, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, skipEncode: true });
   assert.equal(result.status, 'draft', JSON.stringify(result.failures));
   return out;
 }

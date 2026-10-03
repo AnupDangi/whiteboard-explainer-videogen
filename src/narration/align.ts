@@ -4,8 +4,14 @@ import { PIPELINE } from '../run/config.js';
 /** Unicode-aware word tokenizer, including curly apostrophes used in generated narration. */
 const WORD_RE = /[\p{L}\p{M}\p{N}]+(?:['’‘ʼ-][\p{L}\p{M}\p{N}]+)*/gu;
 
-export function tokenizeWords(text: string): string[] {
-  return text.normalize('NFKC').match(WORD_RE) ?? [];
+export function tokenizeWords(text: string, language = 'und'): string[] {
+  const normalized = text.normalize('NFKC');
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(normalized)) {
+    return [...new Intl.Segmenter(language, { granularity: 'word' }).segment(normalized)]
+      .filter((part) => part.isWordLike)
+      .map((part) => part.segment);
+  }
+  return normalized.match(WORD_RE) ?? [];
 }
 
 /**

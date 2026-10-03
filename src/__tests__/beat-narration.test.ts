@@ -154,3 +154,13 @@ test('the spoken-word budget scales with the language: Hindi gets more words per
   assert.ok((validateSceneNarration(long, { ...ctx, durationSec: 8 }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
   assert.ok(!(validateSceneNarration(long, { ...ctx, durationSec: 12, language: 'hi' }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
 });
+
+test('CJK narration uses Intl word segmentation for its spoken-word budget', () => {
+  const mandarin = SceneNarrationDraftSchema.parse({ beats: [
+    { beatId: 'scene.b1', sentences: ['你好世界欢迎大家。'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }], emphasisTerms: [] },
+    { beatId: 'scene.b2', sentences: ['欢迎大家来到世界。'], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }], emphasisTerms: [] },
+  ] });
+  const findings = validateSceneNarration(mandarin, { ...ctx, language: 'zh', durationSec: 0.5 }) as Array<{ message: string }>;
+  assert.ok(findings.some((problem) => /too long/.test(problem.message)));
+  assert.deepEqual(tokenizeWords('你好世界，欢迎大家。', 'zh').length > 1, true);
+});

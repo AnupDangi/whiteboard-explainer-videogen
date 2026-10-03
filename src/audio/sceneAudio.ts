@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { elevenLabsAligner, loadElevenLabsCapabilitySnapshot, resolveElevenLabsModel, resolveElevenLabsVoice, type ElevenLabsCapabilitySnapshot, type ElevenLabsUsageEvent } from './elevenlabs.js';
+import { elevenLabsAligner, loadElevenLabsCapabilitySnapshot, modelsForLanguage, resolveElevenLabsModel, resolveElevenLabsVoice, type ElevenLabsCapabilitySnapshot, type ElevenLabsUsageEvent } from './elevenlabs.js';
 import { withHostResourcePermit } from '../shared/hostResourcePool.js';
 import { synthesizeAndAlign, type AlignedWord, type AlignerIdentity } from '../shared/alignment/align.js';
 import type { ContentAddressedArtifactStore } from '../run/artifactCache.js';
@@ -16,7 +16,7 @@ export interface SceneAudioRequest {
   language: string;
   voice?: string;
   /** Versioned lesson-wide native-language/English technical terminology policy. */
-  languagePolicy?: 'native-plus-english-terms/v1';
+  languagePolicy?: 'english-only/v1' | 'native-plus-english-terms/v1';
   terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }>;
   /** Captured provider metadata makes routing deterministic and network-free in tests. */
   elevenLabsCapabilities?: ElevenLabsCapabilitySnapshot;
@@ -80,8 +80,12 @@ export async function synthesizeSceneAudio(request: SceneAudioRequest, deps: Sce
     return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, ...(providerMetadata ? { providerMetadata } : {}), audioBase64: (await readFile(generated.audioPath)).toString('base64') };
   };
   const effectiveVoice = tts === 'elevenlabs' ? resolveElevenLabsVoice(request.voice) : request.voice;
-  const effectiveModel = tts === 'elevenlabs' ? resolveElevenLabsModel(request.elevenLabsModel) : 'base';
-  const cacheInput = { text: request.text, language: request.language, voice: effectiveVoice, languagePolicy: request.languagePolicy ?? 'native-plus-english-terms/v1', terminology: request.terminology ?? [], provider: 'auto', model: effectiveModel, ...(tts === 'local' ? {} : { tts, capabilitySnapshotId: capabilities?.snapshotId ?? 'runtime-probe', voiceSettings: request.voiceSettings ?? { stability: 0.5, similarity_boost: 0.75, speed: 1 }, normalizationVersion: 'nfkc-whitespace/v1' }), calibration: { provider: tts, model: effectiveModel, voice: effectiveVoice, language: request.language, medianErrorMs: request.calibrationMedianErrorMs } };
+  const requestedModel = tts === 'elevenlabs' ? resolveElevenLabsModel(request.elevenLabsModel) : undefined;
+  const effectiveModel = tts === 'elevenlabs'
+    ? requestedModel ?? (capabilities ? modelsForLanguage(capabilities, request.language)[0]?.id : undefined)
+    : 'base';
+  const languagePolicy = request.languagePolicy ?? (/^en(?:-|$)/iu.test(request.language) ? 'english-only/v1' : 'native-plus-english-terms/v1');
+  const cacheInput = { text: request.text, language: request.language, voice: effectiveVoice, languagePolicy, terminology: request.terminology ?? [], provider: 'auto', model: effectiveModel, ...(tts === 'local' ? {} : { tts, capabilitySnapshotId: capabilities?.snapshotId ?? 'runtime-probe', voiceSettings: request.voiceSettings ?? { stability: 0.5, similarity_boost: 0.75, speed: 1 }, normalizationVersion: 'nfkc-whitespace/v1' }), calibration: { provider: tts, model: effectiveModel, voice: effectiveVoice, language: request.language, medianErrorMs: request.calibrationMedianErrorMs } };
   if (!deps.artifactStore) {
     const payload = await generate();
     return { ...fromPayload(payload), cacheHit: false };

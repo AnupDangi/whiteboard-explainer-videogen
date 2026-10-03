@@ -160,6 +160,10 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
     addUsage(usage, syllabusResult.usage); failures.push(...syllabusResult.failures); rawResponses.syllabus = syllabusResult.rawResponses;
     if (!syllabusResult.value) return preparedResult({ requestedDurationSec });
     const syllabus = syllabusResult.value;
+    const lessonTerminology = syllabus.concepts
+      .map(({ label }) => label.trim())
+      .filter((term, index, terms) => term.length > 0 && terms.indexOf(term) === index)
+      .map((term) => ({ term }));
     const sufficiencyCheckedAt = new Date().toISOString();
     const sufficiencyFailure: StageFailure | undefined = syllabus.sourceSupport === 'insufficient' ? {
       code: 'source-insufficient-for-goal', stage: 'source',
@@ -225,7 +229,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       if (!analysis.ok || contractFindings.length) return preparedResult({ syllabus, graph, plan: modulePlan, analysis, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const moduleVocabulary = m.beats ? {} : await discoverFor(`:${moduleTag}`, graph, modulePlan, `${moduleTag}_`);
       // Beat mode: the teaching beats and their speech replace Visual Discovery and the marker script (flag TEACHING_BEATS_V2).
-      const beatRun = m.beats ? await runCached(`S3b-beats:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan }, 'claude-beats/v1', 'S3b-beats-v1-teaching-beats', () => runBeatStages({ plan: modulePlan, graph, sourceDoc: scopedSource }, { ...(m.speechLanguage ? { language: m.speechLanguage } : {}), model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.beatClient ? { client: m.beatClient } : {}) })) : undefined;
+      const beatRun = m.beats ? await runCached(`S3b-beats:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, terminology: lessonTerminology }, 'claude-beats/v2', 'S3b-beats-v2-course-terminology', () => runBeatStages({ plan: modulePlan, graph, sourceDoc: scopedSource, terminology: lessonTerminology }, { ...(m.speechLanguage ? { language: m.speechLanguage } : {}), model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.beatClient ? { client: m.beatClient } : {}) })) : undefined;
       const scriptRun = beatRun ? { result: { value: beatRun.result.value?.script, usage: beatRun.result.usage, failures: beatRun.result.failures, rawResponses: beatRun.result.rawResponses } } : await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, vocabulary: moduleVocabulary }, 'claude-script/v1', 'S4-module-script-v9-claim-markers', () => writeScript(moduleRequest, graph, modulePlan, { visualVocabulary: moduleVocabulary, model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, scriptRun.result.usage); failures.push(...scriptRun.result.failures); rawResponses[`script:${moduleTag}`] = scriptRun.result.rawResponses;
       if (!scriptRun.result.value) return preparedResult({ syllabus, graph, plan: modulePlan, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });

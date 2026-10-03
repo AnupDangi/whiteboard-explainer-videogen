@@ -27,7 +27,10 @@ test('audio cache identity includes language policy and canonical lesson termino
     const first = await synthesizeSceneAudio(base, { aligner: countedAligner, artifactStore: store });
     const same = await synthesizeSceneAudio(base, { aligner: countedAligner, artifactStore: store });
     const changed = await synthesizeSceneAudio({ ...base, terminology: [{ term: 'osmosis', nativeExplanation: 'दूसरी व्याख्या' }] }, { aligner: countedAligner, artifactStore: store });
+    const english = await synthesizeSceneAudio({ ...base, language: 'en', languagePolicy: undefined }, { aligner: countedAligner, artifactStore: store });
+    const englishAgain = await synthesizeSceneAudio({ ...base, language: 'en', languagePolicy: undefined }, { aligner: countedAligner, artifactStore: store });
     assert.equal(first.cacheHit, false); assert.equal(same.cacheHit, true); assert.equal(changed.cacheHit, false);
-    assert.equal(calls, 2);
+    assert.equal(english.cacheHit, false); assert.equal(englishAgain.cacheHit, true);
+    assert.equal(calls, 3);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
