@@ -3,6 +3,7 @@
 //   node scripts/v2-lang-demo.mjs <source.md> [en hi ne ...] [--duration=60] [--tag=run1]
 // Output: .data/lang-demo/<tag>/<lang>/ ; prints status, scenes, hard failures, video path per language. Paid (OpenRouter + ElevenLabs).
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 const args = process.argv.slice(2);
 const flag = (k, d) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
@@ -11,7 +12,9 @@ const [source, ...langs] = positional;
 if (!source) { console.error('usage: v2-lang-demo.mjs <source.md> [langs...] [--duration=60] [--tag=name]'); process.exit(2); }
 const languages = langs.length ? langs : ['en', 'hi', 'ne'];
 const tag = flag('tag', new Date().toISOString().replace(/[:.]/g, '-'));
-const env = { ...process.env, TEACHING_COMPILER_VERSION: 'v2', TEACHING_BEATS_V2: '1', BOARD_OPS_V2: '1', PERSISTENT_BOARD_V2: '1', TYPE_RESOLVER_V2: '1', LAYOUT_V2: '1', RENDER_PLAN_V2: '1' };
+// Synthesis requires a captured provider capability snapshot: `pnpm run elevenlabs:capture` writes this default file.
+const capabilities = process.env.ELEVENLABS_CAPABILITIES_FILE ?? (existsSync('.data/elevenlabs-capabilities.json') ? '.data/elevenlabs-capabilities.json' : undefined);
+const env = { ...process.env, ...(capabilities ? { ELEVENLABS_CAPABILITIES_FILE: capabilities } : {}), TEACHING_COMPILER_VERSION: 'v2', TEACHING_BEATS_V2: '1', BOARD_OPS_V2: '1', PERSISTENT_BOARD_V2: '1', TYPE_RESOLVER_V2: '1', LAYOUT_V2: '1', RENDER_PLAN_V2: '1' };
 const run = (language) => new Promise((resolve) => {
   const out = path.join('.data/lang-demo', tag, language);
   const child = spawn('node', ['dist/src/run/lessonCli.js', `--source=${source}`, '--instruction=Teach the main idea of this source to a beginner.', `--duration=${flag('duration', '60')}`, `--id=${path.basename(source, path.extname(source))}-${language}`, '--cache=cold', '--tts=elevenlabs', `--language=${language}`, `--out=${out}`, ...(process.env.V2_BENCH_PLANNER ? [`--planner=${process.env.V2_BENCH_PLANNER}`] : [])], { env });

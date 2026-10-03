@@ -246,3 +246,70 @@ test('scaled kit text below 32px is rejected and moving objects are checked betw
   ]);
   assert.ok(diagnoseSceneGeometry(layoutScene(moveStates), moveStates).some((d) => d.code === 'movement_path_collision' && d.stateIndex === 1 && d.elementIds.includes('traveler') && d.elementIds.includes('obstacle')));
 });
+
+const routeOf = (id: string, a: { x: number; y: number }, b: { x: number; y: number }) => {
+  const angle = Math.atan2(b.y - a.y, b.x - a.x);
+  const head = (da: number) => ({ x: b.x - 22 * Math.cos(angle + da), y: b.y - 22 * Math.sin(angle + da) });
+  const arrowhead: [typeof a, typeof a, typeof a] = [head(0.5), b, head(-0.5)];
+  const xs = arrowhead.map((p) => p.x); const ys = arrowhead.map((p) => p.y);
+  return { id, points: [a, b] as [typeof a, typeof a], arrowhead, arrowheadBounds: { x: Math.min(...xs) - 4, y: Math.min(...ys) - 4, w: Math.max(...xs) - Math.min(...xs) + 8, h: Math.max(...ys) - Math.min(...ys) + 8 } };
+};
+const withRoutes = (base: ReturnType<typeof layoutScene>, routes: Record<string, ReturnType<typeof routeOf>>) => ({ ...base, edgeRouteFor: (_state: BoardState, id: string) => routes[id] }) as typeof base;
+const connect = (id: string, from: string, to: string, beat = 'b1') => BoardOpSchema.parse({ op: 'connect', opId: `${beat}.${id}`, beatId: beat, id, from, to, relation: 'causes' });
+
+test('P9: two arrows that never touch but run almost on top of each other are reported as a clearance defect', () => {
+  const ops: BoardOp[] = [
+    add('a', token('A'), { region: 'left' }, 'b0'), add('b', token('B'), { region: 'right' }, 'b0'),
+    add('c', token('C'), { region: 'left' }, 'b0'), add('d', token('D'), { region: 'right' }, 'b0'),
+    connect('e1', 'a', 'b'), connect('e2', 'c', 'd'),
+  ];
+  const states = statesOf(ops); const base = layoutScene(states);
+  const near = diagnoseSceneGeometry(withRoutes(base, { e1: routeOf('e1', { x: 0, y: 50 }, { x: 300, y: 50 }), e2: routeOf('e2', { x: 0, y: 70 }, { x: 200, y: 70 }) }), states);
+  assert.ok(near.some((d) => d.code === 'edge_clearance' && d.fields.includes('/edges/e1/from') && d.fields.includes('/edges/e2/from')), JSON.stringify(near.map((d) => d.code)));
+  const apart = diagnoseSceneGeometry(withRoutes(base, { e1: routeOf('e1', { x: 0, y: 50 }, { x: 300, y: 50 }), e2: routeOf('e2', { x: 0, y: 150 }, { x: 300, y: 150 }) }), states);
+  assert.equal(apart.some((d) => d.code === 'edge_clearance'), false);
+});
+
+test('P9: arrows that share an endpoint must leave it in clearly different directions', () => {
+  const ops: BoardOp[] = [
+    add('a', token('A'), { region: 'left' }, 'b0'), add('b', token('B'), { region: 'right' }, 'b0'), add('c', token('C'), { region: 'right' }, 'b0'),
+    connect('e1', 'a', 'b'), connect('e2', 'a', 'c'),
+  ];
+  const states = statesOf(ops); const base = layoutScene(states);
+  const stacked = diagnoseSceneGeometry(withRoutes(base, { e1: routeOf('e1', { x: 0, y: 50 }, { x: 300, y: 50 }), e2: routeOf('e2', { x: 0, y: 50 }, { x: 300, y: 62 }) }), states);
+  assert.ok(stacked.some((d) => d.code === 'edge_overlap'), JSON.stringify(stacked.map((d) => d.code)));
+  const fanned = diagnoseSceneGeometry(withRoutes(base, { e1: routeOf('e1', { x: 0, y: 50 }, { x: 300, y: 0 }), e2: routeOf('e2', { x: 0, y: 50 }, { x: 300, y: 200 }) }), states);
+  assert.equal(fanned.some((d) => d.code === 'edge_overlap'), false);
+});
+
+test('P9: a pair of arrows drawn back to back between the same two elements is one line, and is reported', () => {
+  const states = statesOf([add('a', token('A'), { region: 'left' }, 'b0'), add('b', token('B'), { region: 'right' }, 'b0'), connect('e1', 'a', 'b'), connect('e2', 'b', 'a')]);
+  const base = layoutScene(states);
+  const reversed = diagnoseSceneGeometry(withRoutes(base, { e1: routeOf('e1', { x: 0, y: 50 }, { x: 300, y: 50 }), e2: routeOf('e2', { x: 300, y: 54 }, { x: 0, y: 54 }) }), states);
+  assert.ok(reversed.some((d) => d.code === 'edge_overlap'), JSON.stringify(reversed.map((d) => d.code)));
+  const apart = diagnoseSceneGeometry(withRoutes(base, { e1: routeOf('e1', { x: 0, y: 50 }, { x: 300, y: 50 }), e2: routeOf('e2', { x: 300, y: 150 }, { x: 0, y: 150 }) }), states);
+  assert.equal(apart.some((d) => d.code === 'edge_overlap'), false);
+});
+
+test('P9: ink inside a kit frame is checked, not only text: a kit line through text, or a child label across a kit line, is a collision', () => {
+  const states = statesOf([add('box', kit('compartment', JSON.stringify({ zones: ['left', 'right'], boundary: 'solid' }), 'cell'), { region: 'center' }, 'b0')]);
+  const base = layoutScene(states);
+  assert.equal(diagnoseSceneGeometry(base, states).some((d) => d.code === 'kit_ink_collision'), false, 'a stock kit does not collide with its own ink');
+  const home = base.kitRect('box')!; const geometry = base.kitGeometry('box')!;
+  const struck = { ...base, kitGeometry: (id: string) => id === 'box' ? { ...geometry, frame: { ...geometry.frame, paths: [...geometry.frame.paths, { d: `M${home.x} ${home.y + 28}L${home.x + home.w} ${home.y + 28}`, length: home.w, width: 5 }] } } : base.kitGeometry(id) } as typeof base;
+  const found = diagnoseSceneGeometry(struck, states).find((d) => d.code === 'kit_ink_collision');
+  assert.ok(found, 'a stroke through the kit title is reported');
+  assert.deepEqual(found!.elementIds, ['box']);
+  assert.ok(found!.fields.some((f) => f.includes('box')));
+});
+
+test('P9: a kit line through a child element\'s label is a kit_ink_collision on the child', () => {
+  const states = statesOf([add('stack1', kit('stack', '{}', 'call stack'), { region: 'center' }, 'b0'), add('f1', token('f(1)'), { region: 'center', container: 'stack1', slot: 'top' }, 'b1')]);
+  const base = layoutScene(states); const last = states.at(-1)!;
+  assert.equal(diagnoseSceneGeometry(base, states).some((d) => d.code === 'kit_ink_collision'), false);
+  const child = base.rectFor(last, 'f1')!; const geometry = base.kitGeometry('stack1')!;
+  const struck = { ...base, kitGeometry: (id: string) => id === 'stack1' ? { ...geometry, frame: { ...geometry.frame, paths: [...geometry.frame.paths, { d: `M${child.x - 20} ${child.y + child.h / 2}L${child.x + child.w + 20} ${child.y + child.h / 2}`, length: child.w, width: 5 }] } } : base.kitGeometry(id) } as typeof base;
+  const found = diagnoseSceneGeometry(struck, states).find((d) => d.code === 'kit_ink_collision');
+  assert.ok(found, 'reported');
+  assert.deepEqual(found!.elementIds, ['f1', 'stack1']);
+});

@@ -44,7 +44,8 @@
     "assets:sync": "node scripts/assets-sync.mjs",
     "audit:run": "pnpm run build && node dist/src/harness/auditCli.js",
     "icons:iconify": "pnpm run build && node scripts/ingest-iconify-sets.mjs && node scripts/embed-catalog.mjs",
-    "icons:search": "pnpm run build && ASSET_USAGE_CONTEXT=${ASSET_USAGE_CONTEXT:-local-dev} node dist/src/assets/iconSearchCli.js"
+    "icons:search": "pnpm run build && ASSET_USAGE_CONTEXT=${ASSET_USAGE_CONTEXT:-local-dev} node dist/src/assets/iconSearchCli.js",
+    "elevenlabs:capture": "pnpm run build && node scripts/elevenlabs-capture.mjs"
   },
   "devDependencies": {
     "@iconify/json": "^2.2.538",
