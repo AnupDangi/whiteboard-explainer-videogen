@@ -23,9 +23,18 @@ const second = { transition: { mode: 'retain-all' }, ops: [{ op: 'highlight', op
 async function fixture() {
   const dir = await mkdtemp(path.join(tmpdir(), 'board-audit-'));
   await mkdir(path.join(dir, 'v2'));
+  await mkdir(path.join(dir, 'structured', 'board-ops', '0001-scene-one'), { recursive: true });
   await writeFile(path.join(dir, 'lesson-prep.json'), JSON.stringify(prep));
   await writeFile(path.join(dir, 'v2', 'scene.one.json'), JSON.stringify(first));
   await writeFile(path.join(dir, 'v2', 'scene.two.json'), JSON.stringify(second));
+  const historical = path.join(dir, 'structured', 'board-ops', '0001-scene-one');
+  await writeFile(path.join(historical, 'report.json'), JSON.stringify({ stage: 'board-ops', subject: 'scene one' }));
+  const rawDraft = structuredClone(first);
+  delete rawDraft.beatTimings;
+  delete rawDraft.ops[0].element.bindings;
+  await writeFile(path.join(historical, 'raw-model-output.json'), JSON.stringify({ responses: [{ attempt: 1, content: JSON.stringify(rawDraft) }] }));
+  await writeFile(path.join(historical, 'validation-errors.json'), JSON.stringify({ errors: [{ attempt: 1, issues: [{ path: '/ops/2', message: 'unknown target' }] }] }));
+  await writeFile(path.join(historical, 'repair-patches.json'), JSON.stringify({ repairs: [{ repairIndex: 1, mode: 'patch', targets: ['/ops/0/element/bindings'], patches: [{ op: 'add', path: '/ops/0/element/bindings', value: { conceptIds: ['x'], claimIds: ['c'] } }] }] }));
   return dir;
 }
 
@@ -36,8 +45,15 @@ test('audits accepted snapshots with inherited board state without changing run 
     const report = await auditRetainedBoard(dir);
     assert.deepEqual(report.scenes.map((scene) => scene.status), ['accepted-snapshot-valid', 'accepted-snapshot-valid']);
     assert.equal(report.counts.acceptedSnapshotValid, 2);
-    assert.equal(report.historicalRawS6AndRepairStatus, 'unmeasured');
-    assert.match(report.caveat, /not original raw S6 responses/);
+    assert.equal(report.historicalRawS6AndRepairStatus, 'reported-per-scene-when-captured');
+    assert.equal(report.scenes[0].historical.status, 'captured');
+    assert.equal(report.scenes[0].historical.validationAttempts[0].issues[0].path, '/ops/2');
+    assert.equal(report.scenes[0].historical.repairs[0].patches[0].op, 'add');
+    assert.equal(report.scenes[0].historical.offlineReplay.status, 'replayed-offline');
+    assert.match(report.scenes[0].historical.offlineReplay.attempts[0].currentValidatorProblems[0].path, /bindings/);
+    assert.equal(report.scenes[0].historical.offlineReplay.attempts[1].currentValidatorProblems.length, 0);
+    assert.equal(report.scenes[1].historical.status, 'unavailable');
+    assert.match(report.caveat, /summarized per scene when available/);
     assert.equal(await readFile(path.join(dir, 'v2', 'scene.two.json'), 'utf8'), before);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
@@ -49,7 +65,7 @@ test('separates current invalidity from historical failures and missing accepted
     const invalid = await auditRetainedBoard(dir);
     assert.equal(invalid.scenes[0].status, 'accepted-snapshot-invalid');
     assert.ok(invalid.scenes[0].currentValidatorProblems.some((problem) => /bindings/.test(problem.path)));
-    assert.equal(invalid.scenes[0].historicalValidatorProblems, 'unavailable');
+    assert.equal(invalid.scenes[0].historical.status, 'captured');
     await rm(path.join(dir, 'v2', 'scene.two.json'));
     const missing = await auditRetainedBoard(dir);
     assert.equal(missing.scenes[1].status, 'unavailable');

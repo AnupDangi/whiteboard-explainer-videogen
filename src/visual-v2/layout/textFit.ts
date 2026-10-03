@@ -1,14 +1,15 @@
-import { STYLE } from '../../render/style.js';
+import { MIN_READABLE_FONT_PX, STYLE } from '../../render/style.js';
 import { measureTextWidth } from '../../layout/measure.js';
 import type { BoardElement } from '../board-state/types.js';
 import type { Rect } from '../kits/geometry.js';
 
-export const MIN_FONT = 24;
+export const MIN_FONT = MIN_READABLE_FONT_PX;
 
 /** The largest font up to `base` that fits `text` on one line in `width`; below MIN_FONT it stops, so `fitsWidth` decides legality. */
 export function fitFont(text: string, width: number, base: number = STYLE.font.sizes.body): number {
-  const natural = measureTextWidth(text, base);
-  return natural <= width ? base : Math.max(MIN_FONT, Math.floor((base * width) / natural));
+  const readableBase = Math.max(MIN_FONT, base);
+  const natural = measureTextWidth(text, readableBase);
+  return natural <= width ? readableBase : Math.max(MIN_FONT, Math.floor((readableBase * width) / natural));
 }
 
 export interface FittedText { size: number; lines: string[]; fits: boolean }
@@ -30,12 +31,14 @@ function wrap(text: string, width: number, size: number): string[] {
  * three lines inside the slot's height. `fits` is false only when even the smallest legal font cannot hold it.
  */
 export function fitText(text: string, width: number, height: number, base: number = STYLE.font.sizes.body): FittedText {
-  const single = fitFont(text, width, base);
+  const readableBase = Math.max(MIN_FONT, base);
+  const single = fitFont(text, width, readableBase);
   if (measureTextWidth(text, single) <= width + 0.5) return { size: single, lines: [text], fits: true };
   if (/\s/.test(text.trim())) {
-    for (let size = base; size >= MIN_FONT; size -= 2) {
+    for (let size = readableBase; size >= MIN_FONT; size = Math.max(MIN_FONT, size - 2)) {
       const lines = wrap(text, width, size);
       if (lines.length >= 2 && lines.length <= 3 && lines.length * size * LINE_HEIGHT <= height && lines.every((line) => measureTextWidth(line, size) <= width + 0.5)) return { size, lines, fits: true };
+      if (size === MIN_FONT) break;
     }
   }
   return { size: single, lines: [text], fits: false };
@@ -56,7 +59,7 @@ export function textSlot(el: BoardElement, rect: Rect): { text: string; width: n
     case 'token': return { text: spec.text, width: rect.w - 4, height: rect.h - 8, base: STYLE.font.sizes.body };
     case 'entity': return { text: spec.label, width: rect.w - 4, height: rect.h - 8, base: STYLE.font.sizes.body };
     case 'value': return { text: `${spec.label}: ${String(el.value ?? spec.value)}${spec.unit ? ` ${spec.unit}` : ''}`, width: rect.w - 20, height: rect.h - 8, base: STYLE.font.sizes.body };
-    case 'text': return { text: spec.text, width: rect.w, height: rect.h, base: spec.role === 'title' ? STYLE.font.sizes.title : spec.role === 'label' ? STYLE.font.sizes.label : 30 };
+    case 'text': return { text: spec.text, width: rect.w, height: rect.h, base: spec.role === 'title' ? STYLE.font.sizes.title : spec.role === 'label' ? STYLE.font.sizes.label : Math.max(MIN_FONT, 30) };
     default: return undefined;
   }
 }
