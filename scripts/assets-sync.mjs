@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Asset Lab -> runtime sync: bridge manifest, bridge-family catalogs, vendored Iconify sets, embeddings.
 // Usage: node scripts/assets-sync.mjs [--skip-bridge]   (ASSET_LAB_DIR overrides the lab location)
-// The lab is npm-based (package-lock.json); the runtime is pnpm. Each side keeps its own runner.
+// Both the lab and the runtime use pnpm (docs/PNPM.md).
 import { copyFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
@@ -21,7 +21,7 @@ function findLab() {
 
 const lab = findLab();
 const bridgeFile = join(lab, 'out', 'asset-bridge-v2', 'bridge.json');
-if (!process.argv.includes('--skip-bridge')) run('npm', ['run', 'bridge-v2'], lab);
+if (!process.argv.includes('--skip-bridge')) run('pnpm', ['run', 'bridge-v2'], lab);
 if (!existsSync(bridgeFile)) throw new Error(`missing ${bridgeFile}; run without --skip-bridge`);
 copyFileSync(bridgeFile, join(root, 'src/assets/data/asset-bridge-v2.json'));
 run('npx', ['tsc'], root);

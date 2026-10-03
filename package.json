@@ -63,5 +63,10 @@
     "svgpath": "^2.6.0",
     "zod": "^4.6.5"
   },
-  "packageManager": "pnpm@10.28.2"
+  "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "overrides": {
+      "@xmldom/xmldom": ">=0.9.12"
+    }
+  }
 }

@@ -21,4 +21,4 @@ echo "Downloading default Piper voices (English, Nepali) ..."
 
 echo ""
 echo "Done. Supertonic weights auto-download on first synthesis (~/.cache/supertonic3)."
-echo "Then: npm install && npm run compare:en"
+echo "Then: pnpm install && pnpm run compare:en"
