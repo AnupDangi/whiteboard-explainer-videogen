@@ -1,5 +1,12 @@
 # HANDOFF — Claude hypothesis track
 
+## Continuation — 2026-10-03, V2-local failure follow-up
+
+- **Retained failures remain historical facts:** `.data/v2-local1..8` all failed. The runs showing duration misses, evidence/binding repair failures, and beat-narration word-count rejection were run before the following code changes; none of the old results has been replaced or relabeled as passing.
+- **Offline fixes since those attempts:** source grounding accepts the observed inflection form while still requiring every label word in the cited quote; BoardOps repair scope includes a whole invalid creating element and dependent operations; compartment-zone width now reserves enough room for child labels; beat-narration repair guidance and tolerance were tightened; duration revision now changes only the longest scenes, caps each change at 25% per round, and permits five measured rounds. The lesson duration gate remains hard and still rejects out-of-window audio.
+- **Verification:** the full suite passes (1,290 Node + 2 retained-audit + 28 alignment + 12 RAG), including grounding, BoardOps, kit geometry, beat-narration, and duration-fit tests. These are deterministic/offline checks; no provider-backed local rerun has established that the eight earlier failures are resolved.
+- **Still open:** provider-authorized reruns must establish the effect of these fixes before cold-grid outcomes can be counted.
+
 ## Continuation — 2026-10-03, compact S3 truncation recovery
 
 - **Repair change:** when a structured model response ends at the output-token limit, `buildRepairPrompt` no longer copies the incomplete response into the retry. It tells the model the partial output is omitted and to rebuild the full JSON from the original instructions. Non-truncated semantic repairs continue to include their invalid output as before; all schema and semantic validation remains unchanged.

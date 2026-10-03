@@ -49,6 +49,7 @@ Status words follow CLAUDE.md: **implemented**, **tested**, **passed**, **failed
 5. **13 audit advisories** (all one transitive package) are resolved by an override.
 6. **Concurrent processes could overdraw an ElevenLabs key**: reservations were process-local. They are now shared through a lock-guarded file keyed by key *hash*, with dead-process and expiry release.
 7. **S3 osmosis plan was cut off twice**: the initial response exhausted 7,710 completion tokens and its full-document repair exhausted 11,565 before either produced complete JSON. S3 now requests low reasoning effort on both calls, and its cache versions were bumped. Generic truncation recovery omits incomplete output rather than echoing it into the retry; an offline regression test proves a 100,000-character whitespace tail is omitted. Provider-level resolution remains unverified.
+8. **Earlier V2-local failures have offline follow-up fixes, not new run evidence**: grounding now handles the inflection seen in the membrane label; BoardOps repair widens to the entire invalid element; compartment kit child slots reserve readable label space; narration word-count repair guidance is tighter; and measured duration revisions target only the longest scenes with a 25% per-round cap and five rounds. The old `.data/v2-local1..8` failure records remain failures, and all provider-backed resolution remains unmeasured.
 
 ## 4. The board-schema v2 spec (2026-09-26)
 
