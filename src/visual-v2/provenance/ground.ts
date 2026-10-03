@@ -10,6 +10,48 @@ export interface Grounding {
 
 export interface SourceCitation { spanId: string; quote: string }
 
+/** Lexical source consistency, not a proof that the cited statement is true. Never infer a relationship from labels alone. */
+const DECIMAL_ZEROES = [0x660, 0x6f0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66, 0xde6, 0xe50, 0xed0, 0xf20, 0x1040, 0x17e0, 0x1810];
+const asciiDigit = (digit: string): string => {
+  const code = digit.codePointAt(0)!;
+  const zero = DECIMAL_ZEROES.find((base) => code >= base && code < base + 10);
+  return zero === undefined ? digit : String(code - zero);
+};
+const normalized = (text: string): string => text.normalize('NFKC').replace(/\p{Nd}/gu, asciiDigit).toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, ' ').trim().replace(/\s+/g, ' ');
+const containsPhrase = (quote: string, phrase: string): boolean => {
+  const value = normalized(phrase);
+  return value.length > 0 && ` ${normalized(quote)} `.includes(` ${value} `);
+};
+
+export function sourceTextProblem(assertions: readonly string[], citation: SourceCitation | undefined, grounding: Grounding | undefined, subject: string): string | undefined {
+  if (!citation) return `a source ${subject} needs evidence {spanId, quote} copied from the source`;
+  if (!grounding) return `no source is available to check this source ${subject} against`;
+  const verbatim = grounding.verify(citation.spanId, citation.quote);
+  if (verbatim === undefined) return `evidence span ${citation.spanId} does not contain that quote; copy it verbatim from the source`;
+  const absent = assertions.find((text) => !containsPhrase(verbatim, text));
+  return absent === undefined ? undefined : `the source ${subject} asserts ${JSON.stringify(absent)}, which is absent from its cited quote`;
+}
+
+/** Every displayed scalar in source kit parameters must occur in the citation. Boolean/layout-only params carry no source fact. */
+export function factualKitScalars(value: unknown): string[] {
+  if (typeof value === 'number' || typeof value === 'string') return [String(value)];
+  if (Array.isArray(value)) return value.flatMap(factualKitScalars);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(factualKitScalars);
+  return [];
+}
+
+/** An edge requires an anchored quote containing the directed subject, relation, and object in that order. */
+export function sourceEdgeProblem(from: string | undefined, relation: string, to: string | undefined, citation: SourceCitation | undefined, grounding: Grounding | undefined): string | undefined {
+  if (!from || !to) return 'the factual edge endpoints need displayed names before the relationship can be grounded';
+  const mismatch = sourceTextProblem([from, relation, to], citation, grounding, 'edge');
+  if (mismatch) return mismatch;
+  const quote = normalized(grounding!.verify(citation!.spanId, citation!.quote)!);
+  const start = quote.indexOf(normalized(from));
+  const middle = quote.indexOf(normalized(relation), start + normalized(from).length);
+  const end = quote.indexOf(normalized(to), middle + normalized(relation).length);
+  return start >= 0 && middle > start && end > middle ? undefined : 'the cited quote does not state this directed subject–relation–object sequence; use a matching quote or change the edge';
+}
+
 const numbersOf = (text: string): string[] => text.match(/\d+(?:\.\d+)?/g) ?? [];
 const compact = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, '');
 

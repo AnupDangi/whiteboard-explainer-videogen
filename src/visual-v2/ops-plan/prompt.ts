@@ -26,19 +26,19 @@ Think like a whiteboard teacher: the board is built up as the explanation unfold
 Every op is a JSON object whose "op" field names the operation, for example {"op":"add","opId":"b1.t1","beatId":"<beat id>","cue":0,"id":"cell1","element":{"type":"token","text":"water","provenance":"illustrative"},"at":{"region":"center"}} (the key is "op", never "type"; "type" belongs only inside an element).
 Operations (every op has opId, beatId and an optional cue = the 0-based sentence of that beat's speech the change belongs to; ops are listed beat by beat in order; give each change the cue of the sentence that introduces it, usually one change per sentence, so the board grows with the speech):
 - add {id, element, at}: draw something new. at = {region, container?, zone?, slot?}.
-- connect {id, from, to, relation, label?, weight?}: an arrow between two elements (weight 0..1 thickens it).
+- connect {id, from, to, relation, label?, weight?, evidence?}: a factual directed arrow between two elements (weight 0..1 thickens it). Cite a quote that states the named source, relation, and named destination in that order.
 - move {target, to}: carry an element to a new place (a different zone, slot or region).
 - transform {target, changes:[{key,value}]}: restyle an element. Only key scale (number 0.5-1.6) or color (blue, yellow, green, orange, purple, red, grey); never content.
 - replace {target, id, element}: swap an element for another in the same place.
 - remove {target}: take an element away (a removed id can never be used again, give every new element a new id).
 - highlight / deemphasize / strike {target}: draw attention, fade, or cross out.
-- updateValue {target, value}: change the number or text of a value element.
+- updateValue {target, value, evidence?}: change the number or text of a value element. A source value needs a fresh citation for its new value; unsupported derived value changes fail.
 - split {target, into:[{id,element,at}]} / merge {targets, into:{id,element,at}}: one thing becomes several, or several become one.
 - equationStep {target, latex, rule, evidence?}: the next line of a derivation; the whole derivation stays visible (evidence is required when the equation's provenance is source).
 - revealRegion / clearRegion {region}: show or empty an area.
-Elements: entity {conceptId, label, provenance} (a thing from the lesson's concepts; label at most 4 words), kit {kit, label?, paramsJson, provenance} (a mechanism picture, below), token {text, provenance} (a small item: at most 24 characters), text {text, role, provenance}, equation {latex, provenance, evidence?}, value {label, value, unit?, provenance}.
+Elements: entity {conceptId, label, provenance, evidence?} (a thing from the lesson's concepts; label at most 4 words), kit {kit, label?, paramsJson, provenance, evidence?} (a mechanism picture, below), token {text, provenance, evidence?} (a small item: at most 24 characters), text {text, role, provenance, evidence?}, equation {latex, provenance, evidence?}, value {label, value, unit?, provenance, evidence?}.
 Every element may include bindings:{conceptIds:[...],claimIds:[...]}; add it to all visuals, including kits, tokens, values and equations. Bindings are exact IDs from the BEAT/claim context, never guessed from labels. Entity conceptId also explicitly binds that concept. A factual connect op must include bindings with the conceptIds and claimIds that support its relationship. Do not add unsupported bindings.
-provenance: source = stated by the source (an equation or derivation line with provenance source MUST carry evidence {spanId, quote} copied verbatim from the SOURCE EVIDENCE list in the user message; if none fits, use derived or illustrative); derived = follows from the source; illustrative = an example value you choose to make an idea concrete (it must be correct); metaphorical = an analogy picture.
+provenance: source = stated by the source. Source visuals and factual arrows need evidence {spanId, quote} copied verbatim from SOURCE EVIDENCE. Values must match their label, value and unit; kit parameters that display text or numbers must match; arrows need an explicit directed subject–relation–object phrase. A citation is a consistency check, not mathematical proof. If no quote fits, use an explicitly illustrative example or change the visual. derived = follows from the source only when a supported verifier can check it; illustrative = an example you choose to make an idea concrete; metaphorical = an analogy picture.
 Regions: ${REGION_IDS.join(', ')} (semantic areas; read left to right, top to bottom). Put a mechanism kit in a region, put its children inside it with at.container = the kit's id, plus zone or slot as the kit requires.
 Kits:
 ${kits}
@@ -64,7 +64,7 @@ ${speech.map((sentence, i) => `    ${i}: ${sentence}`).join('\n')}`;
   const user = `SCENE ${ctx.sceneId}: "${ctx.title}"
 Concepts of this scene: ${JSON.stringify(ctx.concepts.map(({ id, label }) => ({ id, label })))}
 SOURCE EVIDENCE you may cite (spanId in brackets, quote verbatim):
-${cites.length ? cites.join('\n') : '  (none: do not use provenance source for equations)'}
+${cites.length ? cites.join('\n') : '  (none: do not use provenance source for factual visuals or arrows)'}
 Ids already used in the lesson (never reuse one, including removed elements; give every new element and arrow a fresh id): ${usedIds.length ? usedIds.join(', ') : '(none)'}
 Board inherited from the previous scene (full live element state, values, bindings, placements, kit params and lifecycle): ${inherited.length ? JSON.stringify(inherited) : '(no live elements)'}
 Live factual edges inherited from the previous scene: ${inheritedEdges.length ? JSON.stringify(inheritedEdges) : '(no live edges)'}

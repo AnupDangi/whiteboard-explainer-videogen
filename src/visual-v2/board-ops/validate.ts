@@ -3,7 +3,7 @@ import type { BoardOp, ElementSpec, Expect, Placement } from './types.js';
 import { KIT_REGISTRY, parseKitParams } from '../kits/registry.js';
 import { verifyEquation, verifyStep } from '../provenance/verify.js';
 import { createdBy, dependenciesOf } from './deps.js';
-import { sourceFormulaProblem, type Grounding } from '../provenance/ground.js';
+import { factualKitScalars, sourceEdgeProblem, sourceFormulaProblem, sourceTextProblem, type Grounding } from '../provenance/ground.js';
 import type { BoardState, Condition } from '../board-state/types.js';
 import { BoardOpError } from '../board-state/types.js';
 import { applyOpAfter, containerContents, duplicateId } from '../board-state/reducer.js';
@@ -79,6 +79,56 @@ function equationProblems(spec: ElementSpec, path: string, grounding?: Grounding
   return [{ path: pointer, message: verdict.status === 'refuted' ? `this ${description} is wrong (${verdict.detail}); give a correct example` : `could not verify this ${description} (${verdict.detail}); if the source states this equation, set provenance source and copy evidence {spanId, quote} from the SOURCE EVIDENCE list; otherwise use a numeric example the checker can evaluate` }];
 }
 
+function sourceContentProblems(spec: ElementSpec, path: string, grounding?: Grounding): ValidatorProblem[] {
+  if (spec.provenance !== 'source' || spec.type === 'equation' || (spec.type === 'kit' && spec.kit === 'equation')) return [];
+  let assertions: string[];
+  switch (spec.type) {
+    case 'token': case 'text': assertions = [spec.text]; break;
+    case 'entity': assertions = [spec.label]; break;
+    case 'value': assertions = [spec.label, String(spec.value), ...(spec.unit ? [spec.unit] : [])]; break;
+    case 'kit': {
+      const parsed = parseKitParams(spec.kit, spec.paramsJson);
+      if (!parsed.ok) return [];
+      assertions = [...(spec.label ? [spec.label] : []), ...factualKitScalars(parsed.value)];
+      break;
+    }
+  }
+  // Legacy entity/text boards had no citation field. With no source verifier they cannot receive a fresh factual pass.
+  if ((spec.type === 'entity' || spec.type === 'text') && !grounding && !spec.evidence) return [];
+  const message = sourceTextProblem(assertions, spec.evidence, grounding, spec.type);
+  return message ? [{ path: `${path}/evidence`, message }] : [];
+}
+
+function contentProblems(spec: ElementSpec, path: string, grounding?: Grounding): ValidatorProblem[] {
+  return [...sourceContentProblems(spec, path, grounding), ...equationProblems(spec, path, grounding)];
+}
+
+function displayedName(spec: ElementSpec | undefined): string | undefined {
+  if (!spec) return undefined;
+  switch (spec.type) {
+    case 'entity': case 'value': return spec.label;
+    case 'text': case 'token': return spec.text;
+    case 'kit': return spec.label;
+    case 'equation': return undefined;
+  }
+}
+
+function mutationProblems(op: BoardOp, state: BoardState, path: string, grounding?: Grounding): ValidatorProblem[] {
+  if (op.op !== 'updateValue') return [];
+  const target = state.elements[op.target]?.spec;
+  if (!target || target.type !== 'value') return [];
+  if (target.provenance === 'illustrative' || target.provenance === 'metaphorical') return [];
+  if (target.provenance === 'derived') return [{ path: `${path}/evidence`, message: 'a derived value mutation has no supported derivation verifier; use a source-grounded value or an explicitly illustrative example' }];
+  const message = sourceTextProblem([target.label, String(op.value), ...(target.unit ? [target.unit] : [])], op.evidence, grounding, 'value mutation');
+  return message ? [{ path: `${path}/evidence`, message }] : [];
+}
+
+function edgeProblems(op: BoardOp, state: BoardState, path: string, grounding?: Grounding): ValidatorProblem[] {
+  if (op.op !== 'connect' || (!op.evidence && !grounding)) return [];
+  const message = sourceEdgeProblem(displayedName(state.elements[op.from]?.spec), op.relation, displayedName(state.elements[op.to]?.spec), op.evidence, grounding);
+  return message ? [{ path: `${path}/evidence`, message }] : [];
+}
+
 function stepProblems(op: BoardOp, state: BoardState, at: string, grounding?: Grounding): ValidatorProblem[] {
   if (op.op !== 'equationStep') return [];
   const target = state.elements[op.target];
@@ -116,13 +166,15 @@ function transformProblems(op: BoardOp, state: BoardState, at: string): Validato
 function opShapeProblems(op: BoardOp, state: BoardState, index: number, grounding?: Grounding): ValidatorProblem[] {
   const at = `/ops/${index}`;
   switch (op.op) {
-    case 'add': return [...kitProblems(op.element, `${at}/element`), ...equationProblems(op.element, `${at}/element`, grounding), ...zoneProblems(state, op.at, `${at}/at`)];
+    case 'add': return [...kitProblems(op.element, `${at}/element`), ...contentProblems(op.element, `${at}/element`, grounding), ...zoneProblems(state, op.at, `${at}/at`)];
     case 'equationStep': return stepProblems(op, state, at, grounding);
     case 'transform': return transformProblems(op, state, at);
-    case 'replace': return [...kitProblems(op.element, `${at}/element`), ...equationProblems(op.element, `${at}/element`, grounding)];
+    case 'replace': return [...kitProblems(op.element, `${at}/element`), ...contentProblems(op.element, `${at}/element`, grounding)];
     case 'move': return zoneProblems(state, op.to, `${at}/to`);
-    case 'split': return [...(duplicateId(op.into.map((part) => part.id)) ? [{ path: `${at}/into`, message: `split parts must have distinct ids; ${duplicateId(op.into.map((part) => part.id))} is repeated` }] : []), ...op.into.flatMap((part, j) => [...kitProblems(part.element, `${at}/into/${j}/element`), ...equationProblems(part.element, `${at}/into/${j}/element`, grounding), ...zoneProblems(state, part.at, `${at}/into/${j}/at`)])];
-    case 'merge': return [...kitProblems(op.into.element, `${at}/into/element`), ...equationProblems(op.into.element, `${at}/into/element`, grounding), ...zoneProblems(state, op.into.at, `${at}/into/at`)];
+    case 'split': return [...(duplicateId(op.into.map((part) => part.id)) ? [{ path: `${at}/into`, message: `split parts must have distinct ids; ${duplicateId(op.into.map((part) => part.id))} is repeated` }] : []), ...op.into.flatMap((part, j) => [...kitProblems(part.element, `${at}/into/${j}/element`), ...contentProblems(part.element, `${at}/into/${j}/element`, grounding), ...zoneProblems(state, part.at, `${at}/into/${j}/at`)])];
+    case 'merge': return [...kitProblems(op.into.element, `${at}/into/element`), ...contentProblems(op.into.element, `${at}/into/element`, grounding), ...zoneProblems(state, op.into.at, `${at}/into/at`)];
+    case 'connect': return edgeProblems(op, state, at, grounding);
+    case 'updateValue': return mutationProblems(op, state, at, grounding);
     default: return [];
   }
 }
