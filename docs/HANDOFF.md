@@ -1,5 +1,12 @@
 # HANDOFF — Claude hypothesis track
 
+## Continuation — 2026-10-03, compact S3 truncation recovery
+
+- **Repair change:** when a structured model response ends at the output-token limit, `buildRepairPrompt` no longer copies the incomplete response into the retry. It tells the model the partial output is omitted and to rebuild the full JSON from the original instructions. Non-truncated semantic repairs continue to include their invalid output as before; all schema and semantic validation remains unchanged.
+- **Regression evidence:** `model-layer.test.ts` injects a 100,000-character whitespace tail and confirms the retry prompt stays under 500 characters, excludes the truncated fragment, and still receives the existing 1.5× completion allowance.
+- **Verification:** `pnpm run typecheck:hypothesis`, `pnpm run test:hypothesis` (**1,290 Node + 2 retained-audit + 28 alignment + 12 RAG**), and `git diff --check` passed.
+- **Still open:** no authorized live provider run has tested either S3 mitigation. The paid cold grid, held-out run, cost/minute, and human alignment, muted-board, and rights reviews remain outstanding. `ABSOLUTE_QUALITY_CERTIFICATION=UNAVAILABLE` remains correct.
+
 ## Continuation — 2026-10-03, P13 raster worker measurement
 
 - **Method:** extended `scripts/render-bench.mjs` to run three isolated subprocess trials at 1, 2, 4, and 8 workers, with 120 locked SVG frames per trial. Each trial records throughput, wall time, incremental and absolute process RSS, process CPU, and host load; the report records thermal status and any narrowly tolerated lock-tool drift.
@@ -7,7 +14,7 @@
 - **Result:** `.data/benchmark-v2/p13-render-bench/2026-10-03-3x.json`, 10-core/24-GB host. Median throughput was 46.45, 91.20, 169.20, and 230.80 fps for 1/2/4/8 workers. Median incremental peak RSS was 604, 925, 899, and 865 MB; absolute peak RSS maxima were 759, 1,070, 1,042, and 1,035 MB. Eight workers were the recommended size by the script's within-10%-of-best rule. Process CPU rose to 7.45 core-equivalents at eight workers; host load averaged about 2.8–3.0 over 1 minute and 4.3–4.4 over 5 minutes on ten available CPUs.
 - **Worker default:** changed the bounded pool's default from four workers to `min(8, availableParallelism() - 1)`, floored at one, based on the measured 8-worker result. Eight workers improved median throughput by 36% over four without increasing observed absolute peak RSS in this run. This is a local benchmark-based default, not a cross-host optimum.
 - **Thermal limit:** `pmset -g therm` returned no CPU power status on this host; `powermetrics` requires superuser access. Thermal throttling therefore remains unmeasured. The throughput/RAM/CPU portion of P13 is measured; this result is one host/workload and does not prove behavior on other hardware.
-- **Verification:** `pnpm run typecheck:hypothesis`, build, render-bench syntax check, the full repository suite (1,289 Node + 2 retained-audit + 28 alignment + 12 RAG), and `git diff --check` passed. The raster-only path has a regression test proving Node/pipeline drift is tolerated only for this benchmark and renderer-version drift still fails.
+- **Verification:** `pnpm run typecheck:hypothesis`, build, render-bench syntax check, the full repository suite (1,289 Node + 2 retained-audit + 28 alignment + 12 RAG), and `git diff --check` passed at that point. The raster-only path has a regression test proving Node/pipeline drift is tolerated only for this benchmark and renderer-version drift still fails.
 - **Still open:** confirm the S3 low-reasoning mitigation with an authorized provider run; complete the cold 5×3 and held-out runs; obtain human alignment, muted-board, and rights reviews; measure cost per finished minute. `ABSOLUTE_QUALITY_CERTIFICATION=UNAVAILABLE` remains correct.
 
 ## Continuation — 2026-10-03, S3 truncation mitigation

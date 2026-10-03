@@ -48,7 +48,7 @@ Status words follow CLAUDE.md: **implemented**, **tested**, **passed**, **failed
 4. **Synthesis could not start**: ElevenLabs requires a captured capability snapshot and none existed. `pnpm run elevenlabs:capture` now captures it (read-only GETs; 9 speech models).
 5. **13 audit advisories** (all one transitive package) are resolved by an override.
 6. **Concurrent processes could overdraw an ElevenLabs key**: reservations were process-local. They are now shared through a lock-guarded file keyed by key *hash*, with dead-process and expiry release.
-7. **S3 osmosis plan was cut off twice**: the initial response exhausted 7,710 completion tokens and its full-document repair exhausted 11,565 before either produced complete JSON. S3 now requests low reasoning effort on both calls, and its cache versions were bumped. Offline request-contract tests pass; provider-level resolution remains unverified.
+7. **S3 osmosis plan was cut off twice**: the initial response exhausted 7,710 completion tokens and its full-document repair exhausted 11,565 before either produced complete JSON. S3 now requests low reasoning effort on both calls, and its cache versions were bumped. Generic truncation recovery omits incomplete output rather than echoing it into the retry; an offline regression test proves a 100,000-character whitespace tail is omitted. Provider-level resolution remains unverified.
 
 ## 4. The board-schema v2 spec (2026-09-26)
 

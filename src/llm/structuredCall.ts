@@ -271,8 +271,16 @@ function isNetworkTransportError(error: unknown): boolean {
   return NETWORK_FAILURE_MESSAGE.test(text);
 }
 
-export const buildRepairPrompt = (originalUserPrompt: string, invalidOutput: string, validatorError: string, truncated = false): string => `${originalUserPrompt}
-Your previous response was NOT valid and was rejected by the validator. This is your one allowed repair attempt — produce a corrected JSON object that fixes every issue below. Do not repeat the same mistake.${truncated ? '\nYour previous response was cut off at the output token limit before the JSON was complete. Write the complete object more concisely: shorter strings, no commentary.' : ''}
+export const buildRepairPrompt = (originalUserPrompt: string, invalidOutput: string, validatorError: string, truncated = false): string => truncated
+  ? `${originalUserPrompt}
+Your previous response was cut off at the output token limit and did not form a complete JSON object. The incomplete output is omitted. Rebuild the entire response from the original instructions; do not continue from the cut-off text. Keep it concise: short strings, no commentary, no unnecessary whitespace.
+
+Validator error:
+${validatorError}
+
+Respond with ONLY the complete JSON object.`
+  : `${originalUserPrompt}
+Your previous response was NOT valid and was rejected by the validator. This is your one allowed repair attempt — produce a corrected JSON object that fixes every issue below. Do not repeat the same mistake.
 
 Your previous (INVALID) response:
 ${invalidOutput}

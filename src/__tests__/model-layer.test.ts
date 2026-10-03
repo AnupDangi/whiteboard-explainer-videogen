@@ -91,16 +91,24 @@ test('a reservation that does not fit waits for in-flight calls, then fails only
 
 test('a response cut off at the token limit is labelled truncated and the repair gets more output tokens', async () => {
   const maxTokens: number[] = [];
+  const prompts: string[] = [];
   let call = 0;
   const result = await structuredCall({
     ...baseCall, maxTokens: 1000, remainingBudgetUsd: 1,
     fetcher: async (_url, init) => {
-      maxTokens.push(Number(JSON.parse(String(init?.body)).max_tokens));
-      return ++call === 1 ? chatResponse('{"ok": tr', 'length') : chatResponse('{"ok":true}');
+      const request = JSON.parse(String(init?.body)) as { max_tokens: number; messages: Array<{ role: string; content: string }> };
+      maxTokens.push(request.max_tokens);
+      prompts.push(request.messages[1]!.content);
+      return ++call === 1 ? chatResponse(`{"ok": tr${' '.repeat(100_000)}`, 'length') : chatResponse('{"ok":true}');
     },
   });
   assert.deepEqual(result.value, { ok: true });
   assert.deepEqual(maxTokens, [1000, 1500]);
+  assert.match(prompts[1]!, /incomplete output is omitted/);
+  assert.match(prompts[1]!, /Rebuild the entire response from the original instructions/);
+  assert.doesNotMatch(prompts[1]!, /\{"ok": tr/);
+  assert.ok(prompts[1]!.length < 500, 'a huge truncated whitespace tail must not be copied into the repair prompt');
+  assert.doesNotMatch(prompts[1]!, /[ \t]{50}/);
   assert.equal(result.failures.find((failure) => failure.code === 'plan-truncated')?.hard, false);
   assert.equal(result.rawResponses[0]?.finishReason, 'length');
 });
