@@ -45,21 +45,33 @@ export function fitPacing(audioMs: readonly number[], requestedMs: number, polic
 export interface MeasuredScene { sceneId: string; audioMs: number; words: number }
 export interface RevisionTarget { sceneId: string; targetWords: number; targetAudioMs: number; measuredWordsPerSec: number }
 
+/** One rewrite may change a scene by at most this share of its speech: larger swings are where models stop following a word budget. */
+export const MAX_REVISION_SHARE = 0.25;
+
 /**
- * Scale every scene by one factor so total speech lands where the pauses make the request exact. Pauses are assumed nominal; when
- * the direction is known the aim assumes pauses half-way toward the far bound: a rewrite tends to stop short of its budget, so
- * asking for a little less speech (shorten) or a little more (lengthen) than the centred target lands inside the pause bounds.
+ * Which scenes to rewrite, and to how many words, to close the gap between the measured speech and the speech the request leaves
+ * room for. The longest scenes are rewritten first, each by at most MAX_REVISION_SHARE, and only until the gap is covered, so a
+ * small mismatch touches one scene instead of perturbing the whole lesson. Pauses are assumed nominal; when the direction is known
+ * the aim assumes pauses half-way toward the far bound: a rewrite tends to stop short of its budget, so asking for a little less
+ * speech (shorten) or a little more (lengthen) lands inside the pause bounds. `scale` is the lesson-wide speech ratio aimed for.
  */
 export function revisionTargets(scenes: readonly MeasuredScene[], requestedMs: number, policy: PacingPolicy = DEFAULT_PACING, lean?: 'shorten' | 'lengthen'): { scale: number; scenes: RevisionTarget[] } {
   const aim = (bounds: PacingBounds): number => (lean === 'shorten' ? bounds.nominal + (bounds.max - bounds.nominal) / 2 : lean === 'lengthen' ? bounds.nominal - (bounds.nominal - bounds.min) / 2 : bounds.nominal);
   const pauses = aim(policy.gapMs) * Math.max(0, scenes.length - 1) + aim(policy.trailingMs);
   const speech = scenes.reduce((sum, scene) => sum + scene.audioMs, 0);
-  const scale = Math.max(0.1, (requestedMs - pauses) / speech);
-  return {
-    scale,
-    scenes: scenes.map((scene) => ({
+  const speechTarget = Math.max(1, requestedMs - pauses);
+  const gap = speech - speechTarget;
+  let remaining = Math.abs(gap);
+  const chosen = new Map<string, RevisionTarget>();
+  for (const scene of [...scenes].sort((a, b) => b.audioMs - a.audioMs || a.sceneId.localeCompare(b.sceneId))) {
+    if (remaining <= 0) break;
+    const delta = Math.min(remaining, scene.audioMs * MAX_REVISION_SHARE);
+    const targetAudioMs = gap > 0 ? scene.audioMs - delta : scene.audioMs + delta;
+    chosen.set(scene.sceneId, {
       sceneId: scene.sceneId, measuredWordsPerSec: scene.words / (scene.audioMs / 1000),
-      targetWords: Math.max(6, Math.round(scene.words * scale)), targetAudioMs: scene.audioMs * scale,
-    })),
-  };
+      targetWords: Math.max(6, Math.round(scene.words * (targetAudioMs / scene.audioMs))), targetAudioMs,
+    });
+    remaining -= delta;
+  }
+  return { scale: speechTarget / speech, scenes: scenes.flatMap((scene) => chosen.get(scene.sceneId) ?? []) };
 }

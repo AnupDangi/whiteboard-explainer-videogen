@@ -32,16 +32,22 @@ test('speech that cannot fit even with the shortest pauses, or leaves more silen
   assert.throws(() => fitPacing([1000, -5], 60000), /positive/);
 });
 
-test('revision targets scale every scene by the same measured factor, from its own measured speaking rate', () => {
-  const targets = revisionTargets([{ sceneId: 'a', audioMs: 30000, words: 60 }, { sceneId: 'b', audioMs: 57000, words: 114 }], 60000);
-  const pauses = DEFAULT_PACING.gapMs.nominal * 1 + DEFAULT_PACING.trailingMs.nominal;
-  const speechTarget = 60000 - pauses;
-  assert.equal(Math.round(targets.scale * 87000), speechTarget);
-  assert.deepEqual(targets.scenes.map((s) => s.sceneId), ['a', 'b']);
-  assert.equal(targets.scenes[0]!.targetWords, Math.round(60 * targets.scale));
-  assert.equal(targets.scenes[1]!.measuredWordsPerSec, 2);
-  assert.ok(Math.abs(targets.scenes[1]!.targetAudioMs - 57000 * targets.scale) < 1);
-  assert.ok(targets.scenes.every((s) => s.targetWords >= 6), 'a revision never asks for a scene to vanish');
+test('revision rewrites the longest scenes first, each by a bounded share, and stops once the gap is covered', () => {
+  const scenes = [{ sceneId: 'a', audioMs: 30000, words: 60 }, { sceneId: 'b', audioMs: 57000, words: 114 }];
+  const pauses = DEFAULT_PACING.gapMs.nominal + DEFAULT_PACING.trailingMs.nominal;
+  const gap = 87000 - (60000 - pauses);
+  const targets = revisionTargets(scenes, 60000);
+  assert.ok(gap > 0);
+  const speechAfter = targets.scenes.reduce((sum, t) => sum + (scenes.find((s) => s.sceneId === t.sceneId)!.audioMs - t.targetAudioMs), 0);
+  assert.ok(Math.abs(speechAfter - Math.min(gap, 0.25 * 87000)) < 1, 'the cuts add up to the gap, or to the per-scene cap if the gap is larger');
+  assert.equal(targets.scenes[0]!.sceneId, 'a', 'results stay in lesson order');
+  const b = targets.scenes.find((t) => t.sceneId === 'b')!;
+  assert.equal(b.measuredWordsPerSec, 2);
+  assert.ok(b.targetAudioMs >= 57000 * 0.75 - 1, 'no scene is cut by more than a quarter');
+  assert.ok(targets.scenes.every((t) => t.targetWords >= 6), 'a revision never asks for a scene to vanish');
+  const small = revisionTargets([{ sceneId: 'a', audioMs: 20000, words: 40 }, { sceneId: 'b', audioMs: 20000, words: 40 }, { sceneId: 'c', audioMs: 14000, words: 28 }], 60000, DEFAULT_PACING, 'shorten');
+  assert.ok(small.scenes.length < 3, 'a small mismatch touches fewer scenes than the lesson has');
+  assert.equal(revisionTargets([{ sceneId: 'a', audioMs: 28800, words: 57 }], 28800 + DEFAULT_PACING.trailingMs.nominal).scenes.length, 0, 'speech already at the target needs no rewrite');
 });
 
 test('a known direction asks for slightly less (shorten) or more (lengthen) speech than the centred target, always keeping the pauses inside their bounds', () => {

@@ -189,7 +189,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     }
     revisionRounds++;
     const targets = revisionTargets(audioScenes.map(({ section, narration, audio }) => ({ sceneId: section.id, audioMs: audio.durationMs, words: tokenizeWords(narration.text, prepared.beatNarrationContexts?.[section.id]?.language ?? language).length })), requestedDurationMs, DEFAULT_PACING, fit.direction);
-    const revisions = await mapLimit(audioScenes, 4, async ({ section, narration, audio }) => {
+    const revisions = await mapLimit(audioScenes.filter(({ section }) => targets.scenes.some((item) => item.sceneId === section.id)), 4, async ({ section, narration, audio }) => {
       const target = targets.scenes.find((item) => item.sceneId === section.id)!;
       const base = prepared.beatNarrationContexts?.[section.id];
       const sentencesOf = (beatId: string): string[] => narration.beatSpans.find((span) => span.beatId === beatId)?.sentenceSpans.map((span) => narration.text.slice(span.charStart, span.charEnd)) ?? [];
