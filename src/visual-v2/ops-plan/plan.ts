@@ -5,6 +5,9 @@ import { SceneBoardDraftSchema, type SceneBoardDraft } from './types.js';
 import { validateSceneBoard, type BoardContext } from './validate.js';
 
 /** S6 (V2): the board operations of one scene, written from its teaching beats and narration. */
+/** A citation problem is fixed either by quoting better or by changing the element's provenance, so the whole element is in scope. */
+export const boardRepairScope = (pointer: string): string => pointer.replace(/^(\/ops\/\d+(?:\/into(?:\/\d+)?)?\/element)\/evidence$/, '$1');
+
 export async function planSceneBoard(input: { ctx: BoardContext }, m: BeatStageModel): Promise<StructuredCallResult<SceneBoardDraft>> {
   const { ctx } = input;
   const { system, user } = buildBoardPrompt(ctx);
@@ -12,5 +15,6 @@ export async function planSceneBoard(input: { ctx: BoardContext }, m: BeatStageM
     stage: 'board-ops', subject: `scene ${ctx.sceneId}`, model: m.model, apiKey: m.apiKey, system, user, schema: SceneBoardDraftSchema, schemaName: 'scene_board',
     maxTokens: 7000, maxRepairs: 2, remainingBudgetUsd: m.remainingBudgetUsd, ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.client ? { client: m.client } : {}),
     validate: (draft) => validateSceneBoard(draft, ctx),
+    repairScope: boardRepairScope,
   });
 }

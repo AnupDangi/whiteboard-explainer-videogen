@@ -45,9 +45,14 @@ export function fitPacing(audioMs: readonly number[], requestedMs: number, polic
 export interface MeasuredScene { sceneId: string; audioMs: number; words: number }
 export interface RevisionTarget { sceneId: string; targetWords: number; targetAudioMs: number; measuredWordsPerSec: number }
 
-/** Scale every scene by one factor so total speech lands where nominal pauses make the request exact. */
-export function revisionTargets(scenes: readonly MeasuredScene[], requestedMs: number, policy: PacingPolicy = DEFAULT_PACING): { scale: number; scenes: RevisionTarget[] } {
-  const pauses = policy.gapMs.nominal * Math.max(0, scenes.length - 1) + policy.trailingMs.nominal;
+/**
+ * Scale every scene by one factor so total speech lands where the pauses make the request exact. Pauses are assumed nominal; when
+ * the direction is known the aim assumes pauses half-way toward the far bound: a rewrite tends to stop short of its budget, so
+ * asking for a little less speech (shorten) or a little more (lengthen) than the centred target lands inside the pause bounds.
+ */
+export function revisionTargets(scenes: readonly MeasuredScene[], requestedMs: number, policy: PacingPolicy = DEFAULT_PACING, lean?: 'shorten' | 'lengthen'): { scale: number; scenes: RevisionTarget[] } {
+  const aim = (bounds: PacingBounds): number => (lean === 'shorten' ? bounds.nominal + (bounds.max - bounds.nominal) / 2 : lean === 'lengthen' ? bounds.nominal - (bounds.nominal - bounds.min) / 2 : bounds.nominal);
+  const pauses = aim(policy.gapMs) * Math.max(0, scenes.length - 1) + aim(policy.trailingMs);
   const speech = scenes.reduce((sum, scene) => sum + scene.audioMs, 0);
   const scale = Math.max(0.1, (requestedMs - pauses) / speech);
   return {

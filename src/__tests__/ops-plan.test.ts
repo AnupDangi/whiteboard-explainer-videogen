@@ -263,3 +263,27 @@ test('the prompt lists each kit\'s exact parameter fields and enumerations from 
   assert.match(describeKitParams('axes-plot'), /fn: one of linear\|quadratic\|cubic\|sine\|exp\|log\|normal/);
   assert.match(describeKitParams('graph'), /layout\?: one of ring\|grid\|compound/);
 });
+
+test('the repair the validator asks for is allowed: switching an unquoted source label to illustrative may touch its provenance and citation together', async () => {
+  const bad = good() as { ops: Array<{ element: Record<string, unknown> }> };
+  bad.ops[1]!.element = { ...bad.ops[1]!.element, provenance: 'source', evidence: { spanId: 's1', quote: 'a stack pushes' } };
+  const grounded = { ...ctx, grounding: { verify: (spanId: string, quote: string) => (spanId === 's1' && quote === 'a stack pushes' ? quote : undefined) } } as BoardContext;
+  assert.ok(validateSceneBoard(draft(bad), grounded).some((p) => /absent from its cited quote/.test((p as { message: string }).message) && /derived|illustrative/.test((p as { message: string }).message)));
+  // This is the patch a model returns when it follows the hint. It changes provenance and removes the citation of the SAME element.
+  const patch = { patches: [{ op: 'replace', path: '/ops/1/element/provenance', valueJson: '"illustrative"' }, { op: 'remove', path: '/ops/1/element/evidence' }] };
+  const { client, requests } = scripted([JSON.stringify(bad), JSON.stringify(patch)]);
+  const result = await planSceneBoard({ ctx: grounded }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+  assert.equal(result.failures.length, 0, JSON.stringify(result.failures));
+  assert.equal(requests.length, 2, 'one repair was enough');
+  const element = (result.value?.ops[1] as { element: { provenance: string; evidence?: unknown } }).element;
+  assert.equal(element.provenance, 'illustrative');
+  assert.equal(element.evidence, undefined);
+});
+
+test('citation problems on split parts and merge targets also put the whole element in repair scope', async () => {
+  const { boardRepairScope } = await import('../visual-v2/ops-plan/plan.js');
+  assert.equal(boardRepairScope('/ops/3/element/evidence'), '/ops/3/element');
+  assert.equal(boardRepairScope('/ops/3/into/1/element/evidence'), '/ops/3/into/1/element');
+  assert.equal(boardRepairScope('/ops/3/into/element/evidence'), '/ops/3/into/element');
+  assert.equal(boardRepairScope('/ops/3/target'), '/ops/3/target', 'other pointers keep their exact scope');
+});

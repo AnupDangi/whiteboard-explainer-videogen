@@ -91,8 +91,8 @@ export interface RunLessonV2Result {
   elevenLabsCredits: number;
 }
 
-/** Each round rewrites every scene once to a word budget measured from real audio; three rounds converge or the run stops honestly. */
-const MAX_DURATION_REVISIONS = 3;
+/** Each round rewrites every scene once to a word budget measured from real audio; five rounds converge or the run stops honestly. */
+const MAX_DURATION_REVISIONS = 5;
 
 const STATE_CHANGING = new Set(['move', 'remove', 'updateValue', 'transform', 'equationStep', 'strike', 'split', 'merge', 'replace', 'deemphasize', 'highlight', 'clearRegion']);
 
@@ -184,7 +184,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       return finish('failed', { durationMs: naturalMs });
     }
     revisionRounds++;
-    const targets = revisionTargets(audioScenes.map(({ section, narration, audio }) => ({ sceneId: section.id, audioMs: audio.durationMs, words: tokenizeWords(narration.text, prepared.beatNarrationContexts?.[section.id]?.language ?? language).length })), requestedDurationMs);
+    const targets = revisionTargets(audioScenes.map(({ section, narration, audio }) => ({ sceneId: section.id, audioMs: audio.durationMs, words: tokenizeWords(narration.text, prepared.beatNarrationContexts?.[section.id]?.language ?? language).length })), requestedDurationMs, DEFAULT_PACING, fit.direction);
     const revisions = await mapLimit(audioScenes, 4, async ({ section, narration, audio }) => {
       const target = targets.scenes.find((item) => item.sceneId === section.id)!;
       const base = prepared.beatNarrationContexts?.[section.id];
@@ -192,7 +192,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       const ctx: NarrationContext = {
         ...(base ?? { sceneId: section.id, beats: prepared.beatPlans![section.id]!, allowedNumbers: new Set(narration.text.match(/\d+(?:\.\d+)?/g) ?? []), durationSec: section.budgetSec, emphasisCandidates: section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.label ?? []) }),
         durationSec: target.targetAudioMs / 1000,
-        revision: { targetWords: target.targetWords, measuredWordsPerSec: target.measuredWordsPerSec, previousSeconds: audio.durationMs / 1000, previous: narration.beats.map((beat) => ({ beatId: beat.beatId, sentences: sentencesOf(beat.beatId) })) },
+        revision: { direction: fit.direction, targetWords: target.targetWords, measuredWordsPerSec: target.measuredWordsPerSec, previousSeconds: audio.durationMs / 1000, previous: narration.beats.map((beat) => ({ beatId: beat.beatId, sentences: sentencesOf(beat.beatId) })) },
       };
       const excerpt = prepared.sourceDoc ? sectionSourcePrompt(prepared.sourceDoc, section, graph) : '';
       return { section, result: await writeBeatNarration({ ctx, scene: { title: section.title, goal: section.goal }, sourceExcerpt: excerpt }, { model: input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: (input.remainingBudgetUsd ?? 0.2) / Math.max(1, audioScenes.length), ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}), language }) };

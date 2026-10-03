@@ -166,19 +166,30 @@ test('CJK narration uses Intl word segmentation for its spoken-word budget', () 
 });
 
 test('a length revision states the measured speaking rate and target, shows the previous speech, and is only valid inside the word window', () => {
-  const revising: NarrationContext = { ...ctx, revision: { targetWords: 18, measuredWordsPerSec: 2.1, previousSeconds: 32, previous: [{ beatId: 'scene.b1', sentences: ['Every call pushes a new frame onto the stack.', 'The frame remembers where to return.'] }, { beatId: 'scene.b2', sentences: ['When a call returns, its frame is popped off the top.'] }] } };
+  const revising: NarrationContext = { ...ctx, revision: { direction: 'shorten', targetWords: 18, measuredWordsPerSec: 2.1, previousSeconds: 32, previous: [{ beatId: 'scene.b1', sentences: ['Every call pushes a new frame onto the stack.', 'The frame remembers where to return.'] }, { beatId: 'scene.b2', sentences: ['When a call returns, its frame is popped off the top.'] }] } };
   const { system, user } = buildNarrationPrompt(revising, { title: 'T', goal: 'G' }, 'SRC');
   assert.match(user, /REVISION/);
-  assert.match(user, /about 18 spoken words/);
+  assert.match(user, /at most 18 spoken words/);
   assert.match(user, /2\.1 words per second/);
   assert.match(user, /Every call pushes a new frame onto the stack\./);
   assert.match(system + user, /keep every claim|keep each claim|claims/i);
   const words = (d: SceneNarrationDraft) => d.beats.reduce((n, b) => n + b.sentences.reduce((m, s) => m + tokenizeWords(s).length, 0), 0);
   assert.equal(words(draft()), 26);
   const tooLong = validateSceneNarration(draft(), revising);
-  assert.ok(tooLong.some((p) => (p as { path: string }).path === '/beats' && /18/.test((p as { message: string }).message)), 'outside +/-12% of the target');
+  assert.ok(tooLong.some((p) => (p as { path: string }).path === '/beats' && /18/.test((p as { message: string }).message)), 'above the window for a shortening');
   const fits = draft([{ sentences: ['Every call pushes a frame onto the stack.', 'It remembers its return.'] }, { sentences: ['A return pops that frame off.'] }]);
   assert.ok(words(fits) >= 15 && words(fits) <= 21, `${words(fits)} words`);
   assert.deepEqual(validateSceneNarration(fits, revising), []);
   assert.deepEqual(validateSceneNarration(draft(), ctx), [], 'without a revision there is no window');
+});
+
+test('a shortening window sits at or below the target and a lengthening window at or above it', () => {
+  const base = { targetWords: 18, measuredWordsPerSec: 2, previousSeconds: 10, previous: [] as Array<{ beatId: string; sentences: string[] }> };
+  const eighteen = draft([{ sentences: ['Every call pushes a frame onto the stack.', 'It remembers its return.'] }, { sentences: ['A return pops that frame off.'] }]);
+  assert.deepEqual(validateSceneNarration(eighteen, { ...ctx, revision: { ...base, direction: 'shorten' } }), []);
+  assert.deepEqual(validateSceneNarration(eighteen, { ...ctx, revision: { ...base, direction: 'lengthen' } }), []);
+  const lean = draft([{ sentences: ['Every call pushes a frame onto the stack.'] }, { sentences: ['A return pops that frame.'] }]);
+  const n = (d: SceneNarrationDraft) => d.beats.reduce((a, b) => a + b.sentences.reduce((m, s) => m + tokenizeWords(s).length, 0), 0);
+  assert.ok(n(lean) < 18 - 3 && n(lean) >= 13, `${n(lean)} words`);
+  assert.ok(validateSceneNarration(lean, { ...ctx, revision: { ...base, targetWords: 20, direction: 'lengthen' } }).length > 0, 'a lengthening cannot end short of its target');
 });

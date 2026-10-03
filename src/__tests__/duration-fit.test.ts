@@ -43,3 +43,15 @@ test('revision targets scale every scene by the same measured factor, from its o
   assert.ok(Math.abs(targets.scenes[1]!.targetAudioMs - 57000 * targets.scale) < 1);
   assert.ok(targets.scenes.every((s) => s.targetWords >= 6), 'a revision never asks for a scene to vanish');
 });
+
+test('a known direction asks for slightly less (shorten) or more (lengthen) speech than the centred target, always keeping the pauses inside their bounds', () => {
+  const scenes = [{ sceneId: 'a', audioMs: 30000, words: 60 }, { sceneId: 'b', audioMs: 30000, words: 60 }];
+  const centred = revisionTargets(scenes, 60000);
+  const shorter = revisionTargets(scenes, 60000, DEFAULT_PACING, 'shorten');
+  const longer = revisionTargets(scenes, 60000, DEFAULT_PACING, 'lengthen');
+  assert.ok(shorter.scale < centred.scale && centred.scale < longer.scale);
+  for (const result of [shorter, longer]) {
+    const pauses = 60000 - 60000 * result.scale;
+    assert.ok(pauses >= DEFAULT_PACING.gapMs.min + DEFAULT_PACING.trailingMs.min && pauses <= DEFAULT_PACING.gapMs.max + DEFAULT_PACING.trailingMs.max);
+  }
+});
