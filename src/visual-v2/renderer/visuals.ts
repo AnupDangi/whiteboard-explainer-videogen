@@ -1,10 +1,11 @@
 import type { PrimitiveVisual, StrokePath } from '../../shared/types.js';
 import { STYLE } from '../../render/style.js';
+import { polylinePath } from '../../render/pathmath.js';
 import { fitFont, fitText, lineBaselines } from '../layout/textFit.js';
 import { typesetTex } from '../../render/math.js';
 import type { BoardEdge, BoardElement } from '../board-state/types.js';
-import type { SceneGeometry } from '../layout/sceneLayout.js';
-import { arrowPaths, borderPoint, boxPath, center, emptyVisual, fillOf, linePath, textRun, upper, type Rect } from '../kits/geometry.js';
+import { routeEdge, type EdgeRoute, type SceneGeometry } from '../layout/sceneLayout.js';
+import { boxPath, emptyVisual, fillOf, linePath, textRun, upper, type Rect } from '../kits/geometry.js';
 import { canonicalHash } from '../../harness/replayDeterminism.js';
 import { depictEntity, type ConceptInfo, type EntityResolver } from '../resolver/typeGate.js';
 
@@ -88,13 +89,13 @@ export function strikeVisual(rect: Rect): PrimitiveVisual {
 }
 
 /** An arrow between two element rects, from border to border; weight thickens it. */
-export function edgeVisual(edge: BoardEdge, from: Rect, to: Rect): PrimitiveVisual {
-  const a = borderPoint(from, center(to), 8);
-  const b = borderPoint(to, center(from), 8);
+export function edgeVisual(edge: BoardEdge, from: Rect, to: Rect, pinnedRoute?: EdgeRoute): PrimitiveVisual {
+  const route = pinnedRoute ?? routeEdge(edge.id, from, to, edge.label);
+  const [a, b] = route.points;
   const width = 3 + 7 * (edge.weight ?? 0.3) + (edge.emphasis === 'highlight' ? 5 : 0);
   const color = edge.emphasis === 'highlight' ? STYLE.palette.orange : edge.emphasis === 'struck' ? STYLE.palette.red : undefined;
-  const paths = arrowPaths(a.x, a.y, b.x, b.y, 22).map((p) => ({ ...p, width, ...(color ? { color } : {}) }));
-  const texts = edge.label ? [textRun((a.x + b.x) / 2, (a.y + b.y) / 2 - 16, edge.label, STYLE.font.sizes.note)] : [];
+  const paths = [linePath(a.x, a.y, b.x, b.y), polylinePath(route.arrowhead)].map((p) => ({ ...p, width, ...(color ? { color } : {}) }));
+  const texts = route.label ? [textRun(route.label.x, route.label.y, route.label.text, route.label.size)] : [];
   return { paths, fills: [], texts };
 }
 

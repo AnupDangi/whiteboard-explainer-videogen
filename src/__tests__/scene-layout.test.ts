@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BoardOpSchema, type BoardOp } from '../visual-v2/board-ops/types.js';
 import { applyOp, emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import type { BoardState } from '../visual-v2/board-state/types.js';
-import { diagnoseSceneGeometry, layoutScene, validateSceneGeometry, CONTENT_RECT } from '../visual-v2/layout/sceneLayout.js';
+import { diagnoseSceneGeometry, layoutScene, routeEdge, validateSceneGeometry, CONTENT_RECT } from '../visual-v2/layout/sceneLayout.js';
 import { contains, overlaps } from '../visual-v2/kits/geometry.js';
 
 const add = (id: string, element: unknown, at: unknown, beat = 'b1') => BoardOpSchema.parse({ op: 'add', opId: `${beat}.${id}`, beatId: beat, id, element, at });
@@ -139,8 +139,52 @@ test('edge labels colliding with unrelated geometry are reported with the edge l
   const states = statesOf(ops);
   const geometry = layoutScene(states);
   const rect = geometry.rectFor(states.at(-1)!, 'a')!;
-  const collapsed = { ...geometry, rectFor: () => ({ ...rect }) } as unknown as typeof geometry;
+  const collapsed = { ...geometry, rectFor: () => ({ ...rect }), edgeRouteFor: (_state: BoardState, id: string) => routeEdge(id, rect, rect, 'causes') } as unknown as typeof geometry;
   const diagnostic = diagnoseSceneGeometry(collapsed, states).find((item) => item.code === 'edge_label_collision' && item.edgeId === 'edge' && item.fields.includes('/edges/edge/label'));
   assert.ok(diagnostic, 'the arrow label overlaps unrelated element geometry');
   assert.ok(diagnostic.fields.includes('/edges/edge/label'));
+});
+
+test('edge routes pin the exact shaft, label ink, and arrowhead across repeated layouts', () => {
+  const ops: BoardOp[] = [
+    add('a', token('A'), { region: 'left' }, 'b0'),
+    add('b', token('B'), { region: 'right' }, 'b0'),
+    BoardOpSchema.parse({ op: 'connect', opId: 'b1.edge', beatId: 'b1', id: 'edge', from: 'a', to: 'b', relation: 'causes', label: 'causes' }),
+  ];
+  const states = statesOf(ops);
+  const route = layoutScene(states).edgeRouteFor(states.at(-1)!, 'edge');
+  assert.ok(route);
+  assert.deepEqual(route, layoutScene(states).edgeRouteFor(states.at(-1)!, 'edge'));
+  assert.equal(route.arrowhead[1].x, route.points[1].x);
+  assert.equal(route.arrowhead[1].y, route.points[1].y);
+  assert.ok(route.label && route.label.bounds.w > 0 && route.label.bounds.h > 0);
+  assert.ok(contains(route.arrowheadBounds, { x: route.points[1].x, y: route.points[1].y, w: 0, h: 0 }));
+  assert.equal(layoutScene(states).edgeRouteFor(states[0]!, 'edge'), undefined);
+});
+
+test('a shaft through unrelated text emits an edge and text diagnostic', () => {
+  const ops: BoardOp[] = [
+    add('a', token('A'), { region: 'left' }, 'b0'),
+    add('word', token('MIDDLE'), { region: 'center' }, 'b0'),
+    add('b', token('B'), { region: 'right' }, 'b0'),
+    BoardOpSchema.parse({ op: 'connect', opId: 'b1.edge', beatId: 'b1', id: 'edge', from: 'a', to: 'b', relation: 'causes' }),
+  ];
+  const states = statesOf(ops);
+  const diagnostics = diagnoseSceneGeometry(layoutScene(states), states);
+  assert.ok(diagnostics.some((d) => d.code === 'edge_text_collision' && d.edgeId === 'edge' && d.elementIds.includes('word')));
+});
+
+test('the pinned arrowhead and its own label cannot occupy the same ink', () => {
+  const ops: BoardOp[] = [
+    add('a', token('A'), { region: 'left' }, 'b0'), add('b', token('B'), { region: 'right' }, 'b0'),
+    BoardOpSchema.parse({ op: 'connect', opId: 'b1.edge', beatId: 'b1', id: 'edge', from: 'a', to: 'b', relation: 'causes', label: 'a long explanation' }),
+  ];
+  const states = statesOf(ops);
+  const geometry = layoutScene(states);
+  const original = geometry.edgeRouteFor;
+  const crowded = { ...geometry, edgeRouteFor: (state: BoardState, id: string) => {
+    const route = original(state, id);
+    return route?.label ? { ...route, label: { ...route.label, bounds: route.arrowheadBounds } } : route;
+  } };
+  assert.ok(diagnoseSceneGeometry(crowded, states).some((d) => d.code === 'edge_label_collision' && d.edgeId === 'edge' && d.elementIds.length === 0));
 });

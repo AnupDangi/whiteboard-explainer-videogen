@@ -43,10 +43,12 @@ export type RenderSegment = LessonLockV2['renderPlan'][number];
 
 const Rect = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).strict();
 const PlacedRect = z.object({ id: z.string(), rect: Rect }).strict();
+const Point = z.object({ x: z.number(), y: z.number() }).strict();
+const EdgeRoute = z.object({ id: z.string(), points: z.tuple([Point, Point]), arrowhead: z.tuple([Point, Point, Point]), arrowheadBounds: Rect, label: z.object({ x: z.number(), y: z.number(), text: z.string(), size: z.number(), bounds: Rect }).strict().optional() }).strict();
 const CapturedSchema = z.object({
   sceneId: z.string(), title: z.string(), seedBase: z.string(),
   concepts: z.array(z.tuple([z.string(), z.unknown()])),
-  geometry: z.object({ contentRect: Rect, regionRects: z.record(z.string(), Rect), allRects: z.array(PlacedRect), states: z.array(z.array(PlacedRect)), kitFrames: z.array(z.tuple([z.string(), z.unknown()])) }).strict(),
+  geometry: z.object({ contentRect: Rect, regionRects: z.record(z.string(), Rect), allRects: z.array(PlacedRect), states: z.array(z.array(PlacedRect)), kitFrames: z.array(z.tuple([z.string(), z.unknown()])), edgeRoutes: z.array(z.array(EdgeRoute)).optional() }).strict(),
   timeline: z.object({
     ops: z.array(z.object({ index: z.number().int(), op: z.record(z.string(), z.unknown()), effects: z.array(z.unknown()), anchorMs: z.number(), t0: z.number(), t1: z.number(), deadlineMs: z.number(), late: z.boolean() }).strict()),
     states: z.array(z.record(z.string(), z.unknown())).min(1), durationMs: z.number(), lateOps: z.array(z.string()), hash: Hash,
@@ -125,6 +127,7 @@ function captureScene({ scene }: V2VideoScene): CapturedScene {
       contentRect: scene.geometry.contentRect, regionRects: scene.geometry.regionRects, allRects: scene.geometry.allRects(),
       states: scene.timeline.states.map((state) => ids.flatMap((id) => { const rect = scene.geometry.rectFor(state, id); return rect ? [{ id, rect }] : []; })),
       kitFrames: ids.flatMap((id) => { const kit = scene.geometry.kitGeometry(id); return kit ? [[id, kit.frame]] : []; }),
+      edgeRoutes: scene.timeline.states.map((state) => Object.keys(state.edges).sort().flatMap((id) => { const route = scene.geometry.edgeRouteFor(state, id); return route ? [route] : []; })),
     },
   })));
 }
@@ -307,6 +310,14 @@ async function inspectLock(outputDir: string): Promise<{ problems: string[]; ver
       try {
         const data = CapturedSchema.parse(JSON.parse(bytes.toString('utf8')));
         if (data.sceneId !== scene.sceneId || data.timeline.states.length !== data.timeline.ops.length + 1 || data.geometry.states.length !== data.timeline.states.length) problems.push(`scene ${scene.sceneId} captured state structure invalid`);
+        if (data.geometry.edgeRoutes) {
+          if (data.geometry.edgeRoutes.length !== data.timeline.states.length) problems.push(`scene ${scene.sceneId} captured edge route state count invalid`);
+          data.geometry.edgeRoutes.forEach((routes, index) => {
+            const state = data.timeline.states[index] as { edges?: Record<string, { lifecycle?: { removedAtBeat?: string } }> } | undefined;
+            const expected = Object.entries(state?.edges ?? {}).filter(([, edge]) => edge.lifecycle?.removedAtBeat === undefined).map(([id]) => id).sort();
+            if (routes.map((route) => route.id).join('\0') !== expected.join('\0')) problems.push(`scene ${scene.sceneId} captured edge route ids invalid at state ${index}`);
+          });
+        }
         const hashes = capturedHashes(data);
         for (const [key, actual] of Object.entries(hashes)) if (actual !== scene[key as keyof typeof hashes]) problems.push(`scene ${scene.sceneId} ${key} hash drift`);
         if (data.timeline.hash !== hashes.timelineHash) problems.push(`scene ${scene.sceneId} timeline content hash drift`);

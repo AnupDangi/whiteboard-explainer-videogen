@@ -182,7 +182,7 @@ test('text that cannot fit its slot at the smallest readable font is reported, t
   const el = timeline.states[1]!.elements.a!;
   assert.equal(textOverflow(el, { x: 0, y: 0, w: 900, h: 100 }), undefined);
   assert.equal(textOverflow(el, { x: 0, y: 0, w: 120, h: 100 }), 'transformer layers');
-  assert.equal(fitFont('transformer layers', 120), 24, 'the font floor is unchanged; legality is decided by fitsWidth');
+  assert.equal(fitFont('transformer layers', 120), 32, 'the shared readability floor is 32 px; legality is decided by fitsWidth');
 });
 
 test('an arrow whose straight path crosses an unrelated element is a geometry problem; a clear arrow is not', () => {
@@ -191,6 +191,20 @@ test('an arrow whose straight path crosses an unrelated element is a geometry pr
   const run = (ops: BoardOp[]) => { const t = compileSceneTimeline({ ops, initial: emptyBoardState(), beats: [timed('b0', 0), timed('b1', 1)] }); return validateSceneGeometry(compileScene('s', 'S', t).geometry, t.states); };
   assert.ok(run(board(true)).some((m) => /arrow link .* crosses m/.test(m)));
   assert.ok(!run(board(false)).some((m) => /arrow/.test(m)));
+});
+
+test('settled edge SVG consumes the scene route geometry', () => {
+  const board: BoardOp[] = [add('l', tok('left'), { region: 'left' }, 'b0'), add('r', tok('right'), { region: 'right' }, 'b0'), BoardOpSchema.parse({ op: 'connect', opId: 'b1.c', beatId: 'b1', id: 'link', from: 'l', to: 'r', relation: 'causes', label: 'causes' })];
+  const timeline = compileSceneTimeline({ ops: board, initial: emptyBoardState(), beats: [timed('b0', 0), timed('b1', 1)] });
+  const scene = compileScene('s', 'S', timeline);
+  const before = renderSceneSvg(scene, timeline.ops.at(-1)!.t1 + 10);
+  const original = scene.geometry.edgeRouteFor;
+  scene.geometry.edgeRouteFor = (state, id) => {
+    const route = original(state, id);
+    return route ? { ...route, points: [{ ...route.points[0], y: route.points[0].y + 37 }, route.points[1]] } : undefined;
+  };
+  const after = renderSceneSvg(scene, timeline.ops.at(-1)!.t1 + 10);
+  assert.notEqual(after, before);
 });
 
 test('an op waits for the op that draws its target, and a beat pause makes the beat settle before it ends', () => {
@@ -209,7 +223,7 @@ test('an op waits for the op that draws its target, and a beat pause makes the b
 
 test('a label too wide for one line wraps onto up to three lines before it is called an overflow', async () => {
   const { fitText } = await import('../visual-v2/layout/textFit.js');
-  const wrapped = fitText('Lower solute concentration', 230, 120);
+  const wrapped = fitText('Lower solute concentration', 260, 120);
   assert.ok(wrapped.fits && wrapped.lines.length >= 2 && wrapped.lines.length <= 3, JSON.stringify(wrapped));
   assert.equal(wrapped.lines.join(' '), 'Lower solute concentration');
   assert.equal(fitText('Supercalifragilisticexpialidocious', 100, 60).fits, false, 'one long word cannot be wrapped');

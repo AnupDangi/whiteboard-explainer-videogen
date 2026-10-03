@@ -167,11 +167,11 @@ export function renderSceneBody(scene: CompiledScene, tMs: number): string {
   for (const el of elements.filter((e) => e.spec.type === 'kit')) { const rect = rectNow(base, el); if (rect) out.push(drawElement(el, base, rect, FULL, overrides.get(el.id))); }
   for (const edge of Object.values(base.edges).filter((e) => e.lifecycle.removedAtBeat === undefined)) {
     const ends = edgeRects(base, edge);
-    if (ends) out.push(drawVisual(edgeVisual(edge, ends[0], ends[1]), ends[0], FULL, scene.seedBase, edge.id, edge.emphasis === 'dim' || edge.emphasis === 'struck' ? 0.4 : 1));
+    if (ends) out.push(drawVisual(edgeVisual(edge, ends[0], ends[1], flight.length ? undefined : geometry.edgeRouteFor(base, edge.id)), ends[0], FULL, scene.seedBase, edge.id, edge.emphasis === 'dim' || edge.emphasis === 'struck' ? 0.4 : 1));
   }
   for (const { edge, state, p } of extraEdges) {
     const ends = edgeRects(state, edge);
-    if (ends) out.push(drawVisual(edgeVisual(edge, ends[0], ends[1]), ends[0], { stroke: ease(p), fill: 1, text: p > 0.8 ? 1 : 0 }, scene.seedBase, edge.id));
+    if (ends) out.push(drawVisual(edgeVisual(edge, ends[0], ends[1], geometry.edgeRouteFor(state, edge.id)), ends[0], { stroke: ease(p), fill: 1, text: p > 0.8 ? 1 : 0 }, scene.seedBase, edge.id));
   }
   for (const el of elements.filter((e) => e.spec.type !== 'kit')) { const rect = rectNow(base, el); if (rect) out.push(drawElement(el, base, rect, FULL, overrides.get(el.id))); }
   for (const { el, state, p } of extraAdds) {
