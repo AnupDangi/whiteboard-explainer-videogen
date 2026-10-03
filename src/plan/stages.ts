@@ -402,7 +402,11 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
     if (leakedIds.length) problems.push(`section concept ids ${[...new Set(leakedIds)].map((id) => `"${id}"`).join(', ')} are JSON field names; use only ids from VALID CONCEPT IDS`);
     return problems;
   };
-  const common = { stage: 'plan', subject: 'teaching plan', model: m.model, apiKey: m.apiKey, system, user, remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher };
+  // S3's structured contract is large enough that hidden reasoning can consume
+  // the completion allowance before the plan JSON starts. Keep reasoning
+  // bounded on both the initial call and its single repair; schema and
+  // semantic validation remain unchanged.
+  const common = { stage: 'plan', subject: 'teaching plan', model: m.model, apiKey: m.apiKey, system, user, effort: 'low' as const, remainingBudgetUsd: m.remainingBudgetUsd, budgetLedger: m.budgetLedger, fetcher: m.fetcher };
 
   if (PLAN_VARIANT_OUTPUT[variant] === 'draft') {
     const result = await structuredCall({

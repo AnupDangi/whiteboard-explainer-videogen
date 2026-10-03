@@ -319,7 +319,7 @@ export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: 
   const system = limits.length ? `${req.system}\n\nField limits (validated; a response that breaks one is rejected):\n${limits.map((line) => `- ${line}`).join('\n')}` : req.system;
   const reasoning = {
     ...(reasoningModel ? { max_tokens: Math.min(1200, Math.max(200, Math.round(req.maxTokens / 4))) } : {}),
-    ...((anthropic || !strict) && req.effort ? { effort: req.effort } : {}),
+    ...((anthropic || STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix)) || !strict) && req.effort ? { effort: req.effort } : {}),
   };
   const body = {
     model: req.model,

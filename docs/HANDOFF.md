@@ -1,5 +1,12 @@
 # HANDOFF — Claude hypothesis track
 
+## Continuation — 2026-10-03, S3 truncation mitigation
+
+- **S3 evidence:** `.data/icon-eval/icons1-osmosis/runs/2026-10-03T10-26-20-271Z-32f8793e-6eec-4252-a332-aebed39947bf/structured/plan/0001-teaching-plan/report.json` shows the initial response used its full 7,710-token allowance and the full-plan repair used its full 11,565-token allowance. Both stopped inside the first section and yielded no complete JSON object. The artifact does not prove whether the large whitespace runs came from hidden reasoning or generated output.
+- **Mitigation:** S3 now requests low reasoning effort on both initial and repair calls; OpenRouter forwards `reasoning.effort` for OpenAI routes even with strict schemas. S3 cache identities were bumped to v9 so older plans cannot mask this request change. Schema and semantic validation still reject incomplete plans.
+- **Verification:** `pnpm run typecheck:hypothesis`, build, and focused prompt/OpenRouter tests pass (11/11). This is offline request-contract evidence only; no live S3 rerun has established that truncation is resolved.
+- **Still open:** confirm the S3 mitigation with an authorized provider run; P13 requires a toolchain-verified source-generated V2 lock, and none is currently eligible; the paid cold grid remains unavailable after the earlier network call failed and its retry was rejected by automatic review. Human reviews and cost/minute remain unmeasured. `ABSOLUTE_QUALITY_CERTIFICATION=UNAVAILABLE` remains correct.
+
 ## Continuation — 2026-10-03, curve routing, architecture refresh, and cold-v2 attempt
 
 - **Geometry implementation:** scene layout now keeps a straight edge when clear, and pins a deterministic quadratic detour when its shaft would cross an unrelated element. Collision/clearance checks sample the curve; SVG rendering and the strict V2 lock schema preserve its control point. The edge label and arrowhead follow the route tangent. This closes the old “curved routes” geometry item for obstacle detours; it does not claim general hand-drawn or loop-edge support.
@@ -8,7 +15,7 @@
 - **Cold benchmark attempt:** verified `bench/benchmark-v2/cold-v2.json` and ran all 15 slots in `.data/benchmark-v2/cold-v2/2026-10-03-completion/`. Every attempt failed at S1 with `fetch failed` before a provider response; report: 15/15 slots recorded, 0/15 complete artifacts, $0 known provider cost, all quality/timing/cost-per-finished-minute measures unmeasured, `accepted: false`. This is a blocked run batch, not a quality result. No TTS credits or generated output were recorded.
 - **Network authorization:** retrying one frozen run with network access was rejected by automatic approval review because sending the frozen source and instruction to the configured external provider had not been authorized for that destination. No alternate route was used. The paid 5×3 grid cannot be completed until that approval is explicit and provider networking is available.
 - **P13:** still unmeasured. `scripts/render-bench.mjs` requires a verified source-generated V2 lock; none exists in this checkout's current run artifacts. The V2-local runs stopped before publication, and legacy V1 locks are not valid P13 inputs. Do not substitute test locks or fixtures.
-- **Still open:** reproduce/fix the retained S3 token truncation (osmosis run 1; initial and repair responses exhausted 7,710 and 11,565 output tokens without a JSON object); run P13 against an eligible generated V2 lock; obtain authorized provider access for the frozen 5×3 and held-out runs; receive human alignment, muted-board, and rights reviews; measure cost per finished minute. `ABSOLUTE_QUALITY_CERTIFICATION=UNAVAILABLE` remains correct. P17 stays deferred by design.
+- **Still open at that point:** confirm the S3 token-truncation mitigation with an authorized provider run; run P13 against an eligible generated V2 lock; obtain authorized provider access for the frozen 5×3 and held-out runs; receive human alignment, muted-board, and rights reviews; measure cost per finished minute. `ABSOLUTE_QUALITY_CERTIFICATION=UNAVAILABLE` remains correct. P17 stays deferred by design.
 
 ## Continuation — 2026-10-03, timeline coverage failures: definition-aware mapping + late-target rescue
 

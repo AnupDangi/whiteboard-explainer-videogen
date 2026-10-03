@@ -128,17 +128,20 @@ test('S3 buildTeachingPlan rejects a section concept id that is a JSON-Schema ke
   };
   const bodies = [leakedPlan, validPlan];
   const requestUsers: string[] = [];
+  const requestReasoning: Array<{ effort?: string }> = [];
   const fetcher: typeof fetch = async (_input, init) => {
-    const request = JSON.parse(String((init as RequestInit).body)) as { messages: Array<{ role: string; content: string }> };
+    const request = JSON.parse(String((init as RequestInit).body)) as { messages: Array<{ role: string; content: string }>; reasoning?: { effort?: string } };
     requestUsers.push(request.messages[1].content);
+    requestReasoning.push(request.reasoning ?? {});
     const body = bodies.shift();
     return new Response(okBody(JSON.stringify(body)), { status: 200 });
   };
   const req: LessonRequest = { source: sourceDoc.text, sourceDoc, targetDurationSec: 18 };
-  const m: StageModel = { model: 'test/model', apiKey: 'test-only', remainingBudgetUsd: 0.05, fetcher };
+  const m: StageModel = { model: 'openai/test-model', apiKey: 'test-only', remainingBudgetUsd: 0.05, fetcher };
   const result = await buildTeachingPlan(req, graph, m);
   assert.equal(result.usage.repairs, 1);
   assert.equal(requestUsers.length, 2);
+  assert.deepEqual(requestReasoning, [{ effort: 'low' }, { effort: 'low' }]);
   assert.match(requestUsers[1], /are JSON field names/);
   assert.ok(result.value);
   assert.deepEqual(result.value!.sections[0]!.conceptIds.sort(), ['heat', 'pressure']);
