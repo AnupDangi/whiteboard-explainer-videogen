@@ -2644,3 +2644,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Verification:** build + typecheck clean, shared manifest verified. Not yet wired into beat pipeline (T3 consumes).
 - **Honest limits:** deterministic starting policy, not model judgment; rare strategies (counterexample, faded, example-nonexample) schema-valid but unselected by policy.
 - **Next:** T3 Teaching Move Library.
+
+## Continuation — 2026-10-03, T3 Teaching Move Library (wt/stcc/charter)
+
+- **Built:** `src/teaching/moves/{types,compile}.ts` — 21 canonical moves as semantic ops (no layout/wording/timing content), `movesForStrategy` + `compileMovePlan` (pure, policy v1). Error path compiles Expose→Fork→ExplainDivergence→Repair per STCC §10.
+- **Gates:** `src/__tests__/moves.test.ts` — all 13 strategies map to moves, error/predict/fade shapes, no drawing instructions in notes. 5/5 pass.
+- **Note:** STCC §8 text lists 21 moves, not 20; test asserts 21 with this record.
+- **Verification:** build + typecheck clean, shared manifest verified. Beat attachment deferred to T4/S6 consumers.
+- **Next:** T4 S4 strategy-aware narration (continuity fix).
