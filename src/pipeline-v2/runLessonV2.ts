@@ -167,10 +167,15 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
 
   // The requested runtime is a hard prerequisite for paid board planning. Check it
   // as soon as all audio clocks are known, before spending on any BoardOps calls.
+  // The trailing closure hold is adaptive: the compiler always added 1200 ms of
+  // final hold; now it adds only what the fixed clock needs (at most 1200 ms),
+  // so sub-second speech residuals land exactly instead of failing. Speech plus
+  // gaps beyond the clock still fail at S4's owner, never trimmed.
   const gap = PIPELINE.sceneGapMs;
-  const trailing = 1200;
   const requestedDurationMs = (prepared.requestedDurationSec ?? plan.targetDurationSec) * 1000;
-  const totalMs = audioScenes.reduce((sum, { audio }, i) => sum + audio.durationMs + (i < audioScenes.length - 1 ? gap : trailing), 0);
+  const speechAndGapsMs = audioScenes.reduce((sum, { audio }, i) => sum + audio.durationMs + (i < audioScenes.length - 1 ? gap : 0), 0);
+  const trailing = Math.min(1200, Math.max(0, requestedDurationMs - speechAndGapsMs));
+  const totalMs = speechAndGapsMs + trailing;
   metrics['v2.requestedDurationMs'] = requestedDurationMs;
   metrics['v2.actualDurationDeltaMs'] = totalMs - requestedDurationMs;
   const durationProblems = audioDurationProblems(totalMs, requestedDurationMs, 200);
