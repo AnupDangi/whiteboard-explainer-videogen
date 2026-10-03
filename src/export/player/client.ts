@@ -1,4 +1,5 @@
 import { frameSvgAt, type VideoScene } from '../frame.js';
+import { clampSeekToReadyPrefix, readyFramePrefixLength, readyPrefixEndMs } from './readiness.js';
 
 interface PreviewRun {
   schemaVersion: 'hypothesis-browser-preview/v1';
@@ -53,7 +54,9 @@ let durationMs = 0;
 let lastEventSequence = 0;
 let activeProgressiveAudio: SceneAudioReference | undefined;
 const lockedSvgCache = new Map<string, string>();
-let lockedRequest = 0;
+const lockedFrameHashes: string[] = [];
+const lockedFrameLoads = new Map<number, Promise<void>>();
+let lockedFailure: string | undefined;
 let requestedHash: string | undefined;
 
 function lockedHashAt(t: number): string {
@@ -66,37 +69,93 @@ function lockedHashAt(t: number): string {
   return hash;
 }
 
+function lockedFrameAt(t: number): number {
+  const locked = run?.lockedV2;
+  if (!locked) return 0;
+  return Math.max(0, Math.min(locked.frames - 1, Math.floor(Math.max(0, t) * locked.fps / 1000)));
+}
+
+function readyLockedFrames(): number {
+  return readyFramePrefixLength(lockedFrameHashes.length, (frame) => lockedSvgCache.has(lockedFrameHashes[frame]!));
+}
+
+function updateLockedSeekRange(): void {
+  if (!run?.lockedV2) return;
+  const frames = readyLockedFrames();
+  seek.max = String(readyPrefixEndMs(frames, run.lockedV2.fps, durationMs));
+  seek.disabled = frames === 0;
+}
+
+function failLockedPlayback(reason: string): void {
+  if (lockedFailure) return;
+  lockedFailure = reason;
+  message.textContent = `Playback failed: ${reason}`;
+  message.dataset.state = 'failed';
+  playButton.disabled = true;
+  seek.disabled = true;
+  if (!audio.paused) audio.pause();
+  setPlaying(false);
+}
+
+function requestLockedFrame(frame: number): Promise<void> {
+  const hash = lockedFrameHashes[frame];
+  if (!hash) return Promise.reject(new Error(`Locked frame ${frame} is unavailable`));
+  if (lockedSvgCache.has(hash)) return Promise.resolve();
+  const existing = lockedFrameLoads.get(frame);
+  if (existing) return existing;
+  const loaded = fetch(`/locked/svg/${hash}.svg`, { cache: 'no-store' }).then(async (response) => {
+    if (!response.ok) throw new Error(`Verified frame ${frame} request failed (${response.status})`);
+    const bytes = await response.arrayBuffer();
+    const svg = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (!svg.startsWith('<svg')) throw new Error(`Verified frame ${frame} content is invalid`);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    const actualHash = [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    if (actualHash !== hash) throw new Error(`Verified frame ${frame} hash does not match its lock`);
+    lockedSvgCache.set(hash, svg);
+    updateLockedSeekRange();
+    if (playing && lockedFrameAt(timeMs) === frame) {
+      board.innerHTML = svg;
+      requestedHash = hash;
+      void audio.play().catch((error: unknown) => failLockedPlayback(error instanceof Error ? error.message : String(error)));
+    }
+  });
+  const task = loaded.then((value) => {
+    lockedFrameLoads.delete(frame);
+    return value;
+  }, (error: unknown) => {
+    lockedFrameLoads.delete(frame);
+    failLockedPlayback(error instanceof Error ? error.message : String(error));
+    throw error;
+  });
+  lockedFrameLoads.set(frame, task);
+  return task;
+}
+
+let preloadCursor = 0;
+const LOCKED_PREFETCH_SECONDS = 2;
+const LOCKED_PREFETCH_WORKERS = 2;
+function prefetchLockedPrefix(fromTimeMs = timeMs): void {
+  if (!run?.lockedV2 || lockedFailure) return;
+  const targetEnd = Math.min(run.lockedV2.frames, lockedFrameAt(fromTimeMs) + Math.max(1, Math.ceil(run.lockedV2.fps * LOCKED_PREFETCH_SECONDS)));
+  while (preloadCursor < targetEnd && lockedFrameLoads.size < LOCKED_PREFETCH_WORKERS) {
+    const frame = preloadCursor++;
+    void requestLockedFrame(frame).catch(() => undefined).finally(() => {
+      lockedFrameLoads.delete(frame);
+      prefetchLockedPrefix(timeMs);
+    });
+  }
+}
+
 function drawLockedFrame(t: number): void {
   const hash = lockedHashAt(t);
   if (hash === requestedHash) return;
   requestedHash = hash;
-  const request = ++lockedRequest;
   const cached = lockedSvgCache.get(hash);
-  if (cached) { board.innerHTML = cached; return; }
-  message.textContent = 'BUFFERING · loading verified frame';
+  if (cached) { board.innerHTML = cached; prefetchLockedPrefix(t); return; }
+  message.textContent = `BUFFERING · verified frame ${lockedFrameAt(t) + 1} is loading`;
   if (playing && !audio.paused) audio.pause();
-  void fetch(`/locked/svg/${hash}.svg`, { cache: 'no-store' }).then(async (response) => {
-    if (!response.ok) throw new Error(`Frame request failed (${response.status})`);
-    const svg = await response.text();
-    if (!svg.startsWith('<svg')) throw new Error('Locked frame content is invalid');
-    lockedSvgCache.set(hash, svg);
-    if (request === lockedRequest) {
-      board.innerHTML = svg;
-      message.textContent = `${run!.status.toUpperCase()} · ${run!.runClass} · verified locked playback`;
-      if (playing) void audio.play().catch((error: unknown) => {
-        message.textContent = `Preview unavailable: ${error instanceof Error ? error.message : String(error)}`;
-        message.dataset.state = 'failed';
-        setPlaying(false);
-        playButton.disabled = true;
-      });
-    }
-  }).catch((error: unknown) => {
-    if (request !== lockedRequest) return;
-    message.textContent = `Preview unavailable: ${error instanceof Error ? error.message : String(error)}`;
-    message.dataset.state = 'failed';
-    setPlaying(false);
-    playButton.disabled = true;
-  });
+  void requestLockedFrame(lockedFrameAt(t)).catch(() => undefined);
+  prefetchLockedPrefix(t);
 }
 
 function draw(t: number): void {
@@ -120,8 +179,9 @@ function setPlaying(value: boolean): void {
     cancelAnimationFrame(raf);
   } else {
     lastTick = performance.now();
+    if (run?.lockedV2) prefetchLockedPrefix(timeMs);
     if ((run?.audioUrl || run?.lockedV2) && audio.paused && (!run.lockedV2 || lockedSvgCache.has(lockedHashAt(timeMs)))) void audio.play().catch((error: unknown) => {
-      if (run?.lockedV2) { message.textContent = `Preview unavailable: ${error instanceof Error ? error.message : String(error)}`; message.dataset.state = 'failed'; setPlaying(false); playButton.disabled = true; }
+      if (run?.lockedV2) failLockedPlayback(error instanceof Error ? error.message : String(error));
       else message.textContent = `Audio could not start: ${error instanceof Error ? error.message : String(error)}. Visual playback continues.`;
     });
     else if (!run?.audioUrl) void playProgressiveAudio(timeMs);
@@ -133,7 +193,7 @@ function tick(now: number): void {
   if (!playing || !run) return;
   const rate = Number(speed.value) || 1;
   if (run.lockedV2 && audio.paused && !audio.ended) {
-    message.textContent = 'BUFFERING · waiting for locked audio';
+    if (!lockedFailure) message.textContent = lockedSvgCache.has(lockedHashAt(timeMs)) ? 'BUFFERING · waiting for verified audio' : `BUFFERING · verified frame ${lockedFrameAt(timeMs) + 1} is loading`;
     raf = requestAnimationFrame(tick);
     return;
   }
@@ -169,11 +229,12 @@ async function start(): Promise<void> {
   run = payload;
   if (payload.lockedV2) {
     if (!Number.isSafeInteger(payload.lockedV2.frames) || payload.lockedV2.frames < 1 || !Number.isSafeInteger(payload.lockedV2.fps) || payload.lockedV2.fps < 1 || !Array.isArray(payload.lockedV2.renderPlan)) throw new Error('Locked V2 preview has an invalid frame plan');
+    for (let frame = 0; frame < payload.lockedV2.frames; frame++) lockedFrameHashes.push(lockedHashAt(frame * 1000 / payload.lockedV2.fps));
   }
   durationMs = payload.durationMs;
   lastEventSequence = payload.events.length;
   if (payload.scenes.length) durationMs = Math.max(durationMs, ...payload.scenes.map((scene) => scene.endMs));
-  seek.max = String(durationMs);
+  seek.max = String(payload.lockedV2 ? 0 : durationMs);
   seek.disabled = durationMs <= 0;
   if (payload.audioUrl || payload.lockedV2) {
     audio.src = payload.lockedV2?.audioUrl ?? payload.audioUrl!;
@@ -183,7 +244,18 @@ async function start(): Promise<void> {
   if (payload.captionsUrl) $<HTMLTrackElement>('captions').src = payload.captionsUrl;
   message.textContent = payload.lockedV2 ? `${payload.status.toUpperCase()} · ${payload.runClass} · verified locked playback` : `${payload.status.toUpperCase()} · ${payload.runClass} · ${payload.scenes.length} scenes`;
   if (payload.status !== 'passed') message.dataset.state = payload.status;
-  draw(0);
+  if (payload.lockedV2) {
+    seek.disabled = true;
+    playButton.disabled = true;
+    try {
+      await requestLockedFrame(0);
+      playButton.disabled = false;
+      message.textContent = `${payload.status.toUpperCase()} · ${payload.runClass} · verified first frame ready`;
+      updateLockedSeekRange();
+      prefetchLockedPrefix(0);
+      draw(0);
+    } catch { return; }
+  } else draw(0);
   if (payload.streaming) scheduleRefresh();
 }
 
@@ -295,10 +367,13 @@ function scheduleRefresh(): void {
 
 playButton.addEventListener('click', () => setPlaying(!playing));
 seek.addEventListener('input', () => {
-  const t = Number(seek.value);
+  const requested = Number(seek.value);
+  const t = run?.lockedV2 ? clampSeekToReadyPrefix(requested, readyLockedFrames(), run.lockedV2.fps, durationMs) : requested;
+  if (run?.lockedV2 && t !== requested) message.textContent = 'SEEK LIMITED · only the verified ready prefix is seekable';
   if ((run?.audioUrl || run?.lockedV2) && audio.src) audio.currentTime = Math.max(0, Math.min(durationMs, t)) / 1000;
   else void playProgressiveAudio(t, playing);
   draw(t);
+  if (run?.lockedV2) prefetchLockedPrefix(t);
 });
 speed.addEventListener('change', () => {
   audio.playbackRate = Number(speed.value) || 1;
@@ -310,14 +385,15 @@ audio.addEventListener('ended', () => {
     void playProgressiveAudio(timeMs);
   } else setPlaying(false);
 });
-audio.addEventListener('waiting', () => { if (run?.lockedV2) message.textContent = 'BUFFERING · waiting for locked audio'; });
-audio.addEventListener('playing', () => { if (run?.lockedV2) message.textContent = `${run.status.toUpperCase()} · ${run.runClass} · verified locked playback`; });
+audio.addEventListener('waiting', () => { if (run?.lockedV2 && !lockedFailure) message.textContent = 'BUFFERING · waiting for verified audio'; });
+audio.addEventListener('playing', () => { if (run?.lockedV2 && !lockedFailure) message.textContent = `${run.status.toUpperCase()} · ${run.runClass} · verified locked playback`; });
 audio.addEventListener('error', () => {
-  if (run?.lockedV2) { message.textContent = 'Preview unavailable: verified audio failed to load'; message.dataset.state = 'failed'; setPlaying(false); playButton.disabled = true; }
+  if (run?.lockedV2) failLockedPlayback('verified audio failed to load');
   else message.textContent = 'Audio failed to load; visual preview remains available.';
 });
 void start().catch((error: unknown) => {
   message.textContent = `Preview unavailable: ${error instanceof Error ? error.message : String(error)}`;
+  message.dataset.state = 'failed';
   playButton.disabled = true;
   seek.disabled = true;
 });

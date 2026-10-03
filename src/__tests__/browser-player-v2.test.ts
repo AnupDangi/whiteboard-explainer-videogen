@@ -10,6 +10,7 @@ import { compileSceneTimeline } from '../visual-v2/timeline/compile.js';
 import { compileScene } from '../visual-v2/renderer/frame.js';
 import { writeLessonLockV2, type LessonLockV2 } from '../pipeline-v2/lockV2.js';
 import { createBrowserPreviewHandler, loadBrowserPreview, lockedFrameHashAt } from '../export/player/previewServer.js';
+import { clampSeekToReadyPrefix, readyFramePrefixLength, readyPrefixEndMs } from '../export/player/readiness.js';
 
 // Synthetic contract data: playback and confinement evidence, never visual-quality evidence.
 async function lockedFixture(dir: string): Promise<LessonLockV2> {
@@ -62,6 +63,16 @@ test('V2 browser playback serves the exact frozen frame sequence and verified ma
     assert.equal((await request(handler, `/locked/svg/${'0'.repeat(64)}.svg`)).status, 404);
     assert.equal((await request(handler, '/locked/svg/%2E%2E%2Faudio.wav')).status, 404);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('V2 player ready prefix stops at the first missing frozen frame and bounds seeking', () => {
+  const ready = new Set([0, 1, 2, 4, 5]);
+  const prefix = readyFramePrefixLength(6, (frame) => ready.has(frame));
+  assert.equal(prefix, 3);
+  assert.equal(readyPrefixEndMs(prefix, 2, 10_000), 1_500);
+  assert.equal(clampSeekToReadyPrefix(8_000, prefix, 2, 10_000), 1_000);
+  assert.equal(clampSeekToReadyPrefix(750, prefix, 2, 10_000), 750);
+  assert.equal(clampSeekToReadyPrefix(750, 0, 2, 10_000), 0);
 });
 
 test('V2 browser playback fails closed when frozen SVG or audio changes or resolves outside the run', async () => {
