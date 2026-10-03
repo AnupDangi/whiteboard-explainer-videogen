@@ -49,13 +49,29 @@ export function sourceEdgeProblem(from: string | undefined, relation: string, to
   const start = quote.indexOf(normalized(from));
   const middle = quote.indexOf(normalized(relation), start + normalized(from).length);
   const end = quote.indexOf(normalized(to), middle + normalized(relation).length);
-  return start >= 0 && middle > start && end > middle ? undefined : 'the cited quote does not state this directed subject–relation–object sequence; use a matching quote or change the edge';
+  if (start < 0 || middle <= start || end <= middle) return 'the cited quote does not state this directed subject–relation–object sequence; use a matching quote or change the edge';
+  // Lexical order alone can invert a claim: "light does not cause heat" contains all three terms.
+  // Treat scoped negation and qualification as unsupported rather than promoting a positive edge.
+  const clause = quote.slice(0, end + normalized(to).length);
+  if (unsupportedQualifier(clause)) return 'the cited relationship is negated or qualified; use an explicit supported claim or remove the factual edge';
+  return undefined;
 }
 
-const numbersOf = (text: string): string[] => text.match(/\d+(?:\.\d+)?/g) ?? [];
-const compact = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, '');
+const unsupportedQualifier = (text: string): boolean => /\b(?:not|never|no|without|false|neither|nor|cannot|can't|doesn't|isn't|unlikely|may|might|possibly|perhaps|approximately|roughly|only if|only when|unless|except|if)\b/u.test(text);
+const mathText = (text: string): string => text
+  .replace(/\\mathrm\{([^{}]+)\}/g, '$1')
+  .replace(/\\sqrt\b/g, 'sqrt')
+  .replace(/\{/g, '(')
+  .replace(/\}/g, ')')
+  .normalize('NFKC')
+  .replace(/\p{Nd}/gu, asciiDigit)
+  .toLowerCase();
+const mathTokens = (text: string): string[] => mathText(text).match(/[\p{L}\p{N}_]+|[=+\-*/^()[\]{}<>]/gu) ?? [];
+const numbersOf = (text: string): string[] => mathText(text).match(/\d+(?:\.\d+)?/g) ?? [];
+const compact = (text: string): string => mathText(text).replace(/[^\p{L}\p{N}]/gu, '');
+const operator = (token: string | undefined): boolean => token !== undefined && /^[=+\-*/^<>]$/.test(token);
 
-/** What the formula says that the quote must also say: its numbers, and every multi-letter word it names (macros excluded). */
+/** A source formula needs matching symbols and operators in sequence, with no unsupported qualifier. */
 export function formulaProblem(latex: string, quote: string): string | undefined {
   const stripped = latex.replace(/\\[a-zA-Z]+/g, ' ');
   const haystack = compact(quote);
@@ -64,6 +80,16 @@ export function formulaProblem(latex: string, quote: string): string | undefined
   if (missingNumber) return `the number ${missingNumber} is not in the cited source text`;
   const missingWord = (stripped.toLowerCase().match(/[a-z]{2,}/g) ?? []).find((word) => !haystack.includes(word));
   if (missingWord) return `"${missingWord}" is not in the cited source text`;
+  // Require the same ordered expression, including operators and exponents. A bag of
+  // matching numbers/words is insufficient (3+4=5 differs from 3^2+4^2=5^2).
+  if (/\\(?!mathrm\b|sqrt\b)[a-zA-Z]+/.test(latex)) return 'the equation uses notation that cannot be checked against the cited source text';
+  const expected = mathTokens(latex);
+  const actual = mathTokens(quote);
+  const matches = expected.length > 0 && actual.some((_, index) =>
+    expected.every((token, offset) => actual[index + offset] === token)
+    && !operator(actual[index - 1]) && !operator(actual[index + expected.length]));
+  if (!matches) return 'the equation structure, operators, exponents, or variables do not match the cited source text';
+  if (unsupportedQualifier(quote.toLowerCase())) return 'the cited equation is negated or qualified and cannot support an unconditional formula';
   return undefined;
 }
 

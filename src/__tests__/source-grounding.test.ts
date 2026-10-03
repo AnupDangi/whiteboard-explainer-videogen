@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BoardOpSchema } from '../visual-v2/board-ops/types.js';
 import { validateBoardOps } from '../visual-v2/board-ops/validate.js';
 import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
-import { formulaProblem, sourceFormulaProblem, type Grounding } from '../visual-v2/provenance/ground.js';
+import { formulaProblem, sourceEdgeProblem, sourceFormulaProblem, type Grounding } from '../visual-v2/provenance/ground.js';
 
 const spans: Record<string, string> = { s1: 'The attention weights are softmax(QK^T / sqrt(d_k)) V with d_k = 64.', s2: 'Unrelated prose about training data.' };
 const grounding: Grounding = { verify: (spanId, quote) => (spans[spanId]?.includes(quote) ? quote : undefined) };
@@ -79,4 +79,26 @@ test('factual edges need an anchored directed relationship; source value mutatio
   const update = (value: number, evidence?: { spanId: string; quote: string }) => BoardOpSchema.parse({ op: 'updateValue', opId: 'u', beatId: 'b2', target: 'v', value, ...(evidence ? { evidence } : {}) });
   assert.deepEqual(validateBoardOps([sourceValue, update(8, { spanId: 'b', quote: source.b })], emptyBoardState(), verifier), []);
   assert.equal((validateBoardOps([sourceValue, update(9)], emptyBoardState(), verifier) as Array<{ path: string }>).at(-1)?.path, '/ops/1/evidence');
+});
+
+test('a positive factual edge cannot cite a negated or qualified source relationship', () => {
+  const quoted = (quote: string): Grounding => ({ verify: (_id, requested) => requested === quote ? quote : undefined });
+  for (const quote of ['Light does not cause heat.', 'Light never causes heat.', 'Light may cause heat.', 'If exposed, light causes heat.']) {
+    // The first two use the literal relation "cause"; the remaining examples
+    // are checked with the literal inflection present in the quote.
+    const relation = quote.includes('causes') ? 'causes' : 'cause';
+    assert.match(sourceEdgeProblem('Light', relation, 'heat', { spanId: 's', quote }, quoted(quote)) ?? '', /negated or qualified/, quote);
+  }
+  const good = 'Light causes heat.';
+  assert.equal(sourceEdgeProblem('Light', 'causes', 'heat', { spanId: 's', quote: good }, quoted(good)), undefined);
+});
+
+test('formula grounding preserves operators, exponents, variable identity, and conditions', () => {
+  assert.equal(formulaProblem('3^2+4^2=5^2', '3^2 + 4^2 = 5^2.'), undefined);
+  assert.match(formulaProblem('3+4=5', '3^2 + 4^2 = 5^2.') ?? '', /structure/);
+  assert.match(formulaProblem('3*4=12', '3 + 4 = 12.') ?? '', /structure/);
+  assert.match(formulaProblem('x=5', 'y = 5 and x is a variable.') ?? '', /structure/);
+  assert.match(formulaProblem('x=5', 'x = 5 only when t = 0.') ?? '', /qualified/);
+  assert.match(formulaProblem('x=5', 'x is not equal to 5.') ?? '', /structure/);
+  assert.equal(formulaProblem('d_k=64', 'd_k = 64.'), undefined);
 });
