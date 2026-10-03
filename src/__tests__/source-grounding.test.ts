@@ -102,3 +102,13 @@ test('formula grounding preserves operators, exponents, variable identity, and c
   assert.match(formulaProblem('x=5', 'x is not equal to 5.') ?? '', /structure/);
   assert.equal(formulaProblem('d_k=64', 'd_k = 64.'), undefined);
 });
+
+test('schema-aware kit grounding: layout zones and closed-vocabulary enums are compiler vocabulary, displayed strings are facts', async () => {
+  const { factualKitScalars } = await import('../visual-v2/provenance/ground.js');
+  const scalars = factualKitScalars({ zones: ['left', 'right'], boundary: 'semipermeable', orientation: 'side' }, 'compartment');
+  assert.deepEqual(scalars, [], 'zones/orientation/enums assert nothing');
+  const labeled = factualKitScalars({ zones: ['a', 'b'], zoneLabels: ['Dilute side', 'Crowded side'] }, 'compartment');
+  assert.deepEqual(labeled, ['Dilute side', 'Crowded side'], 'displayed zone labels are source assertions');
+  const legacy = factualKitScalars({ zones: ['left'] });
+  assert.deepEqual(legacy, ['left'], 'unknown kits keep the flat legacy reading');
+});

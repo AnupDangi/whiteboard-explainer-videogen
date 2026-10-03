@@ -10,6 +10,10 @@ export interface Grounding {
 
 export interface SourceCitation { spanId: string; quote: string }
 
+import { z } from 'zod';
+import { KIT_REGISTRY } from '../kits/registry.js';
+import type { KitName } from '../board-ops/types.js';
+
 /** Lexical source consistency, not a proof that the cited statement is true. Never infer a relationship from labels alone. */
 const DECIMAL_ZEROES = [0x660, 0x6f0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66, 0xde6, 0xe50, 0xed0, 0xf20, 0x1040, 0x17e0, 0x1810];
 const asciiDigit = (digit: string): string => {
@@ -32,11 +36,53 @@ export function sourceTextProblem(assertions: readonly string[], citation: Sourc
   return absent === undefined ? undefined : `the source ${subject} asserts ${JSON.stringify(absent)}, which is absent from its cited quote; use the quote's own words as the label, or cite a quote containing the label word for word`;
 }
 
+/** Param keys that place or arrange instead of stating: zone ids, slots, regions, orientations. Their words are compiler vocabulary, never source facts. */
+const LAYOUT_PARAM_KEYS = new Set(['zones', 'zone', 'slot', 'slots', 'region', 'regions', 'layout', 'orientation', 'arrangement', 'position', 'anchor', 'align']);
+
+/** Zod v4 internals: every schema carries its kind at `_zod.def.type` (string, object, enum, array, optional, ...). */
+type Zod4Def = { type?: string; innerType?: z.ZodType; shape?: Record<string, z.ZodType>; element?: z.ZodType };
+const zodDef = (schema: z.ZodType): Zod4Def => ((schema as unknown as { _zod?: { def?: Zod4Def } })._zod?.def ?? {}) as Zod4Def;
+
+const unwrap = (schema: z.ZodType): z.ZodType => {
+  let current: z.ZodType = schema;
+  for (;;) {
+    const def = zodDef(current);
+    if ((def.type === 'optional' || def.type === 'default' || def.type === 'nullable' || def.type === 'readonly' || def.type === 'nonoptional') && def.innerType) current = def.innerType;
+    else return current;
+  }
+};
+
+/** Schema-aware factual params: free strings and numbers a kit displays or counts are source assertions; closed-vocabulary enums, booleans, and layout keys are compiler vocabulary grounded by the citation itself, not by wording. */
+function factualBySchema(schema: z.ZodType, value: unknown): string[] {
+  const field = unwrap(schema);
+  const name = zodDef(field).type ?? '';
+  if (name === 'enum' || name === 'boolean' || name === 'literal') return [];
+  if (name === 'number') return typeof value === 'number' ? [String(value)] : [];
+  if (name === 'string') return typeof value === 'string' ? [value] : [];
+  if (name === 'array') {
+    const element = zodDef(field).element;
+    return Array.isArray(value) && element ? value.flatMap((item) => factualBySchema(element, item)) : [];
+  }
+  if (name === 'object') {
+    const shape = zodDef(field).shape;
+    if (!shape || !value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const record = value as Record<string, unknown>;
+    return Object.entries(shape).flatMap(([key, sub]) => (LAYOUT_PARAM_KEYS.has(key) ? [] : factualBySchema(sub, record[key])));
+  }
+  return factualKitScalars(value);
+}
+
 /** Every displayed scalar in source kit parameters must occur in the citation. Boolean/layout-only params carry no source fact. */
-export function factualKitScalars(value: unknown): string[] {
+export function factualKitScalars(value: unknown, kit?: KitName): string[] {
+  if (kit) {
+    try {
+      const schema = KIT_REGISTRY[kit].paramsSchema as z.ZodType;
+      if (zodDef(unwrap(schema)).type === 'object') return factualBySchema(schema, value);
+    } catch { /* unknown kit: fall through to the flat legacy reading */ }
+  }
   if (typeof value === 'number' || typeof value === 'string') return [String(value)];
-  if (Array.isArray(value)) return value.flatMap(factualKitScalars);
-  if (value && typeof value === 'object') return Object.values(value).flatMap(factualKitScalars);
+  if (Array.isArray(value)) return value.flatMap((item) => factualKitScalars(item));
+  if (value && typeof value === 'object') return Object.values(value).flatMap((item) => factualKitScalars(item));
   return [];
 }
 

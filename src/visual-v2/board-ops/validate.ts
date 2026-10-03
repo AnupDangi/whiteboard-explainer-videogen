@@ -89,7 +89,7 @@ function sourceContentProblems(spec: ElementSpec, path: string, grounding?: Grou
     case 'kit': {
       const parsed = parseKitParams(spec.kit, spec.paramsJson);
       if (!parsed.ok) return [];
-      assertions = [...(spec.label ? [spec.label] : []), ...factualKitScalars(parsed.value)];
+      assertions = [...(spec.label ? [spec.label] : []), ...factualKitScalars(parsed.value, spec.kit)];
       break;
     }
   }
