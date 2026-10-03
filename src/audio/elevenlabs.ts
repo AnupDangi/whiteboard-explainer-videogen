@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AlignedWord, AlignmentResult } from '../shared/alignment/align.js';
+import { FileReservationStore } from './reservations.js';
 
 /**
  * ElevenLabs speech with character timestamps. The provider returns audio AND the time of every character, so word clocks come
@@ -93,9 +94,13 @@ export class ElevenKeyPool {
   private readonly dead = new Set<string>();
   private readonly reservations = new Map<string, number>();
   private readonly selection = new Map<string, Promise<void>>();
-  constructor(private readonly keys: readonly string[], private readonly fetcher: FetchLike) {}
+  private readonly pendingReleases = new Set<Promise<void>>();
+  constructor(private readonly keys: readonly string[], private readonly fetcher: FetchLike, private readonly store?: FileReservationStore) {}
 
   get size(): number { return this.keys.length; }
+
+  /** Resolves when every hold released by settle/cancel has been written to the shared store. */
+  async idle(): Promise<void> { while (this.pendingReleases.size) await Promise.all([...this.pendingReleases]); }
 
   private async balance(key: string): Promise<number | undefined> {
     const known = this.balances.get(key);
@@ -123,17 +128,22 @@ export class ElevenKeyPool {
 
   /** Atomically reserves a key's remaining credits for one in-flight request. */
   async reserve(credits: number): Promise<{ key: string; settle(actualCredits?: number): void; cancel(): void }> {
+    await this.idle();
     for (const key of this.keys) {
       if (this.dead.has(key)) continue;
       const unlock = await this.lock(key);
       try {
         const remaining = await this.balance(key);
-        if (remaining === undefined || remaining - (this.reservations.get(key) ?? 0) < credits) continue;
-        this.reservations.set(key, (this.reservations.get(key) ?? 0) + credits);
+        if (remaining === undefined) continue;
+        // With a store the hold is shared with every process using this key; without one it is process-local.
+        const holdId = this.store ? await this.store.tryHold(FileReservationStore.keyId(key), credits, remaining) : undefined;
+        if (this.store ? holdId === undefined : remaining - (this.reservations.get(key) ?? 0) < credits) continue;
+        if (!this.store) this.reservations.set(key, (this.reservations.get(key) ?? 0) + credits);
         let done = false;
         const release = (actual?: number): void => {
           if (done) return; done = true;
-          this.reservations.set(key, Math.max(0, (this.reservations.get(key) ?? 0) - credits));
+          if (this.store && holdId) { const pending = this.store.release(holdId).catch(() => undefined); this.pendingReleases.add(pending); void pending.finally(() => this.pendingReleases.delete(pending)); }
+          else this.reservations.set(key, Math.max(0, (this.reservations.get(key) ?? 0) - credits));
           const known = this.balances.get(key);
           if (known && actual !== undefined) known.remaining = Math.max(0, known.remaining - actual);
         };
@@ -178,7 +188,8 @@ function poolFor(env: ElevenLabsEnv, fetcher: FetchLike): ElevenKeyPool {
   if (fetcher !== defaultFetch) return new ElevenKeyPool(keys, fetcher);
   const id = keys.join('|');
   let pool = pools.get(id);
-  if (!pool) { pool = new ElevenKeyPool(keys, fetcher); pools.set(id, pool); }
+  // Live pools share credit holds with every other process through a file (benchmarks and demos run lessons as parallel processes).
+  if (!pool) { pool = new ElevenKeyPool(keys, fetcher, new FileReservationStore(path.resolve(env.ELEVENLABS_RESERVATIONS_FILE ?? '.data/elevenlabs-reservations.json'))); pools.set(id, pool); }
   return pool;
 }
 

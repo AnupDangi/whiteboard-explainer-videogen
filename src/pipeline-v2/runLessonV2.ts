@@ -12,7 +12,12 @@ import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import type { ContentAddressedArtifactStore } from '../run/artifactCache.js';
 import type { StageFailure } from '../shared/types.js';
 import { beatIntervals } from '../narration/beat-narration/intervals.js';
-import { alignedWordTimingProblems } from '../narration/align.js';
+import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
+import { writeBeatNarration } from '../narration/beat-narration/generate.js';
+import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
+import type { NarrationContext } from '../narration/beat-narration/validate.js';
+import { sectionSourcePrompt } from '../plan/stages.js';
+import { DEFAULT_PACING, fitPacing, revisionTargets } from './durationFit.js';
 import { emptyBoardState, startScene } from '../visual-v2/board-state/reducer.js';
 import type { BoardState } from '../visual-v2/board-state/types.js';
 import { planSceneBoard } from '../visual-v2/ops-plan/plan.js';
@@ -86,6 +91,9 @@ export interface RunLessonV2Result {
   elevenLabsCredits: number;
 }
 
+/** Each round rewrites every scene once to a word budget measured from real audio; two rounds converge or the run stops honestly. */
+const MAX_DURATION_REVISIONS = 2;
+
 const STATE_CHANGING = new Set(['move', 'remove', 'updateValue', 'transform', 'equationStep', 'strike', 'split', 'merge', 'replace', 'deemphasize', 'highlight', 'clearRegion']);
 
 function vttTime(ms: number): string {
@@ -125,27 +133,91 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await mkdir(path.join(outputDir, 'v2'), { recursive: true });
   const dump = (name: string, value: unknown) => writeFile(path.join(outputDir, 'v2', name), `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 
-  // 1. Real audio and alignment for each scene's speech: the master clock.
-  const audios = await mapLimit(plan.sections, Math.max(1, input.audioConcurrency ?? 1), async (section) => {
-    const narration = prepared.beatNarrations![section.id]!;
-    const speechContext = prepared.beatNarrationContexts?.[section.id];
-    try {
-      const audio = await synthesizeSceneAudio({ sceneId: section.id, text: narration.text, language: speechContext?.language ?? language, ...(input.voice ? { voice: input.voice } : {}), ...(speechContext?.speechLanguagePolicy === 'native-plus-english-terms' ? { languagePolicy: 'native-plus-english-terms/v1' as const } : {}), ...(speechContext?.terminology?.length ? { terminology: speechContext.terminology } : {}), ...(input.calibrationMedianErrorMs !== undefined ? { calibrationMedianErrorMs: input.calibrationMedianErrorMs } : {}) }, { ...(input.artifactStore ? { artifactStore: input.artifactStore } : {}), ...(input.aligner ? { aligner: input.aligner } : {}), onElevenLabsUsage: (event) => { providerUsageEvents.push(event); input.onElevenLabsUsage?.(event); } });
-      if (audio.providerMetadata) speechUsage.push({ sceneId: section.id, model: audio.providerMetadata.model, voice: audio.providerMetadata.voice, credits: audio.providerMetadata.credits, cacheHit: audio.cacheHit, ...(audio.providerMetadata.capabilitySnapshotId ? { capabilitySnapshotId: audio.providerMetadata.capabilitySnapshotId } : {}) });
-      return { ok: true as const, section, narration, audio };
-    } catch (error) {
-      return { ok: false as const, section, message: error instanceof Error ? error.message : String(error) };
+  // 1. Real audio and alignment for each scene's speech: the master clock. Before any paid board planning the speech is fitted to
+  // the requested runtime: first by bounded pacing (gaps and final hold), then, if the speech itself is too long or too short,
+  // by rewriting each scene to a word budget measured from its real speaking rate (claims preserved) and re-synthesizing it.
+  const requestedDurationMs = (prepared.requestedDurationSec ?? plan.targetDurationSec) * 1000;
+  metrics['v2.requestedDurationMs'] = requestedDurationMs;
+  const narrations: Record<string, CompiledSceneNarration> = { ...prepared.beatNarrations };
+  const synthesized = new Map<string, { text: string; audio: Awaited<ReturnType<typeof synthesizeSceneAudio>> }>();
+  let audioScenes: Array<{ section: (typeof plan.sections)[number]; narration: CompiledSceneNarration; audio: Awaited<ReturnType<typeof synthesizeSceneAudio>> }> = [];
+  let pacing: { gapMs: number; trailingMs: number } = { gapMs: PIPELINE.sceneGapMs, trailingMs: DEFAULT_PACING.trailingMs.nominal };
+  let revisionRounds = 0;
+  for (;;) {
+    const audios = await mapLimit(plan.sections, Math.max(1, input.audioConcurrency ?? 1), async (section) => {
+      const narration = narrations[section.id]!;
+      const reusable = synthesized.get(section.id);
+      if (reusable && reusable.text === narration.text) return { ok: true as const, section, narration, audio: reusable.audio };
+      const speechContext = prepared.beatNarrationContexts?.[section.id];
+      try {
+        const audio = await synthesizeSceneAudio({ sceneId: section.id, text: narration.text, language: speechContext?.language ?? language, ...(input.voice ? { voice: input.voice } : {}), ...(speechContext?.speechLanguagePolicy === 'native-plus-english-terms' ? { languagePolicy: 'native-plus-english-terms/v1' as const } : {}), ...(speechContext?.terminology?.length ? { terminology: speechContext.terminology } : {}), ...(input.calibrationMedianErrorMs !== undefined ? { calibrationMedianErrorMs: input.calibrationMedianErrorMs } : {}) }, { ...(input.artifactStore ? { artifactStore: input.artifactStore } : {}), ...(input.aligner ? { aligner: input.aligner } : {}), onElevenLabsUsage: (event) => { providerUsageEvents.push(event); input.onElevenLabsUsage?.(event); } });
+        if (audio.providerMetadata) speechUsage.push({ sceneId: section.id, model: audio.providerMetadata.model, voice: audio.providerMetadata.voice, credits: audio.providerMetadata.credits, cacheHit: audio.cacheHit, ...(audio.providerMetadata.capabilitySnapshotId ? { capabilitySnapshotId: audio.providerMetadata.capabilitySnapshotId } : {}) });
+        synthesized.set(section.id, { text: narration.text, audio });
+        return { ok: true as const, section, narration, audio };
+      } catch (error) {
+        return { ok: false as const, section, message: error instanceof Error ? error.message : String(error) };
+      }
+    });
+    const failedAudio = audios.filter((result) => !result.ok);
+    if (failedAudio.length) {
+      for (const result of failedAudio) failures.push({ code: 'v2-audio-generation-failed', stage: 'align', message: `${result.section.id}: ${result.message}`, hard: true });
+      return finish('failed');
     }
-  });
-  const failedAudio = audios.filter((result) => !result.ok);
-  if (failedAudio.length) {
-    for (const result of failedAudio) failures.push({ code: 'v2-audio-generation-failed', stage: 'align', message: `${result.section.id}: ${result.message}`, hard: true });
-    return finish('failed');
+    audioScenes = audios.filter((result) => result.ok).map(({ section, narration, audio }) => ({ section, narration, audio }));
+    for (const { section, audio } of audioScenes) {
+      const problems = !Number.isFinite(audio.durationMs) || audio.durationMs <= 0
+        ? ['audio duration must be finite and positive']
+        : alignedWordTimingProblems(audio.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })), audio.durationMs);
+      for (const message of problems) failures.push({ code: 'v2-invalid-alignment', stage: 'align', message: `${section.id}: ${message}`, hard: true });
+    }
+    if (failures.some((failure) => failure.hard)) {
+      metrics['v2.hardAlignmentProblems'] = failures.length;
+      return finish('failed');
+    }
+    const fit = fitPacing(audioScenes.map(({ audio }) => audio.durationMs), requestedDurationMs);
+    if (fit.ok) { pacing = fit; break; }
+    const speechMs = audioScenes.reduce((sum, { audio }) => sum + audio.durationMs, 0);
+    const naturalMs = speechMs + PIPELINE.sceneGapMs * (audioScenes.length - 1) + DEFAULT_PACING.trailingMs.nominal;
+    metrics['v2.actualDurationDeltaMs'] = naturalMs - requestedDurationMs;
+    if (revisionRounds >= MAX_DURATION_REVISIONS) {
+      failures.push({ code: 'v2-fixed-duration', stage: 'audio', message: `speech of ${speechMs}ms cannot be fitted to the requested ${requestedDurationMs}ms after ${revisionRounds} narration revision round(s): it must ${fit.direction} by about ${fit.deltaMs}ms; ${audioDurationProblems(naturalMs, requestedDurationMs, 200)[0] ?? ''}`.trim(), hard: true });
+      return finish('failed', { durationMs: naturalMs });
+    }
+    revisionRounds++;
+    const targets = revisionTargets(audioScenes.map(({ section, narration, audio }) => ({ sceneId: section.id, audioMs: audio.durationMs, words: tokenizeWords(narration.text, prepared.beatNarrationContexts?.[section.id]?.language ?? language).length })), requestedDurationMs);
+    const revisions = await mapLimit(audioScenes, 4, async ({ section, narration, audio }) => {
+      const target = targets.scenes.find((item) => item.sceneId === section.id)!;
+      const base = prepared.beatNarrationContexts?.[section.id];
+      const sentencesOf = (beatId: string): string[] => narration.beatSpans.find((span) => span.beatId === beatId)?.sentenceSpans.map((span) => narration.text.slice(span.charStart, span.charEnd)) ?? [];
+      const ctx: NarrationContext = {
+        ...(base ?? { sceneId: section.id, beats: prepared.beatPlans![section.id]!, allowedNumbers: new Set(narration.text.match(/\d+(?:\.\d+)?/g) ?? []), durationSec: section.budgetSec, emphasisCandidates: section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.label ?? []) }),
+        durationSec: target.targetAudioMs / 1000,
+        revision: { targetWords: target.targetWords, measuredWordsPerSec: target.measuredWordsPerSec, previousSeconds: audio.durationMs / 1000, previous: narration.beats.map((beat) => ({ beatId: beat.beatId, sentences: sentencesOf(beat.beatId) })) },
+      };
+      const excerpt = prepared.sourceDoc ? sectionSourcePrompt(prepared.sourceDoc, section, graph) : '';
+      return { section, result: await writeBeatNarration({ ctx, scene: { title: section.title, goal: section.goal }, sourceExcerpt: excerpt }, { model: input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: (input.remainingBudgetUsd ?? 0.2) / Math.max(1, audioScenes.length), ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}), language }) };
+    });
+    for (const { result } of revisions) { addUsage(usage, result.usage); failures.push(...result.failures); reports.push(...result.reports); }
+    const unrevised = revisions.filter(({ result }) => !result.value);
+    if (unrevised.length) {
+      for (const { section } of unrevised) failures.push({ code: 'v2-duration-revision-failed', stage: 'narration', message: `${section.id}: the narration could not be rewritten to its measured word budget`, hard: true });
+      failures.push({ code: 'v2-fixed-duration', stage: 'audio', message: `speech of ${speechMs}ms does not fit the requested ${requestedDurationMs}ms (it must ${fit.direction} by about ${fit.deltaMs}ms) and the narration rewrite failed`, hard: true });
+      return finish('failed', { durationMs: naturalMs });
+    }
+    for (const { section, result } of revisions) narrations[section.id] = result.value!;
   }
-  const readyAudios = audios.filter((result) => result.ok);
-  const audioScenes = readyAudios.map(({ section, narration, audio }) => ({ section, narration, audio }));
+  metrics['v2.durationRevisionRounds'] = revisionRounds;
+  metrics['v2.pacingGapMs'] = pacing.gapMs;
+  metrics['v2.pacingTrailingMs'] = pacing.trailingMs;
+  const gap = pacing.gapMs;
+  const trailing = pacing.trailingMs;
+  const totalMs = audioScenes.reduce((sum, { audio }, i) => sum + audio.durationMs + (i < audioScenes.length - 1 ? gap : trailing), 0);
+  metrics['v2.actualDurationDeltaMs'] = totalMs - requestedDurationMs;
+  const durationProblems = audioDurationProblems(totalMs, requestedDurationMs, 200);
+  for (const message of durationProblems) failures.push({ code: 'v2-fixed-duration', stage: 'audio', message, hard: true });
+  if (durationProblems.length) return finish('failed', { durationMs: totalMs });
 
-  // Preserve the complete measured word clock, including aligner/repair/calibration metadata.
+  // Preserve the complete measured word clock of the FINAL speech, including aligner/repair/calibration metadata.
   // Beat token matching alone cannot establish valid intervals.
   await dump('alignment.json', { schemaVersion: 'v2-alignment/v1', scenes: audioScenes.map(({ section, audio }) => ({
     sceneId: section.id, durationMs: audio.durationMs, words: audio.words,
@@ -154,28 +226,6 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       ? { status: 'unmeasured' }
       : { status: 'measured', medianAbsoluteBoundaryErrorMs: input.calibrationMedianErrorMs },
   })) });
-  for (const { section, audio } of audioScenes) {
-    const problems = !Number.isFinite(audio.durationMs) || audio.durationMs <= 0
-      ? ['audio duration must be finite and positive']
-      : alignedWordTimingProblems(audio.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })), audio.durationMs);
-    for (const message of problems) failures.push({ code: 'v2-invalid-alignment', stage: 'align', message: `${section.id}: ${message}`, hard: true });
-  }
-  if (failures.some((failure) => failure.hard)) {
-    metrics['v2.hardAlignmentProblems'] = failures.length;
-    return finish('failed');
-  }
-
-  // The requested runtime is a hard prerequisite for paid board planning. Check it
-  // as soon as all audio clocks are known, before spending on any BoardOps calls.
-  const gap = PIPELINE.sceneGapMs;
-  const trailing = 1200;
-  const requestedDurationMs = (prepared.requestedDurationSec ?? plan.targetDurationSec) * 1000;
-  const totalMs = audioScenes.reduce((sum, { audio }, i) => sum + audio.durationMs + (i < audioScenes.length - 1 ? gap : trailing), 0);
-  metrics['v2.requestedDurationMs'] = requestedDurationMs;
-  metrics['v2.actualDurationDeltaMs'] = totalMs - requestedDurationMs;
-  const durationProblems = audioDurationProblems(totalMs, requestedDurationMs, 200);
-  for (const message of durationProblems) failures.push({ code: 'v2-fixed-duration', stage: 'audio', message, hard: true });
-  if (durationProblems.length) return finish('failed', { durationMs: totalMs });
 
   timing['v2.audioMs'] = Date.now() - startedAt;
   const conceptIndex = new Map(graph.concepts.map((c) => [c.id, { id: c.id, label: c.label, kind: c.kind } as ConceptInfo]));
@@ -269,9 +319,9 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   // 4. Master audio, video and captions.
   const masterAudio = path.join(outputDir, 'audio.wav');
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
-  const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = prepared.beatNarrations![scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
+  const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: prepared.beatNarrations });
+  await dump('lesson-context.json', { sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });

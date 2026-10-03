@@ -17,6 +17,7 @@ import { compareReplayDigests } from '../harness/replayDeterminism.js';
 import { canonicalHash } from '../harness/replayDeterminism.js';
 import { sha256 } from '../shared/artifacts.js';
 import { PIPELINE } from '../run/config.js';
+import { DEFAULT_PACING } from '../pipeline-v2/durationFit.js';
 
 // A contract test for the V2 runner with injected model and aligner. The lesson content is synthetic test data, not a generated lesson.
 const claims = (id: string) => [{ id: `${id}_c`, statement: 'x', conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: ['s1'] }];
@@ -137,7 +138,7 @@ test('invalid V2 word clocks stop before paid board planning and cannot publish 
     await runFfmpeg(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', '2', audioPath]);
     for (const fault of ['zero', 'overlap', 'outside', 'nonfinite', 'duration']) {
       let boardCalls = 0;
-      const model: ModelClient = { ...client, chat: async (request) => { boardCalls++; return client.chat(request); } };
+      const model: ModelClient = { ...client, chat: async (request) => { if (!/REVISION/.test(request.user)) boardCalls++; return client.chat(request); } };
       const aligner = async (text: string) => {
         const words = tokenizeWords(text).map((word, i) => ({ word, startMs: i * 100, endMs: i * 100 + 80 }));
         if (fault === 'zero') words[0]!.endMs = words[0]!.startMs;
@@ -162,7 +163,7 @@ test('a measured audio duration outside the request stops before paid board plan
     const audioPath = path.join(dir, 'speech.wav');
     await runFfmpeg(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', '2', audioPath]);
     let boardCalls = 0;
-    const model: ModelClient = { ...client, chat: async (request) => { boardCalls++; return client.chat(request); } };
+    const model: ModelClient = { ...client, chat: async (request) => { if (!/REVISION/.test(request.user)) boardCalls++; return client.chat(request); } };
     const aligner = async (text: string) => {
       const words = tokenizeWords(text).map((word, i) => ({ word, startMs: i * 100, endMs: i * 100 + 80 }));
       return { durationMs: 2000, words, aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
@@ -247,5 +248,81 @@ test('V2 lock v5 remains readable when an earlier capture has no lifecycle event
     await writeFile(lockPath, lockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
     assert.deepEqual(await verifyLessonLockV2(out), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// --- Fitting speech to the requested runtime: pacing first, then a claim-preserving rewrite measured against real audio ---
+const msPerWord = 300;
+const speechAligner = (dir: string) => async (text: string) => {
+  const tokens = tokenizeWords(text);
+  const durationMs = tokens.length * msPerWord + 100;
+  const audioPath = path.join(dir, `fit-${tokens.length}-${Math.random().toString(36).slice(2)}.wav`);
+  await runFfmpeg(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', String(durationMs / 1000), audioPath]);
+  return { durationMs, words: tokens.map((word, i) => ({ word, startMs: i * msPerWord, endMs: i * msPerWord + 260 })), aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
+};
+const shorter: Record<string, string[]> = { one: ['Each call pushes a frame onto the stack.', 'It sits on top.'], two: ['A return pops the top frame.'] };
+const reviser = (calls: string[], reply: Record<string, string[]> = shorter): ModelClient => ({
+  provider: 'fake',
+  chat: async (request) => {
+    if (/REVISION/.test(request.user)) {
+      const scene = /SCENE (\w+)/.exec(request.user)?.[1] ?? '';
+      calls.push(scene);
+      return { content: JSON.stringify({ beats: [{ beatId: `${scene}.b1`, sentences: reply[scene], claimSentences: [{ claimId: `${scene}_c`, sentenceIndex: 0 }], emphasisTerms: [] }] }), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage };
+    }
+    return client.chat(request);
+  },
+});
+const speechMs = (perScene: Record<string, string[]>) => Object.values(perScene).reduce((sum, list) => sum + tokenizeWords(list.join(' ')).length * msPerWord + 100, 0);
+
+test('speech within the pause bounds is fitted by moving the gaps and final hold only: no rewrite, an exact runtime', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-pacing-'));
+  try {
+    const natural = speechMs(sentences) + PIPELINE.sceneGapMs + 1200;
+    const requestedMs = natural + 700;
+    const calls: string[] = [];
+    const result = await runLessonV2({ lessonId: 'pacing', outputDir: path.join(dir, 'run'), prepared: { ...prepared, requestedDurationSec: requestedMs / 1000 }, plannerModel: 'google/x', apiKey: 'k', client: reviser(calls), aligner: speechAligner(dir) as never, skipEncode: true });
+    assert.equal(result.status, 'draft', JSON.stringify(result.failures));
+    assert.deepEqual(calls, [], 'no narration rewrite was needed');
+    assert.equal(result.durationMs, requestedMs, 'the runtime is exact');
+    assert.equal(result.metrics['v2.actualDurationDeltaMs'], 0);
+    assert.equal(result.metrics['v2.durationRevisionRounds'], 0);
+    assert.ok(result.metrics['v2.pacingGapMs']! > PIPELINE.sceneGapMs || result.metrics['v2.pacingTrailingMs']! > 1200);
+    assert.deepEqual(await verifyLessonLockV2(path.join(dir, 'run')), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('speech far too long is rewritten to a measured word budget, re-synthesized, and the lesson then lands exactly on the request', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-revise-'));
+  try {
+    const requestedMs = speechMs(shorter) + PIPELINE.sceneGapMs + 1200 + 300;
+    assert.ok(speechMs(sentences) + DEFAULT_PACING.gapMs.min + DEFAULT_PACING.trailingMs.min > requestedMs, 'even the shortest pauses cannot fit the original narration');
+    const calls: string[] = [];
+    const result = await runLessonV2({ lessonId: 'revise', outputDir: path.join(dir, 'run'), prepared: { ...prepared, requestedDurationSec: requestedMs / 1000 }, plannerModel: 'google/x', apiKey: 'k', client: reviser(calls), aligner: speechAligner(dir) as never, skipEncode: true });
+    assert.equal(result.status, 'draft', JSON.stringify(result.failures));
+    assert.deepEqual(calls.sort(), ['one', 'two'], 'each scene was rewritten once');
+    assert.equal(result.metrics['v2.durationRevisionRounds'], 1);
+    assert.equal(result.durationMs, requestedMs);
+    const vtt = await readFile(path.join(dir, 'run', 'captions.vtt'), 'utf8');
+    assert.match(vtt, /It sits on top\./, 'captions carry the revised speech');
+    assert.doesNotMatch(vtt, /The newest frame sits on top\./);
+    const context = JSON.parse(await readFile(path.join(dir, 'run', 'v2', 'lesson-context.json'), 'utf8')) as { beatNarrations: Record<string, { text: string }> };
+    assert.match(context.beatNarrations.one!.text, /It sits on top\./, 'the lock pins the revised narration, not the original');
+    assert.ok(result.reports.some((report) => report.stage === 'beat-narration'), 'the rewrite is accounted as a structured call');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('a rewrite that still cannot fit the runtime fails closed before any board is planned, naming the measured gap', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-revise-fail-'));
+  try {
+    const requestedMs = speechMs(shorter) + PIPELINE.sceneGapMs + 1200;
+    let boards = 0;
+    const calls: string[] = [];
+    const stubborn = reviser(calls, sentences);
+    const counting: ModelClient = { ...stubborn, chat: async (request) => { if (!/REVISION/.test(request.user)) boards++; return stubborn.chat(request); } };
+    const result = await runLessonV2({ lessonId: 'revise-fail', outputDir: path.join(dir, 'run'), prepared: { ...prepared, requestedDurationSec: requestedMs / 1000 }, plannerModel: 'google/x', apiKey: 'k', client: counting, aligner: speechAligner(dir) as never, skipEncode: true });
+    assert.equal(result.status, 'failed');
+    assert.equal(boards, 0, 'no board call was paid for');
+    assert.ok(result.failures.some((failure) => failure.hard && /v2-(fixed-duration|duration-revision)/.test(failure.code)), JSON.stringify(result.failures.map((f) => f.code)));
+    await assert.rejects(stat(path.join(dir, 'run', 'lesson.lock.v2.json')), { code: 'ENOENT' });
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

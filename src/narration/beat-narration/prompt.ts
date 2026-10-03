@@ -16,8 +16,11 @@ Return ONE JSON object { "beats": [{ "beatId", "sentences": [...1-4 sentences], 
   const words = Math.round(ctx.durationSec * wordsPerSec(ctx.language));
   const around = lesson ? `Lesson: "${lesson.title}".${lesson.previous ? ` The previous scene taught: ${lesson.previous.title} (${lesson.previous.goal}).` : ''}${lesson.next ? ` The next scene will cover: ${lesson.next.title} (${lesson.next.goal}).` : ''}\n` : '';
   const terminology = ctx.terminology?.length ? `Lesson terminology (use consistently; explain unfamiliar English terms in ${languageName}):\n${ctx.terminology.map((entry) => `- ${entry.term}${entry.nativeExplanation ? `: ${entry.nativeExplanation}` : ''}`).join('\n')}\n` : '';
+  const revision = ctx.revision
+    ? `\nREVISION: the previous version of this scene was spoken in ${ctx.revision.previousSeconds.toFixed(1)} s at ${ctx.revision.measuredWordsPerSec.toFixed(1)} words per second, which does not fit the lesson's runtime. Write it again with about ${ctx.revision.targetWords} spoken words. Keep exactly the same beats, in the same order, and keep every claim anchored to the sentence that states it; ${ctx.revision.targetWords < ctx.revision.previous.reduce((n, beat) => n + beat.sentences.join(' ').split(/\s+/).length, 0) ? 'say the same things in fewer words and drop only what no claim needs' : 'add only short explanations the SOURCE supports'}. Previous version:\n${ctx.revision.previous.map((beat) => `- ${beat.beatId}: ${beat.sentences.join(' ')}`).join('\n')}\n`
+    : '';
   const user = `${around}SCENE ${ctx.sceneId}: "${scene.title}" — ${scene.goal}
-About ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_PROMPT_CEILING)}); the audio sets the real length.
+${ctx.revision ? `About ${ctx.revision.targetWords} spoken words (the audio sets the real length).` : `About ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_PROMPT_CEILING)}); the audio sets the real length.`}${revision}
 ${terminology}
 Teaching beats (write one narration beat for each):
 ${beatLines}

@@ -18,6 +18,11 @@ export interface NarrationContext {
   speechLanguagePolicy?: 'native-plus-english-terms';
   /** Lesson-wide canonical terminology; explanations remain in the spoken language. */
   terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }>;
+  /**
+   * Set when the measured audio of an earlier draft missed the lesson's runtime: rewrite this scene to a word budget derived from the
+   * real speaking rate. The claims and beats stay exactly as planned; only the amount of speech changes.
+   */
+  revision?: { targetWords: number; measuredWordsPerSec: number; previousSeconds: number; previous: Array<{ beatId: string; sentences: string[] }> };
   /** Where this scene sits in the lesson, so the speech continues one talk instead of restarting. */
   lesson?: { title: string; sceneIndex: number; sceneCount: number; previous?: { title: string; goal: string }; next?: { title: string; goal: string } };
 }
@@ -29,6 +34,8 @@ const STAGE_DIRECTION = /^(?:now[, ]+)?(?:show|display|draw|animate|render|highl
 /** What the speaker is told never to exceed; the validator only rejects beyond NARRATION_HARD_CEILING, because the audio, not the word count, sets the real length. */
 export const NARRATION_PROMPT_CEILING = 1.5;
 export const NARRATION_HARD_CEILING = 2.5;
+/** A length revision must land within this share of its word target, so one more synthesis converges on the runtime. */
+export const REVISION_WORD_TOLERANCE = 0.12;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 const wordCount = (text: string, language?: string): number => tokenizeWords(text, language ?? 'und').length;
@@ -81,6 +88,10 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
     for (const claim of planClaims) if (!anchored.has(claim)) problems.push({ path: `${at}/claimSentences`, message: `claim ${claim} must be anchored to the sentence of this beat that states it` });
   });
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
+  if (ctx.revision) {
+    const slack = Math.max(3, Math.round(ctx.revision.targetWords * REVISION_WORD_TOLERANCE));
+    if (Math.abs(words - ctx.revision.targetWords) > slack) problems.push({ path: '/beats', message: `write about ${ctx.revision.targetWords} spoken words (between ${ctx.revision.targetWords - slack} and ${ctx.revision.targetWords + slack}); this has ${words}. Keep every beat and every claim, and ${words > ctx.revision.targetWords ? 'cut the least necessary words' : 'add only explanation the source supports'}` });
+  }
   const ceiling = Math.round(ctx.durationSec * wordsPerSec(ctx.language) * NARRATION_HARD_CEILING);
   if (words > ceiling) problems.push({ path: '/beats', message: `too long: ${words} spoken words, at most ${ceiling} for a ${ctx.durationSec}s scene (about ${Math.max(6, Math.floor(ceiling / Math.max(1, draft.beats.length)))} words per beat for ${draft.beats.length} beats); cut or merge the longest sentences` });
   return problems;
