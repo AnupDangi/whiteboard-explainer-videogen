@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RELATION_TYPES } from '../../plan/schemas.js';
+import { ErrorContrastSchema } from '../error-contrast/types.js';
 
 /**
  * TeachingBeatPlan (V2 plan Phase 2). S3 decides WHAT CHANGES IN THE LEARNER'S UNDERSTANDING for each scene as a short
@@ -43,6 +44,8 @@ export const BeatDraftSchema = z.object({
   stateAfter: StateSpecSchema.optional(),
   /** Scene misconception ids (m1, m2 ...) this beat addresses. */
   misconceptionIds: z.array(id()).max(2),
+  /** Structured wrong-vs-correct divergence when this beat repairs a misconception (STCC §10). */
+  errorContrast: ErrorContrastSchema.optional(),
   narrationGoal: z.string().min(1).max(200),
   /** What must be visible when the beat ends. */
   visualInvariant: z.string().max(200),

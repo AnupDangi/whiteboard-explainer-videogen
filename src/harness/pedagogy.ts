@@ -64,6 +64,9 @@ function misconceptionRepair(beats: readonly TeachingBeat[]): PedagogyFinding[] 
     if (beat.beatType !== 'contrast' && beat.beatType !== 'counterexample' && beat.beatType !== 'demonstrate' && beat.beatType !== 'transform') {
       out.push({ dimension: 'misconception-repair', severity: 'soft', beatId: beat.beatId, message: 'misconception beat uses a non-contrast beat type: divergence may be unclear' });
     }
+    if (!beat.errorContrast) {
+      out.push({ dimension: 'misconception-repair', severity: 'soft', beatId: beat.beatId, message: 'misconception beat has no errorContrast: shared-prefix → fork → repair structure is missing' });
+    }
   }
   return out;
 }

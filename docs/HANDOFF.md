@@ -2660,3 +2660,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Fixed during work:** restored `${terminology}` line dropped in prompt edit (caught by build).
 - **Verification:** beat-narration 15/15 (incl. new T4 regression test), beat-pipeline 2/2, lesson-v2 8/8; typecheck clean, manifest verified.
 - **Next:** T5 ErrorContrast.
+
+## Continuation — 2026-10-03, T5 ErrorContrast (wt/stcc/charter)
+
+- **Built:** `src/teaching/error-contrast/{types,validate}.ts` — structured divergence (sharedPrefix/divergence/repair/transferCheck); `BeatDraftSchema` gains optional `errorContrast` (passes through compile untouched); beat validator checks attached contrasts against beat ids; S4 prompt renders the fork verbatim; T1 pedagogy eval gains a soft finding when a misconception beat lacks contrast (extension, not weakening: hard gates unchanged).
+- **Gates:** `src/__tests__/error-contrast.test.ts` — clean validation, identical-steps failure, wrong-id failure, empty-prefix failure, beat-level id check. 5/5 pass.
+- **Verification:** beat-plan 11/11, beat-narration 15/15, pedagogy 7/7, strategy 9/9, moves 5/5, beat-pipeline 2/2; typecheck clean, manifest verified.
+- **Honest limits:** model does not yet emit contrasts (prompt instructs, no live proof without credits); S6 drawing support deferred to T7.
+- **Next:** T6 prediction beats + S9 timing.

@@ -1,5 +1,6 @@
 import type { ConceptGraph, SceneContract } from '../../plan/schemas.js';
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
+import { validateErrorContrast } from '../error-contrast/validate.js';
 import type { BeatPlanDraft, RelationSpec } from './types.js';
 
 export interface BeatContext {
@@ -54,6 +55,9 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
     beat.misconceptionIds.forEach((misconceptionId, j) => { if (!misconceptions.has(misconceptionId)) problems.push({ path: `${at}/misconceptionIds/${j}`, message: `unknown misconception ${misconceptionId}; use one of: ${ctx.misconceptionIds.join(', ') || '(none: leave the list empty)'}` }); });
     if (!beat.visualInvariant.trim()) problems.push({ path: `${at}/visualInvariant`, message: 'visualInvariant must say what is visible when the beat ends' });
     if (!beat.narrationOnly && !beat.mutedMeaning.trim()) problems.push({ path: `${at}/mutedMeaning`, message: 'a visual beat needs a muted meaning: what a viewer with the sound off should conclude from the board' });
+    if (beat.errorContrast) {
+      for (const message of validateErrorContrast(beat.errorContrast, beat.misconceptionIds)) problems.push({ path: `${at}/errorContrast`, message });
+    }
   });
   const range = beatCountRange(ctx.durationSec);
   if (plan.beats.length < range.min) problems.push({ path: '/beats', message: `a ${ctx.durationSec}s scene needs at least ${range.min} beats, got ${plan.beats.length}` });
