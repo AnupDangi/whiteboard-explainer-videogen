@@ -146,7 +146,8 @@ test('unsupported non-source derivations fail and a failed equation step leaves 
     assert.match(unsupported[0]!.message, /could not verify/, provenance);
   }
   const failedAdd = validateBoardOps([add('x^2=9'), step('x=3', 's')], emptyBoardState()) as Array<{ path: string; message: string }>;
-  assert.deepEqual(failedAdd.map((problem) => problem.path), ['/ops/0/element/latex'], 'ops that only fail because the failed op never drew their target are not separate problems');
+  assert.deepEqual(failedAdd.map((problem) => problem.path), ['/ops/0/element/latex', '/ops/1'], 'dependent references are repaired atomically with an invalid creator');
+  assert.match(failedAdd[1]!.message, /repair this reference together with the creator/);
 });
 
 test('transform cannot silently rewrite equation content through generic properties', () => {

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { scenePlanner as scenePlannerById } from '../planner/registry.js';
 import path from 'node:path';
-import type { HypothesisRunOptions, StageRunRecord } from '../shared/contracts.js';
+import type { EvaluationBundle, HypothesisRunOptions, StageRunRecord } from '../shared/contracts.js';
 import { MATH_LESSONS } from '../fixtures/mathLessons.js';
 import { loadOpenRouterEnv } from '../planner/env.js';
 import { lessonToLiveInput, prepareLesson } from './lesson.js';
@@ -13,6 +14,7 @@ import { FileCallRecorder, setAmbientCallRecorder } from '../structured/recorder
 import { buildScorecard } from '../harness/scorecard.js';
 import { FEATURE_FLAGS, TEACHING_COMPILER_VERSION } from './featureFlags.js';
 import { runLessonV2 } from '../pipeline-v2/runLessonV2.js';
+import { ttsProvider } from '../audio/sceneAudio.js';
 import { encodeLockedLessonV2Clips } from '../pipeline-v2/clipsV2.js';
 import { loadAlignmentCalibration } from '../shared/alignment/calibration.js';
 import { closeSpeechWorkers } from '../shared/alignment/align.js';
@@ -46,7 +48,7 @@ let activeRunFailureContext: {
   inputSourcePaths?: string[];
   modelIds: string[];
 } | undefined;
-const preallocatedRuns = new Map<string, { runId: string; outputDir: string; startedAtMs: number }>();
+const preallocatedRuns = new Map<string, { runId: string; outputDir: string; startedAtMs: number; startedMonotonicMs: number }>();
 
 async function writeFailedRunManifest(
   context: NonNullable<typeof activeRunFailureContext>,
@@ -89,6 +91,92 @@ async function writeFailedRunManifest(
     ...(artifactSha256['evaluation-bundle.json'] ? { evaluationBundle: 'evaluation-bundle.json' } : {}),
   };
   await writeFile(path.join(context.outputDir, 'run-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
+}
+
+async function listRunFiles(root: string, rel = ''): Promise<string[]> {
+  const entries = await readdir(path.join(root, rel), { withFileTypes: true });
+  const found: string[] = [];
+  for (const entry of entries) {
+    const next = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) found.push(...await listRunFiles(root, next));
+    else if (entry.isFile() && entry.name !== 'run-manifest.json' && !entry.name.endsWith('.partial')) found.push(next);
+  }
+  return found;
+}
+
+/** V2 outputs use the shared evidence envelope, but stay draft/failed until independent release evidence exists. */
+async function writeV2RunArtifacts(input: {
+  outputDir: string; runId: string; caseId: string; startedAtMs: number; completedAtMs: number;
+  cacheMode: string; plannerModel: string; language: string; result: Awaited<ReturnType<typeof runLessonV2>>;
+  prepared: Awaited<ReturnType<typeof prepareLesson>>; estimatedRagCostUsd: number;
+}): Promise<EvaluationBundle> {
+  const { outputDir, runId, caseId, startedAtMs, completedAtMs, cacheMode, plannerModel, language, result, prepared, estimatedRagCostUsd } = input;
+  const failures = [...prepared.failures, ...result.failures].map(({ code, stage, message, hard }) => ({ code, stage, message, hard }));
+  const spans = new Map(prepared.sourceDoc.spans.map((span) => [span.id, span]));
+  const evidenceFor = (spanIds: readonly string[]) => spanIds.flatMap((spanId) => {
+    const span = spans.get(spanId);
+    return span ? [{ sourceId: span.citationSourceId ?? prepared.sourceDoc.sourceId, spanId: span.id, startChar: span.startChar, endChar: span.endChar, startLine: span.startLine, endLine: span.endLine, quote: span.text, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}) }] : [];
+  });
+  const claims = (prepared.plan?.sections ?? []).flatMap((section) => section.contract?.essentialClaims ?? []);
+  const claimEvidence = Object.fromEntries(claims.map((claim) => [claim.id, evidenceFor(claim.evidenceSpanIds)]));
+  const visualEvidence: EvaluationBundle['visualEvidence'] = {};
+  const neutralElements: EvaluationBundle['elements'] = [];
+  const neutralTimeline: EvaluationBundle['timeline'] = [];
+  const provenance: EvaluationBundle['provenance'] = {};
+  const relations: EvaluationBundle['relations'] = [];
+  for (const scene of result.compiled) {
+    const finalState = scene.timeline.states.at(-1)!;
+    for (const element of Object.values(finalState.elements).filter((item) => item.lifecycle.removedAtBeat === undefined)) {
+      const box = scene.geometry.rectFor(finalState, element.id);
+      if (!box) continue;
+      const spec = element.spec;
+      const label = spec.type === 'entity' || spec.type === 'kit' || spec.type === 'value' ? spec.label : spec.type === 'token' || spec.type === 'text' ? spec.type === 'token' ? spec.text : spec.text : spec.latex;
+      const key = `${scene.sceneId}:${element.id}`;
+      neutralElements.push({ id: key, kind: spec.type, label, bbox: box });
+      const bindings = 'bindings' in spec ? spec.bindings : undefined;
+      const boundRefs = (bindings?.claimIds ?? []).flatMap((claimId) => claimEvidence[claimId] ?? []);
+      if (boundRefs.length) visualEvidence[key] = boundRefs;
+      provenance[key] = [spec.provenance, ...(bindings?.conceptIds ?? []).map((id) => `concept:${id}`), ...(bindings?.claimIds ?? []).map((id) => `claim:${id}`)];
+    }
+    for (const state of scene.timeline.states) for (const edge of Object.values(state.edges)) {
+    if (edge.lifecycle.removedAtBeat !== undefined) continue;
+      const edgeKey = `${scene.sceneId}:edge:${edge.id}`;
+      provenance[edgeKey] = [`relation:${edge.relation}`, ...(edge.bindings?.conceptIds ?? []).map((id) => `concept:${id}`), ...(edge.bindings?.claimIds ?? []).map((id) => `claim:${id}`)];
+      if (edge.bindings?.claimIds.length) visualEvidence[edgeKey] = edge.bindings.claimIds.flatMap((id) => claimEvidence[id] ?? []);
+      for (const relation of edge.bindings?.claimIds.flatMap((id) => claims.find((claim) => claim.id === id)?.relations ?? []) ?? []) relations.push({ from: relation.from, to: relation.to, type: relation.type });
+    }
+    for (const event of scene.timeline.ops) {
+      const op = event.op as unknown as Record<string, unknown>;
+      const target = typeof op.target === 'string' ? op.target : typeof op.id === 'string' ? op.id : op.opId as string;
+      neutralTimeline.push({ elementId: `${scene.sceneId}:${target}`, action: String(op.op), startMs: event.t0, endMs: event.t1, anchor: event.op.beatId, pedagogicalHold: false });
+    }
+  }
+  const nativeArtifacts: Record<string, string> = {};
+  for (const file of await listRunFiles(outputDir)) nativeArtifacts[file] = sha256(await readFile(path.join(outputDir, file)));
+  const bundle: EvaluationBundle = {
+    schemaVersion: 'evaluation-bundle/v1', pipeline: 'claude', runClass: 'generated-lesson', status: result.status,
+    caseId, runId, commit: process.env.GIT_COMMIT ?? 'unavailable',
+    configHash: sha256(JSON.stringify({ compiler: TEACHING_COMPILER_VERSION, plannerModel, language, cacheMode })),
+    nativeArtifacts, claims: claims.map((claim) => `${claim.id}: ${claim.statement}`), claimEvidence, visualEvidence,
+    relations: [...new Map(relations.map((relation) => [`${relation.from}|${relation.to}|${relation.type}`, relation])).values()], elements: neutralElements, timeline: neutralTimeline, provenance,
+    metrics: { ...result.metrics, 'cost.ttsCredits': result.elevenLabsCredits, 'cost.ttsUsdKnown': ttsProvider() === 'elevenlabs' ? 0 : 1, absoluteQualityCertification: 'UNAVAILABLE' },
+    usage: { calls: prepared.usage.calls + result.usage.calls, promptTokens: prepared.usage.promptTokens + result.usage.promptTokens, completionTokens: prepared.usage.completionTokens + result.usage.completionTokens, cachedTokens: prepared.usage.cachedTokens + result.usage.cachedTokens, costUsd: prepared.usage.costUsd + result.usage.costUsd + estimatedRagCostUsd, repairs: prepared.usage.repairs + result.usage.repairs, fallbacks: 0, cacheHits: prepared.cacheHits.length + (result.metrics['v2.clipsCached'] ?? 0) },
+    failures,
+  };
+  await writeFile(path.join(outputDir, 'evaluation-bundle.json'), `${JSON.stringify(bundle, null, 2)}\n`, 'utf8');
+  const artifactSha256: Record<string, string> = {};
+  for (const file of await listRunFiles(outputDir)) artifactSha256[file] = sha256(await readFile(path.join(outputDir, file)));
+  const manifest = {
+    schemaVersion: 'hypothesis-run/v1', pipeline: 'claude', runClass: 'generated-lesson', status: result.status,
+    runId, caseId, startedAt: new Date(startedAtMs).toISOString(), completedAt: new Date(completedAtMs).toISOString(),
+    executionTiming: { startedAt: new Date(startedAtMs).toISOString(), completedAt: new Date(completedAtMs).toISOString(), wallMs: result.metrics['v2.requestToCompleteMs'], requestToCompleteMs: result.metrics['v2.requestToCompleteMs'] },
+    options: { cache: cacheMode, plannerModel, compiler: 'teaching-compiler-v2' },
+    stages: { failedAt: failures.find((failure) => failure.hard)?.stage ?? null, language, sceneCount: result.scenes, plannedScenes: result.planned, preparationStages: prepared.stageRuns, speechUsage: result.speechUsage, providerUsageEvents: result.providerUsageEvents, limitations: ['V2 independent human quality and rights review are unmeasured', 'first audible-playable latency is unmeasured until progressive playback is verified', ...(ttsProvider() === 'elevenlabs' ? ['TTS credits are reported separately and are not valued in USD because the provider does not report a USD price'] : [])] },
+    mediaSha256: { ...(artifactSha256['audio.wav'] ? { audio: artifactSha256['audio.wav'] } : {}), ...(artifactSha256['video.mp4'] ? { video: artifactSha256['video.mp4'] } : {}) },
+    artifactSha256, evaluationBundle: 'evaluation-bundle.json', svg: 'v2/locked/svg', ...(artifactSha256['video.mp4'] ? { video: 'video.mp4' } : {}),
+  };
+  await writeFile(path.join(outputDir, 'run-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
+  return bundle;
 }
 
 /**
@@ -140,10 +228,11 @@ async function main(): Promise<void> {
   const sourceId = arg('id') ?? benchmarkAttempt?.topicId ?? firstLabel.replace(/\W+/g, '-').replace(/^-|-$/g, '').toLowerCase();
   if (sourcePaths.length || sourceUrls.length) {
     const startedAtMs = Date.now();
+    const startedMonotonicMs = performance.now();
     const runId = `${new Date(startedAtMs).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`;
     const outputDir = path.join(outBase, sourceId, 'runs', runId);
     await mkdir(outputDir, { recursive: true });
-    preallocatedRuns.set(sourceId, { runId, outputDir, startedAtMs });
+    preallocatedRuns.set(sourceId, { runId, outputDir, startedAtMs, startedMonotonicMs });
     activeRunFailureContext = {
       runId, caseId: sourceId, outputDir, startedAtMs, stage: 'cli-setup',
       sourceFiles: ['source-doc.json', 'source-bundle.json'],
@@ -177,6 +266,7 @@ async function main(): Promise<void> {
   const sourceArtifacts = new Map<string, Array<{ key: string; contentHash: string; cacheHit: boolean }>>();
   const sourceStageRuns = new Map<string, StageRunRecord[]>();
   const lessonExecutionStartedAt = new Map<string, number>();
+  const lessonExecutionStartedMonotonic = new Map<string, number>();
   if (sourcePaths.length || sourceUrls.length) {
     if (activeRunFailureContext) activeRunFailureContext.stage = 'cli-validation';
     const requestedDurationSec = Number(arg('duration') ?? benchmarkAttempt?.targetDurationSec ?? 60);
@@ -192,6 +282,7 @@ async function main(): Promise<void> {
     }
     const allocatedSourceRun = preallocatedRuns.get(id)!;
     lessonExecutionStartedAt.set(id, allocatedSourceRun.startedAtMs);
+    lessonExecutionStartedMonotonic.set(id, allocatedSourceRun.startedMonotonicMs);
     if (activeRunFailureContext) {
       activeRunFailureContext.stage = 'S1-source-intake';
       activeRunFailureContext.requestHash = sha256(JSON.stringify({ sourcePaths, sourceUrls, instruction: arg('instruction') ?? benchmarkAttempt?.instruction, requestedDurationSec }));
@@ -235,6 +326,7 @@ async function main(): Promise<void> {
   for (const lesson of lessons) {
     const allocated = preallocatedRuns.get(lesson.id);
     const executionStartedAtMs = allocated?.startedAtMs ?? lessonExecutionStartedAt.get(lesson.id) ?? Date.now();
+    const executionStartedMonotonicMs = allocated?.startedMonotonicMs ?? lessonExecutionStartedMonotonic.get(lesson.id) ?? performance.now();
     lessonExecutionStartedAt.set(lesson.id, executionStartedAtMs);
     const runId = allocated?.runId ?? `${new Date(executionStartedAtMs).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`;
     const outputDir = allocated?.outputDir ?? path.join(outBase, lesson.id, 'runs', runId);
@@ -301,10 +393,11 @@ async function main(): Promise<void> {
     for (const f of prepFailures) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
     if (FEATURE_FLAGS.enabled.BOARD_OPS_V2) {
       // Teaching Compiler V2: beats -> real audio -> board operations -> persistent board -> frames. No V1 board planner.
-      const v2 = await runLessonV2({ lessonId: lesson.id, outputDir, prepared, plannerModel, apiKey: env.apiKey, budgetLedger, artifactStore, language, ...(calibration.status === 'measured' ? { calibrationMedianErrorMs: calibration.medianAbsoluteBoundaryErrorMs! } : {}), remainingBudgetUsd: Math.max(0.01, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd) });
+      const v2 = await runLessonV2({ lessonId: lesson.id, outputDir, prepared, plannerModel, apiKey: env.apiKey, budgetLedger, artifactStore, language, requestStartedAtMs: executionStartedAtMs, requestStartedMonotonicMs: executionStartedMonotonicMs, ...(calibration.status === 'measured' ? { calibrationMedianErrorMs: calibration.medianAbsoluteBoundaryErrorMs! } : {}), remainingBudgetUsd: Math.max(0.01, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd) });
       const v2Hard = v2.failures.filter((f) => f.hard);
       const v2CompletedAtMs = Date.now();
       await writeFile(path.join(outputDir, 'scorecard.json'), `${JSON.stringify(buildScorecard({ compilerVersion: TEACHING_COMPILER_VERSION, reports: [...callRecorder.reports()], coverageMetrics: v2.metrics }), null, 2)}\n`, 'utf8');
+      await writeV2RunArtifacts({ outputDir, runId, caseId: lesson.id, startedAtMs: executionStartedAtMs, completedAtMs: v2CompletedAtMs, cacheMode, plannerModel, language, result: v2, prepared, estimatedRagCostUsd: ragOutcome?.estimatedCostUsd ?? 0 });
       console.log(`status=${v2.status} scenes=${v2.scenes}/${v2.planned} hard=${v2Hard.length} ops=${v2.metrics['v2.ops'] ?? 0} stateChanging=${v2.metrics['v2.stateChangingOps'] ?? 0} late=${v2.metrics['v2.lateOps'] ?? 0} cost=$${(prepared.usage.costUsd + v2.usage.costUsd).toFixed(4)} wall=${Math.round((v2CompletedAtMs - executionStartedAtMs) / 1000)}s video=${v2.videoPath ?? 'none'} encodedDuration=${(v2.durationMs / 1000).toFixed(3)}s`);
       for (const f of v2Hard) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
       summary.push({ lesson: lesson.id, runId, outputDir, status: v2.status, scenes: v2.scenes, planned: v2.planned, compiler: 'v2', hardFailures: v2Hard.length, failureDetails: v2Hard.map(({ code, stage, message }) => ({ code, stage, message })), metrics: v2.metrics, costUsd: prepared.usage.costUsd + v2.usage.costUsd, video: v2.videoPath ?? null, durationMs: v2.durationMs, startedAt: new Date(executionStartedAtMs).toISOString(), completedAt: new Date(v2CompletedAtMs).toISOString(), wallMs: v2CompletedAtMs - executionStartedAtMs });

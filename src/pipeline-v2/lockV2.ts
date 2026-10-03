@@ -50,6 +50,7 @@ const CapturedSchema = z.object({
   timeline: z.object({
     ops: z.array(z.object({ index: z.number().int(), op: z.record(z.string(), z.unknown()), effects: z.array(z.unknown()), anchorMs: z.number(), t0: z.number(), t1: z.number(), deadlineMs: z.number(), late: z.boolean() }).strict()),
     states: z.array(z.record(z.string(), z.unknown())).min(1), durationMs: z.number(), lateOps: z.array(z.string()), hash: Hash,
+    lifecycleEvents: z.array(z.object({ kind: z.enum(['beat-end', 'scene-end']), beatId: z.string().optional(), atMs: z.number(), state: z.record(z.string(), z.unknown()) }).strict()).optional(),
   }).strict(),
 }).strict();
 type CapturedScene = z.infer<typeof CapturedSchema>;
@@ -129,8 +130,11 @@ function captureScene({ scene }: V2VideoScene): CapturedScene {
 }
 
 function capturedHashes(captured: CapturedScene) {
+  const scheduledHashInput = captured.timeline.ops.map((s) => [s.op.opId, Math.round(s.t0), Math.round(s.t1)]);
   return {
-    timelineHash: canonicalHash(captured.timeline.ops.map((s) => [s.op.opId, Math.round(s.t0), Math.round(s.t1)])),
+    timelineHash: captured.timeline.lifecycleEvents
+      ? canonicalHash([scheduledHashInput, captured.timeline.lifecycleEvents.map((event) => [event.kind, event.beatId, Math.round(event.atMs), event.state])])
+      : canonicalHash(scheduledHashInput),
     geometryHash: canonicalHash(captured.geometry), boardOpsHash: canonicalHash(captured.timeline.ops.map((s) => s.op)),
     boardStatesHash: canonicalHash(captured.timeline.states), conceptsHash: canonicalHash(captured.concepts),
   };

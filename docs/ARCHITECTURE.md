@@ -431,3 +431,31 @@ pnpm run catalog:build                                         # rebuild the Str
 pnpm run catalog:e4:calibrate -- --input=<e4-labeled-pairs.json> [--out=<report.json>]
 pnpm run reference:lamina                                      # rebuild the Lamina reference pack
 ```
+
+## Teaching Compiler V2 continuation
+
+The current V2 runtime is under `src/pipeline-v2`, `src/visual-v2`, and
+`src/audio`. Board planning is sequential because each scene inherits the
+previous scene's live elements, edges, bindings, and retained geometry. It
+validates each response through the shared reducer/timeline contracts and allows
+at most two semantic repairs. Visual claim coverage comes from explicit
+concept/claim bindings, never English label matching. `beat-end` and
+`scene-end` lifecycle events are part of new timeline locks; older V2 locks
+without that optional captured field remain readable.
+
+ElevenLabs routing is offline-deterministic only when an operator-captured
+capability snapshot is supplied. Audio artifacts retain submitted and
+normalized text, provider clocks, span mappings, provider/model/voice identity,
+credits, and normalization version. Process-local reservations protect
+concurrent calls; cross-process reservations and ledger settlement remain
+separate limitations. Provider credits are not USD. V2 evaluation bundles
+record speech usage and make the $0.10 lesson cost gate unmeasured whenever TTS
+has no USD valuation.
+
+Per-scene clips are immutable, hash-verified cache entries and are concatenated
+against the locked master audio. The current `onClipReady` callback signals a
+silent video clip: it does not establish first-audible-playable readiness. The
+runner still locks the full lesson before clip encoding, and buffering, ready-
+prefix seeking, starvation recovery, and audible progressive playback have not
+been implemented. See `docs/HANDOFF.md` for current checks and the explicit
+unmeasured gates; the frozen V2 plan remains unchanged.

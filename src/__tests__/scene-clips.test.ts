@@ -47,6 +47,7 @@ test('clips are cached across runs, retried locally, announced in order and join
     const deps = {
       createRasterPool: () => ({ render: async () => Buffer.from('png'), close: async () => {} }),
       spawnClipEncoder: fakeEncoder(log) as never,
+      probeDurationMs: async () => Math.round(lock.render.frames * 1000 / lock.render.fps),
       concat: async (list: string, audio: string, out: string) => { joined = await readFile(list, 'utf8'); audioSeen = audio; await writeFile(out, 'joined'); },
       onClipReady: (clip: { sceneId: string }) => { ready.push(clip.sceneId); },
     };
@@ -56,10 +57,14 @@ test('clips are cached across runs, retried locally, announced in order and join
     assert.equal(first.clips[0]!.cached, false); assert.equal(log.frames, lock.render.frames);
     assert.deepEqual(ready, ['one']); assert.match(joined, /^file '.*\.mp4'\n$/); assert.ok(audioSeen.endsWith('.audio.wav'));
     assert.equal(await readFile(out, 'utf8'), 'joined');
-    const manifest = JSON.parse(await readFile(path.join(dir, 'clips', 'manifest.json'), 'utf8'));
+    const manifest = JSON.parse(await readFile(path.join(dir, 'v2', 'clip-progress.json'), 'utf8'));
     assert.deepEqual(manifest.ready.map((r: { sceneId: string }) => r.sceneId), ['one']); assert.equal(manifest.total, 1);
     const again = await encodeLockedLessonV2Clips(dir, path.join(dir, 'again.mp4'), deps);
     assert.equal(again.clips[0]!.cached, true); assert.equal(again.rendered, 0); assert.equal(log.calls, 2, 'no clip is encoded twice');
+    await writeFile(again.clips[0]!.path, 'corrupt-cache');
+    const recovered = await encodeLockedLessonV2Clips(dir, path.join(dir, 'recovered.mp4'), deps);
+    assert.equal(recovered.clips[0]!.cached, false, 'a content-hash mismatch is discarded and encoded again');
+    assert.equal(log.calls, 3);
     assert.ok(!(await readdir(dir)).some((f) => f.includes('.partial.') || f.endsWith('.audio.wav')));
     await assert.rejects(encodeLockedLessonV2Clips(dir, path.join(dir, 'x.mp4'), { ...deps, cacheDir: path.join(dir, 'fresh'), spawnClipEncoder: (() => ({ write: async () => { throw new Error('boom'); }, end: () => {}, abort: () => {}, done: Promise.resolve(), args: [] })) as never, attempts: 2 }), /clip failed after 2 attempts: boom/);
   } finally { await rm(dir, { recursive: true, force: true }); }
@@ -74,5 +79,26 @@ test('real ffmpeg: clips join into one video whose duration matches the locked l
     assert.equal(result.frames, lock.render.frames);
     const ms = await probeMediaDurationMs(out);
     assert.ok(Math.abs(ms - lock.render.durationMs) < 400, `duration ${ms}ms vs ${lock.render.durationMs}ms`);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('a failed raster worker is replaced before its bounded clip retry', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'v2-clips-worker-recovery-'));
+  try {
+    const lock = await fixture(dir);
+    let pools = 0;
+    const result = await encodeLockedLessonV2Clips(dir, path.join(dir, 'recovered.mp4'), {
+      createRasterPool: () => {
+        pools++;
+        const failedPool = pools === 1;
+        return { render: async () => { if (failedPool) throw new Error('worker exited'); return Buffer.from('png'); }, close: async () => {} };
+      },
+      spawnClipEncoder: fakeEncoder({ frames: 0, calls: 0 }) as never,
+      probeDurationMs: async () => Math.round(lock.render.frames * 1000 / lock.render.fps),
+      concat: async (_list, _audio, out) => writeFile(out, 'joined'),
+      attempts: 2,
+    });
+    assert.equal(result.clips[0]!.attempts, 2);
+    assert.equal(pools, 2, 'retry gets a fresh raster worker pool');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

@@ -1,10 +1,12 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { PIPELINE } from '../run/config.js';
 import { concatSceneAudio } from '../export/audioStitch.js';
 import { addUsage, emptyUsage, type CallUsage, type StructuredCallReport } from '../llm/structuredCall.js';
 import type { ModelClient } from '../llm/modelClient.js';
-import { synthesizeSceneAudio, type SceneAudioDeps } from '../audio/sceneAudio.js';
+import { audioDurationProblems, synthesizeSceneAudio, type SceneAudioDeps } from '../audio/sceneAudio.js';
+import type { ElevenLabsUsageEvent } from '../audio/elevenlabs.js';
 import type { PreparedLesson } from '../run/lesson.js';
 import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import type { ContentAddressedArtifactStore } from '../run/artifactCache.js';
@@ -50,11 +52,17 @@ export interface RunLessonV2Input {
   skipEncode?: boolean;
   /** Per-scene clip cache shared across runs (default: `<outputDir>/clips`). */
   clipCacheDir?: string;
-  /** Scenes synthesised and aligned at once (default 3); bounded so a long lesson cannot exhaust CPU, memory or the TTS provider. */
+  /** Scenes synthesised and aligned at once (default 1 until shared provider reservations have measured concurrency safety). */
   audioConcurrency?: number;
   /** Notified, in lesson order, as each scene's clip is ready (progressive playback). */
   onClipReady?: (clip: { sceneId: string; path: string; index: number }) => void;
   remainingBudgetUsd?: number;
+  /** Wall-clock timestamp captured when the CLI accepted this request, before intake and S1–S4. */
+  requestStartedAtMs?: number;
+  /** Monotonic clock captured at the same request-acceptance boundary. */
+  requestStartedMonotonicMs?: number;
+  /** Provider usage is retained even when synthesis fails after a charged request. */
+  onElevenLabsUsage?: (event: ElevenLabsUsageEvent) => void;
 }
 
 export interface RunLessonV2Result {
@@ -69,6 +77,9 @@ export interface RunLessonV2Result {
   metrics: Record<string, number>;
   scorecard: Scorecard;
   compiled: CompiledScene[];
+  speechUsage: Array<{ sceneId: string; model: string; voice: string; credits: number; cacheHit: boolean; capabilitySnapshotId?: string }>;
+  providerUsageEvents: ElevenLabsUsageEvent[];
+  elevenLabsCredits: number;
 }
 
 const STATE_CHANGING = new Set(['move', 'remove', 'updateValue', 'transform', 'equationStep', 'strike', 'split', 'merge', 'replace', 'deemphasize', 'highlight', 'clearRegion']);
@@ -84,15 +95,21 @@ function vttTime(ms: number): string {
 export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2Result> {
   const { prepared, outputDir } = input;
   const startedAt = Date.now();
+  const startedMonotonicMs = performance.now();
+  const requestStartedMonotonicMs = input.requestStartedMonotonicMs ?? startedMonotonicMs;
   const timing: Record<string, number> = {};
   const failures: StageFailure[] = [];
   const reports: StructuredCallReport[] = [];
   const usage = emptyUsage();
   const compiled: CompiledScene[] = [];
+  const speechUsage: RunLessonV2Result['speechUsage'] = [];
+  const providerUsageEvents: ElevenLabsUsageEvent[] = [];
   const metrics: Record<string, number> = {};
   const finish = (status: 'draft' | 'failed', extra: Partial<RunLessonV2Result> = {}): RunLessonV2Result => {
-    const scorecard = buildScorecard({ compilerVersion: TEACHING_COMPILER_VERSION, reports, coverageMetrics: metrics, measured: [] });
-    return { status, failures, reports, usage, scenes: compiled.length, planned: prepared.plan?.sections.length ?? 0, durationMs: 0, metrics, scorecard, compiled, ...extra };
+    const finalMetrics = { ...metrics, ...timing, 'v2.totalMs': performance.now() - startedMonotonicMs, 'v2.requestToCompleteMs': performance.now() - requestStartedMonotonicMs };
+    const scorecard = buildScorecard({ compilerVersion: TEACHING_COMPILER_VERSION, reports, coverageMetrics: finalMetrics, measured: [] });
+    const elevenLabsCredits = providerUsageEvents.filter((event) => event.status === 'succeeded').reduce((sum, event) => sum + (event.credits ?? 0), 0);
+    return { status, failures, reports, usage, scenes: compiled.length, planned: prepared.plan?.sections.length ?? 0, durationMs: 0, metrics: finalMetrics, scorecard, compiled, speechUsage, providerUsageEvents, elevenLabsCredits, ...extra };
   };
   const plan = prepared.plan;
   if (!plan || !prepared.beatPlans || !prepared.beatNarrations || !prepared.graph) {
@@ -105,9 +122,10 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const dump = (name: string, value: unknown) => writeFile(path.join(outputDir, 'v2', name), `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 
   // 1. Real audio and alignment for each scene's speech: the master clock.
-  const audios = await mapLimit(plan.sections, Math.max(1, input.audioConcurrency ?? 3), async (section) => {
+  const audios = await mapLimit(plan.sections, Math.max(1, input.audioConcurrency ?? 1), async (section) => {
     const narration = prepared.beatNarrations![section.id]!;
-    const audio = await synthesizeSceneAudio({ sceneId: section.id, text: narration.text, language, ...(input.voice ? { voice: input.voice } : {}), ...(input.calibrationMedianErrorMs !== undefined ? { calibrationMedianErrorMs: input.calibrationMedianErrorMs } : {}) }, { ...(input.artifactStore ? { artifactStore: input.artifactStore } : {}), ...(input.aligner ? { aligner: input.aligner } : {}) });
+    const audio = await synthesizeSceneAudio({ sceneId: section.id, text: narration.text, language, ...(input.voice ? { voice: input.voice } : {}), ...(input.calibrationMedianErrorMs !== undefined ? { calibrationMedianErrorMs: input.calibrationMedianErrorMs } : {}) }, { ...(input.artifactStore ? { artifactStore: input.artifactStore } : {}), ...(input.aligner ? { aligner: input.aligner } : {}), onElevenLabsUsage: (event) => { providerUsageEvents.push(event); input.onElevenLabsUsage?.(event); } });
+    if (audio.providerMetadata) speechUsage.push({ sceneId: section.id, model: audio.providerMetadata.model, voice: audio.providerMetadata.voice, credits: audio.providerMetadata.credits, cacheHit: audio.cacheHit, ...(audio.providerMetadata.capabilitySnapshotId ? { capabilitySnapshotId: audio.providerMetadata.capabilitySnapshotId } : {}) });
     return { section, narration, audio };
   });
 
@@ -210,6 +228,11 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   let cursor = 0;
   const placements = audios.map(({ audio }, i) => { const startMs = cursor; cursor += audio.durationMs + (i < audios.length - 1 ? gap : trailing); return { startMs, endMs: cursor }; });
   const totalMs = cursor;
+  const requestedDurationMs = (prepared.requestedDurationSec ?? plan.targetDurationSec) * 1000;
+  const durationProblems = audioDurationProblems(totalMs, requestedDurationMs, 200);
+  metrics['v2.requestedDurationMs'] = requestedDurationMs;
+  metrics['v2.actualDurationDeltaMs'] = totalMs - requestedDurationMs;
+  for (const message of durationProblems) failures.push({ code: 'v2-fixed-duration', stage: 'audio', message, hard: true });
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = prepared.beatNarrations![scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
   await dump('lesson-context.json', { sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: prepared.beatNarrations });
@@ -224,7 +247,12 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       Object.assign(metrics, { 'v2.frames': encoded.frames, 'v2.framesRendered': encoded.rendered, 'v2.framesReused': encoded.reused, 'v2.clips': encoded.clips.length, 'v2.clipsCached': encoded.clips.filter((c) => c.cached).length, 'v2.clipRetries': encoded.clips.reduce((n, c) => n + Math.max(0, c.attempts - 1), 0) });
     }
   }
-  timing['v2.totalMs'] = Date.now() - startedAt;
+  timing['v2.totalMs'] = performance.now() - startedMonotonicMs;
+  // This is full request latency, including intake and S1–S4. The first
+  // encoded clip above is silent media and is deliberately not called
+  // first-playable latency; that metric stays absent until the audible player
+  // can verify a frozen frame and its matching audio together.
+  timing['v2.requestToCompleteMs'] = performance.now() - requestStartedMonotonicMs;
   Object.assign(metrics, timing);
   const result = finish(failures.some((f) => f.hard) ? 'failed' : 'draft', { durationMs: totalMs, ...(videoPath ? { videoPath } : {}) });
   await dump('scorecard.json', result.scorecard);

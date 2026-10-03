@@ -14,6 +14,8 @@ import { runFfmpeg, probeMediaDurationMs } from '../export/ffmpeg.js';
 import { tokenizeWords } from '../narration/align.js';
 import { replayLessonV2, verifyLessonLockV2 } from '../pipeline-v2/lockV2.js';
 import { compareReplayDigests } from '../harness/replayDeterminism.js';
+import { canonicalHash } from '../harness/replayDeterminism.js';
+import { sha256 } from '../shared/artifacts.js';
 
 // A contract test for the V2 runner with injected model and aligner. The lesson content is synthetic test data, not a generated lesson.
 const claims = (id: string) => [{ id: `${id}_c`, statement: 'x', conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: ['s1'] }];
@@ -26,7 +28,7 @@ const sceneIds = ['one', 'two'];
 const beatPlans = Object.fromEntries(sceneIds.map((id) => [id, compileBeatPlan(beatDraft(id), ctxFor(id))]));
 const sentences: Record<string, string[]> = { one: ['Each call pushes a frame onto the stack.', 'The newest frame sits on top.'], two: ['A return pops the top frame.', 'The stack shrinks again.'] };
 const narrations = Object.fromEntries(sceneIds.map((id) => [id, compileSceneNarration(id, SceneNarrationDraftSchema.parse({ beats: [{ beatId: `${id}.b1`, sentences: sentences[id], claimSentences: [{ claimId: `${id}_c`, sentenceIndex: 0 }], emphasisTerms: [] }] }), beatPlans[id]!)]));
-const plan = { targetDurationSec: 12, intro: { sourceTitle: 't', sections: [] }, recap: { keyPoints: [] }, sections: sceneIds.map((id) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 6, contract: { learningDelta: 'd', targetDurationSec: 6, requiredConceptIds: ['frame', 'stack'], requiredRelations: [], evidenceSpanIds: ['s1'], essentialClaims: claims(id), teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } })) };
+const plan = { targetDurationSec: 10, intro: { sourceTitle: 't', sections: [] }, recap: { keyPoints: [] }, sections: sceneIds.map((id) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 6, contract: { learningDelta: 'd', targetDurationSec: 6, requiredConceptIds: ['frame', 'stack'], requiredRelations: [], evidenceSpanIds: ['s1'], essentialClaims: claims(id), teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } })) };
 const graph = { concepts: [{ id: 'frame', label: 'Frame', kind: 'entity', definition: 'd', evidence: [], level: 'one-step' }, { id: 'stack', label: 'Stack', kind: 'entity', definition: 'd', evidence: [], level: 'one-step' }], relations: [], prerequisites: [] };
 const prepared = { plan, graph, beatPlans, beatNarrations: narrations } as unknown as PreparedLesson;
 const oneBindings = { conceptIds: ['frame', 'stack'], claimIds: ['one_c'] };
@@ -66,6 +68,8 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.equal(result.metrics['v2.stateChangingOps'], 2, 'remove and highlight change the board');
     assert.equal(result.metrics['v2.visualBeatCoverage'], 1);
     assert.equal(result.metrics['v2.hardGeometryProblems'], 0);
+    assert.ok(Number.isFinite(result.metrics['v2.requestToCompleteMs']));
+    assert.equal(result.metrics['v2.timeToFirstPlayableMs'], undefined, 'a silent encoded clip is not audible-playable readiness');
     assert.ok(result.compiled[1]!.timeline.states[0]!.elements.pile, 'scene two starts from the board scene one left');
     assert.ok(result.videoPath && (await stat(result.videoPath)).size > 1000);
     const ms = await probeMediaDurationMs(result.videoPath!);
@@ -165,5 +169,32 @@ test('replaying a V2 lock twenty times gives identical ops, geometry, events, as
     for (let i = 0; i < 20; i++) digests.push(await replayLessonV2(out));
     assert.deepEqual(compareReplayDigests(digests), { replays: 20, identical: true, mismatches: [] });
     assert.match(digests[0]!.frames, /^[0-9a-f]{64}$/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('V2 lock v5 remains readable when an earlier capture has no lifecycle event field', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-legacy-lock-'));
+  try {
+    const out = await fixtureRun(dir);
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { scenes: Array<{ captured: { file: string; hash: string }; timelineHash: string }>; contentHash: string };
+    const scene = lock.scenes[0]!;
+    const capturedPath = path.join(out, scene.captured.file);
+    const captured = JSON.parse(await readFile(capturedPath, 'utf8')) as { timeline: { ops: Array<{ op: { opId: string }; t0: number; t1: number }>; lifecycleEvents?: unknown[]; hash: string } };
+    delete captured.timeline.lifecycleEvents;
+    const capturedBytes = `${JSON.stringify(captured, null, 2)}\n`;
+    await writeFile(capturedPath, capturedBytes);
+    scene.captured.hash = sha256(capturedBytes);
+    scene.timelineHash = canonicalHash(captured.timeline.ops.map((op) => [op.op.opId, Math.round(op.t0), Math.round(op.t1)]));
+    captured.timeline.hash = scene.timelineHash;
+    const legacyCapturedBytes = `${JSON.stringify(captured, null, 2)}\n`;
+    await writeFile(capturedPath, legacyCapturedBytes);
+    scene.captured.hash = sha256(legacyCapturedBytes);
+    const { contentHash: _oldHash, ...body } = lock;
+    lock.contentHash = canonicalHash(body);
+    const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, lockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+    assert.deepEqual(await verifyLessonLockV2(out), []);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
