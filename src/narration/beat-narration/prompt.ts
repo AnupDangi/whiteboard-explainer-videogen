@@ -52,7 +52,7 @@ Return ONE JSON object { "beats": [{ "beatId", "sentences": [...1-4 sentences], 
   const around = lesson ? `Lesson: "${lesson.title}".${lesson.previous ? ` The previous scene taught: ${lesson.previous.title} (${lesson.previous.goal}).` : ''}${lesson.next ? ` The next scene will cover: ${lesson.next.title} (${lesson.next.goal}).` : ''}\n` : '';
   const terminology = ctx.terminology?.length ? `Lesson terminology (use consistently; explain unfamiliar English terms in ${languageName}):\n${ctx.terminology.map((entry) => `- ${entry.term}${entry.nativeExplanation ? `: ${entry.nativeExplanation}` : ''}`).join('\n')}\n` : '';
   const user = `${around}SCENE ${ctx.sceneId}: "${scene.title}" — ${scene.goal}
-About ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_PROMPT_CEILING)}); the audio sets the real length.
+At most ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_PROMPT_CEILING)}); the audio sets the real length, and overruns fail the lesson, so shorter is always safe.
 ${treatment}${bridge}${terminology}Teaching beats (write one narration beat for each):
 ${beatLines}
 Concept labels you may stress: ${JSON.stringify(ctx.emphasisCandidates)}

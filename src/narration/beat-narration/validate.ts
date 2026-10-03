@@ -39,8 +39,9 @@ const STAGE_DIRECTION = /^(?:now[, ]+)?(?:show|display|draw|animate|render|highl
 const VIDEO_REFERENCE = /\bin this video\b/i;
 /** Audio sets the clock, so a mild overrun is a warning; only a scene this much over its spoken budget is rejected. */
 /** What the speaker is told never to exceed; the validator only rejects beyond NARRATION_HARD_CEILING, because the audio, not the word count, sets the real length. */
-export const NARRATION_PROMPT_CEILING = 1.5;
-export const NARRATION_HARD_CEILING = 2.5;
+/** Ceilings are tight because the fixed-duration gate downstream allows only 200 ms of slack: a scene that overshoots its spoken budget fails the run, so the repair loop must cut early at S4 instead. */
+export const NARRATION_PROMPT_CEILING = 1.15;
+export const NARRATION_HARD_CEILING = 1.3;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 const wordCount = (text: string, language?: string): number => tokenizeWords(text, language ?? 'und').length;
