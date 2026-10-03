@@ -29,7 +29,7 @@ export function sourceTextProblem(assertions: readonly string[], citation: Sourc
   const verbatim = grounding.verify(citation.spanId, citation.quote);
   if (verbatim === undefined) return `evidence span ${citation.spanId} does not contain that quote; copy it verbatim from the source`;
   const absent = assertions.find((text) => !containsPhrase(verbatim, text));
-  return absent === undefined ? undefined : `the source ${subject} asserts ${JSON.stringify(absent)}, which is absent from its cited quote`;
+  return absent === undefined ? undefined : `the source ${subject} asserts ${JSON.stringify(absent)}, which is absent from its cited quote; use the quote's own words as the label, or cite a quote containing the label word for word`;
 }
 
 /** Every displayed scalar in source kit parameters must occur in the citation. Boolean/layout-only params carry no source fact. */
