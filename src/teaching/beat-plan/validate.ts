@@ -16,9 +16,9 @@ export interface BeatContext {
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
-/** One beat is about one thought, 4-10 s of speech: the range follows scene length and is the same for every topic. */
+/** One beat is about one thought, 4-10 s of speech: the range follows scene length and is the same for every topic. The max assumes ~5 s per beat because a beat needs at least one claim-covering sentence (~10+ words); shorter beats cannot fit exact spoken budgets. */
 export function beatCountRange(durationSec: number): { min: number; max: number } {
-  const max = clamp(Math.floor(durationSec / 4), 2, 8);
+  const max = clamp(Math.floor(durationSec / 5), 2, 8);
   return { min: clamp(Math.ceil(durationSec / 10), 1, max), max };
 }
 

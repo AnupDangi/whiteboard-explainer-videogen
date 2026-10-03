@@ -66,7 +66,7 @@ test('a narration-only beat may omit its muted meaning, a visual beat may not', 
 
 test('beat count follows scene duration and stays bounded', () => {
   assert.deepEqual(beatCountRange(10), { min: 1, max: 2 });
-  assert.deepEqual(beatCountRange(20), { min: 2, max: 5 });
+  assert.deepEqual(beatCountRange(20), { min: 2, max: 4 });
   assert.deepEqual(beatCountRange(60), { min: 6, max: 8 });
   const many = Array.from({ length: 9 }, () => beat());
   assert.equal(BeatPlanDraftSchema.safeParse({ beats: many }).success, false);
