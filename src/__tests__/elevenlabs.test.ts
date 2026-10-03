@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ElevenKeyPool, elevenLabsKeys, pcmToWav, synthesizeWithElevenLabs, wordsFromCharacterTimes, type FetchLike } from '../audio/elevenlabs.js';
+import { ElevenKeyPool, elevenLabsKeys, modelsForLanguage, normalizedCharacterClock, pcmToWav, synthesizeWithElevenLabs, wordsFromCharacterTimes, type FetchLike } from '../audio/elevenlabs.js';
 import { tokenizeWords } from '../narration/align.js';
 
 // Offline contract tests with a scripted fetch; no provider is called.
@@ -33,6 +33,36 @@ test('the pool uses one key at a time and moves on when a key lacks credits or i
   await assert.rejects(pool.pick(50), /no ElevenLabs key has 50 credits/);
 });
 
+test('credit reservations are atomic across concurrent scene requests', async () => {
+  const pool = new ElevenKeyPool(['a'], async () => reply(200, { character_count: 0, character_limit: 100 }));
+  const first = await pool.reserve(60);
+  await assert.rejects(pool.reserve(60), /no ElevenLabs key/);
+  first.cancel();
+  const next = await pool.reserve(60);
+  next.settle(60);
+  await assert.rejects(pool.reserve(50), /no ElevenLabs key/);
+});
+
+test('capability snapshot chooses the cheapest language-compatible model and refuses unsupported pairs offline', () => {
+  const snapshot = { snapshotId: 'cap-test-1', capturedAt: '2026-10-03T00:00:00Z', models: [
+    { id: 'v3', creditsPerChar: 1, languages: ['ne'] },
+    { id: 'flash', creditsPerChar: 0.5, languages: ['en', 'hi'] },
+  ] };
+  assert.deepEqual(modelsForLanguage(snapshot, 'HI-in').map((m) => m.id), ['flash']);
+  assert.deepEqual(modelsForLanguage(snapshot, 'ne-NP').map((m) => m.id), ['v3']);
+  assert.deepEqual(modelsForLanguage(snapshot, 'zh'), []);
+});
+
+test('a captured capability snapshot rejects unsupported routing without contacting the provider', async () => {
+  let calls = 0;
+  const fetcher: FetchLike = async () => { calls++; return reply(500, {}); };
+  await assert.rejects(synthesizeWithElevenLabs('test', {
+    language: 'zh', fetcher, env: { ELEVENLABS_API_KEY_1: 'k' },
+    capabilities: { snapshotId: 'captured', capturedAt: '2026-10-03T00:00:00Z', models: [{ id: 'flash', creditsPerChar: 0.5, languages: ['en'] }] },
+  }), /no ElevenLabs model.*supports zh/);
+  assert.equal(calls, 0);
+});
+
 test('synthesis tries the cheapest model, falls through on an unsupported language, and returns WAV audio with the provider word clock', async () => {
   const calls: string[] = [];
   const text = 'पानी झिल्लीबाट पार हुन्छ।';
@@ -43,8 +73,8 @@ test('synthesis tries the cheapest model, falls through on an unsupported langua
     if (body.model_id !== 'eleven_v3') return reply(400, { detail: { code: 'invalid_parameters', status: 'unsupported_language', message: `Model '${body.model_id}' does not support language_code '${body.language_code}'.` } });
     return reply(200, { audio_base64: pcm(2000).toString('base64'), alignment: chars(text, 0.05) });
   };
-  const result = await synthesizeWithElevenLabs(text, { language: 'ne-test-fallthrough', fetcher, env: { ELEVENLABS_API_KEY_1: 'k' } });
-  assert.deepEqual(calls, ['eleven_flash_v2_5:ne-test-fallthrough', 'eleven_multilingual_v2:ne-test-fallthrough', 'eleven_v3:ne-test-fallthrough']);
+  const result = await synthesizeWithElevenLabs(text, { language: 'ne-test-fallthrough', fetcher, env: { ELEVENLABS_API_KEY_1: 'k' }, capabilities: { snapshotId: 'ne-cap-1', capturedAt: '2026-10-03T00:00:00Z', models: [{ id: 'eleven_v3', creditsPerChar: 1, languages: ['ne'] }] } });
+  assert.deepEqual(calls, ['eleven_v3:ne-test-fallthrough']);
   assert.equal(result.model, 'eleven_v3'); assert.equal(result.aligner, 'elevenlabs-timestamps'); assert.equal(result.repairedWordIndexes.length, 0);
   assert.equal(result.durationMs, 2000); assert.equal(result.words.length, 4);
   assert.equal(pcmToWav(pcm(1000), 24000).subarray(0, 4).toString(), 'RIFF');
@@ -58,6 +88,31 @@ test('an out-of-credits key is retired and the next key serves the same request'
     used.push(key);
     return key === 'one' ? reply(401, { detail: { status: 'quota_exceeded' } }) : reply(200, { audio_base64: pcm(500).toString('base64'), alignment: chars('Hi there', 0.05) });
   };
-  const r = await synthesizeWithElevenLabs('Hi there', { language: 'en-test-rotate', fetcher, env: { ELEVENLABS_API_KEY_1: 'one', ELEVENLABS_API_KEY_2: 'two' } });
+  const r = await synthesizeWithElevenLabs('Hi there', { language: 'en-test-rotate', fetcher, env: { ELEVENLABS_API_KEY_1: 'one', ELEVENLABS_API_KEY_2: 'two' }, capabilities: { snapshotId: 'en-cap-1', capturedAt: '2026-10-03T00:00:00Z', models: [{ id: 'eleven_flash_v2_5', creditsPerChar: 0.5, languages: ['en'] }] } });
   assert.deepEqual(used, ['one', 'two']); assert.equal(r.words.length, 2);
+});
+
+test('429 is retried without retiring a valid key, and success reports provider usage', async () => {
+  let calls = 0; const usage: string[] = [];
+  const fetcher: FetchLike = async (url) => {
+    if (url.endsWith('/user/subscription')) return reply(200, { character_count: 0, character_limit: 10_000 });
+    if (++calls === 1) return reply(429, { detail: 'rate limited' });
+    return reply(200, { audio_base64: pcm(1000).toString('base64'), alignment: chars('Hello there.', 0.05) });
+  };
+  const result = await synthesizeWithElevenLabs('Hello there.', { language: 'en', fetcher, env: { ELEVENLABS_API_KEY_1: 'a' }, capabilities: { snapshotId: 'en-cap-2', capturedAt: '2026-10-03T00:00:00Z', models: [{ id: 'eleven_flash_v2_5', creditsPerChar: 0.5, languages: ['en'] }] }, onUsage: (event) => usage.push(event.status) });
+  assert.equal(calls, 2); assert.deepEqual(usage, ['succeeded']); assert.equal(result.voice, 'Xb7hH8MSUJpSbSDYk0k2');
+  assert.equal(result.submittedText, 'Hello there.'); assert.equal(result.normalizedText, 'Hello there.');
+});
+
+test('malformed provider clocks are rejected instead of clamped into apparently valid words', () => {
+  assert.throws(() => wordsFromCharacterTimes({ characters: ['x'], character_start_times_seconds: [0.2], character_end_times_seconds: [0.1] }, 1000), /malformed/);
+  assert.throws(() => wordsFromCharacterTimes({ characters: ['x'], character_start_times_seconds: [0], character_end_times_seconds: [0] }, 1000), /zero-length/);
+});
+
+test('normalized character clocks map composed Unicode and collapsed whitespace back to timed source spans', () => {
+  const raw = { characters: ['e', '\u0301', ' ', ' ', 'x'], startTimesSeconds: [0, 0.01, 0.1, 0.15, 0.2], endTimesSeconds: [0.01, 0.05, 0.13, 0.18, 0.3] };
+  const mapped = normalizedCharacterClock(raw);
+  assert.equal(mapped.characters.join(''), 'é x');
+  assert.deepEqual(mapped.startTimesSeconds, [0, 0.1, 0.2]);
+  assert.deepEqual(mapped.endTimesSeconds, [0.05, 0.18, 0.3]);
 });

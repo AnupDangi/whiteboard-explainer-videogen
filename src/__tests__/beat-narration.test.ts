@@ -119,10 +119,18 @@ test('a screen reference is repaired by patching that one sentence', async () =>
   assert.equal(requests[1]!.schemaName, 'json_patch');
 });
 
-test('speech with a symbol the voice and aligner cannot read is a pointer problem naming the spoken word', () => {
-  const symbolic = draft([{ sentences: ['The time constant tau equals R times C, written τ.'] }]);
+test('Greek text is allowed while mathematical operators remain a pointer problem', () => {
+  const greek = draft([{ sentences: ['The time constant tau equals R times C, written τ.'] }]);
+  assert.equal(validateSceneNarration(greek, ctx).some((p) => /cannot be spoken or aligned/.test((p as { message: string }).message)), false);
+  const symbolic = draft([{ sentences: ['Heat flows from A → B.'] }]);
   const problems = validateSceneNarration(symbolic, ctx) as Array<{ path: string; message: string }>;
   assert.ok(problems.some((p) => p.path === '/beats/0/sentences/0' && /cannot be spoken or aligned/.test(p.message)));
+});
+
+test('Unicode decimal digits are checked against the same factual-number allowlist', () => {
+  const devanagari = draft([{ sentences: ['पानी ३ चरणों से गुजरता है।'] }]);
+  assert.equal(validateSceneNarration(devanagari, { ...ctx, allowedNumbers: new Set(['3']) }).some((p) => /number 3 is not/.test((p as { message: string }).message)), false);
+  assert.ok(validateSceneNarration(devanagari, { ...ctx, allowedNumbers: new Set() }).some((p) => /number 3 is not/.test((p as { message: string }).message)));
 });
 
 test('the narration prompt names the language and tells the speaker where the scene sits in one continuous lesson', async () => {
@@ -130,9 +138,11 @@ test('the narration prompt names the language and tells the speaker where the sc
   const scene = { title: 'Why it moves', goal: 'explain the flow' };
   const first = buildNarrationPrompt({ ...ctx, language: 'hi', lesson: { title: 'Lesson', sceneIndex: 0, sceneCount: 3, next: { title: 'Balance', goal: 'when it stops' } } }, scene, 'src');
   assert.match(first.system, /idiomatic Hindi/); assert.match(first.system, /FIRST of 3 scenes/); assert.match(first.system, /Open with the question or puzzle/);
+  assert.match(first.system, /retaining familiar English technical terms/); assert.match(first.system, /Explain unfamiliar English terms in the requested language/);
   assert.match(first.user, /The next scene will cover: Balance/); assert.doesNotMatch(first.user, /previous scene taught/);
   const last = buildNarrationPrompt({ ...ctx, lesson: { title: 'Lesson', sceneIndex: 2, sceneCount: 3, previous: { title: 'Why it moves', goal: 'flow' } } }, scene, 'src');
   assert.match(last.system, /LAST of 3 scenes/); assert.match(last.system, /two-sentence recap/); assert.match(last.system, /idiomatic English/);
+  assert.match(last.system, /Speak in English throughout/);
   assert.match(last.user, /previous scene taught: Why it moves/);
 });
 
