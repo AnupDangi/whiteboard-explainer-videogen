@@ -86,8 +86,15 @@ export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: 
     const running = active.filter((a) => a.t1 > Math.max(anchorMs, lastStart, needs));
     let start = Math.max(anchorMs, lastStart, needs);
     if (running.length >= SCHEDULE.maxConcurrent) start = Math.max(start, running.map((a) => a.t1).sort((a, b) => a - b)[running.length - SCHEDULE.maxConcurrent]!);
-    // The beat's last op must leave the board settled for the beat's pause; earlier ops keep the sentence deadline.
+    // Prediction beats (STCC §11): a think/scene-close pause is thinking time, not
+    // new-content time. The next beat's first op never starts inside the pause window.
+    if (i === 0) {
+      const at = input.beats.findIndex((b) => b.beatId === op.beatId);
+      const prev = at > 0 ? input.beats[at - 1] : undefined;
+      if (prev && (prev.pauseIntent === 'think' || prev.pauseIntent === 'scene_close')) start = Math.max(start, prev.endMs);
+    }
     const lastOfBeat = i === n - 1;
+    // The beat's last op must leave the board settled for the beat's pause; earlier ops keep the sentence deadline.
     const settleBy = lastOfBeat ? beat.endMs - PAUSE_MS[beat.pauseIntent ?? 'none'] : Infinity;
     const deadlineMs = Math.min(sentence.endMs + SCHEDULE.graceMs, Math.max(settleBy, anchorMs + natural * SCHEDULE.minSpeed));
     let duration = natural;

@@ -119,6 +119,18 @@ function narrationContinuity(beats: readonly TeachingBeat[], narration: Compiled
   return out;
 }
 
+/** A prediction that never asks is a lecture wearing a pause (STCC §11). */
+function predictionBeats(beats: readonly TeachingBeat[], narration: CompiledSceneNarration): PedagogyFinding[] {
+  const out: PedagogyFinding[] = [];
+  const byId = new Map(narration.beats.map((b) => [b.beatId, b.text]));
+  for (const beat of beats) {
+    if (beat.cognitiveOperation !== 'predict') continue;
+    if (!(byId.get(beat.beatId) ?? '').includes('?')) {
+      out.push({ dimension: 'narration-continuity', severity: 'soft', beatId: beat.beatId, message: 'predict beat asks no question: prediction needs question → pause → reveal' });
+    }
+  }
+  return out;
+}
 export function evaluatePedagogy(input: PedagogyInput): PedagogyFinding[] {
   return [
     ...workedExample(input.beats),
@@ -127,6 +139,7 @@ export function evaluatePedagogy(input: PedagogyInput): PedagogyFinding[] {
     ...lessonShape(input.beats),
     ...mutedComprehension(input.beats),
     ...narrationContinuity(input.beats, input.narration),
+    ...predictionBeats(input.beats, input.narration),
   ];
 }
 

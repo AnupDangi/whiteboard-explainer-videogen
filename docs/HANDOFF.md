@@ -2668,3 +2668,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Verification:** beat-plan 11/11, beat-narration 15/15, pedagogy 7/7, strategy 9/9, moves 5/5, beat-pipeline 2/2; typecheck clean, manifest verified.
 - **Honest limits:** model does not yet emit contrasts (prompt instructs, no live proof without credits); S6 drawing support deferred to T7.
 - **Next:** T6 prediction beats + S9 timing.
+
+## Continuation — 2026-10-03, T6 prediction beats + S9 timing (wt/stcc/charter)
+
+- **Built:** S9 compiler clamp — first op of the beat after a think/scene-close pause never starts inside the pause window (STCC §11; pause is thinking time). Pause policy values unchanged (think 550ms). T1 pedagogy gains soft check: `predict` cognitive-op beats with no question mark.
+- **Gates:** `src/__tests__/prediction.test.ts` — overlap-proof pause (3/3 pass), question-present/question-absent separation.
+- **Verification:** V2 timeline/render/encode/lock/clips/player suites all green (17+2+7+4+3+3+3+10), typecheck clean, manifest verified. No timing regressions.
+- **Honest limits:** reveal-after-question is structural (pause respected + question asked); whether the reveal answers the question stays with judges.
+- **Next:** T7 S6 Visual Teaching Model for moves.
