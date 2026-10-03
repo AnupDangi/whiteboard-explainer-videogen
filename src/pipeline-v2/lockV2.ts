@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { access, link, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { access, link, lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { availableParallelism } from 'node:os';
 import { Resvg } from '@resvg/resvg-js';
@@ -22,6 +22,7 @@ const Segment = z.discriminatedUnion('kind', [
   z.object({ ...Range, kind: z.literal('hold'), stateHash: Hash, svgHash: Hash }).strict(),
   z.object({ ...Range, kind: z.literal('transition'), fromStateHash: Hash, toStateHash: Hash, fps: z.number().int().positive(), svgHashes: z.array(Hash).min(1) }).strict(),
 ]);
+const SampleSchema = z.object({ sceneId: z.string().min(1), kind: z.enum(['final', 'transition']), svgHash: Hash, pngHash: Hash, sampleTimeMs: z.number().nonnegative(), frame: z.number().int().nonnegative().optional() }).strict();
 const LockSchema = z.object({
   schemaVersion: z.literal(LESSON_LOCK_V2_VERSION), lessonId: z.string().min(1),
   context: Ref, alignment: Ref,
@@ -34,7 +35,7 @@ const LockSchema = z.object({
   font: z.object({ file: z.string().min(1), hash: Hash, family: z.literal(KALAM_FONT_FAMILY), loadSystemFonts: z.literal(false) }).strict(),
   render: z.object({ fps: z.number().int().positive().max(120), durationMs: z.number().positive(), width: z.number().int().positive(), height: z.number().int().positive(), frames: z.number().int().positive() }).strict(),
   renderPlan: z.array(Segment).min(1), svgAssets: z.array(Ref).min(1),
-  samples: z.array(z.object({ sceneId: z.string().min(1), kind: z.enum(['final', 'transition']), svgHash: Hash, pngHash: Hash, sampleTimeMs: z.number().nonnegative(), frame: z.number().int().nonnegative().optional() }).strict()).min(1),
+  samples: z.array(SampleSchema).min(1),
   versions: z.object({ node: z.string().min(1), pipeline: z.string().min(1), resvg: z.string().min(1), roughjs: z.string().min(1), ffmpeg: z.string().min(1), kalamSha256: Hash, renderPlan: z.literal('svg-frame-ranges/v1') }).strict(),
   contentHash: Hash,
 }).strict();
@@ -111,7 +112,8 @@ async function confinedPath(root: string, rel: string): Promise<string> {
   return full;
 }
 
-async function readRef(root: string, ref: { file: string; hash: string }): Promise<Buffer> {
+/** Read a pinned file, refusing unsafe paths and any byte drift. */
+export async function readRef(root: string, ref: { file: string; hash: string }): Promise<Buffer> {
   const bytes = await readFile(await confinedPath(root, ref.file));
   if (bytesHash(bytes) !== ref.hash) throw new Error(`${ref.file} hash drift`);
   return bytes;
@@ -147,7 +149,212 @@ function raster(svg: string, lock: Pick<LessonLockV2, 'font' | 'render'>, fontFi
   return Buffer.from(new Resvg(svg, { font: { loadSystemFonts: false, fontFiles: [fontFile], defaultFontFamily: lock.font.family, sansSerifFamily: lock.font.family }, fitTo: { mode: 'width', value: lock.render.width } }).render().asPng());
 }
 
-/** Freeze SVG compilation before the lock. No timeline, layout, resolver or semantic renderer runs on the replay side. */
+export const SCENE_LOCK_V2_VERSION = 'scene.lock/v2-teaching-compiler';
+const SceneLockSchema = z.object({
+  schemaVersion: z.literal(SCENE_LOCK_V2_VERSION), lessonId: z.string().min(1),
+  sceneId: z.string().regex(/^[a-zA-Z0-9_-]+$/), index: z.number().int().nonnegative(),
+  startMs: z.number().nonnegative(), endMs: z.number().positive(), fps: z.number().int().positive().max(120),
+  scene: Ref, audio: Ref, captured: Ref,
+  timelineHash: Hash, geometryHash: Hash, boardOpsHash: Hash, boardStatesHash: Hash, conceptsHash: Hash,
+  firstFrame: z.number().int().nonnegative(), frames: z.number().int().positive(),
+  renderPlan: z.array(Segment).min(1), svgAssets: z.array(Ref).min(1), samples: z.array(SampleSchema).min(1),
+  contentHash: Hash,
+}).strict();
+export type SceneLockV2 = z.infer<typeof SceneLockSchema>;
+const SCENE_LOCK_DIR = 'v2/locked/scene-locks';
+const sceneLockFile = (sceneId: string): string => `${SCENE_LOCK_DIR}/${sceneId}.scene.lock.json`;
+const sceneLockHash = (lock: SceneLockV2): string => { const { contentHash: _ignored, ...body } = lock; return canonicalHash(body); };
+
+/** First frame whose timestamp is at or after `ms`; frames belong to the scene whose placement contains their time. */
+function firstFrameAtOrAfter(ms: number, fps: number): number {
+  let frame = Math.max(0, Math.floor(ms * fps / 1000) - 1);
+  while (frame * 1000 / fps < ms) frame++;
+  return frame;
+}
+/** Frame range of a placement. The last scene runs to the lock's rounded frame count, as the single-lock writer always did. */
+function sceneFrameRange(startMs: number, endMs: number, fps: number, final: boolean): { firstFrame: number; frames: number } {
+  const firstFrame = firstFrameAtOrAfter(startMs, fps);
+  const end = final ? Math.max(1, Math.round(endMs * fps / 1000)) : firstFrameAtOrAfter(endMs, fps);
+  return { firstFrame, frames: Math.max(1, end - firstFrame) };
+}
+
+function svgProblem(hash: string, svg: string): string | undefined {
+  if (!/^<svg[\s>]/.test(svg) || /<(?:script|foreignObject)\b/i.test(svg) || /(?:href\s*=\s*["'](?!#)|url\(\s*["']?(?!#))[^\s)]*(?:https?:|file:|\/\/)/i.test(svg)) return `SVG ${hash} contains external or executable content`;
+  return undefined;
+}
+
+/** Content-addressed and idempotent: an existing file must already hold exactly these bytes. */
+async function persistAddressed(outputDir: string, file: string, bytes: Buffer | string): Promise<{ file: string; hash: string }> {
+  const hash = bytesHash(bytes);
+  try { await writeFile(path.join(outputDir, file), bytes, { flag: 'wx' }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    if (bytesHash(await readFile(path.join(outputDir, file))) !== hash) throw new Error(`${file} exists with different bytes`);
+  }
+  return { file, hash };
+}
+
+async function sceneLockExists(outputDir: string, sceneId: string): Promise<boolean> {
+  try { await access(path.join(outputDir, sceneLockFile(sceneId))); return true; } catch { return false; }
+}
+
+/**
+ * Freeze one scene as soon as it compiles: its captured state, every SVG frame it needs, its render-plan segments and raster
+ * pins. A scene lock is immutable and verifiable alone, so playback of the finished prefix can start while later scenes are
+ * still being planned. The lesson lock later aggregates these files without re-rendering.
+ */
+export async function publishSceneLockV2(input: { outputDir: string; lessonId: string; index: number; item: V2VideoScene; fps: number; final?: boolean }): Promise<SceneLockV2> {
+  const { outputDir, lessonId, index, item, fps } = input;
+  const sceneId = item.scene.sceneId;
+  if (!/^[a-zA-Z0-9_-]+$/.test(sceneId)) throw new Error('invalid V2 sceneId');
+  if (!Number.isInteger(fps) || fps < 1 || fps > 120 || !Number.isInteger(index) || index < 0) throw new Error('scene lock needs a non-negative index and FPS from 1 to 120');
+  if (!Number.isFinite(item.startMs) || !Number.isFinite(item.endMs) || item.startMs < 0 || item.endMs <= item.startMs) throw new Error('V2 scene placement must be a positive interval');
+  if (await sceneLockExists(outputDir, sceneId)) throw new Error(`scene lock already published: ${sceneId}`);
+  const fontBytes = await readFile(KALAM_BOLD_FILE);
+  if (bytesHash(fontBytes) !== KALAM_FONT_SHA256) throw new Error('bundled font content hash drift');
+  for (const dir of ['svg', 'scenes']) await mkdir(path.join(outputDir, 'v2', 'locked', dir), { recursive: true });
+  await mkdir(path.join(outputDir, SCENE_LOCK_DIR), { recursive: true });
+
+  const captured = captureScene(item);
+  const capturedRef = await persistAddressed(outputDir, `v2/locked/scenes/${sceneId}.json`, jsonBytes(captured));
+  const readRefFile = async (file: string) => ({ file, hash: bytesHash(await readFile(await confinedPath(outputDir, file))) });
+  const sceneRef = await readRefFile(`v2/scene.${sceneId}.json`);
+  const audioRef = await readRefFile(`scene-audio/${sceneId}.wav`);
+
+  const { firstFrame, frames } = sceneFrameRange(item.startMs, item.endMs, fps, input.final === true);
+  const svgBytes = new Map<string, string>();
+  const svgAssets: SceneLockV2['svgAssets'] = [];
+  const storeSvg = async (svg: string): Promise<string> => {
+    const hash = bytesHash(svg);
+    if (!svgBytes.has(hash)) { svgBytes.set(hash, svg); svgAssets.push(await persistAddressed(outputDir, `v2/locked/svg/${hash}.svg`, svg)); }
+    return hash;
+  };
+  const renderPlan: RenderSegment[] = [];
+  const transitions: Array<{ frame: number; svgHash: string; sampleTimeMs: number }> = [];
+  const holds = new Map<string, string>();
+  const stateHash = (index: number) => canonicalHash([captured.geometry, captured.timeline.states[index]]);
+  for (let frame = firstFrame; frame < firstFrame + frames; frame++) {
+    const local = Math.max(0, frame * 1000 / fps - item.startMs);
+    const key = holdKey(item.scene, local);
+    let svgHash = key === undefined ? undefined : holds.get(key);
+    if (!svgHash) { svgHash = await storeSvg(renderSceneSvg(item.scene, local)); if (key !== undefined) holds.set(key, svgHash); }
+    const done = captured.timeline.ops.filter((s) => s.t1 <= local).length;
+    const previous = renderPlan.at(-1);
+    if (key !== undefined) {
+      if (previous?.kind === 'hold' && previous.svgHash === svgHash) previous.frameCount++;
+      else renderPlan.push({ kind: 'hold', sceneId, firstFrame: frame, frameCount: 1, stateHash: stateHash(done), svgHash });
+    } else {
+      const flightEnd = captured.timeline.ops.filter((s) => s.t0 < local).length;
+      const fromStateHash = stateHash(done); const toStateHash = stateHash(Math.max(done, flightEnd));
+      if (previous?.kind === 'transition' && previous.fromStateHash === fromStateHash && previous.toStateHash === toStateHash) { previous.frameCount++; previous.svgHashes.push(svgHash); }
+      else renderPlan.push({ kind: 'transition', sceneId, firstFrame: frame, frameCount: 1, fromStateHash, toStateHash, fps, svgHashes: [svgHash] });
+      transitions.push({ frame, svgHash, sampleTimeMs: local });
+    }
+  }
+  const samples: SceneLockV2['samples'] = [];
+  const pinFont = { family: KALAM_FONT_FAMILY } as const;
+  const rasterHash = (svgHash: string): string => bytesHash(raster(svgBytes.get(svgHash)!, { font: { ...pinFont, file: '', hash: KALAM_FONT_SHA256, loadSystemFonts: false }, render: { fps, durationMs: 1, width: STYLE.canvas.w, height: STYLE.canvas.h, frames: 1 } }, KALAM_BOLD_FILE));
+  // Representative evidence: first, middle and last sampled transition frame, plus the completed scene. Not every video frame.
+  for (const at of new Set([0, Math.floor(transitions.length / 2), transitions.length - 1])) {
+    const selected = transitions[at]; if (selected) samples.push({ sceneId, kind: 'transition', svgHash: selected.svgHash, sampleTimeMs: selected.sampleTimeMs, frame: selected.frame, pngHash: rasterHash(selected.svgHash) });
+  }
+  const finalTime = Math.max(700, item.scene.timeline.durationMs);
+  const finalHash = await storeSvg(renderSceneSvg(item.scene, finalTime));
+  samples.push({ sceneId, kind: 'final', svgHash: finalHash, sampleTimeMs: finalTime, pngHash: rasterHash(finalHash) });
+
+  const lock = SceneLockSchema.parse({
+    schemaVersion: SCENE_LOCK_V2_VERSION, lessonId, sceneId, index, startMs: item.startMs, endMs: item.endMs, fps,
+    scene: sceneRef, audio: audioRef, captured: capturedRef, ...capturedHashes(captured), firstFrame, frames, renderPlan, svgAssets, samples, contentHash: '0'.repeat(64),
+  });
+  lock.contentHash = sceneLockHash(lock);
+  await publishExclusive(path.join(outputDir, sceneLockFile(sceneId)), jsonBytes(lock));
+  return lock;
+}
+
+/** Everything a scene lock pins must still hold: bytes, hashes, safe paths, SVG content and a gapless frame range. */
+export async function verifySceneLockV2(outputDir: string, sceneId: string): Promise<string[]> {
+  const problems: string[] = [];
+  let lock: SceneLockV2;
+  try {
+    const parsed = SceneLockSchema.safeParse(JSON.parse((await readFile(await confinedPath(outputDir, sceneLockFile(sceneId)))).toString('utf8')));
+    if (!parsed.success) return [`scene lock ${sceneId} structure invalid: ${parsed.error.message}`];
+    lock = parsed.data;
+  } catch (error) { return [`scene lock ${sceneId} unreadable: ${error instanceof Error ? error.message : String(error)}`]; }
+  if (lock.sceneId !== sceneId) problems.push(`scene lock ${sceneId} names scene ${lock.sceneId}`);
+  if (sceneLockHash(lock) !== lock.contentHash) problems.push(`scene lock ${sceneId} content hash mismatch`);
+  const load = async (ref: { file: string; hash: string }, label: string): Promise<Buffer | undefined> => {
+    try { return await readRef(outputDir, ref); } catch (error) { problems.push(`scene ${sceneId} ${label}: ${error instanceof Error ? error.message : String(error)}`); return undefined; }
+  };
+  await load(lock.scene, 'semantic data');
+  await load(lock.audio, 'audio');
+  const capturedBytes = await load(lock.captured, 'captured state');
+  if (capturedBytes) {
+    try {
+      const data = CapturedSchema.parse(JSON.parse(capturedBytes.toString('utf8')));
+      const hashes = capturedHashes(data);
+      for (const [key, actual] of Object.entries(hashes)) if (actual !== lock[key as keyof typeof hashes]) problems.push(`scene ${sceneId} ${key} hash drift`);
+    } catch { problems.push(`scene ${sceneId} captured JSON invalid`); }
+  }
+  const svgs = new Set<string>();
+  for (const ref of lock.svgAssets) {
+    const bytes = await load(ref, 'SVG');
+    if (bytes) { const problem = svgProblem(ref.hash, bytes.toString('utf8')); if (problem) problems.push(problem); svgs.add(ref.hash); }
+  }
+  let cursor = lock.firstFrame;
+  for (const segment of lock.renderPlan) {
+    if (segment.sceneId !== sceneId || segment.firstFrame !== cursor) problems.push(`scene ${sceneId} render plan frame range invalid`);
+    cursor += segment.frameCount;
+    const hashes = segment.kind === 'hold' ? [segment.svgHash] : segment.svgHashes;
+    if (segment.kind === 'transition' && (segment.fps !== lock.fps || hashes.length !== segment.frameCount)) problems.push(`scene ${sceneId} transition frame range or FPS invalid`);
+    if (hashes.some((hash) => !svgs.has(hash))) problems.push(`scene ${sceneId} render plan references missing SVG bytes`);
+  }
+  if (cursor !== lock.firstFrame + lock.frames) problems.push(`scene ${sceneId} render plan does not cover its frames`);
+  if (!lock.samples.some((sample) => sample.kind === 'final')) problems.push(`scene ${sceneId} requires a final raster sample`);
+  for (const sample of lock.samples) if (sample.sceneId !== sceneId || !svgs.has(sample.svgHash)) problems.push(`scene ${sceneId} raster sample reference invalid`);
+  return problems;
+}
+
+export interface ReadyPrefixV2 { scenes: SceneLockV2[]; readyThroughMs: number; stoppedBecause?: string }
+
+/** The playable prefix: scene locks 0..k that are all present, verified, and placed edge to edge on the audio clock. */
+export async function readyPrefixV2(outputDir: string): Promise<ReadyPrefixV2> {
+  let names: string[];
+  try { names = (await readdir(path.join(outputDir, SCENE_LOCK_DIR))).filter((name) => name.endsWith('.scene.lock.json')); }
+  catch { return { scenes: [], readyThroughMs: 0 }; }
+  const byIndex = new Map<number, string>();
+  for (const name of names) {
+    const sceneId = name.slice(0, -'.scene.lock.json'.length);
+    try {
+      const parsed = SceneLockSchema.safeParse(JSON.parse(await readFile(path.join(outputDir, SCENE_LOCK_DIR, name), 'utf8')));
+      if (parsed.success && !byIndex.has(parsed.data.index)) byIndex.set(parsed.data.index, sceneId);
+    } catch { /* unreadable locks simply are not ready */ }
+  }
+  const ready: SceneLockV2[] = [];
+  let endMs = 0;
+  for (let index = 0; byIndex.has(index); index++) {
+    const sceneId = byIndex.get(index)!;
+    const problems = await verifySceneLockV2(outputDir, sceneId);
+    if (problems.length) return { scenes: ready, readyThroughMs: endMs, stoppedBecause: problems[0]! };
+    const lock = SceneLockSchema.parse(JSON.parse(await readFile(path.join(outputDir, sceneLockFile(sceneId)), 'utf8')));
+    if (lock.startMs !== endMs) return { scenes: ready, readyThroughMs: endMs, stoppedBecause: `scene ${sceneId} does not start where the previous scene ends` };
+    ready.push(lock); endMs = lock.endMs;
+  }
+  return { scenes: ready, readyThroughMs: endMs };
+}
+
+/** Wall-clock publication log. Deliberately outside every pinned file so locks stay byte-deterministic. */
+export async function recordSceneProgressV2(outputDir: string, event: { sceneId: string; index: number; sinceRequestMs: number; sinceStartMs: number }): Promise<void> {
+  const file = path.join(outputDir, 'v2', 'progress.json');
+  let events: unknown[] = [];
+  try { events = (JSON.parse(await readFile(file, 'utf8')) as { events: unknown[] }).events; } catch { /* first event */ }
+  const next = { schemaVersion: 'v2-progress/v1', events: [...events, { ...event, sinceRequestMs: Math.round(event.sinceRequestMs), sinceStartMs: Math.round(event.sinceStartMs) }] };
+  const partial = `${file}.${randomUUID()}.partial.json`;
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(partial, jsonBytes(next), { flag: 'wx' });
+  await rename(partial, file);
+}
+
+/** Aggregate the published scene locks into the lesson lock. Missing scene locks are published here; none are re-rendered if present. */
 export async function writeLessonLockV2(input: { outputDir: string; lessonId: string; scenes: readonly V2VideoScene[]; durationMs: number; audioPath: string; fps: number }): Promise<LessonLockV2> {
   const { outputDir, lessonId, fps, durationMs } = input;
   for (const name of ['lesson.lock.json', 'lesson.lock.v2.json']) {
@@ -168,8 +375,6 @@ export async function writeLessonLockV2(input: { outputDir: string; lessonId: st
   const fontBytes = await readFile(KALAM_BOLD_FILE);
   if (bytesHash(fontBytes) !== KALAM_FONT_SHA256) throw new Error('bundled font content hash drift');
   const lockedDir = path.join(outputDir, 'v2', 'locked');
-  await mkdir(path.join(lockedDir, 'svg'), { recursive: true });
-  await mkdir(path.join(lockedDir, 'scenes'), { recursive: true });
   await mkdir(path.join(lockedDir, 'fonts'), { recursive: true });
   await mkdir(path.join(lockedDir, 'audio'), { recursive: true });
   const persist = async (file: string, bytes: Buffer | string) => {
@@ -187,70 +392,42 @@ export async function writeLessonLockV2(input: { outputDir: string; lessonId: st
   const semantic: unknown[] = [];
   const captions = await ref('captions.vtt');
   const records: LessonLockV2['scenes'] = [];
-  const capturedById = new Map<string, CapturedScene>();
-  for (const item of scenes) {
+  const renderPlan: RenderSegment[] = [];
+  const svgAssets: LessonLockV2['svgAssets'] = [];
+  const seenSvg = new Set<string>();
+  const samples: LessonLockV2['samples'] = [];
+  let frameCursor = 0;
+  for (const [index, item] of scenes.entries()) {
     const sceneId = item.scene.sceneId;
-    const captured = captureScene(item);
-    capturedById.set(sceneId, captured);
-    const file = await ref(`v2/scene.${sceneId}.json`);
-    semantic.push(JSON.parse((await readRef(outputDir, file)).toString('utf8')));
-    const audioFile = await ref(`scene-audio/${sceneId}.wav`);
-    records.push({ sceneId, startMs: item.startMs, endMs: item.endMs, file: file.file, fileHash: file.hash, audioFile: audioFile.file, audioHash: audioFile.hash, captured: await persist(`v2/locked/scenes/${sceneId}.json`, jsonBytes(captured)), ...capturedHashes(captured) });
+    const final = index === scenes.length - 1;
+    const expected = sceneFrameRange(item.startMs, item.endMs, fps, final);
+    let sceneLock: SceneLockV2;
+    if (await sceneLockExists(outputDir, sceneId)) {
+      const problems = await verifySceneLockV2(outputDir, sceneId);
+      if (problems.length) throw new Error(`scene lock ${sceneId} failed verification: ${problems.join('; ')}`);
+      sceneLock = SceneLockSchema.parse(JSON.parse(await readFile(path.join(outputDir, sceneLockFile(sceneId)), 'utf8')));
+      const captured = capturedHashes(captureScene(item));
+      const differs = sceneLock.index !== index || sceneLock.lessonId !== lessonId || sceneLock.fps !== fps || sceneLock.startMs !== item.startMs || sceneLock.endMs !== item.endMs
+        || sceneLock.firstFrame !== expected.firstFrame || sceneLock.frames !== expected.frames
+        || (Object.keys(captured) as Array<keyof typeof captured>).some((key) => sceneLock[key] !== captured[key]);
+      if (differs) throw new Error(`scene lock ${sceneId} differs from the compiled scene (placement, frame range or captured state)`);
+    } else {
+      sceneLock = await publishSceneLockV2({ outputDir, lessonId, index, item, fps, final });
+    }
+    if (sceneLock.firstFrame !== frameCursor) throw new Error('scene lock frame ranges must be contiguous');
+    frameCursor += sceneLock.frames;
+    semantic.push(JSON.parse((await readRef(outputDir, sceneLock.scene)).toString('utf8')));
+    records.push({ sceneId, startMs: item.startMs, endMs: item.endMs, file: sceneLock.scene.file, fileHash: sceneLock.scene.hash, audioFile: sceneLock.audio.file, audioHash: sceneLock.audio.hash, captured: sceneLock.captured,
+      timelineHash: sceneLock.timelineHash, geometryHash: sceneLock.geometryHash, boardOpsHash: sceneLock.boardOpsHash, boardStatesHash: sceneLock.boardStatesHash, conceptsHash: sceneLock.conceptsHash });
+    renderPlan.push(...sceneLock.renderPlan);
+    for (const asset of sceneLock.svgAssets) if (!seenSvg.has(asset.hash)) { seenSvg.add(asset.hash); svgAssets.push(asset); }
+    samples.push(...sceneLock.samples);
   }
+  const frames = Math.max(1, Math.round(durationMs * fps / 1000));
+  if (frameCursor !== frames) throw new Error(`scene locks cover ${frameCursor} frames, the lesson needs ${frames}`);
   const invalidAlignment = alignmentProblems(alignmentBytes, records, semantic);
   if (invalidAlignment.length) throw new Error(`V2 lock alignment validation failed: ${invalidAlignment.join('; ')}`);
-  const svgAssets: LessonLockV2['svgAssets'] = [];
-  const svgBytes = new Map<string, string>();
-  const storeSvg = async (svg: string): Promise<string> => {
-    const hash = bytesHash(svg);
-    if (!svgBytes.has(hash)) { svgBytes.set(hash, svg); svgAssets.push(await persist(`v2/locked/svg/${hash}.svg`, svg)); }
-    return hash;
-  };
-  const frames = Math.max(1, Math.round(durationMs * fps / 1000));
-  const renderPlan: RenderSegment[] = [];
-  const transitionFrames = new Map<string, Array<{ frame: number; svgHash: string; sampleTimeMs: number }>>();
-  const holds = new Map<string, string>();
-  let activeIndex = 0;
-  for (let frame = 0; frame < frames; frame++) {
-    const globalTime = frame * 1000 / fps;
-    while (activeIndex + 1 < scenes.length && scenes[activeIndex + 1]!.startMs <= globalTime) activeIndex++;
-    const item = scenes[activeIndex]!;
-    const local = Math.max(0, globalTime - item.startMs);
-    const key = holdKey(item.scene, local);
-    let svgHash = key === undefined ? undefined : holds.get(key);
-    if (!svgHash) { svgHash = await storeSvg(renderSceneSvg(item.scene, local)); if (key !== undefined) holds.set(key, svgHash); }
-    const captured = capturedById.get(item.scene.sceneId)!;
-    const done = captured.timeline.ops.filter((s) => s.t1 <= local).length;
-    const stateHash = (index: number) => canonicalHash([captured.geometry, captured.timeline.states[index]]);
-    const previous = renderPlan.at(-1);
-    if (key !== undefined) {
-      if (previous?.kind === 'hold' && previous.sceneId === item.scene.sceneId && previous.svgHash === svgHash) previous.frameCount++;
-      else renderPlan.push({ kind: 'hold', sceneId: item.scene.sceneId, firstFrame: frame, frameCount: 1, stateHash: stateHash(done), svgHash });
-    } else {
-      const flightEnd = captured.timeline.ops.filter((s) => s.t0 < local).length;
-      const fromStateHash = stateHash(done); const toStateHash = stateHash(Math.max(done, flightEnd));
-      if (previous?.kind === 'transition' && previous.sceneId === item.scene.sceneId && previous.fromStateHash === fromStateHash && previous.toStateHash === toStateHash) { previous.frameCount++; previous.svgHashes.push(svgHash); }
-      else renderPlan.push({ kind: 'transition', sceneId: item.scene.sceneId, firstFrame: frame, frameCount: 1, fromStateHash, toStateHash, fps, svgHashes: [svgHash] });
-      const samples = transitionFrames.get(item.scene.sceneId) ?? [];
-      samples.push({ frame, svgHash, sampleTimeMs: local }); transitionFrames.set(item.scene.sceneId, samples);
-    }
-  }
   const render = { fps, durationMs, width: STYLE.canvas.w, height: STYLE.canvas.h, frames };
-  const samples: LessonLockV2['samples'] = [];
-  const fontPath = await confinedPath(outputDir, font.file);
-  const sample = (sceneId: string, kind: 'final' | 'transition', svgHash: string, sampleTimeMs: number, frame?: number) => {
-    samples.push({ sceneId, kind, svgHash, sampleTimeMs, ...(frame !== undefined ? { frame } : {}), pngHash: bytesHash(raster(svgBytes.get(svgHash)!, { font, render }, fontPath)) });
-  };
-  for (const item of scenes) {
-    const sceneId = item.scene.sceneId;
-    const transitions = transitionFrames.get(sceneId) ?? [];
-    // Representative evidence: first, middle and last sampled transition frame, plus the completed scene. Not every video frame.
-    for (const index of new Set([0, Math.floor(transitions.length / 2), transitions.length - 1])) {
-      const selected = transitions[index]; if (selected) sample(sceneId, 'transition', selected.svgHash, selected.sampleTimeMs, selected.frame);
-    }
-    const finalTime = Math.max(700, item.scene.timeline.durationMs);
-    sample(sceneId, 'final', await storeSvg(renderSceneSvg(item.scene, finalTime)), finalTime);
-  }
   const lock = LockSchema.parse({ schemaVersion: LESSON_LOCK_V2_VERSION, lessonId, context, alignment, scenes: records, media: { audio, captions }, font, render, renderPlan, svgAssets, samples, versions, contentHash: '0'.repeat(64) });
   lock.contentHash = lockHash(lock);
   // Publish only after all inputs and representative PNG pins exist. Exclusive writes preserve previously published locks.
@@ -334,7 +511,8 @@ async function inspectLock(outputDir: string): Promise<{ problems: string[]; ver
     const bytes = await load(ref, 'SVG');
     if (bytes) {
       const svg = bytes.toString('utf8');
-      if (!/^<svg[\s>]/.test(svg) || /<(?:script|foreignObject)\b/i.test(svg) || /(?:href\s*=\s*["'](?!#)|url\(\s*["']?(?!#))[^\s)]*(?:https?:|file:|\/\/)/i.test(svg)) problems.push(`SVG ${ref.hash} contains external or executable content`);
+      const problem = svgProblem(ref.hash, svg);
+      if (problem) problems.push(problem);
       svgs.set(ref.hash, svg);
     }
   }

@@ -1,5 +1,5 @@
-import { frameSvgAt, type VideoScene } from '../frame.js';
-import { clampSeekToReadyPrefix, readyFramePrefixLength, readyPrefixEndMs } from './readiness.js';
+import type { VideoScene } from '../frame.js';
+import { clampSeekToReadyPrefix, readyFramePrefixLength, readyPrefixEndMs, shouldAdoptLockedUpdate } from './readiness.js';
 
 interface PreviewRun {
   schemaVersion: 'hypothesis-browser-preview/v1';
@@ -14,7 +14,7 @@ interface PreviewRun {
   eventUrl: string;
   audioUrl?: string;
   captionsUrl?: string;
-  lockedV2?: { fps: number; frames: number; renderPlan: Array<{ kind: 'hold' | 'transition'; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }>; audioUrl: string };
+  lockedV2?: { fps: number; frames: number; renderPlan: Array<{ kind: 'hold' | 'transition'; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }>; audioUrl: string; live?: true };
 }
 
 interface SceneAudioReference { sceneId: string; path: string; contentHash: string; startMs: number; endMs: number }
@@ -158,12 +158,21 @@ function drawLockedFrame(t: number): void {
   prefetchLockedPrefix(t);
 }
 
+/**
+ * The V1 scene composer pulls in the Node-only text measurer (resvg). It is imported only for V1 runs, so the verified locked
+ * V2 player, which draws frozen SVG bytes, never loads Node-only modules in the browser.
+ */
+let sceneComposer: ((scenes: VideoScene[], t: number) => string) | undefined;
+async function loadSceneComposer(): Promise<void> {
+  if (!sceneComposer) sceneComposer = (await import('../frame.js')).frameSvgAt;
+}
+
 function draw(t: number): void {
   timeMs = Math.max(0, Math.min(durationMs, t));
   // This is the same pure scene/timeline frame composer sampled by encodeVideo.
   // Only renderer-produced markup is inserted; the loaded data is validated run output.
   if (run!.lockedV2) drawLockedFrame(timeMs);
-  else board.innerHTML = frameSvgAt(run!.scenes, timeMs);
+  else if (sceneComposer) board.innerHTML = sceneComposer(run!.scenes, timeMs);
   seek.value = String(timeMs);
   clock.value = `${fmt(timeMs)} / ${fmt(durationMs)}`;
   const word = run!.alignedWords.find((x) => x.startMs <= timeMs && timeMs < x.endMs);
@@ -227,6 +236,7 @@ async function start(): Promise<void> {
     throw new Error('Run data does not match the browser-player schema');
   }
   run = payload;
+  if (!payload.lockedV2) await loadSceneComposer();
   if (payload.lockedV2) {
     if (!Number.isSafeInteger(payload.lockedV2.frames) || payload.lockedV2.frames < 1 || !Number.isSafeInteger(payload.lockedV2.fps) || payload.lockedV2.fps < 1 || !Array.isArray(payload.lockedV2.renderPlan)) throw new Error('Locked V2 preview has an invalid frame plan');
     for (let frame = 0; frame < payload.lockedV2.frames; frame++) lockedFrameHashes.push(lockedHashAt(frame * 1000 / payload.lockedV2.fps));
@@ -320,6 +330,24 @@ async function consumeSceneEvents(): Promise<void> {
   }
 }
 
+/** More scenes became verified (or the final lock was published): extend the frame plan and swap to the longer audio at the same position. */
+function adoptLockedUpdate(latest: PreviewRun): void {
+  if (!run?.lockedV2 || !latest.lockedV2) return;
+  const wasEnded = timeMs >= durationMs - 1;
+  run.lockedV2 = latest.lockedV2;
+  for (let frame = lockedFrameHashes.length; frame < latest.lockedV2.frames; frame++) lockedFrameHashes.push(lockedHashAt(frame * 1000 / latest.lockedV2.fps));
+  durationMs = Math.max(durationMs, latest.durationMs);
+  const resumeAt = timeMs / 1000;
+  audio.src = latest.lockedV2.audioUrl;
+  audio.playbackRate = Number(speed.value) || 1;
+  audio.currentTime = resumeAt;
+  if (playing) {
+    void audio.play().catch((error: unknown) => failLockedPlayback(error instanceof Error ? error.message : String(error)));
+    if (wasEnded) { cancelAnimationFrame(raf); lastTick = performance.now(); raf = requestAnimationFrame(tick); }
+  }
+  prefetchLockedPrefix(timeMs);
+}
+
 async function refreshRunState(): Promise<boolean> {
   if (!run) return false;
   await consumeSceneEvents();
@@ -331,6 +359,7 @@ async function refreshRunState(): Promise<boolean> {
   run.runClass = latest.runClass;
   run.streaming = latest.streaming;
   run.alignedWords = latest.alignedWords;
+  if (run.lockedV2 && shouldAdoptLockedUpdate(run.lockedV2, latest.lockedV2)) adoptLockedUpdate(latest);
   if (latest.durationMs > 0) durationMs = Math.max(durationMs, latest.durationMs);
   if (latest.audioUrl && !audio.src) {
     activeProgressiveAudio = undefined;
@@ -349,7 +378,7 @@ async function refreshRunState(): Promise<boolean> {
   }
   if (playing && !run.audioUrl && !activeProgressiveAudio && run.sceneAudio.length) void playProgressiveAudio(timeMs);
   if (latest.captionsUrl) $<HTMLTrackElement>('captions').src = latest.captionsUrl;
-  seek.max = String(durationMs);
+  if (run.lockedV2) updateLockedSeekRange(); else seek.max = String(durationMs);
   draw(timeMs);
   if (!run.streaming) {
     message.textContent = `${run.status.toUpperCase()} · ${run.runClass} · ${run.scenes.length} scenes`;

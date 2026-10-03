@@ -10,7 +10,7 @@ import { compileSceneTimeline } from '../visual-v2/timeline/compile.js';
 import { compileScene } from '../visual-v2/renderer/frame.js';
 import { writeLessonLockV2, type LessonLockV2 } from '../pipeline-v2/lockV2.js';
 import { createBrowserPreviewHandler, loadBrowserPreview, lockedFrameHashAt } from '../export/player/previewServer.js';
-import { clampSeekToReadyPrefix, readyFramePrefixLength, readyPrefixEndMs } from '../export/player/readiness.js';
+import { clampSeekToReadyPrefix, readyFramePrefixLength, readyPrefixEndMs, shouldAdoptLockedUpdate } from '../export/player/readiness.js';
 
 // Synthetic contract data: playback and confinement evidence, never visual-quality evidence.
 async function lockedFixture(dir: string): Promise<LessonLockV2> {
@@ -98,4 +98,14 @@ test('V2 browser playback fails closed when frozen SVG or audio changes or resol
     await assert.rejects(loadBrowserPreview(dir), /verification|escape|outside/i);
     assert.notEqual((await request(handler, `/locked/svg/${lock.svgAssets[0]!.hash}.svg`)).status, 200);
   } finally { await rm(dir, { recursive: true, force: true }); await rm(outside, { recursive: true, force: true }); }
+});
+
+test('a running V2 session adopts only updates that extend playback, never a shorter or identical view', () => {
+  assert.equal(shouldAdoptLockedUpdate({ frames: 10, live: true }, { frames: 20, live: true }), true);
+  assert.equal(shouldAdoptLockedUpdate({ frames: 10, live: true }, { frames: 10, live: true }), false);
+  assert.equal(shouldAdoptLockedUpdate({ frames: 20, live: true }, { frames: 10, live: true }), false);
+  assert.equal(shouldAdoptLockedUpdate({ frames: 20, live: true }, { frames: 20 }), true, 'the finished lock replaces the live prefix');
+  assert.equal(shouldAdoptLockedUpdate({ frames: 20, live: true }, { frames: 12 }), false, 'a finished view can never be shorter than what already plays');
+  assert.equal(shouldAdoptLockedUpdate({ frames: 20 }, { frames: 20 }), false);
+  assert.equal(shouldAdoptLockedUpdate({ frames: 20 }, undefined), false);
 });

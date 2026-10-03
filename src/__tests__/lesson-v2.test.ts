@@ -12,7 +12,7 @@ import type { PreparedLesson } from '../run/lesson.js';
 import type { ModelClient } from '../llm/modelClient.js';
 import { runFfmpeg, probeMediaDurationMs } from '../export/ffmpeg.js';
 import { tokenizeWords } from '../narration/align.js';
-import { replayLessonV2, verifyLessonLockV2 } from '../pipeline-v2/lockV2.js';
+import { readyPrefixV2, replayLessonV2, verifyLessonLockV2 } from '../pipeline-v2/lockV2.js';
 import { compareReplayDigests } from '../harness/replayDeterminism.js';
 import { canonicalHash } from '../harness/replayDeterminism.js';
 import { sha256 } from '../shared/artifacts.js';
@@ -85,6 +85,14 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     const scorecard = JSON.parse(await readFile(path.join(out, 'v2', 'scorecard.json'), 'utf8')) as { releaseCandidate: boolean; blockers: string[] };
     assert.equal(scorecard.releaseCandidate, false, 'a synthetic run is never a release candidate');
     assert.ok(await stat(path.join(out, 'v2', 'scene.one.json')));
+    // Each scene was frozen as its board compiled; the whole run is therefore a playable prefix, in order, with timing recorded.
+    const ready = await readyPrefixV2(out);
+    assert.deepEqual(ready.scenes.map((scene) => scene.sceneId), ['one', 'two']);
+    assert.equal(ready.readyThroughMs, result.durationMs);
+    const progress = JSON.parse(await readFile(path.join(out, 'v2', 'progress.json'), 'utf8')) as { events: Array<{ sceneId: string; sinceRequestMs: number }> };
+    assert.deepEqual(progress.events.map((event) => event.sceneId), ['one', 'two']);
+    assert.ok(progress.events[0]!.sinceRequestMs <= progress.events[1]!.sinceRequestMs);
+    assert.ok(Number.isFinite(result.metrics['v2.requestToFirstReadySceneMs']) && result.metrics['v2.requestToFirstReadySceneMs']! <= result.metrics['v2.requestToCompleteMs']!);
     await writeFile(path.join(dir, 'done'), 'ok');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

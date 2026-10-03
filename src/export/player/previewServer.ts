@@ -5,13 +5,34 @@ import path from 'node:path';
 import type { AlignedAudio, LaidOutScene, Timeline } from '../../shared/types.js';
 import type { VideoScene } from '../frame.js';
 import type { EvaluationBundle } from '../../shared/contracts.js';
-import { LESSON_LOCK_V2_VERSION, verifiedInputs, type LessonLockV2 } from '../../pipeline-v2/lockV2.js';
+import { LESSON_LOCK_V2_VERSION, readRef, readyPrefixV2, verifiedInputs, type LessonLockV2 } from '../../pipeline-v2/lockV2.js';
+import { joinPaddedScenes } from './wavPrefix.js';
+import { KALAM_BOLD_FILE } from '../../render/fonts.js';
 
 export interface LockedV2Preview {
   fps: number;
   frames: number;
   renderPlan: LessonLockV2['renderPlan'];
-  audioUrl: '/locked/audio.wav';
+  audioUrl: string;
+  /** Set while later scenes are still being planned: frames and audio cover only the verified ready prefix. */
+  live?: true;
+}
+
+/** The verified, still-growing prefix of a V2 run that has no final lock yet. */
+async function loadLivePrefix(dir: string): Promise<BrowserPreviewPayload | undefined> {
+  const ready = await readyPrefixV2(dir);
+  if (!ready.scenes.length) return undefined;
+  const fps = ready.scenes[0]!.fps;
+  const frames = ready.scenes.reduce((sum, scene) => sum + scene.frames, 0);
+  const alignmentRaw = await readFile(path.join(dir, 'v2', 'alignment.json'), 'utf8').catch(() => undefined);
+  const alignment = alignmentRaw ? JSON.parse(alignmentRaw) as { scenes?: Array<{ sceneId: string; words: Array<{ word: string; startMs: number; endMs: number }> }> } : undefined;
+  const starts = new Map(ready.scenes.map((scene) => [scene.sceneId, scene.startMs]));
+  const alignedWords = (alignment?.scenes ?? []).flatMap((scene) => starts.has(scene.sceneId) ? scene.words.map((word) => ({ w: word.word, startMs: starts.get(scene.sceneId)! + word.startMs, endMs: starts.get(scene.sceneId)! + word.endMs })) : []);
+  return {
+    schemaVersion: 'hypothesis-browser-preview/v1', status: 'draft', runClass: 'generated-lesson', durationMs: ready.readyThroughMs,
+    scenes: [], alignedWords, events: [], sceneAudio: [], streaming: true, eventUrl: '/scene-events.jsonl',
+    lockedV2: { fps, frames, renderPlan: ready.scenes.flatMap((scene) => scene.renderPlan), audioUrl: `/locked/prefix.wav?through=${ready.readyThroughMs}`, live: true },
+  };
 }
 
 /** The lock itself is the only source of frame and audio locations. */
@@ -102,6 +123,10 @@ export async function loadBrowserPreview(runDir: string): Promise<BrowserPreview
         lockedV2: { fps: lock.render.fps, frames: lock.render.frames, renderPlan: lock.renderPlan, audioUrl: '/locked/audio.wav' },
       };
     }
+  }
+  if (!primary) {
+    const live = await loadLivePrefix(dir);
+    if (live) return live;
   }
   const [manifestRaw, evaluationRaw, audioRaw, names, events] = await Promise.all([
     readFile(path.join(dir, 'run-manifest.json'), 'utf8').catch(() => undefined),
@@ -202,18 +227,44 @@ export async function createBrowserPreviewServer(runDir: string, repoRoot = proc
   const html = await readFile(htmlPath);
   const runPath = path.resolve(runDir);
   const distRoot = path.resolve(repoRoot, 'dist');
-  const fontPath = path.resolve(repoRoot, 'src/run/assets/fonts/Kalam-Bold.ttf');
+  const fontPath = KALAM_BOLD_FILE;
   return createServer(createBrowserPreviewHandler(payload, runPath, distRoot, html, fontPath, () => loadBrowserPreview(runPath)));
 }
 
+/** Start the preview as soon as the run has something verified to play (the first scene lock), waiting up to `timeoutMs`. */
+export async function createBrowserPreviewServerWhenReady(runDir: string, options: { timeoutMs: number; pollMs?: number }, repoRoot = process.cwd()): Promise<Server> {
+  const deadline = Date.now() + options.timeoutMs;
+  for (;;) {
+    try { return await createBrowserPreviewServer(runDir, repoRoot); }
+    catch (error) {
+      if (!/No laid-out scenes|playable scene event|ENOENT/.test(error instanceof Error ? error.message : String(error)) || Date.now() >= deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 500));
+    }
+  }
+}
+
 /** Request handler is exported separately so route/security behavior can be tested without opening a socket. */
-export function createBrowserPreviewHandler(payload: BrowserPreviewPayload, runPath: string, distRoot: string, html: Buffer, fontPath = path.resolve(process.cwd(), 'src/assets/fonts/Kalam-Bold.ttf'), refresh?: () => Promise<BrowserPreviewPayload>) {
+export function createBrowserPreviewHandler(payload: BrowserPreviewPayload, runPath: string, distRoot: string, html: Buffer, fontPath = KALAM_BOLD_FILE, refresh?: () => Promise<BrowserPreviewPayload>) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1');
       if (req.method !== 'GET') return send(res, 405, 'text/plain; charset=utf-8', 'Method not allowed');
       if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', html);
       if (url.pathname === '/run.json') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(refresh ? await refresh() : payload));
+      if (url.pathname.startsWith('/locked/') && payload.lockedV2?.live) {
+        // Live session: every request re-verifies the ready prefix; nothing outside it is ever served.
+        const ready = await readyPrefixV2(runPath);
+        if (url.pathname === '/locked/prefix.wav') {
+          const through = Number(url.searchParams.get('through'));
+          const scenes = ready.scenes.filter((scene) => scene.endMs <= through);
+          if (!Number.isFinite(through) || !scenes.length || scenes.at(-1)!.endMs !== through) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+          const wavs = await Promise.all(scenes.map(async (scene) => ({ wav: await readRef(runPath, scene.audio), placementMs: scene.endMs - scene.startMs })));
+          return send(res, 200, 'audio/wav', joinPaddedScenes(wavs));
+        }
+        const live = /^\/locked\/svg\/([a-f0-9]{64})\.svg$/.exec(url.pathname)?.[1];
+        const asset = live ? ready.scenes.flatMap((scene) => scene.svgAssets).find((item) => item.hash === live) : undefined;
+        return asset ? send(res, 200, 'image/svg+xml; charset=utf-8', await readRef(runPath, asset)) : send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+      }
       if (url.pathname.startsWith('/locked/')) {
         if (!payload.lockedV2) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
         // Inspect again for every request; use only the buffers returned by verification.

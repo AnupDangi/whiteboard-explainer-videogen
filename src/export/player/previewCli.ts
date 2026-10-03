@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-import { createBrowserPreviewServer } from './previewServer.js';
+import { createBrowserPreviewServer, createBrowserPreviewServerWhenReady } from './previewServer.js';
 
+// Usage: previewCli.js <run-directory> [port] [--wait-ms=N]   (--wait-ms waits for the first verified scene of a run still in progress)
 const args = process.argv.slice(2);
-const runDir = args[0];
-const portValue = args[1] ?? '4178';
-const port = Number(portValue);
-if (!runDir || !Number.isInteger(port) || port < 1 || port > 65535) {
-  console.error('Usage: node dist/src/export/player/previewCli.js <run-directory> [port]');
+const waitMs = Number(args.find((arg) => arg.startsWith('--wait-ms='))?.slice('--wait-ms='.length) ?? 0);
+const positional = args.filter((arg) => !arg.startsWith('--'));
+const runDir = positional[0];
+const port = Number(positional[1] ?? '4178');
+if (!runDir || !Number.isInteger(port) || port < 1 || port > 65535 || !Number.isFinite(waitMs) || waitMs < 0) {
+  console.error('Usage: node dist/src/export/player/previewCli.js <run-directory> [port] [--wait-ms=N]');
   process.exitCode = 2;
 } else {
-  createBrowserPreviewServer(runDir).then((server) => {
+  (waitMs > 0 ? createBrowserPreviewServerWhenReady(runDir, { timeoutMs: waitMs }) : createBrowserPreviewServer(runDir)).then((server) => {
     server.listen(port, '127.0.0.1', () => console.log(`Hypothesis preview: http://127.0.0.1:${port}`));
     const stop = () => server.close(() => process.exit(0));
     process.once('SIGINT', stop);

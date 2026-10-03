@@ -16,3 +16,13 @@ export function clampSeekToReadyPrefix(requestedMs: number, readyFrames: number,
   const latestReadyFrameTime = Math.max(0, (readyFrames - 1) * 1000 / fps);
   return Math.max(0, Math.min(requestedMs, durationMs, latestReadyFrameTime));
 }
+
+/**
+ * A running V2 session adopts a newer server view only when it extends what is already playing (more verified frames), or when the
+ * finished lock replaces the live prefix. A shorter or equal view is ignored so a transient server state can never rewind playback.
+ */
+export function shouldAdoptLockedUpdate(current: { frames: number; live?: boolean }, latest: { frames: number; live?: boolean } | undefined): boolean {
+  if (!latest) return false;
+  if (current.live && !latest.live) return latest.frames >= current.frames;
+  return latest.frames > current.frames;
+}

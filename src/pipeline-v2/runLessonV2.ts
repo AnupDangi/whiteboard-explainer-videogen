@@ -22,7 +22,7 @@ import { validateSceneGeometry, type PriorLayout } from '../visual-v2/layout/sce
 import { compileSceneTimeline, type BeatTiming } from '../visual-v2/timeline/compile.js';
 import { compileScene, type CompiledScene } from '../visual-v2/renderer/frame.js';
 import { mapLimit } from './mapLimit.js';
-import { writeLessonLockV2 } from './lockV2.js';
+import { publishSceneLockV2, recordSceneProgressV2, writeLessonLockV2 } from './lockV2.js';
 import { encodeLockedLessonV2Clips } from './clipsV2.js';
 import type { ConceptInfo } from '../visual-v2/resolver/typeGate.js';
 import { depictEntity } from '../visual-v2/resolver/typeGate.js';
@@ -180,6 +180,15 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   timing['v2.audioMs'] = Date.now() - startedAt;
   const conceptIndex = new Map(graph.concepts.map((c) => [c.id, { id: c.id, label: c.label, kind: c.kind } as ConceptInfo]));
 
+  // Scene audio and the placement of every scene on the master clock are known now, so each scene can be frozen
+  // (immutable scene lock) the moment its board compiles instead of waiting for the whole lesson.
+  const sceneDir = path.join(outputDir, 'scene-audio');
+  await mkdir(sceneDir, { recursive: true });
+  const wavPaths: string[] = [];
+  for (const { section, audio } of audioScenes) { const p = path.join(sceneDir, `${section.id}.wav`); await writeFile(p, audio.audio); wavPaths.push(p); }
+  let cursor = 0;
+  const placements = audioScenes.map(({ audio }, i) => { const startMs = cursor; cursor += audio.durationMs + (i < audioScenes.length - 1 ? gap : trailing); return { startMs, endMs: cursor }; });
+
   // 2. Board operations scene by scene (each scene sees the board the previous one left).
   let carried: BoardState = emptyBoardState();
   let prior: PriorLayout | undefined;
@@ -214,6 +223,12 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     carried = timeline.states[timeline.states.length - 1]!;
     prior = { geometry: scene.geometry, state: carried };
     await dump(`scene.${section.id}.json`, { transition: result.value.transition, ops: result.value.ops, beats, narration, beatTimings, schedule: timeline.ops.map((s) => ({ opId: s.op.opId, t0: Math.round(s.t0), t1: Math.round(s.t1), late: s.late })), timelineHash: timeline.hash });
+    if (!failures.some((f) => f.hard)) {
+      const index = compiled.length - 1;
+      await publishSceneLockV2({ outputDir, lessonId: input.lessonId, index, item: { scene, startMs: placements[index]!.startMs, endMs: placements[index]!.endMs }, fps: input.fps ?? 30, final: index === audioScenes.length - 1 });
+      await recordSceneProgressV2(outputDir, { sceneId: section.id, index, sinceRequestMs: performance.now() - requestStartedMonotonicMs, sinceStartMs: performance.now() - startedMonotonicMs });
+      timing['v2.requestToFirstReadySceneMs'] ??= performance.now() - requestStartedMonotonicMs;
+    }
   }
 
   timing['v2.boardsMs'] = Date.now() - startedAt - timing['v2.audioMs']!;
@@ -252,14 +267,8 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   });
 
   // 4. Master audio, video and captions.
-  const sceneDir = path.join(outputDir, 'scene-audio');
-  await mkdir(sceneDir, { recursive: true });
-  const wavPaths: string[] = [];
-  for (const { section, audio } of audioScenes) { const p = path.join(sceneDir, `${section.id}.wav`); await writeFile(p, audio.audio); wavPaths.push(p); }
   const masterAudio = path.join(outputDir, 'audio.wav');
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
-  let cursor = 0;
-  const placements = audioScenes.map(({ audio }, i) => { const startMs = cursor; cursor += audio.durationMs + (i < audioScenes.length - 1 ? gap : trailing); return { startMs, endMs: cursor }; });
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = prepared.beatNarrations![scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
   await dump('lesson-context.json', { sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: prepared.beatNarrations });
