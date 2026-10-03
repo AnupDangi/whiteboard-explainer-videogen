@@ -13,7 +13,7 @@ Status words follow CLAUDE.md: **implemented**, **tested**, **passed**, **failed
 | `pnpm run test:hypothesis` | Node tests, 2 retained-audit tests, 28 Python alignment tests, 12 Python RAG tests all pass (live counts in HANDOFF; counts change, do not copy them) |
 | `pnpm audit` (root, `voice-engine`, Asset Lab) | no known vulnerabilities (a transitive `@xmldom/xmldom` range was overridden to `>=0.9.12`) |
 | package manager | pnpm 10 only: pinned, `pnpm-lock.yaml` only, enforced by `pnpm-hygiene.test.ts`; the Asset Lab repo was converted too |
-| paid V2 acceptance | **blocked, not failed**: ElevenLabs credits are spent (key 1: 9,999/10,000 until 2026-10-13; key 2: HTTP 401; key 3: 9,968/10,000 until 2026-11-02). Local-TTS runs are possible and are reported separately |
+| paid V2 acceptance | **blocked on credits for ElevenLabs; OpenRouter + local-TTS runs executed and failed on planner reliability** (see §6): ElevenLabs credits are spent (key 1: 9,999/10,000 until 2026-10-13; key 2: HTTP 401; key 3: 9,968/10,000 until 2026-11-02). Local-TTS runs are possible and are reported separately |
 
 ## 2. Phase-by-phase truth
 
@@ -37,7 +37,7 @@ Status words follow CLAUDE.md: **implemented**, **tested**, **passed**, **failed
 | P15 | per-scene clips + ordered concat | implemented, tested | `pipeline-v2/clipsV2.ts` (clip cache keyed by scene frames, local retry, ordered join) |
 | P16 | progressive playback | **implemented this session, verified in a real browser** | immutable per-scene locks, `readyPrefixV2`, live preview server, player adopts newer prefixes while playing. First-audible latency on a generated lesson: see §5 |
 | P17 | renderer backend bake-off | deferred by design | gated on semantic parity; not started |
-| §7 | Stage A/B performance ladder | unmeasured | needs a passing generated 60 s lesson (see §5) |
+| §7 | Stage A/B performance ladder | **TTFP failed (partial); rest unmeasured** | first verified playable scene took 245 s / 421 s / 563 s from the request on three concurrent local-TTS runs (S1-S4 intake alone 93-193 s). No run completed a full lesson, so full-60 s generation, render+encode and Stage B are unmeasured. See HANDOFF 'live provider-backed V2 reruns' |
 | §8–§15 | grounding, muted-board, sync, determinism, reliability, cost, Simi-behaviour benchmarks | harness code exists (`harness/*`, `scripts/v2-benchmark.mjs`); measurements unmeasured | fresh 15-trial cold grid, human muted review, rights review, 100-item alignment review, external benchmark adapter and sealed hold-out are all absent. `ABSOLUTE_QUALITY_CERTIFICATION=UNAVAILABLE` |
 
 ## 3. Defects found by this audit (not visible in any earlier report)
@@ -63,3 +63,7 @@ That spec describes the v1-track `claude-board/v2` planner (S6 enums, `board-v1`
 - Absolute quality certification — depends on all of the above.
 
 (Run evidence from this session is appended to `docs/HANDOFF.md`.)
+
+## 6. Live evidence added after the first audit pass
+
+Provider-backed V2 reruns (OpenRouter + local TTS) found and fixed four generic defects that no offline test had exposed: fixed-duration speech 45% over the request (now fitted by bounded pacing then measured-budget rewrites), inflected source labels rejected, a validator-hinted repair rejected by its own scope rule, and compartment slots too narrow for a label. After those fixes no run completed: every run stopped at the first board scene that exhausted its two repairs, so the S6 first-try validity gate (>=95%) and the 15/15 completion gate are **failed** for this model/prompt on the topics tried. This is a planner-reliability finding, not an infrastructure one.

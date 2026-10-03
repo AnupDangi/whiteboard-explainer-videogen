@@ -245,6 +245,13 @@ export async function createBrowserPreviewServerWhenReady(runDir: string, option
 
 /** Request handler is exported separately so route/security behavior can be tested without opening a socket. */
 export function createBrowserPreviewHandler(payload: BrowserPreviewPayload, runPath: string, distRoot: string, html: Buffer, fontPath = KALAM_BOLD_FILE, refresh?: () => Promise<BrowserPreviewPayload>) {
+  // Verifying the whole ready prefix re-reads every pinned file; do it at most a few times a second, not once per frame request.
+  // Every served file is still hash-checked when read, so a stale prefix can never serve changed bytes.
+  let cachedPrefix: { at: number; value: Promise<Awaited<ReturnType<typeof readyPrefixV2>>> } | undefined;
+  const freshPrefix = (): Promise<Awaited<ReturnType<typeof readyPrefixV2>>> => {
+    if (!cachedPrefix || Date.now() - cachedPrefix.at > 250) cachedPrefix = { at: Date.now(), value: readyPrefixV2(runPath) };
+    return cachedPrefix.value;
+  };
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -253,7 +260,7 @@ export function createBrowserPreviewHandler(payload: BrowserPreviewPayload, runP
       if (url.pathname === '/run.json') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(refresh ? await refresh() : payload));
       if (url.pathname.startsWith('/locked/') && payload.lockedV2?.live) {
         // Live session: every request re-verifies the ready prefix; nothing outside it is ever served.
-        const ready = await readyPrefixV2(runPath);
+        const ready = await freshPrefix();
         if (url.pathname === '/locked/prefix.wav') {
           const through = Number(url.searchParams.get('through'));
           const scenes = ready.scenes.filter((scene) => scene.endMs <= through);
