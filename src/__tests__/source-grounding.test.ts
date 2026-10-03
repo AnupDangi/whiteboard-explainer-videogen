@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BoardOpSchema } from '../visual-v2/board-ops/types.js';
 import { validateBoardOps } from '../visual-v2/board-ops/validate.js';
 import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
-import { formulaProblem, sourceEdgeProblem, sourceFormulaProblem, type Grounding } from '../visual-v2/provenance/ground.js';
+import { formulaProblem, sourceEdgeProblem, sourceFormulaProblem, sourceTextProblem, type Grounding } from '../visual-v2/provenance/ground.js';
 
 const spans: Record<string, string> = { s1: 'The attention weights are softmax(QK^T / sqrt(d_k)) V with d_k = 64.', s2: 'Unrelated prose about training data.' };
 const grounding: Grounding = { verify: (spanId, quote) => (spans[spanId]?.includes(quote) ? quote : undefined) };
@@ -101,4 +101,26 @@ test('formula grounding preserves operators, exponents, variable identity, and c
   assert.match(formulaProblem('x=5', 'x = 5 only when t = 0.') ?? '', /qualified/);
   assert.match(formulaProblem('x=5', 'x is not equal to 5.') ?? '', /structure/);
   assert.equal(formulaProblem('d_k=64', 'd_k = 64.'), undefined);
+});
+
+test('source text is checked for the words it claims, with inflection tolerated and invented words still rejected', () => {
+  const quote = 'A selectively permeable membrane allows water molecules to pass freely while restricting the movement of most solute particles';
+  const citation = { spanId: 's1', quote };
+  const source: Grounding = { verify: (spanId, text) => (spanId === 's1' && quote.includes(text) ? text : undefined) };
+  assert.equal(sourceTextProblem(['Selective membrane'], citation, source, 'kit'), undefined, 'selective/selectively, membrane/membrane');
+  assert.equal(sourceTextProblem(['water molecules', 'solute particle'], citation, source, 'token'), undefined, 'plural and singular');
+  assert.equal(sourceTextProblem(['restricting movement'], citation, source, 'text'), undefined, 'a shortened phrase made of quoted words');
+  const invented = sourceTextProblem(['No cell energy'], citation, source, 'text') ?? '';
+  assert.match(invented, /No cell energy/);
+  assert.match(invented, /derived|your own wording|illustrative/i, 'the repair message says what to do instead of copying');
+  assert.match(sourceTextProblem(['osmotic pressure'], citation, source, 'kit') ?? '', /osmotic pressure/, 'words that are simply not in the quote are rejected');
+  assert.match(sourceTextProblem(['membrane osmosis'], citation, source, 'kit') ?? '', /membrane osmosis/, 'one missing word is enough');
+  assert.match(sourceTextProblem(['membrane'], undefined, source, 'kit') ?? '', /needs evidence/);
+});
+
+test('numbers and units in source text must still match the quote exactly', () => {
+  const quote = 'The membrane has 3 pores and holds 12 percent solute';
+  const source: Grounding = { verify: (_id, text) => (quote.includes(text) ? text : undefined) };
+  assert.equal(sourceTextProblem(['3 pores'], { spanId: 's', quote }, source, 'token'), undefined);
+  assert.match(sourceTextProblem(['30 pores'], { spanId: 's', quote }, source, 'token') ?? '', /30 pores/, 'a different number is never an inflection');
 });

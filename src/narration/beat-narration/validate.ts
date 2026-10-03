@@ -35,7 +35,7 @@ const STAGE_DIRECTION = /^(?:now[, ]+)?(?:show|display|draw|animate|render|highl
 export const NARRATION_PROMPT_CEILING = 1.5;
 export const NARRATION_HARD_CEILING = 2.5;
 /** A length revision must land within this share of its word target, so one more synthesis converges on the runtime. */
-export const REVISION_WORD_TOLERANCE = 0.12;
+export const REVISION_WORD_TOLERANCE = 0.07;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 const wordCount = (text: string, language?: string): number => tokenizeWords(text, language ?? 'und').length;
@@ -89,7 +89,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
   });
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
   if (ctx.revision) {
-    const slack = Math.max(3, Math.round(ctx.revision.targetWords * REVISION_WORD_TOLERANCE));
+    const slack = Math.max(2, Math.round(ctx.revision.targetWords * REVISION_WORD_TOLERANCE));
     if (Math.abs(words - ctx.revision.targetWords) > slack) problems.push({ path: '/beats', message: `write about ${ctx.revision.targetWords} spoken words (between ${ctx.revision.targetWords - slack} and ${ctx.revision.targetWords + slack}); this has ${words}. Keep every beat and every claim, and ${words > ctx.revision.targetWords ? 'cut the least necessary words' : 'add only explanation the source supports'}` });
   }
   const ceiling = Math.round(ctx.durationSec * wordsPerSec(ctx.language) * NARRATION_HARD_CEILING);

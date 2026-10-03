@@ -22,14 +22,28 @@ const containsPhrase = (quote: string, phrase: string): boolean => {
   const value = normalized(phrase);
   return value.length > 0 && ` ${normalized(quote)} `.includes(` ${value} `);
 };
+/** Space-delimited alphabets only; for other scripts a phrase must appear verbatim. */
+const SPACE_DELIMITED = /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{N}\p{M}\s]+$/u;
+/** Inflection-tolerant stem: long words match on their first five letters ("selective"/"selectively"), short words and numbers exactly (minus a plural s). */
+const stemOf = (word: string): string => (/^\p{N}+$/u.test(word) ? word : word.length >= 6 ? word.slice(0, 5) : word.length >= 4 ? word.replace(/s$/, '') : word);
+/**
+ * A source label may be a tidy form of what the quote says. Every word of the label must still appear in the quote, up to
+ * inflection; a number or a word the quote lacks is never excused. Lexical consistency, not proof that the quote supports it.
+ */
+const mentionsAllWords = (quote: string, phrase: string): boolean => {
+  const value = normalized(phrase);
+  if (!value || !SPACE_DELIMITED.test(value)) return false;
+  const have = new Set(normalized(quote).split(' ').map(stemOf));
+  return value.split(' ').every((word) => have.has(stemOf(word)));
+};
 
 export function sourceTextProblem(assertions: readonly string[], citation: SourceCitation | undefined, grounding: Grounding | undefined, subject: string): string | undefined {
   if (!citation) return `a source ${subject} needs evidence {spanId, quote} copied from the source`;
   if (!grounding) return `no source is available to check this source ${subject} against`;
   const verbatim = grounding.verify(citation.spanId, citation.quote);
   if (verbatim === undefined) return `evidence span ${citation.spanId} does not contain that quote; copy it verbatim from the source`;
-  const absent = assertions.find((text) => !containsPhrase(verbatim, text));
-  return absent === undefined ? undefined : `the source ${subject} asserts ${JSON.stringify(absent)}, which is absent from its cited quote`;
+  const absent = assertions.find((text) => !containsPhrase(verbatim, text) && !mentionsAllWords(verbatim, text));
+  return absent === undefined ? undefined : `the source ${subject} asserts ${JSON.stringify(absent)}, which is absent from its cited quote; use words that appear in the quote, or mark it provenance "derived" or "illustrative" if it is your own wording`;
 }
 
 /** Every displayed scalar in source kit parameters must occur in the citation. Boolean/layout-only params carry no source fact. */

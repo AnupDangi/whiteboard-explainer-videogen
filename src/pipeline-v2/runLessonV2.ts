@@ -91,8 +91,8 @@ export interface RunLessonV2Result {
   elevenLabsCredits: number;
 }
 
-/** Each round rewrites every scene once to a word budget measured from real audio; two rounds converge or the run stops honestly. */
-const MAX_DURATION_REVISIONS = 2;
+/** Each round rewrites every scene once to a word budget measured from real audio; three rounds converge or the run stops honestly. */
+const MAX_DURATION_REVISIONS = 3;
 
 const STATE_CHANGING = new Set(['move', 'remove', 'updateValue', 'transform', 'equationStep', 'strike', 'split', 'merge', 'replace', 'deemphasize', 'highlight', 'clearRegion']);
 
