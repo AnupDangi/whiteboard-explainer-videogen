@@ -22,7 +22,7 @@ const CATALOG = {
 };
 
 const [name, ...rest] = process.argv.slice(2);
-const attempt = Number((rest.find((a) => a.startsWith('--attempt=')) ?? '=1').slice(1));
+const attempt = Number(((rest.find((a) => a.startsWith('--attempt=')) ?? '--attempt=1').split('=')[1]));
 const item = CATALOG[name];
 if (!item) { console.error(`unknown domain name. choose: ${Object.keys(CATALOG).join(', ')}`); process.exit(2); }
 const lang = 'en';
