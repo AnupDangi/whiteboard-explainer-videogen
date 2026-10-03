@@ -29,17 +29,19 @@ const narrations = Object.fromEntries(sceneIds.map((id) => [id, compileSceneNarr
 const plan = { targetDurationSec: 12, intro: { sourceTitle: 't', sections: [] }, recap: { keyPoints: [] }, sections: sceneIds.map((id) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 6, contract: { learningDelta: 'd', targetDurationSec: 6, requiredConceptIds: ['frame', 'stack'], requiredRelations: [], evidenceSpanIds: ['s1'], essentialClaims: claims(id), teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } })) };
 const graph = { concepts: [{ id: 'frame', label: 'Frame', kind: 'entity', definition: 'd', evidence: [], level: 'one-step' }, { id: 'stack', label: 'Stack', kind: 'entity', definition: 'd', evidence: [], level: 'one-step' }], relations: [], prerequisites: [] };
 const prepared = { plan, graph, beatPlans, beatNarrations: narrations } as unknown as PreparedLesson;
+const oneBindings = { conceptIds: ['frame', 'stack'], claimIds: ['one_c'] };
+const twoBindings = { conceptIds: ['frame', 'stack'], claimIds: ['two_c'] };
 
 const board: Record<string, unknown> = {
   one: { transition: { mode: 'clean' }, ops: [
-    { op: 'add', opId: 'o1', beatId: 'one.b1', id: 'pile', element: { type: 'kit', kit: 'stack', label: 'stack', paramsJson: '{}', provenance: 'metaphorical' }, at: { region: 'center' }, cue: 0 },
-    { op: 'add', opId: 'o2', beatId: 'one.b1', id: 'f1', element: { type: 'entity', conceptId: 'frame', label: 'frame', provenance: 'source' }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 0 },
-    { op: 'add', opId: 'o3', beatId: 'one.b1', id: 'f2', element: { type: 'token', text: 'newest', provenance: 'illustrative' }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 1 },
+    { op: 'add', opId: 'o1', beatId: 'one.b1', id: 'pile', element: { type: 'kit', kit: 'stack', label: 'stack', paramsJson: '{}', provenance: 'metaphorical', bindings: oneBindings }, at: { region: 'center' }, cue: 0 },
+    { op: 'add', opId: 'o2', beatId: 'one.b1', id: 'f1', element: { type: 'entity', conceptId: 'frame', label: 'frame', provenance: 'source', bindings: oneBindings }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 0 },
+    { op: 'add', opId: 'o3', beatId: 'one.b1', id: 'f2', element: { type: 'token', text: 'newest', provenance: 'illustrative', bindings: oneBindings }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 1 },
   ] },
   two: { transition: { mode: 'retain-all' }, ops: [
     { op: 'remove', opId: 'p1', beatId: 'two.b1', target: 'f2', cue: 0 },
     { op: 'highlight', opId: 'p2', beatId: 'two.b1', target: 'f1', cue: 1 },
-    { op: 'add', opId: 'p3', beatId: 'two.b1', id: 'note', element: { type: 'text', text: 'stack shrinks', role: 'note', provenance: 'derived' }, at: { region: 'bottom' }, cue: 1 },
+    { op: 'add', opId: 'p3', beatId: 'two.b1', id: 'note', element: { type: 'text', text: 'stack shrinks', role: 'note', provenance: 'derived', bindings: twoBindings }, at: { region: 'bottom' }, cue: 1 },
   ] },
 };
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };

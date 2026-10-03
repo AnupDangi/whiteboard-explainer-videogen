@@ -99,6 +99,21 @@ test('beat-persistent elements leave when the next beat starts, and stay while t
   assert.equal(states[3]!.elements.keep!.lifecycle.removedAtBeat, undefined, 'scene-persistent elements stay');
 });
 
+test('timeline emits explicit beat-end records for narration-only beats and a scene-end record', () => {
+  const ops: BoardOp[] = [
+    BoardOpSchema.parse({ op: 'add', opId: 'temp', beatId: 'b0', id: 'temp', element: tok('temp'), at: { region: 'center' }, persistence: 'beat' }),
+    add('last', tok('last'), { region: 'right' }, 'b2'),
+  ];
+  const beats: BeatTiming[] = [0, 1, 2].map((n) => ({ beatId: `b${n}`, startMs: n * 4000, endMs: n * 4000 + 3500, sentences: [{ startMs: n * 4000, endMs: n * 4000 + 3500 }] }));
+  const timeline = compileSceneTimeline({ ops, initial: emptyBoardState(), beats });
+  assert.deepEqual(timeline.lifecycleEvents.map((event) => [event.kind, event.beatId]), [
+    ['beat-end', 'b0'], ['beat-end', 'b1'], ['beat-end', 'b2'], ['scene-end', undefined],
+  ]);
+  assert.equal(timeline.lifecycleEvents[0]!.state.elements.temp!.lifecycle.removedAtBeat, 'b0:beat-end');
+  assert.equal(timeline.lifecycleEvents[1]!.state.elements.last, undefined, 'a narration-only beat does not observe a future board change');
+  assert.equal(timeline.lifecycleEvents[3]!.atMs, timeline.durationMs);
+});
+
 test('objects retained across a scene cut keep their rectangle; a new neighbour is placed beside them', () => {
   const first: BoardOp[] = [add('a', tok('alpha'), { region: 'center' }, 'b0')];
   const t1 = compileSceneTimeline({ ops: first, initial: emptyBoardState(), beats: [{ beatId: 'b0', startMs: 0, endMs: 3000, sentences: [{ startMs: 0, endMs: 3000 }] }] });

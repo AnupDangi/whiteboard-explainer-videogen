@@ -20,6 +20,9 @@ export const EMPHASIS = ['normal', 'highlight', 'dim', 'struck'] as const;
 const elementId = () => z.string().min(1).max(48).regex(/^[A-Za-z0-9_.-]+$/, 'ids use letters, digits, _ . -');
 const beatIdField = () => z.string().min(1).max(60).regex(/^[a-z0-9_.]+$/);
 const scalar = () => z.union([z.string().max(60), z.number()]);
+/** Explicit semantic ownership for every visual or factual edge. Labels are never used as a proxy for meaning. */
+export const BoardBindingsSchema = z.object({ conceptIds: z.array(z.string().min(1).max(40)).max(12), claimIds: z.array(z.string().min(1).max(40)).max(12) }).strict();
+const bindingFields = { bindings: BoardBindingsSchema.optional() };
 
 export const PlacementSchema = z.object({
   region: z.enum(REGION_IDS),
@@ -36,16 +39,16 @@ const label = () => z.string().min(1).max(40);
 /** A verbatim quote from one source span; required when an equation claims `source` provenance. */
 export const SourceCitationSchema = z.object({ spanId: z.string().min(1).max(40), quote: z.string().min(6).max(240) }).strict();
 
-export const EntitySpecSchema = z.object({ type: z.literal('entity'), conceptId: z.string().min(1).max(40), label: label(), provenance: z.enum(PROVENANCE) }).strict();
+export const EntitySpecSchema = z.object({ type: z.literal('entity'), conceptId: z.string().min(1).max(40), label: label(), provenance: z.enum(PROVENANCE), ...bindingFields }).strict();
 export const KitSpecSchema = z.object({
   type: z.literal('kit'), kit: z.enum(KIT_NAMES), label: label().optional(),
   /** Kit parameters as JSON text, validated by the kit's own schema (kits/registry). Keeps the wire schema bounded. */
-  paramsJson: z.string().max(2000), provenance: z.enum(PROVENANCE), evidence: SourceCitationSchema.optional(),
+  paramsJson: z.string().max(2000), provenance: z.enum(PROVENANCE), evidence: SourceCitationSchema.optional(), ...bindingFields,
 }).strict();
-export const TokenSpecSchema = z.object({ type: z.literal('token'), text: z.string().min(1).max(24), provenance: z.enum(PROVENANCE) }).strict();
-export const TextSpecSchema = z.object({ type: z.literal('text'), text: z.string().min(1).max(60), role: z.enum(['title', 'label', 'note']), provenance: z.enum(PROVENANCE) }).strict();
-export const EquationSpecSchema = z.object({ type: z.literal('equation'), latex: z.string().min(1).max(160), provenance: z.enum(PROVENANCE), evidence: SourceCitationSchema.optional() }).strict();
-export const ValueSpecSchema = z.object({ type: z.literal('value'), label: label(), value: scalar(), unit: z.string().max(12).optional(), provenance: z.enum(PROVENANCE) }).strict();
+export const TokenSpecSchema = z.object({ type: z.literal('token'), text: z.string().min(1).max(24), provenance: z.enum(PROVENANCE), ...bindingFields }).strict();
+export const TextSpecSchema = z.object({ type: z.literal('text'), text: z.string().min(1).max(60), role: z.enum(['title', 'label', 'note']), provenance: z.enum(PROVENANCE), ...bindingFields }).strict();
+export const EquationSpecSchema = z.object({ type: z.literal('equation'), latex: z.string().min(1).max(160), provenance: z.enum(PROVENANCE), evidence: SourceCitationSchema.optional(), ...bindingFields }).strict();
+export const ValueSpecSchema = z.object({ type: z.literal('value'), label: label(), value: scalar(), unit: z.string().max(12).optional(), provenance: z.enum(PROVENANCE), ...bindingFields }).strict();
 
 export const ElementSpecSchema = z.union([EntitySpecSchema, KitSpecSchema, TokenSpecSchema, TextSpecSchema, EquationSpecSchema, ValueSpecSchema]);
 export type ElementSpec = z.infer<typeof ElementSpecSchema>;
@@ -68,7 +71,7 @@ const base = {
 const part = z.object({ id: elementId(), element: ElementSpecSchema, at: PlacementSchema }).strict();
 
 export const AddOpSchema = z.object({ op: z.literal('add'), ...base, id: elementId(), element: ElementSpecSchema, at: PlacementSchema, persistence: z.enum(PERSISTENCE).optional() }).strict();
-export const ConnectOpSchema = z.object({ op: z.literal('connect'), ...base, id: elementId(), from: elementId(), to: elementId(), relation: z.string().min(1).max(30), label: label().optional(), weight: z.number().min(0).max(1).optional() }).strict();
+export const ConnectOpSchema = z.object({ op: z.literal('connect'), ...base, id: elementId(), from: elementId(), to: elementId(), relation: z.string().min(1).max(30), label: label().optional(), weight: z.number().min(0).max(1).optional(), bindings: BoardBindingsSchema.optional() }).strict();
 export const MoveOpSchema = z.object({ op: z.literal('move'), ...base, target: elementId(), to: PlacementSchema }).strict();
 export const TransformOpSchema = z.object({ op: z.literal('transform'), ...base, target: elementId(), changes: z.array(z.object({ key: z.string().min(1).max(30), value: scalar() }).strict()).min(1).max(4) }).strict();
 export const ReplaceOpSchema = z.object({ op: z.literal('replace'), ...base, target: elementId(), id: elementId(), element: ElementSpecSchema }).strict();

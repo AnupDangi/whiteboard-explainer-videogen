@@ -137,17 +137,22 @@ export const MAX_KIT_CHILDREN = 6;
 /** Zoned kits split their width between zones, so each zone holds fewer. */
 export const MAX_ZONE_CHILDREN = 4;
 
-export function validateBoardOps(ops: readonly BoardOp[], initial: BoardState, grounding?: Grounding): ValidatorProblem[] {
+export function validateBoardOps(ops: readonly BoardOp[], initial: BoardState, grounding?: Grounding, beatOrder?: readonly string[]): ValidatorProblem[] {
   const problems: ValidatorProblem[] = [];
   let state = initial;
-  // Elements a failed op would have created. Later ops that need them fail only because of that one root cause, so they are
-  // skipped silently: the model should repair the failed op, not a cascade of "does not exist".
+  // Elements a failed op would have created. Dependent operations are not
+  // simulated, but are explicitly included in the pointer repair closure.
   const phantom = new Set<string>();
   let created = 0;
   const skip = (op: BoardOp): void => { for (const id of createdBy(op)) phantom.add(id); };
   ops.forEach((op, index) => {
     const previousBeat = ops[index - 1]?.beatId;
-    if (dependenciesOf(op).some((id) => phantom.has(id))) { skip(op); return; }
+    const blockedBy = dependenciesOf(op).filter((id) => phantom.has(id));
+    if (blockedBy.length) {
+      problems.push({ path: `/ops/${index}`, message: `this operation depends on an earlier invalid creator (${blockedBy.join(', ')}); repair this reference together with the creator while preserving its opId and other accepted operations` });
+      skip(op);
+      return;
+    }
     const shape = opShapeProblems(op, state, index, grounding);
     problems.push(...shape);
     if (shape.length > 0) { skip(op); return; }
@@ -156,7 +161,7 @@ export function validateBoardOps(ops: readonly BoardOp[], initial: BoardState, g
       problems.push({ path: `/ops/${index}`, message: `this scene already draws ${created} elements; at most ${MAX_BOARD_ELEMENTS} per scene, so reuse, move or restyle what is on the board instead of adding more` });
       skip(op); return;
     }
-    try { state = applyOpAfter(state, op, previousBeat).state; } catch (error) {
+    try { state = applyOpAfter(state, op, previousBeat, beatOrder).state; } catch (error) {
       if (!(error instanceof BoardOpError)) throw error;
       problems.push({ path: `/ops/${index}`, message: error.message.replace(`${op.opId}: `, '') });
       skip(op);

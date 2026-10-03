@@ -233,3 +233,39 @@ test('an arrow can be highlighted, dimmed, struck or removed by its own id, like
   assert.throws(() => applyOp(removed, emphasise('highlight')), /does not exist/);
   assert.notEqual(hashBoardState(applyOp(state, emphasise('highlight')).state), hashBoardState(state), 'emphasis changes the state hash');
 });
+
+test('element-only operations reject edge ids as structured operation failures instead of throwing', () => {
+  let state = applyOp(emptyBoardState(), add('a', 'b0', 'left', token('left'), { region: 'left' })).state;
+  state = applyOp(state, add('b', 'b0', 'right', token('right'), { region: 'right' })).state;
+  state = applyOp(state, BoardOpSchema.parse({ op: 'connect', opId: 'edge', beatId: 'b0', id: 'link', from: 'left', to: 'right', relation: 'connects' })).state;
+  for (const op of [
+    { op: 'move', opId: 'move-edge', beatId: 'b1', target: 'link', to: { region: 'center' } },
+    { op: 'transform', opId: 'transform-edge', beatId: 'b1', target: 'link', changes: [{ key: 'scale', value: 1 }] },
+    { op: 'replace', opId: 'replace-edge', beatId: 'b1', target: 'link', id: 'new', element: token('new') },
+  ]) {
+    const parsed = BoardOpSchema.parse(op);
+    assert.throws(() => applyOp(state, parsed), new RegExp(`${parsed.opId}: link is an edge; ${parsed.op} requires an element`));
+    const problems = validateBoardOps([parsed], state) as Array<{ path: string; message: string }>;
+    assert.equal(problems[0]!.path, '/ops/0');
+    assert.match(problems[0]!.message, /is an edge/);
+  }
+  assert.throws(() => applyOp(state, BoardOpSchema.parse({ op: 'connect', opId: 'edge-endpoint', beatId: 'b1', id: 'link2', from: 'link', to: 'right', relation: 'connects' })), /link is an edge; connect endpoints must be elements/);
+});
+
+test('split and merge reject duplicate targets and destinations that are not existing live containers', () => {
+  const base = applyOp(emptyBoardState(), add('a', 'b0', 'source', token('source'), { region: 'center' })).state;
+  const split = BoardOpSchema.parse({ op: 'split', opId: 'split', beatId: 'b1', target: 'source', into: [
+    { id: 'one', element: token('one'), at: { region: 'center', container: 'missing' } },
+    { id: 'two', element: token('two'), at: { region: 'center' } },
+  ] });
+  assert.throws(() => applyOp(base, split), /missing is not a live destination container/);
+  const kit = add('kit', 'b0', 'kit', stackKit, { region: 'center' });
+  const withKit = applyOp(base, kit).state;
+  const selfDestination = BoardOpSchema.parse({ op: 'split', opId: 'self-split', beatId: 'b1', target: 'kit', into: [
+    { id: 'one', element: token('one'), at: { region: 'center', container: 'kit' } },
+    { id: 'two', element: token('two'), at: { region: 'center' } },
+  ] });
+  assert.throws(() => applyOp(withKit, selfDestination), /kit is removed by this op/);
+  const duplicateMerge = BoardOpSchema.parse({ op: 'merge', opId: 'merge-duplicate', beatId: 'b1', targets: ['source', 'source'], into: { id: 'merged', element: token('merged'), at: { region: 'center' } } });
+  assert.throws(() => applyOp(base, duplicateMerge), /merge targets must be distinct/);
+});

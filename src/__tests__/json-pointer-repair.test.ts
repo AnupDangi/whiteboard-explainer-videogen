@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { z } from 'zod';
-import { applyPatches, decodePatchResponse, patchOutsideTargets, pointerFromPath, valueAtPointer } from '../structured/jsonPointerRepair.js';
+import { applyPatches, buildPatchRepairPrompt, decodePatchResponse, patchOutsideTargets, pointerFromPath, valueAtPointer } from '../structured/jsonPointerRepair.js';
 import { structuredCall } from '../llm/structuredCall.js';
 import type { ModelClient } from '../llm/modelClient.js';
 import type { ChatRequest } from '../llm/openrouter.js';
@@ -12,6 +12,15 @@ test('pointers are built from zod paths and resolve values, with ~ and / escaped
   const doc = { a: [{ 'b/c': { 'd~e': 7 } }] };
   assert.equal(valueAtPointer(doc, '/a/0/b~1c/d~0e'), 7);
   assert.equal(valueAtPointer(doc, '/a/3'), undefined);
+});
+
+test('a patch repair prompt includes every issue when one validation round finds more than twelve', () => {
+  const issues = Array.from({ length: 15 }, (_, i) => ({ path: `/ops/${i}`, message: `diagnostic ${i + 1}` }));
+  const prompt = buildPatchRepairPrompt({ originalUserPrompt: 'plan', invalidDocument: { ops: [] }, issues, schema: { type: 'object' } });
+  for (const issue of issues) {
+    assert.ok(prompt.includes(issue.path), `missing pointer ${issue.path}`);
+    assert.ok(prompt.includes(issue.message), `missing diagnostic ${issue.message}`);
+  }
 });
 
 test('applyPatches replaces, adds and removes without mutating the input and refuses a pointer that does not resolve', () => {

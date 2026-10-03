@@ -6,7 +6,7 @@ import { applyOpAfter, startScene } from '../board-state/reducer.js';
 import type { BoardState } from '../board-state/types.js';
 import { createdBy } from '../board-ops/deps.js';
 import type { Grounding } from '../provenance/ground.js';
-import { layoutScene, validateSceneGeometry, type PriorLayout } from '../layout/sceneLayout.js';
+import { diagnoseSceneGeometry, layoutScene, type GeometryDiagnostic, type PriorLayout } from '../layout/sceneLayout.js';
 import type { SceneBoardDraft } from './types.js';
 
 export interface BoardContext {
@@ -23,14 +23,11 @@ export interface BoardContext {
   /** Resolves source citations; without it no equation may claim `source` provenance. */
   grounding?: Grounding;
   /** Test seam: replaces the layout solver check. */
-  geometryCheck?: (states: BoardState[]) => string[];
+  geometryCheck?: (states: BoardState[]) => GeometryDiagnostic[];
 }
 
 const MAX_LABEL_WORDS = 4;
 const words = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
-const norm = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, '');
-const stem = (text: string): string => norm(text).replace(/s$/, '');
-
 function specText(spec: ElementSpec): string[] {
   switch (spec.type) {
     case 'entity': return [spec.label];
@@ -54,6 +51,19 @@ function opSpecs(op: BoardOp, at: string): Array<{ spec: ElementSpec; path: stri
     case 'merge': return [{ spec: op.into.element, path: `${at}/into/element` }];
     default: return [];
   }
+}
+
+function bindingProblems(spec: ElementSpec, path: string, ctx: BoardContext): ValidatorProblem[] {
+  const knownConcepts = new Set(ctx.concepts.map((concept) => concept.id));
+  const knownClaims = new Set(ctx.beats.flatMap((beat) => beat.claimIds));
+  const conceptIds = [...new Set([...(spec.type === 'entity' ? [spec.conceptId] : []), ...(spec.bindings?.conceptIds ?? [])])];
+  const claimIds = spec.bindings?.claimIds ?? [];
+  const problems: ValidatorProblem[] = [];
+  if (conceptIds.length === 0) problems.push({ path: `${path}/bindings/conceptIds`, message: 'every visual needs explicit conceptIds bindings; labels are not semantic evidence' });
+  if (claimIds.length === 0) problems.push({ path: `${path}/bindings/claimIds`, message: 'every visual needs explicit claimIds bindings to claims it supports' });
+  for (const id of conceptIds) if (!knownConcepts.has(id)) problems.push({ path: `${path}/bindings/conceptIds`, message: `unknown concept binding ${id}; use an exact concept id from this scene` });
+  for (const id of claimIds) if (!knownClaims.has(id)) problems.push({ path: `${path}/bindings/claimIds`, message: `unknown claim binding ${id}; use an exact claim id from this scene` });
+  return problems;
 }
 
 /** Inspect the actual post-op placement; replacements inherit it and moves may target kits created in this scene. */
@@ -91,9 +101,19 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
     else if (position < furthest) problems.push({ path: `${at}/beatId`, message: `out of order: beat ${op.beatId} is earlier in the lesson than the beat of the op before; list ops beat by beat` });
     else { furthest = position; lastOpOfBeat.set(op.beatId, i); }
     for (const { spec, path } of opSpecs(op, at)) problems.push(...labelProblems(spec, path));
+    for (const { spec, path } of opSpecs(op, at)) problems.push(...bindingProblems(spec, path, ctx));
+    if (op.op === 'connect') {
+      const binding = op.bindings;
+      if (!binding?.conceptIds.length) problems.push({ path: `${at}/bindings/conceptIds`, message: 'every factual edge needs explicit conceptIds bindings' });
+      if (!binding?.claimIds.length) problems.push({ path: `${at}/bindings/claimIds`, message: 'every factual edge needs explicit claimIds bindings' });
+      for (const id of binding?.conceptIds ?? []) if (!ctx.concepts.some((concept) => concept.id === id)) problems.push({ path: `${at}/bindings/conceptIds`, message: `unknown concept binding ${id}; use an exact concept id from this scene` });
+      const claims = new Set(ctx.beats.flatMap((beat) => beat.claimIds));
+      for (const id of binding?.claimIds ?? []) if (!claims.has(id)) problems.push({ path: `${at}/bindings/claimIds`, message: `unknown claim binding ${id}; use an exact claim id from this scene` });
+    }
   });
   const initial = startScene(ctx.initial, draft.transition, ctx.sceneId);
-  const opProblems = validateBoardOps(draft.ops, initial, ctx.grounding);
+  const beatOrder = ctx.beats.map((beat) => beat.beatId);
+  const opProblems = validateBoardOps(draft.ops, initial, ctx.grounding, beatOrder);
   problems.push(...opProblems);
 
   for (const beat of ctx.beats) if (!beat.narrationOnly && !lastOpOfBeat.has(beat.beatId)) problems.push({ path: '/ops', message: `beat ${beat.beatId} shows a change (${beat.visualInvariant}), so it needs at least one op` });
@@ -103,7 +123,7 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
   draft.ops.forEach((op, i) => {
     const before = states[states.length - 1]!;
     try {
-      const after = applyOpAfter(before, op, draft.ops[i - 1]?.beatId).state;
+      const after = applyOpAfter(before, op, draft.ops[i - 1]?.beatId, beatOrder).state;
       states.push(after);
       // Report the responsible placement once, rather than cascading over the same bad child in subsequent states.
       problems.push(...nestedKitProblems(op, after, `/ops/${i}`));
@@ -119,30 +139,36 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
     for (const entity of beat.entities) {
       const label = labelOf.get(entity.conceptId);
       const shown = live.some((el) => (el.spec.type === 'entity' && el.spec.conceptId === entity.conceptId)
-        || (label !== undefined && specText(el.spec).some((text) => stem(text).includes(stem(label)) && stem(label).length > 0)));
-      if (!shown) problems.push({ path: '/ops', message: `concept ${entity.conceptId}${label ? ` (${label})` : ''} is not on the board by the end of beat ${beat.beatId}; add an entity element whose conceptId is ${entity.conceptId}${label ? `, or a text or token element that contains the words "${label}"` : ''}; add it with a patch at /ops/${at + 1}, right after the last op of that beat, so ops stay beat by beat` });
+        || (el.spec.bindings?.conceptIds.includes(entity.conceptId) ?? false));
+      if (!shown) problems.push({ path: `/ops/${at + 1}`, message: `concept ${entity.conceptId}${label ? ` (${label})` : ''} is not bound to a live visual by the end of beat ${beat.beatId}; add a bound element with conceptIds:["${entity.conceptId}"] and its supporting claimIds` });
     }
   }
   // Geometry: the board must lay out inside the safe area without overlap or unreadable slots. These problems name no single op.
   if (problems.length === 0) {
-    const check = ctx.geometryCheck ?? ((all: BoardState[]) => validateSceneGeometry(layoutScene(all, ctx.prior), all));
-    const found = check(states);
+    const found = ctx.geometryCheck
+      ? ctx.geometryCheck(states)
+      : diagnoseSceneGeometry(layoutScene(states, ctx.prior), states);
     const creatorOf = new Map<string, number>();
     draft.ops.forEach((op, i) => { for (const id of createdBy(op)) if (!creatorOf.has(id)) creatorOf.set(id, i); });
-    // One problem per element (the first), at most four, then one hint: a cascade of the same cause teaches the model nothing.
+    // Report structured failures keyed by their stable IDs, never by parsing
+    // human-readable diagnostic wording. Keep every unique defect for repair.
     const seen = new Set<string>();
-    for (const message of found) {
-      const subject = /(?:state \d+: )?([\w.-]+)/.exec(message)?.[1] ?? message;
-      if (seen.has(subject) || seen.size >= 4) continue;
+    for (const diagnostic of found) {
+      const subject = `${diagnostic.code}|${[...diagnostic.elementIds].sort().join(',')}|${diagnostic.edgeId ?? ''}`;
+      if (seen.has(subject)) continue;
       seen.add(subject);
-      // Name the op that drew the element, so the repair patches that op instead of regenerating the whole board.
-      const opIndex = creatorOf.get(subject);
-      problems.push(opIndex === undefined ? `layout: ${message}` : { path: `/ops/${opIndex}`, message: `layout: ${message}` });
+      const message = `layout[${diagnostic.code}]: ${diagnostic.message}`;
+      const opIndexes = new Set<number>();
+      if (diagnostic.edgeId !== undefined) { const index = creatorOf.get(diagnostic.edgeId); if (index !== undefined) opIndexes.add(index); }
+      for (const id of diagnostic.elementIds) { const index = creatorOf.get(id); if (index !== undefined) opIndexes.add(index); }
+      if (opIndexes.size === 0) problems.push({ path: '/transition', message });
+      else for (const index of opIndexes) problems.push({ path: `/ops/${index}`, message });
     }
-    // The hint rides on the first layout problem so the list stays pointer-addressed (a bare string would force a whole-document repair).
-    const HINT = ' (hint: slots shrink as a kit holds more children and labels need about 14 characters per 200px; keep each kit to a handful of children, give separate mechanisms separate regions, never nest kits, and keep labels short)';
-    const first = problems.findIndex((p) => (typeof p === 'string' ? p : p.message).startsWith('layout: '));
-    if (found.length && first >= 0) { const p = problems[first]!; problems[first] = typeof p === 'string' ? `${p}${HINT}` : { ...p, message: `${p.message}${HINT}` }; }
+    const HINT = ' (keep text readable, shorten labels before changing layout, and preserve the board meaning)';
+    for (let i = problems.length - 1; i >= 0; i--) {
+      const problem = problems[i];
+      if (problem && typeof problem !== 'string' && problem.message.startsWith('layout[')) problems[i] = { ...problem, message: `${problem.message}${HINT}` };
+    }
   }
   return problems;
 }

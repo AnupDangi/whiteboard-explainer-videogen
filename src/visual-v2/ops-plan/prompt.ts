@@ -37,6 +37,7 @@ Operations (every op has opId, beatId and an optional cue = the 0-based sentence
 - equationStep {target, latex, rule, evidence?}: the next line of a derivation; the whole derivation stays visible (evidence is required when the equation's provenance is source).
 - revealRegion / clearRegion {region}: show or empty an area.
 Elements: entity {conceptId, label, provenance} (a thing from the lesson's concepts; label at most 4 words), kit {kit, label?, paramsJson, provenance} (a mechanism picture, below), token {text, provenance} (a small item: at most 24 characters), text {text, role, provenance}, equation {latex, provenance, evidence?}, value {label, value, unit?, provenance}.
+Every element may include bindings:{conceptIds:[...],claimIds:[...]}; add it to all visuals, including kits, tokens, values and equations. Bindings are exact IDs from the BEAT/claim context, never guessed from labels. Entity conceptId also explicitly binds that concept. A factual connect op must include bindings with the conceptIds and claimIds that support its relationship. Do not add unsupported bindings.
 provenance: source = stated by the source (an equation or derivation line with provenance source MUST carry evidence {spanId, quote} copied verbatim from the SOURCE EVIDENCE list in the user message; if none fits, use derived or illustrative); derived = follows from the source; illustrative = an example value you choose to make an idea concrete (it must be correct); metaphorical = an analogy picture.
 Regions: ${REGION_IDS.join(', ')} (semantic areas; read left to right, top to bottom). Put a mechanism kit in a region, put its children inside it with at.container = the kit's id, plus zone or slot as the kit requires.
 Kits:
@@ -46,7 +47,8 @@ Rules: use at most 3 regions in a scene and put the main mechanism kit in the 'c
 Leave out the optional expects field of every op; the board is checked by code. Return ONE JSON object { "transition": {...}, "ops": [...] }.`;
   const beatBlocks = ctx.beats.map((beat) => {
     const speech = ctx.narration.find((n) => n.beatId === beat.beatId)?.sentences ?? [];
-    return `BEAT ${beat.beatId} [${beat.beatType}; ${beat.cognitiveOperation}; family ${beat.representationFamily}]${beat.narrationOnly ? ' (narration only: no board change needed)' : ''}
+  return `BEAT ${beat.beatId} [${beat.beatType}; ${beat.cognitiveOperation}; family ${beat.representationFamily}]${beat.narrationOnly ? ' (narration only: no board change needed)' : ''}
+  claims to support: ${JSON.stringify(beat.claimIds)}
   learner should see: ${beat.mutedMeaning || '(nothing)'}
   visible when it ends: ${beat.visualInvariant}
   concepts: ${JSON.stringify(beat.entities)}
@@ -56,6 +58,7 @@ Leave out the optional expects field of every op; the board is checked by code. 
 ${speech.map((sentence, i) => `    ${i}: ${sentence}`).join('\n')}`;
   }).join('\n');
   const inherited = Object.values(ctx.initial.elements).filter((el) => el.lifecycle.removedAtBeat === undefined);
+  const inheritedEdges = Object.values(ctx.initial.edges).filter((edge) => edge.lifecycle.removedAtBeat === undefined);
   const cites = ctx.concepts.flatMap((c) => (c.evidence ?? []).map((e) => `  [${e.spanId}] ${e.quote}`));
   const usedIds = [...Object.keys(ctx.initial.elements), ...Object.keys(ctx.initial.edges)];
   const user = `SCENE ${ctx.sceneId}: "${ctx.title}"
@@ -63,7 +66,12 @@ Concepts of this scene: ${JSON.stringify(ctx.concepts.map(({ id, label }) => ({ 
 SOURCE EVIDENCE you may cite (spanId in brackets, quote verbatim):
 ${cites.length ? cites.join('\n') : '  (none: do not use provenance source for equations)'}
 Ids already used in the lesson (never reuse one, including removed elements; give every new element and arrow a fresh id): ${usedIds.length ? usedIds.join(', ') : '(none)'}
-Board inherited from the previous scene: ${inherited.length ? JSON.stringify(inherited.map((el) => ({ id: el.id, type: el.spec.type, region: el.placement.region, ...(el.placement.container ? { container: el.placement.container } : {}) }))) : '(empty)'}
+Board inherited from the previous scene (full live element state, values, bindings, placements, kit params and lifecycle): ${inherited.length ? JSON.stringify(inherited) : '(no live elements)'}
+Live factual edges inherited from the previous scene: ${inheritedEdges.length ? JSON.stringify(inheritedEdges) : '(no live edges)'}
+Current container slot order: ${JSON.stringify(ctx.initial.containers)}
+Current regions and visibility: ${JSON.stringify(ctx.initial.regions)}
+Previously used IDs, including edges: ${usedIds.length ? usedIds.join(', ') : '(none)'}
+Retained geometry to respect: ${ctx.prior ? JSON.stringify(ctx.prior) : '(no retained geometry)'}
 ${beatBlocks}`;
   return { system, user };
 }

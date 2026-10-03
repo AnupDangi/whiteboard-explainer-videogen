@@ -97,14 +97,51 @@ export function applyOp(input: BoardState, op: BoardOp): { state: BoardState; ef
   const { pre } = derivePrePost(op);
   const failed = checkConditions(input, pre);
   if (failed) throw new BoardOpError(op.opId, failed);
+  // The wire field `target` is intentionally shared by element and edge operations,
+  // but the operation itself determines the target type. Check it here, at the
+  // reducer boundary, so direct callers and every simulator get the same result.
+  const elementOnly = op.op === 'move' || op.op === 'transform' || op.op === 'replace'
+    || op.op === 'updateValue' || op.op === 'split' || op.op === 'merge' || op.op === 'equationStep';
+  if (elementOnly) {
+    const ids = op.op === 'merge' ? op.targets : [op.target];
+    for (const id of ids) if (!isLive(input.elements[id])) {
+      throw new BoardOpError(op.opId, `${id} is an edge; ${op.op} requires an element`);
+    }
+  }
+  if (op.op === 'connect') for (const id of [op.from, op.to]) {
+    const edge = input.edges[id];
+    if (edge && edge.lifecycle.removedAtBeat === undefined && !isLive(input.elements[id])) throw new BoardOpError(op.opId, `${id} is an edge; connect endpoints must be elements`);
+  }
   if (op.op === 'split') { const dup = duplicateId(op.into.map((part) => part.id)); if (dup) throw new BoardOpError(op.opId, `split parts must have distinct ids; ${dup} is repeated`); }
+  if (op.op === 'merge') {
+    const dup = duplicateId(op.targets);
+    if (dup) throw new BoardOpError(op.opId, `merge targets must be distinct; ${dup} is repeated`);
+  }
+  // A split/merge destination is a new visual, not a way to place children into
+  // an element created by the same operation. Requiring an existing live kit
+  // prevents partial container state and orphaned child IDs.
+  const destinations = op.op === 'split' ? op.into : op.op === 'merge' ? [op.into] : [];
+  const removedByOp = new Set<string>();
+  const collectRemoved = (id: string): void => {
+    if (removedByOp.has(id)) return;
+    removedByOp.add(id);
+    for (const child of input.containers[id] ?? []) collectRemoved(child);
+  };
+  if (op.op === 'split') collectRemoved(op.target);
+  if (op.op === 'merge') for (const id of op.targets) collectRemoved(id);
+  for (const part of destinations) if (part.at.container) {
+    const container = input.elements[part.at.container];
+    if (removedByOp.has(part.at.container)) throw new BoardOpError(op.opId, `${part.at.container} is removed by this op and cannot hold a destination`);
+    if (!isLive(container)) throw new BoardOpError(op.opId, `${part.at.container} is not a live destination container`);
+    if (container.spec.type !== 'kit' || !CONTAINER_KITS.has(container.spec.kit)) throw new BoardOpError(op.opId, `${part.at.container} is not a container`);
+  }
   const state = clone(input);
   const effects: BoardEffect[] = [];
   const beat = op.beatId;
   switch (op.op) {
     case 'add': addElement(state, op.id, op.element, op.at, beat, op.opId, op.persistence ?? 'scene', effects); break;
     case 'connect': {
-      const edge: BoardEdge = { id: op.id, from: op.from, to: op.to, relation: op.relation, ...(op.label ? { label: op.label } : {}), ...(op.weight !== undefined ? { weight: op.weight } : {}), lifecycle: { createdAtBeat: beat, updatedAtBeat: [] } };
+      const edge: BoardEdge = { id: op.id, from: op.from, to: op.to, relation: op.relation, ...(op.label ? { label: op.label } : {}), ...(op.weight !== undefined ? { weight: op.weight } : {}), ...(op.bindings ? { bindings: op.bindings } : {}), lifecycle: { createdAtBeat: beat, updatedAtBeat: [] } };
       state.edges[op.id] = edge;
       effects.push({ kind: 'connect', opId: op.opId, targetId: op.id, from: op.from, to: op.to });
       break;
@@ -233,7 +270,15 @@ export function endBeat(input: BoardState, beatId: string): BoardState {
  * Apply `op` after the op before it: when the beat changes, the previous beat's beat-only elements leave first, so every
  * simulation (validation, timeline, plan checks) sees the same board.
  */
-export function applyOpAfter(input: BoardState, op: BoardOp, previousBeatId: string | undefined): { state: BoardState; effects: BoardEffect[] } {
-  const board = previousBeatId !== undefined && previousBeatId !== op.beatId ? endBeat(input, previousBeatId) : input;
+export function applyOpAfter(input: BoardState, op: BoardOp, previousBeatId: string | undefined, beatOrder?: readonly string[]): { state: BoardState; effects: BoardEffect[] } {
+  let board = input;
+  if (previousBeatId !== undefined && previousBeatId !== op.beatId) {
+    const previousIndex = beatOrder?.indexOf(previousBeatId) ?? -1;
+    const currentIndex = beatOrder?.indexOf(op.beatId) ?? -1;
+    const completed = previousIndex >= 0 && currentIndex > previousIndex
+      ? beatOrder!.slice(previousIndex, currentIndex)
+      : [previousBeatId];
+    for (const beatId of completed) board = endBeat(board, beatId);
+  }
   return applyOp(board, op);
 }

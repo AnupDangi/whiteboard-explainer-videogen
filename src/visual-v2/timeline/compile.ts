@@ -1,6 +1,6 @@
 import type { BoardOp } from '../board-ops/types.js';
 import { createdBy, dependenciesOf } from '../board-ops/deps.js';
-import { applyOpAfter } from '../board-state/reducer.js';
+import { applyOpAfter, endBeat } from '../board-state/reducer.js';
 import type { BoardEffect, BoardState } from '../board-state/types.js';
 import { canonicalHash } from '../../harness/replayDeterminism.js';
 
@@ -46,6 +46,8 @@ export interface SceneTimeline {
   states: BoardState[];
   durationMs: number;
   lateOps: string[];
+  /** Explicit closure records for every spoken beat, including beats with no BoardOps, plus the scene boundary. */
+  lifecycleEvents: Array<{ kind: 'beat-end' | 'scene-end'; beatId?: string; atMs: number; state: BoardState }>;
   hash: string;
 }
 
@@ -68,7 +70,7 @@ export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: 
   input.ops.forEach((op, index) => {
     const beat = beatById.get(op.beatId);
     if (!beat) throw new Error(`op ${op.opId} names beat ${op.beatId}, which has no timing`);
-    const result = applyOpAfter(states[index]!, op, input.ops[index - 1]?.beatId);
+    const result = applyOpAfter(states[index]!, op, input.ops[index - 1]?.beatId, input.beats.map((item) => item.beatId));
     states.push(result.state);
     const n = countByBeat.get(op.beatId)!;
     const i = seenByBeat.get(op.beatId) ?? 0;
@@ -101,8 +103,22 @@ export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: 
   });
   const lastBeatEnd = input.beats.reduce((max, beat) => Math.max(max, beat.endMs), 0);
   const durationMs = Math.max(lastBeatEnd, lastEnd) + (input.tailMs ?? 0);
+  // Keep beat/scene closure explicit. In particular, a narration-only beat has
+  // no ScheduledOp at which to infer its boundary, so it still receives a
+  // lifecycle record and its state reflects any prior beat cleanup.
+  const lifecycleEvents: SceneTimeline['lifecycleEvents'] = [];
+  let boundaryState = input.initial;
+  const opsByBeat = new Map<string, ScheduledOp[]>();
+  for (const item of scheduled) opsByBeat.set(item.op.beatId, [...(opsByBeat.get(item.op.beatId) ?? []), item]);
+  for (const beat of input.beats) {
+    const beatOps = opsByBeat.get(beat.beatId) ?? [];
+    if (beatOps.length) boundaryState = states[beatOps[beatOps.length - 1]!.index + 1]!;
+    boundaryState = endBeat(boundaryState, beat.beatId);
+    lifecycleEvents.push({ kind: 'beat-end', beatId: beat.beatId, atMs: beat.endMs, state: boundaryState });
+  }
+  lifecycleEvents.push({ kind: 'scene-end', atMs: durationMs, state: boundaryState });
   return {
-    ops: scheduled, states, durationMs, lateOps: scheduled.filter((s) => s.late).map((s) => s.op.opId),
-    hash: canonicalHash(scheduled.map((s) => [s.op.opId, Math.round(s.t0), Math.round(s.t1)])),
+    ops: scheduled, states, durationMs, lateOps: scheduled.filter((s) => s.late).map((s) => s.op.opId), lifecycleEvents,
+    hash: canonicalHash([scheduled.map((s) => [s.op.opId, Math.round(s.t0), Math.round(s.t1)]), lifecycleEvents.map((event) => [event.kind, event.beatId, Math.round(event.atMs), event.state])]),
   };
 }

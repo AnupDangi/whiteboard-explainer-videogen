@@ -10,6 +10,7 @@ import { parseKitParams } from '../visual-v2/kits/registry.js';
 import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import type { ModelClient } from '../llm/modelClient.js';
 import type { TeachingBeat } from '../teaching/beat-plan/types.js';
+import type { GeometryDiagnostic } from '../visual-v2/layout/sceneLayout.js';
 
 const beat = (n: number, over: Partial<TeachingBeat> = {}): TeachingBeat => ({
   beatId: `sc.b${n}`, sceneId: 'sc', order: n, claimIds: ['c1'], learnerDelta: 'delta', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
@@ -26,13 +27,14 @@ const ctx: BoardContext = {
   concepts: [{ id: 'frame', label: 'Frame' }, { id: 'stack', label: 'Stack' }],
   initial: emptyBoardState(),
 };
-const kit = { type: 'kit', kit: 'stack', label: 'stack', paramsJson: '{}', provenance: 'metaphorical' };
+const bindings = { conceptIds: ['frame', 'stack'], claimIds: ['c1'] };
+const kit = { type: 'kit', kit: 'stack', label: 'stack', paramsJson: '{}', provenance: 'metaphorical', bindings };
 const op = (o: Record<string, unknown>) => o;
 const good = (): unknown => ({
   transition: { mode: 'clean' },
   ops: [
     op({ op: 'add', opId: 'o1', beatId: 'sc.b1', id: 'pile', element: kit, at: { region: 'center' }, cue: 0 }),
-    op({ op: 'add', opId: 'o2', beatId: 'sc.b1', id: 'f1', element: { type: 'entity', conceptId: 'frame', label: 'frame', provenance: 'source' }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 0 }),
+    op({ op: 'add', opId: 'o2', beatId: 'sc.b1', id: 'f1', element: { type: 'entity', conceptId: 'frame', label: 'frame', provenance: 'source', bindings }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 0 }),
     op({ op: 'remove', opId: 'o3', beatId: 'sc.b2', target: 'f1', cue: 0 }),
   ],
 });
@@ -58,6 +60,15 @@ test('a board that builds every beat and represents its concepts is valid', () =
   assert.deepEqual(validateSceneBoard(draft(), ctx), []);
 });
 
+test('concept coverage uses exact bindings and never infers meaning from an English label', () => {
+  const falseLabel = good() as { ops: Array<Record<string, unknown>> };
+  const first = falseLabel.ops[0]!;
+  first.element = { ...(first.element as Record<string, unknown>), bindings: { conceptIds: ['frame'], claimIds: ['c1'] } };
+  const failures = validateSceneBoard(draft(falseLabel), ctx) as Array<{ path: string; message: string }>;
+  assert.ok(failures.some((failure) => failure.message.includes('concept stack') && failure.message.includes('not bound to a live visual')));
+  assert.ok(!failures.some((failure) => /contains the words|substring/.test(failure.message)));
+});
+
 test('problems carry pointers: unknown beat, beats out of order, a beat with no change, a missing concept, long labels, a retain without regions', () => {
   const bad = draft({
     transition: { mode: 'retain-regions' },
@@ -68,12 +79,12 @@ test('problems carry pointers: unknown beat, beats out of order, a beat with no 
     ],
   });
   const all = validateSceneBoard(bad, ctx) as Array<{ path: string; message: string }>;
-  const byPath = new Map(all.map((p) => [p.path, p.message]));
+  const byPath = new Map(all.filter((p) => typeof p !== 'string').map((p) => [p.path, p.message]));
   assert.match(byPath.get('/transition/regions')!, /needs the regions/);
   assert.match(byPath.get('/ops/0/beatId')!, /unknown beat sc\.b9/);
   assert.match(byPath.get('/ops/2/beatId')!, /out of order/);
   assert.match(byPath.get('/ops/2/element/text')!, /at most 4 words/);
-  assert.ok(all.some((p) => p.path === '/ops' && /concept stack .* not on the board/.test(p.message)));
+  assert.ok(all.some((p) => typeof p !== 'string' && p.path.startsWith('/ops/') && /concept stack .* not bound to a live visual/.test(p.message)));
 });
 
 test('a visual beat without any op is a problem, a narration-only beat is not', () => {
@@ -125,10 +136,10 @@ test('a bad op is repaired by patching that op', async () => {
 });
 
 test('geometry problems found by the layout solver become board problems, so overflow and overlap cannot reach the renderer', () => {
-  const problems = validateSceneBoard(draft(), { ...ctx, geometryCheck: () => ['state 2: pile overlaps f9'] });
+  const problems = validateSceneBoard(draft(), { ...ctx, geometryCheck: () => [{ code: 'top_level_overlap', stateIndex: 2, message: 'state 2: pile overlaps f9', elementIds: ['pile', 'f9'], fields: ['/elements/pile/placement', '/elements/f9/placement'] }] });
   const first = problems[0] as { path: string; message: string };
   assert.equal(first.path, '/ops/0', 'the layout problem names the op that drew the element, so the repair patches that op');
-  assert.match(first.message, /^layout: state 2: pile overlaps f9 \(hint:/);
+  assert.match(first.message, /^layout\[top_level_overlap\]: state 2: pile overlaps f9 \(keep text readable/);
   assert.equal(problems.length, 1, 'the hint rides on the first problem and does not force a whole-document repair');
   assert.deepEqual(validateSceneBoard(draft(), ctx), [], 'the real solver accepts a sane board');
 });
@@ -150,8 +161,8 @@ test('a kit cannot be placed inside another kit: its slots are too small to draw
 });
 
 const nestingContext: BoardContext = { ...ctx, beats: [beat(1, { entities: [] })], geometryCheck: () => [] };
-const boardAdd = (id: string, element: unknown, at: unknown) => ({ op: 'add', opId: `add-${id}`, beatId: 'sc.b1', id, element, at });
-const token = { type: 'token', text: 'x', provenance: 'illustrative' };
+const boardAdd = (id: string, element: unknown, at: unknown) => ({ op: 'add', opId: `add-${id}`, beatId: 'sc.b1', id, element: element && typeof element === 'object' ? { ...element as Record<string, unknown>, bindings } : element, at });
+const token = { type: 'token', text: 'x', provenance: 'illustrative', bindings };
 
 for (const scenario of [
   {
@@ -224,11 +235,14 @@ test('non-kit children support move, replace, split and merge inside kit slots',
 });
 
 test('geometry problems are condensed to a few per element with one actionable hint, not a cascade', () => {
-  const many = Array.from({ length: 12 }, (_, i) => `state ${i + 1}: frame-three is too small to read (88x21)`).concat(['state 3: frame-three-input is outside frame-three', 'state 4: other overlaps third']);
+  const many: GeometryDiagnostic[] = Array.from({ length: 12 }, (_, i): GeometryDiagnostic => ({ code: 'element_too_small', stateIndex: i, message: `state ${i + 1}: frame-three is too small to read (88x21)`, elementIds: ['frame-three'], fields: ['/elements/frame-three/placement'] })).concat([
+    { code: 'child_outside_container' as const, stateIndex: 3, message: 'state 3: frame-three-input is outside frame-three', elementIds: ['frame-three-input', 'frame-three'], fields: ['/elements/frame-three-input/placement'] },
+    { code: 'top_level_overlap' as const, stateIndex: 4, message: 'state 4: other overlaps third', elementIds: ['other', 'third'], fields: ['/elements/other/placement', '/elements/third/placement'] },
+  ]);
   const problems = validateSceneBoard(draft(), { ...ctx, geometryCheck: () => many });
   const text = problems.map((p) => (typeof p === 'string' ? p : p.message));
-  assert.ok(problems.length <= 4, `${problems.length} problems`);
-  assert.ok(text.some((p) => /hint:/.test(p)));
+  assert.equal(problems.length, 3, `${problems.length} distinct geometry problems`);
+  assert.ok(text.some((p) => /keep text readable/.test(p)));
   assert.ok(text.filter((p) => /frame-three is too small/.test(p)).length === 1, 'repeats of the same element collapse');
 });
 

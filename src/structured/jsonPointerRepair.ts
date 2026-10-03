@@ -118,7 +118,7 @@ export interface PatchPromptInput {
 }
 
 export function buildPatchRepairPrompt(input: PatchPromptInput): string {
-  const lines = input.issues.slice(0, 12).map((issue) => {
+  const lines = input.issues.map((issue) => {
     const current = JSON.stringify(valueAtPointer(input.invalidDocument, issue.path));
     const fragment = schemaAtPointer(input.schema, issue.path);
     return `- ${issue.path || '(root)'}: ${issue.message}\n  current value: ${current === undefined ? '(missing)' : current.slice(0, 400)}${fragment ? `\n  schema here: ${JSON.stringify(fragment).slice(0, 400)}` : ''}`;
