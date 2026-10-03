@@ -1,6 +1,32 @@
 import type { NarrationContext } from './validate.js';
 import { NARRATION_PROMPT_CEILING } from './validate.js';
+import type { TeachingMoveName } from '../../teaching/moves/types.js';
 import { wordsPerSec } from '../../plan/analyze.js';
+
+/** Move → rhetoric: how each teaching move sounds when spoken. Deterministic compiler text, never model output. */
+const MOVE_RHETORIC: Record<TeachingMoveName, string> = {
+  RevealMotivation: 'Open with the puzzle, in plain words, so the learner wants the answer.',
+  ActivatePriorKnowledge: 'Remind the learner what they already own, then build on it.',
+  StateLearningQuestion: 'State the one question this part answers.',
+  BuildIntuition: 'Give one concrete everyday comparison before any formalism.',
+  IntroduceMentalModel: 'Name the reusable picture the learner should keep.',
+  RevealDefinition: 'Define each term with its meaning before you rely on it.',
+  TraceMechanism: 'Walk causes in order; every step earns the next.',
+  WorkExample: 'Show the setup, take one step, say why, show the result.',
+  PredictNextStep: 'Ask what happens next, pause a beat, then answer it yourself.',
+  ExposeMisconception: 'Name the common mistake plainly, as the wrong idea it is.',
+  ForkCorrectIncorrect: 'Hold the wrong and right paths side by side.',
+  ExplainDivergence: 'Say why the wrong path feels plausible.',
+  RepairMisconception: 'Repair at the exact point the reasoning breaks.',
+  ShowNonExample: 'Show what the idea is not.',
+  ShowCounterexample: 'Show the case that breaks the naive rule.',
+  TestBoundary: 'Push to the edge case and say what changes.',
+  CompareCases: 'Compare the cases point for point.',
+  ConfirmInvariant: 'Say what stays the same.',
+  FadeSupport: 'Let the learner carry the step you just carried.',
+  TransferVariant: 'Try the idea on a nearby case.',
+  SummarizeLearnerDelta: 'Close with what the learner can now do.',
+};
 
 /** Topic-free narration rules; everything lesson-specific comes from the beat plan and the source excerpt passed in. */
 export function buildNarrationPrompt(ctx: NarrationContext, scene: { title: string; goal: string }, sourceExcerpt: string): { system: string; user: string } {
@@ -13,13 +39,16 @@ Teach like a person: ${place} ${lesson?.sceneIndex === 0 || (lesson && lesson.sc
 Rules: teach the reasoning (what it is, why it matters, how it changes, what causes what); never refer to the screen, the drawing, positions, boxes, arrows or colours; never command the drawing ("now show", "draw"); say each idea once and move it forward instead of repeating it; use only facts and numbers from the source excerpt and the claims; calm, confident, conversational, short sentences.
 Return ONE JSON object { "beats": [{ "beatId", "sentences": [...1-4 sentences], "claimSentences": [{ "claimId", "sentenceIndex" }], "emphasisTerms": [...] }] } with exactly one narration beat per teaching beat, in order, with the given beat ids. Each claimSentences entry names the sentence (0-based) of that beat that states the claim; every claim of the beat needs one. emphasisTerms are concept labels worth stressing.`;
   const beatLines = ctx.beats.map((beat) => `- ${beat.beatId} [${beat.beatType}; ${beat.cognitiveOperation}] claims ${JSON.stringify(beat.claimIds)}: ${beat.narrationGoal} (the learner should leave able to: ${beat.learnerDelta})`).join('\n');
+  const treatment = ctx.strategy || ctx.moves?.length
+    ? `\nTeaching treatment for this scene: ${ctx.strategy ?? 'see moves'}. Speak each move as written:\n${(ctx.moves ?? []).map((m) => `- ${m.move}: ${MOVE_RHETORIC[m.move]}`).join('\n')}\n`
+    : '';
+  const bridge = `${ctx.previousTakeaway ? `The previous scene ended saying: "${ctx.previousTakeaway}" Pick up from exactly there in your first sentence.\n` : ''}${ctx.nextOpening ? `The next scene will open with: "${ctx.nextOpening}" Aim your closing takeaway at exactly that.\n` : ''}`;
   const words = Math.round(ctx.durationSec * wordsPerSec(ctx.language));
   const around = lesson ? `Lesson: "${lesson.title}".${lesson.previous ? ` The previous scene taught: ${lesson.previous.title} (${lesson.previous.goal}).` : ''}${lesson.next ? ` The next scene will cover: ${lesson.next.title} (${lesson.next.goal}).` : ''}\n` : '';
   const terminology = ctx.terminology?.length ? `Lesson terminology (use consistently; explain unfamiliar English terms in ${languageName}):\n${ctx.terminology.map((entry) => `- ${entry.term}${entry.nativeExplanation ? `: ${entry.nativeExplanation}` : ''}`).join('\n')}\n` : '';
   const user = `${around}SCENE ${ctx.sceneId}: "${scene.title}" — ${scene.goal}
 About ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_PROMPT_CEILING)}); the audio sets the real length.
-${terminology}
-Teaching beats (write one narration beat for each):
+${treatment}${bridge}${terminology}Teaching beats (write one narration beat for each):
 ${beatLines}
 Concept labels you may stress: ${JSON.stringify(ctx.emphasisCandidates)}
 

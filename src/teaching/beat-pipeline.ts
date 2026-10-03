@@ -7,6 +7,8 @@ import { withHostResourcePermit } from '../shared/hostResourcePool.js';
 import { mergeTraces, type StructuredTrace } from '../structured/trace.js';
 import { planSceneBeats, type BeatStageModel } from './beat-plan/plan.js';
 import type { TeachingBeat } from './beat-plan/types.js';
+import { compileStrategyPlan } from './strategy/plan.js';
+import { compileMovePlan } from './moves/compile.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
 import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
 import type { NarrationContext } from '../narration/beat-narration/validate.js';
@@ -40,19 +42,40 @@ function lessonPosition(plan: TeachingPlan, sceneId: string): NonNullable<Narrat
 }
 const numbersIn = (texts: readonly string[]): Set<string> => new Set(texts.flatMap((text) => text.match(/\d+(?:\.\d+)?/g) ?? []));
 
-/** S3b + S4 in beat mode: per scene, plan the teaching beats, then write the speech of each beat. Scenes run in parallel. */
+/** S3b + S4 in beat mode, two phases. Phase A plans beats for all scenes in
+ * parallel (no cross-scene dependency). Phase B writes speech sequentially in
+ * lesson order, because each scene's opening must continue the previous
+ * scene's closing takeaway verbatim (STCC §29: mental-model continuity is
+ * never parallelized). Beats stay parallel; only the narration calls serialize. */
 export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptGraph; sourceDoc: SourceDoc; terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }> }, m: BeatStageModel): Promise<BeatStagesResult> {
   const { plan, graph, sourceDoc, terminology } = input;
   const perScene = m.remainingBudgetUsd / Math.max(1, plan.sections.length);
-  const outcomes = await Promise.all(plan.sections.map((section) => withHostResourcePermit('provider-beats', BEAT_PROVIDER_CONCURRENCY, async () => {
+  // Phase A: beats in parallel.
+  const beatOutcomes = await Promise.all(plan.sections.map((section) => withHostResourcePermit('provider-beats', BEAT_PROVIDER_CONCURRENCY, async () => {
     const stage = { ...m, remainingBudgetUsd: perScene };
     const beats = await planSceneBeats({ section, graph }, stage);
-    if (!beats.value || !beats.context) return { section, beats, narration: undefined as undefined | Awaited<ReturnType<typeof writeBeatNarration>>, ctx: undefined as NarrationContext | undefined };
+    return { section, beats, stage };
+  })));
+  // Phase B: narration sequentially in lesson order.
+  const outcomes: Array<{ section: TeachingPlan['sections'][number]; beats: Awaited<ReturnType<typeof planSceneBeats>>; narration: undefined | Awaited<ReturnType<typeof writeBeatNarration>>; ctx: NarrationContext | undefined }> = [];
+  let previousTakeaway: string | undefined;
+  for (const { section, beats, stage } of beatOutcomes) {
+    if (!beats.value || !beats.context) { outcomes.push({ section, beats, narration: undefined, ctx: undefined }); previousTakeaway = undefined; continue; }
+    const contract = section.contract;
+    const strategyPlan = compileStrategyPlan({
+      sceneId: section.id, teachingSkill: contract?.teachingSkill ?? 'definition', sectionKind: section.kind,
+      misconceptionCount: contract?.misconceptionRisk?.length ?? 0,
+      // priorKnowledge holds labels, not ids, so novelty is approximated by concept count; an S3-owned count replaces this when available.
+      newConceptCount: section.conceptIds.length, claimCount: contract?.essentialClaims?.length ?? 1, budgetSec: section.budgetSec,
+      hasMentalModel: !!contract?.mentalModel, hasBoundaryClaim: false, hasStateChange: false,
+    });
+    const movePlan = compileMovePlan(section.id, strategyPlan.strategy);
     const claims = beats.context.claims;
     const evidence = section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.evidence.map((ref) => ref.quote) ?? []);
     const definitions = section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.definition ?? []);
     // The scene's own source excerpt is what the speaker is shown, so a number printed there is a number the source gives.
     const sourceExcerpt = sectionSourcePrompt(sourceDoc, section, graph);
+    const nextSection = plan.sections[plan.sections.indexOf(section) + 1];
     const ctx: NarrationContext = {
       sceneId: section.id, beats: beats.value, durationSec: beats.context.durationSec,
       allowedNumbers: numbersIn([...claims.map((claim) => claim.statement), ...evidence, ...definitions, sourceExcerpt]),
@@ -61,10 +84,14 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
       ...(m.language && m.language.toLowerCase() !== 'en' ? { speechLanguagePolicy: 'native-plus-english-terms' as const } : {}),
       ...(terminology?.length ? { terminology } : {}),
       lesson: lessonPosition(plan, section.id),
+      strategy: strategyPlan.strategy, moves: movePlan.moves,
+      ...(previousTakeaway ? { previousTakeaway } : {}),
+      ...(nextSection ? { nextOpening: nextSection.goal } : {}),
     };
     const narration = await writeBeatNarration({ ctx, scene: { title: section.title, goal: section.goal }, sourceExcerpt }, stage);
-    return { section, beats, narration, ctx };
-  })));
+    previousTakeaway = narration.value?.beats.at(-1)?.text;
+    outcomes.push({ section, beats, narration, ctx });
+  }
   const usage = emptyUsage();
   const failures: StageFailure[] = [];
   const reports: StructuredCallReport[] = [];

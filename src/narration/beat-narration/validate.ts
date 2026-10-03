@@ -1,5 +1,7 @@
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { TeachingBeat } from '../../teaching/beat-plan/types.js';
+import type { TeachingMove } from '../../teaching/moves/types.js';
+import type { TeachingStrategy } from '../../teaching/strategy/types.js';
 import { wordsPerSec } from '../../plan/analyze.js';
 import type { SceneNarrationDraft } from './types.js';
 import { tokenizeWords } from '../align.js';
@@ -20,11 +22,21 @@ export interface NarrationContext {
   terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }>;
   /** Where this scene sits in the lesson, so the speech continues one talk instead of restarting. */
   lesson?: { title: string; sceneIndex: number; sceneCount: number; previous?: { title: string; goal: string }; next?: { title: string; goal: string } };
+  /** S3b strategy for this scene (T4): rhetoric follows the treatment. */
+  strategy?: TeachingStrategy;
+  /** Compiled teaching moves for this scene (T4): each move shapes how its beats are spoken. */
+  moves?: TeachingMove[];
+  /** Verbatim closing text of the previous scene's speech (T4): the bridge starts from exactly here. */
+  previousTakeaway?: string;
+  /** Verbatim opening goal of the next scene's first beat (T4): the takeaway leads into exactly this. */
+  nextOpening?: string;
 }
 
 /** Speech that depends on the picture instead of teaching the idea (screen-dependent phrasing, final_plan/03 §12). */
 const SCREEN_REFERENCE = /\b(?:look at|as you can see|you can see|on (?:the|your) (?:left|right|top|bottom)|(?:top|bottom)[- ](?:left|right)|in the (?:box|diagram|picture|image|figure|corner)|this (?:box|arrow|diagram|picture|icon)|the (?:arrow|box|diagram|picture|icon) (?:shows|points)|on (?:the )?screen|shown here|pictured)\b/i;
 const STAGE_DIRECTION = /^(?:now[, ]+)?(?:show|display|draw|animate|render|highlight|reveal|place|write|cut to)\b/i;
+/** The speech must stand alone as audio: naming the video admits the lesson does not. */
+const VIDEO_REFERENCE = /\bin this video\b/i;
 /** Audio sets the clock, so a mild overrun is a warning; only a scene this much over its spoken budget is rejected. */
 /** What the speaker is told never to exceed; the validator only rejects beyond NARRATION_HARD_CEILING, because the audio, not the word count, sets the real length. */
 export const NARRATION_PROMPT_CEILING = 1.5;
@@ -66,6 +78,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
       const key = normalize(sentence);
       if (SCREEN_REFERENCE.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'refers to the screen; say what the idea is so the speech works with the sound only' });
       if (STAGE_DIRECTION.test(sentence.trim())) problems.push({ path: `${at}/sentences/${j}`, message: 'a visual stage direction is spoken; teach the idea instead of commanding the drawing' });
+      if (VIDEO_REFERENCE.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'names "this video"; the speech must work as an audio lesson on its own' });
       if (UNSPEAKABLE_SYMBOLS.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'contains a symbol that cannot be spoken or aligned (Greek letter, arrow or maths operator); write it as the word you say, for example tau, not the symbol' });
       if (/\[\[|\]\]/.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'markers are not used; write plain speech' });
       for (const number of asciiDigits(sentence).match(/\d+(?:\.\d+)?/g) ?? []) if (!ctx.allowedNumbers.has(number)) problems.push({ path: `${at}/sentences/${j}`, message: `number ${number} is not in this scene's claims or evidence; state only numbers the source gives` });

@@ -2652,3 +2652,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Note:** STCC §8 text lists 21 moves, not 20; test asserts 21 with this record.
 - **Verification:** build + typecheck clean, shared manifest verified. Beat attachment deferred to T4/S6 consumers.
 - **Next:** T4 S4 strategy-aware narration (continuity fix).
+
+## Continuation — 2026-10-03, T4 S4 strategy-aware narration (wt/stcc/charter)
+
+- **Built:** S4 now consumes strategy + moves + verbatim neighbor speech. `NarrationContext` gains `strategy/moves/previousTakeaway/nextOpening`; prompt adds move→rhetoric block, previous-scene closing line ("pick up from exactly there") and next-scene opening line ("aim your takeaway at exactly that"); validator rejects `in this video` (fail fast at generation, matching T1 eval).
+- **Pipeline:** `runBeatStages` restructured into phase A (beats parallel) + phase B (narration sequential in lesson order). Beats keep concurrency 4; narration serializes — the documented cost of continuity (STCC §29). Strategy/move plans compiled per scene from S3 contract fields; boundary/state flags default false until S3 owns them (T5/T6).
+- **Fixed during work:** restored `${terminology}` line dropped in prompt edit (caught by build).
+- **Verification:** beat-narration 15/15 (incl. new T4 regression test), beat-pipeline 2/2, lesson-v2 8/8; typecheck clean, manifest verified.
+- **Next:** T5 ErrorContrast.

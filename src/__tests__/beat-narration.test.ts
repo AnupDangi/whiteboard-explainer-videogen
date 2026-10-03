@@ -164,3 +164,19 @@ test('CJK narration uses Intl word segmentation for its spoken-word budget', () 
   assert.ok(findings.some((problem) => /too long/.test(problem.message)));
   assert.deepEqual(tokenizeWords('你好世界，欢迎大家。', 'zh').length > 1, true);
 });
+
+test('T4: naming "this video" is rejected; strategy moves shape the rhetoric; neighbor speech bridges scenes', () => {
+  const video = draft([{ sentences: ['In this video we push a frame.', 'The frame remembers.'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }] }]);
+  const problems = validateSceneNarration(video, ctx) as Array<{ path: string; message: string }>;
+  assert.ok(problems.some((p) => /audio lesson on its own/.test(p.message)), 'video reference must fail fast at generation');
+  const { user } = buildNarrationPrompt({ ...ctx,
+    strategy: 'erroneous-example',
+    moves: [{ move: 'ExposeMisconception', note: 'Name it.' }, { move: 'RepairMisconception', note: 'Fix it.' }],
+    previousTakeaway: 'A return keeps nothing behind.',
+    nextOpening: 'The stack unwinds.',
+  }, { title: 'T', goal: 'g' }, 'SOURCE EXCERPT');
+  assert.match(user, /erroneous-example/);
+  assert.match(user, /Name the common mistake plainly/);
+  assert.match(user, /Pick up from exactly there/);
+  assert.match(user, /Aim your closing takeaway at exactly that/);
+});
