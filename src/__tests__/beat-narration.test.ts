@@ -154,13 +154,13 @@ test('the spoken-word budget scales with the language: Hindi gets more words per
     { sentences: [words(n)], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }] },
     { sentences: [words(n)], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }] },
   ];
-  // 8 s English: budget 18, ceiling 23 (1.3x). 2x10 words fit; 2x15 do not.
+  // 8 s English: stated budget 15, hard ceiling 18. 2x7 words fit; 2x10 do not.
   const tooLong = (beatsOver: Parameters<typeof draft>[0], extra: Partial<NarrationContext> = {}): boolean =>
     validateSceneNarration(draft(beatsOver), { ...ctx, durationSec: 8, ...extra }).some((p) => typeof p !== 'string' && /too long/.test(p.message));
-  assert.ok(!tooLong(beats(10)));
-  assert.ok(tooLong(beats(15)));
-  // Same 30 words fit Hindi (budget 24, ceiling 31): the rate difference is real.
-  assert.ok(!tooLong(beats(15), { language: 'hi' }));
+  assert.ok(!tooLong(beats(7)));
+  assert.ok(tooLong(beats(10)));
+  // Same 22 words fit Hindi (stated 20, ceiling 23): the rate difference is real.
+  assert.ok(!tooLong(beats(11), { language: 'hi' }));
 });
 
 test('CJK narration uses Intl word segmentation for its spoken-word budget', () => {
