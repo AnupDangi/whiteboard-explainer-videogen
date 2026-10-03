@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { StageFailure } from '../shared/types.js';
@@ -17,6 +18,8 @@ export interface RecordedCall {
   model: string;
   provider: string;
   schemaName: string;
+  /** The exact model input: what prompt was entered, pinned by sha. */
+  prompt: { system: string; user: string };
   value: unknown;
   rawResponses: StructuredCallAttemptRecord[];
   trace: StructuredTrace;
@@ -58,7 +61,8 @@ export class FileCallRecorder implements CallRecorder {
     const dir = await this.claimDirectory(call.stage, call.subject);
     const write = (file: string, value: unknown) => writeFile(path.join(dir, file), `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
     const header = { schemaVersion: 'structured-call/v1', stage: call.stage, subject: call.subject, model: call.model };
-    await write('raw-model-output.json', { ...header, responses: call.rawResponses.map((response) => ({ ...response })) });
+    const promptSha = createHash('sha256').update(`${call.prompt.system}\n${call.prompt.user}`, 'utf8').digest('hex');
+    await write('raw-model-output.json', { ...header, promptSha, promptChars: { system: call.prompt.system.length, user: call.prompt.user.length }, prompt: call.prompt, responses: call.rawResponses.map((response) => ({ ...response })) });
     await write('validation-errors.json', { ...header, errors: call.trace.validationErrors });
     await write('repair-patches.json', { ...header, repairs: call.trace.repairs });
     await write('coercions.json', { ...header, coercions: call.trace.coercions });

@@ -314,7 +314,7 @@ export async function structuredCall<T>(opts: StructuredCallOptions<T>): Promise
   const recorder = opts.recorder ?? currentCallRecorder();
   if (recorder) {
     try {
-      await recorder.record({ stage: opts.stage, subject: opts.subject, model: opts.model, provider: client.provider, schemaName: opts.schemaName, value: result.value, rawResponses: result.rawResponses, trace: track.trace, report, failures: result.failures });
+      await recorder.record({ stage: opts.stage, subject: opts.subject, model: opts.model, provider: client.provider, schemaName: opts.schemaName, prompt: { system: opts.system, user: opts.user }, value: result.value, rawResponses: result.rawResponses, trace: track.trace, report, failures: result.failures });
       report.retained = { raw: true, replayFixture: true };
     } catch (error) {
       result.failures.push({ code: `${opts.stage}-record-failed`, stage: opts.stage, message: `${opts.subject}: could not retain raw output (${error instanceof Error ? error.message : String(error)}); this call has no replay fixture`, hard: false });

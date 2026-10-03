@@ -20,13 +20,13 @@ for (const stage of structured.sort()) {
     const dir = path.join(stageDir, scene);
     let report = null;
     try { report = JSON.parse(readFileSync(path.join(dir, 'report.json'), 'utf8')); } catch { console.log(`  ${stage}/${scene}: NO REPORT`); continue; }
-    const prompt = (() => { try { return JSON.parse(readFileSync(path.join(dir, 'prompt.json'), 'utf8')); } catch { return null; } })();
+    const prompt = (() => { try { const raw = JSON.parse(readFileSync(path.join(dir, 'raw-model-output.json'), 'utf8')); return raw.promptSha ? { sha256: raw.promptSha, systemChars: raw.promptChars?.system, userChars: raw.promptChars?.user } : null; } catch { return null; } })();
     const state = report.succeeded ? 'OK ' : 'FAIL';
     console.log(`  ${state} ${stage}/${scene} attempts=${report.attempts ?? '?'} repairs=${report.repairs ?? '?'} firstTryValid=${report.firstTryValid ?? '?'}`);
     if (!report.succeeded) {
       console.log(`    prompt: ${prompt ? `sha=${prompt.sha256} system=${prompt.systemChars}ch user=${prompt.userChars}ch` : 'NOT RECORDED (pre prompt.json recorder)'}`);
       for (const f of (report.failures ?? []).filter((x) => x.hard)) console.log(`    hard ${f.code}: ${String(f.message).slice(0, 400)}`);
-      console.log(`    inspect: ${dir}/prompt.json ${dir}/raw-model-output.json ${dir}/validation-errors.json ${dir}/repair-patches.json`);
+      console.log(`    inspect: ${dir}/raw-model-output.json (prompt+responses) ${dir}/validation-errors.json ${dir}/repair-patches.json`);
     }
   }
 }
