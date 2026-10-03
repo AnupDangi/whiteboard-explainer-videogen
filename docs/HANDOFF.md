@@ -2699,3 +2699,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Full `pnpm run test:hypothesis`: PASS** — 1276 Node + 2 audit + alignment/RAG Python suites, exit 0.
 - **Incidental fix:** frozen 2026-09-25 plan arrived 644 from fresh checkout; restored local 444 to match v2b (mode only, bytes untouched, plan-lock 3/3 green).
 - **Track status:** T1–T8 complete as offline architecture, all committed. Paid proof blocked on ElevenLabs credits (KEY_1: 1, KEY_2: dead, KEY_3: 32/10000).
+
+## Continuation — 2026-10-03, osmosis gallery attempts 1–3 (driver)
+
+- **Attempt 1:** audio→boards OK to scene 2; fail text_overflow (110px slot) + movement_path_collision. Fix: ≤2 children/zone, no moves through occupied zones.
+- **Attempt 2:** scene 1/4 boarded; fail dangling `water_marker` + zoneLabels "A"/"B" as source facts. Fix: zoneLabel-verbatim + target-existence rules.
+- **Attempt 3:** scene 1/6 boarded; fail missing bindings (all ops) + derived value mutation without verifier. Rule exhausted (3 attempts): MISSING stands.
+- **Pattern:** cheap planner omits required bindings despite schema+prompt+3 repairs; failures vary per run (no convergence). Board convergence with this planner class is unproven; equation-heavy topics (math) may fare better. Next: math-squares.
