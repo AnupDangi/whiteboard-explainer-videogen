@@ -7,6 +7,8 @@ import { withHostResourcePermit } from '../shared/hostResourcePool.js';
 import { mergeTraces, type StructuredTrace } from '../structured/trace.js';
 import { planSceneBeats, type BeatStageModel } from './beat-plan/plan.js';
 import type { TeachingBeat } from './beat-plan/types.js';
+import { wordsPerSecFor } from '../plan/analyze.js';
+import { ttsProvider } from '../audio/sceneAudio.js';
 import { compileStrategyPlan } from './strategy/plan.js';
 import { compileMovePlan } from './moves/compile.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
@@ -84,6 +86,7 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
     const gapAfterMs = nextSection ? gaps.sceneGapMs : gaps.trailingMs;
     const ctx: NarrationContext = {
       sceneId: section.id, beats: beats.value, durationSec: beats.context.durationSec,
+      wordsPerSecond: wordsPerSecFor(m.language, ttsProvider()),
       allowedNumbers: numbersIn([...claims.map((claim) => claim.statement), ...evidence, ...definitions, sourceExcerpt]),
       emphasisCandidates: section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.label ?? []),
       ...(m.language ? { language: m.language } : {}),

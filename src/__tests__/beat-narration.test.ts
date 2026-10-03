@@ -188,3 +188,13 @@ test('T4: naming "this video" is rejected; strategy moves shape the rhetoric; ne
   assert.match(user, /Pick up from exactly there/);
   assert.match(user, /Aim your closing takeaway at exactly that/);
 });
+
+test('provider-aware rate: local TTS states fewer words than the reference rate', async () => {
+  const { statedWords } = await import('../narration/beat-narration/validate.js');
+  const { wordsPerSecFor } = await import('../plan/analyze.js');
+  assert.ok(wordsPerSecFor('en', 'local') < wordsPerSecFor('en', 'elevenlabs'));
+  const ref = statedWords({ durationSec: 15, language: 'en' });
+  const local = statedWords({ durationSec: 15, language: 'en', wordsPerSecond: wordsPerSecFor('en', 'local') });
+  assert.ok(local < ref, `${local} < ${ref}`);
+  assert.equal(statedWords({ durationSec: 15, language: 'en', gapAfterMs: 1200 }), Math.round((15 - 1.2) * 2.25));
+});

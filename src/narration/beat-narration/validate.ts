@@ -16,6 +16,8 @@ export interface NarrationContext {
   emphasisCandidates: string[];
   /** ISO 639-1 language of the speech (default en). */
   language?: string;
+  /** Measured words/second for the actual TTS voice; overrides the language reference rate when set. */
+  wordsPerSecond?: number;
   /** Native-language teaching with established English technical terms kept where natural. */
   speechLanguagePolicy?: 'native-plus-english-terms';
   /** Lesson-wide canonical terminology; explanations remain in the spoken language. */
@@ -49,10 +51,11 @@ export const NARRATION_HARD_CEILING = 1.0;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 
-/** Words the scene may speak: its clock minus its trailing silent gap, at the language rate. */
-export function statedWords(ctx: Pick<NarrationContext, 'durationSec' | 'language' | 'gapAfterMs'>): number {
+/** Words the scene may speak: its clock minus its trailing silent gap, at the voice rate. */
+export function statedWords(ctx: Pick<NarrationContext, 'durationSec' | 'language' | 'gapAfterMs' | 'wordsPerSecond'>): number {
   const gapSec = (ctx.gapAfterMs ?? DEFAULT_GAP_AFTER_MS) / 1000;
-  return Math.max(1, Math.round((ctx.durationSec - gapSec) * wordsPerSec(ctx.language)));
+  const rate = ctx.wordsPerSecond ?? wordsPerSec(ctx.language);
+  return Math.max(1, Math.round((ctx.durationSec - gapSec) * rate));
 }
 const wordCount = (text: string, language?: string): number => tokenizeWords(text, language ?? 'und').length;
 
