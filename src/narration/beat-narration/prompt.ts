@@ -1,7 +1,6 @@
 import type { NarrationContext } from './validate.js';
-import { NARRATION_BUDGET_FACTOR, NARRATION_PROMPT_CEILING } from './validate.js';
+import { NARRATION_PROMPT_CEILING, statedWords } from './validate.js';
 import type { TeachingMoveName } from '../../teaching/moves/types.js';
-import { wordsPerSec } from '../../plan/analyze.js';
 
 /** Move → rhetoric: how each teaching move sounds when spoken. Deterministic compiler text, never model output. */
 const MOVE_RHETORIC: Record<TeachingMoveName, string> = {
@@ -48,7 +47,7 @@ Return ONE JSON object { "beats": [{ "beatId", "sentences": [...1-4 sentences], 
     ? `\nTeaching treatment for this scene: ${ctx.strategy ?? 'see moves'}. Speak each move as written:\n${(ctx.moves ?? []).map((m) => `- ${m.move}: ${MOVE_RHETORIC[m.move]}`).join('\n')}\n`
     : '';
   const bridge = `${ctx.previousTakeaway ? `The previous scene ended saying: "${ctx.previousTakeaway}" Pick up from exactly there in your first sentence.\n` : ''}${ctx.nextOpening ? `The next scene will open with: "${ctx.nextOpening}" Aim your closing takeaway at exactly that.\n` : ''}`;
-  const words = Math.round(ctx.durationSec * wordsPerSec(ctx.language) * NARRATION_BUDGET_FACTOR);
+  const words = statedWords(ctx);
   const around = lesson ? `Lesson: "${lesson.title}".${lesson.previous ? ` The previous scene taught: ${lesson.previous.title} (${lesson.previous.goal}).` : ''}${lesson.next ? ` The next scene will cover: ${lesson.next.title} (${lesson.next.goal}).` : ''}\n` : '';
   const terminology = ctx.terminology?.length ? `Lesson terminology (use consistently; explain unfamiliar English terms in ${languageName}):\n${ctx.terminology.map((entry) => `- ${entry.term}${entry.nativeExplanation ? `: ${entry.nativeExplanation}` : ''}`).join('\n')}\n` : '';
   const user = `${around}SCENE ${ctx.sceneId}: "${scene.title}" — ${scene.goal}

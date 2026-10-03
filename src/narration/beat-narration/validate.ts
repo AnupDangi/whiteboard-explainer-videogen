@@ -22,6 +22,8 @@ export interface NarrationContext {
   terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }>;
   /** Where this scene sits in the lesson, so the speech continues one talk instead of restarting. */
   lesson?: { title: string; sceneIndex: number; sceneCount: number; previous?: { title: string; goal: string }; next?: { title: string; goal: string } };
+  /** Silent gap after this scene in ms (1400 between scenes, 1200 trailing the last). */
+  gapAfterMs?: number;
   /** S3b strategy for this scene (T4): rhetoric follows the treatment. */
   strategy?: TeachingStrategy;
   /** Compiled teaching moves for this scene (T4): each move shapes how its beats are spoken. */
@@ -40,12 +42,18 @@ const VIDEO_REFERENCE = /\bin this video\b/i;
 /** Audio sets the clock, so a mild overrun is a warning; only a scene this much over its spoken budget is rejected. */
 /** What the speaker is told never to exceed; the validator only rejects beyond NARRATION_HARD_CEILING, because the audio, not the word count, sets the real length. */
 /** Ceilings are tight because the fixed-duration gate downstream allows only 200 ms of slack: a scene that overshoots its spoken budget fails the run, so the repair loop must cut early at S4 instead. */
-/** Stated budget factor: scene gaps (1400 ms each) plus the trailing tail are part of the requested clock but carry no speech, so the spoken budget is 85% of the nominal word count. Measured: models write ~1.2x the stated number; 0.85 lands totals inside the gate. */
-export const NARRATION_BUDGET_FACTOR = 0.85;
-export const NARRATION_PROMPT_CEILING = 1.1;
-export const NARRATION_HARD_CEILING = 1.15;
+/** Gap-aware spoken budget: the scene clock includes the silent gap after the scene (1400 ms between scenes, 1200 ms trailing), which carries no speech. The stated word count subtracts it, so hitting the stated number lands the fixed clock. */
+export const DEFAULT_GAP_AFTER_MS = 1400;
+export const NARRATION_PROMPT_CEILING = 1.05;
+export const NARRATION_HARD_CEILING = 1.1;
 
 const normalize = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+
+/** Words the scene may speak: its clock minus its trailing silent gap, at the language rate. */
+export function statedWords(ctx: Pick<NarrationContext, 'durationSec' | 'language' | 'gapAfterMs'>): number {
+  const gapSec = (ctx.gapAfterMs ?? DEFAULT_GAP_AFTER_MS) / 1000;
+  return Math.max(1, Math.round((ctx.durationSec - gapSec) * wordsPerSec(ctx.language)));
+}
 const wordCount = (text: string, language?: string): number => tokenizeWords(text, language ?? 'und').length;
 
 /** Greek letters, arrows and maths operators: the speech engine and the aligner cannot read them. */
@@ -63,7 +71,7 @@ const asciiDigits = (value: string): string => [...value].map((char) => {
 
 export function narrationLengthWarning(draft: SceneNarrationDraft, ctx: NarrationContext): string | undefined {
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
-  const budget = ctx.durationSec * wordsPerSec(ctx.language) * NARRATION_BUDGET_FACTOR;
+  const budget = statedWords(ctx);
   return words > budget ? `${words} spoken words against a ${Math.round(budget)}-word budget; audio sets the clock` : undefined;
 }
 
@@ -97,7 +105,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
     for (const claim of planClaims) if (!anchored.has(claim)) problems.push({ path: `${at}/claimSentences`, message: `claim ${claim} must be anchored to the sentence of this beat that states it` });
   });
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
-  const ceiling = Math.round(ctx.durationSec * wordsPerSec(ctx.language) * NARRATION_BUDGET_FACTOR * NARRATION_HARD_CEILING);
+  const ceiling = Math.round(statedWords(ctx) * NARRATION_HARD_CEILING);
   if (words > ceiling) problems.push({ path: '/beats', message: `too long: ${words} spoken words, at most ${ceiling} for a ${ctx.durationSec}s scene (about ${Math.max(6, Math.floor(ceiling / Math.max(1, draft.beats.length)))} words per beat for ${draft.beats.length} beats); cut or merge the longest sentences` });
   return problems;
 }

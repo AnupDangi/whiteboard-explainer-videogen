@@ -46,9 +46,14 @@ const numbersIn = (texts: readonly string[]): Set<string> => new Set(texts.flatM
  * parallel (no cross-scene dependency). Phase B writes speech sequentially in
  * lesson order, because each scene's opening must continue the previous
  * scene's closing takeaway verbatim (STCC §29: mental-model continuity is
- * never parallelized). Beats stay parallel; only the narration calls serialize. */
-export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptGraph; sourceDoc: SourceDoc; terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }> }, m: BeatStageModel): Promise<BeatStagesResult> {
+ * never parallelized). Beats stay parallel; only the narration calls serialize.
+ *
+ * Gaps carry no speech: each scene's word budget subtracts its trailing silent
+ * gap (sceneGapMs mid-lesson, trailingMs after the last scene), so hitting the
+ * stated budget lands the fixed lesson clock. Defaults match the S11 assembly. */
+export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptGraph; sourceDoc: SourceDoc; terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }>; gaps?: { sceneGapMs: number; trailingMs: number } }, m: BeatStageModel): Promise<BeatStagesResult> {
   const { plan, graph, sourceDoc, terminology } = input;
+  const gaps = input.gaps ?? { sceneGapMs: 1400, trailingMs: 1200 };
   const perScene = m.remainingBudgetUsd / Math.max(1, plan.sections.length);
   // Phase A: beats in parallel.
   const beatOutcomes = await Promise.all(plan.sections.map((section) => withHostResourcePermit('provider-beats', BEAT_PROVIDER_CONCURRENCY, async () => {
@@ -76,6 +81,7 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
     // The scene's own source excerpt is what the speaker is shown, so a number printed there is a number the source gives.
     const sourceExcerpt = sectionSourcePrompt(sourceDoc, section, graph);
     const nextSection = plan.sections[plan.sections.indexOf(section) + 1];
+    const gapAfterMs = nextSection ? gaps.sceneGapMs : gaps.trailingMs;
     const ctx: NarrationContext = {
       sceneId: section.id, beats: beats.value, durationSec: beats.context.durationSec,
       allowedNumbers: numbersIn([...claims.map((claim) => claim.statement), ...evidence, ...definitions, sourceExcerpt]),
@@ -84,7 +90,7 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
       ...(m.language && m.language.toLowerCase() !== 'en' ? { speechLanguagePolicy: 'native-plus-english-terms' as const } : {}),
       ...(terminology?.length ? { terminology } : {}),
       lesson: lessonPosition(plan, section.id),
-      strategy: strategyPlan.strategy, moves: movePlan.moves,
+      strategy: strategyPlan.strategy, moves: movePlan.moves, gapAfterMs,
       ...(previousTakeaway ? { previousTakeaway } : {}),
       ...(nextSection ? { nextOpening: nextSection.goal } : {}),
     };
