@@ -149,10 +149,18 @@ test('the narration prompt names the language and tells the speaker where the sc
 test('the spoken-word budget scales with the language: Hindi gets more words per second than English', async () => {
   const { wordsPerSec } = await import('../plan/analyze.js');
   assert.equal(wordsPerSec(), 2.25); assert.equal(wordsPerSec('en'), 2.25); assert.ok(wordsPerSec('hi') > wordsPerSec('en'));
-  const sentence = Array.from({ length: 15 }, (_, i) => `word${i}`).join(' ');
-  const long = draft([{ sentences: [sentence, `${sentence} a`, `${sentence} b`, `${sentence} c`] }]);
-  assert.ok((validateSceneNarration(long, { ...ctx, durationSec: 8 }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
-  assert.ok(!(validateSceneNarration(long, { ...ctx, durationSec: 12, language: 'hi' }) as Array<{ message: string }>).some((p) => /too long/.test(p.message)));
+  const words = (n: number): string => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
+  const beats = (n: number) => [
+    { sentences: [words(n)], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }] },
+    { sentences: [words(n)], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }] },
+  ];
+  // 8 s English: budget 18, ceiling 23 (1.3x). 2x10 words fit; 2x15 do not.
+  const tooLong = (beatsOver: Parameters<typeof draft>[0], extra: Partial<NarrationContext> = {}): boolean =>
+    validateSceneNarration(draft(beatsOver), { ...ctx, durationSec: 8, ...extra }).some((p) => typeof p !== 'string' && /too long/.test(p.message));
+  assert.ok(!tooLong(beats(10)));
+  assert.ok(tooLong(beats(15)));
+  // Same 30 words fit Hindi (budget 24, ceiling 31): the rate difference is real.
+  assert.ok(!tooLong(beats(15), { language: 'hi' }));
 });
 
 test('CJK narration uses Intl word segmentation for its spoken-word budget', () => {
