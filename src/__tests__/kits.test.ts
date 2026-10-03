@@ -114,3 +114,11 @@ test('the kits know no topic: no kit source names a lesson subject', async () =>
     assert.doesNotMatch(text, /osmosis|recursion|pythagor|attention|thermostat|vaccin|half-life|membrane/i, file);
   }
 });
+
+test('compartment slots are wide enough for a readable label: with four children a zone gives each at least 150px', () => {
+  const { geometry } = layoutOf('compartment');
+  for (const zone of ['out', 'in']) for (let i = 0; i < 4; i++) {
+    const slot = geometry.slotRect(zone, i);
+    assert.ok(slot.w >= 150, `${zone}[${i}] is ${Math.round(slot.w)}px wide; a 32px label such as "solutes" needs ~150px`);
+  }
+});
