@@ -36,6 +36,8 @@ export interface SceneAudio {
   /** Present when an artifact store was used. */
   artifact?: { key: string; contentHash: string; cacheHit: boolean };
   providerMetadata?: { provider: 'elevenlabs'; model: string; voice: string; credits: number; submittedText: string; normalizedText: string; normalizationVersion: string; rawCharacterClock: { characters: string[]; startTimesSeconds: number[]; endTimesSeconds: number[] }; normalizedCharacterClock: { characters: string[]; startTimesSeconds: number[]; endTimesSeconds: number[] }; capabilitySnapshotId?: string };
+  /** Present when the elevenlabs attempt failed (spent keys, refusal, outage) and local synthesis carried the scene. */
+  ttsFallback?: { from: 'elevenlabs'; reason: string };
 }
 
 export interface SceneAudioDeps {
@@ -48,6 +50,11 @@ export interface SceneAudioDeps {
 const ARTIFACT_META = { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID } as const;
 /** `TTS_PROVIDER=elevenlabs` switches speech and word timing to ElevenLabs; the default is the local voice engine plus forced alignment. */
 export const ttsProvider = (env: NodeJS.ProcessEnv = process.env): 'local' | 'elevenlabs' => (env.TTS_PROVIDER === 'elevenlabs' ? 'elevenlabs' : 'local');
+/** When elevenlabs synthesis fails (all keys spent, refused, unreachable), fall back to local synthesis instead of failing the scene. `TTS_FALLBACK_LOCAL=0` disables it. */
+export const ttsLocalFallbackEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => {
+  const raw = env.TTS_FALLBACK_LOCAL;
+  return raw === undefined || (raw !== '0' && raw.toLowerCase() !== 'false');
+};
 export const sceneAudioStage = (sceneId: string) => `S5-tts-alignment:${sceneId}`;
 
 /** Audio must fit inside the requested clock; never trim, stretch, or pad it to manufacture a pass. */
@@ -67,34 +74,54 @@ export function audioDurationProblems(actualDurationMs: number, requestedDuratio
  */
 export async function synthesizeSceneAudio(request: SceneAudioRequest, deps: SceneAudioDeps = {}): Promise<SceneAudio> {
   const tts = ttsProvider();
-  const aligner = deps.aligner ?? (tts === 'elevenlabs' ? elevenLabsAligner : synthesizeAndAlign);
   const capabilities = tts === 'elevenlabs' ? request.elevenLabsCapabilities ?? loadElevenLabsCapabilitySnapshot() : undefined;
-  const generate = async () => {
-    const generated = await withHostResourcePermit('tts-alignment', DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY, () => tts === 'elevenlabs' && !deps.aligner
+  const languagePolicy = request.languagePolicy ?? (/^en(?:-|$)/iu.test(request.language) ? 'english-only/v1' : 'native-plus-english-terms/v1');
+  const cacheInputFor = (provider: 'local' | 'elevenlabs') => {
+    const effectiveVoice = provider === 'elevenlabs' ? resolveElevenLabsVoice(request.voice) : request.voice;
+    const effectiveModel = provider === 'elevenlabs'
+      ? resolveElevenLabsModel(request.elevenLabsModel) ?? (capabilities ? modelsForLanguage(capabilities, request.language)[0]?.id : undefined)
+      : 'base';
+    return { text: request.text, language: request.language, voice: effectiveVoice, languagePolicy, terminology: request.terminology ?? [], provider: 'auto', model: effectiveModel, ...(provider === 'local' ? {} : { tts: provider, capabilitySnapshotId: capabilities?.snapshotId ?? 'runtime-probe', voiceSettings: request.voiceSettings ?? { stability: 0.5, similarity_boost: 0.75, speed: 1 }, normalizationVersion: 'nfkc-whitespace/v1' }), calibration: { provider, model: effectiveModel, voice: effectiveVoice, language: request.language, medianErrorMs: request.calibrationMedianErrorMs } };
+  };
+  const run = async (provider: 'local' | 'elevenlabs') => {
+    const generated = await withHostResourcePermit('tts-alignment', DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY, () => provider === 'elevenlabs'
       ? elevenLabsAligner(request.text, { language: request.language, voice: request.voice, model: request.elevenLabsModel, capabilities, voiceSettings: request.voiceSettings, onUsage: deps.onElevenLabsUsage })
-      : aligner(request.text, { language: request.language, voice: request.voice, provider: 'auto', model: 'base' }));
+      : (deps.aligner ?? synthesizeAndAlign)(request.text, { language: request.language, voice: request.voice, provider: 'auto', model: 'base' }));
     const eleven = generated as typeof generated & Partial<{ model: string; voice: string; credits: number; submittedText: string; normalizedText: string; normalizationVersion: string; rawCharacterClock: NonNullable<SceneAudio['providerMetadata']>['rawCharacterClock']; normalizedCharacterClock: NonNullable<SceneAudio['providerMetadata']>['normalizedCharacterClock']; capabilitySnapshotId: string }>;
     const providerMetadata = typeof eleven.model === 'string' && typeof eleven.voice === 'string' && typeof eleven.credits === 'number' && typeof eleven.submittedText === 'string' && typeof eleven.normalizedText === 'string' && typeof eleven.normalizationVersion === 'string' && eleven.rawCharacterClock && eleven.normalizedCharacterClock
       ? { provider: 'elevenlabs' as const, model: eleven.model, voice: eleven.voice, credits: eleven.credits, submittedText: eleven.submittedText, normalizedText: eleven.normalizedText, normalizationVersion: eleven.normalizationVersion, rawCharacterClock: eleven.rawCharacterClock, normalizedCharacterClock: eleven.normalizedCharacterClock, ...(eleven.capabilitySnapshotId ? { capabilitySnapshotId: eleven.capabilitySnapshotId } : {}) }
       : undefined;
     return { durationMs: generated.durationMs, words: generated.words, aligner: generated.aligner, repairedWordIndexes: generated.repairedWordIndexes, ...(providerMetadata ? { providerMetadata } : {}), audioBase64: (await readFile(generated.audioPath)).toString('base64') };
   };
-  const effectiveVoice = tts === 'elevenlabs' ? resolveElevenLabsVoice(request.voice) : request.voice;
-  const requestedModel = tts === 'elevenlabs' ? resolveElevenLabsModel(request.elevenLabsModel) : undefined;
-  const effectiveModel = tts === 'elevenlabs'
-    ? requestedModel ?? (capabilities ? modelsForLanguage(capabilities, request.language)[0]?.id : undefined)
-    : 'base';
-  const languagePolicy = request.languagePolicy ?? (/^en(?:-|$)/iu.test(request.language) ? 'english-only/v1' : 'native-plus-english-terms/v1');
-  const cacheInput = { text: request.text, language: request.language, voice: effectiveVoice, languagePolicy, terminology: request.terminology ?? [], provider: 'auto', model: effectiveModel, ...(tts === 'local' ? {} : { tts, capabilitySnapshotId: capabilities?.snapshotId ?? 'runtime-probe', voiceSettings: request.voiceSettings ?? { stability: 0.5, similarity_boost: 0.75, speed: 1 }, normalizationVersion: 'nfkc-whitespace/v1' }), calibration: { provider: tts, model: effectiveModel, voice: effectiveVoice, language: request.language, medianErrorMs: request.calibrationMedianErrorMs } };
-  if (!deps.artifactStore) {
-    const payload = await generate();
-    return { ...fromPayload(payload), cacheHit: false };
+  const deliver = (payload: Awaited<ReturnType<typeof run>> & { ttsFallback?: SceneAudio['ttsFallback'] }, cacheHit: boolean, artifact?: SceneAudio['artifact']): SceneAudio =>
+    ({ ...fromPayload(payload), cacheHit, ...(artifact ? { artifact } : {}), ...(payload.ttsFallback ? { ttsFallback: payload.ttsFallback } : {}) });
+  if (tts === 'local') {
+    if (!deps.artifactStore) return deliver(await run('local'), false);
+    const stage = sceneAudioStage(request.sceneId);
+    const cached = await deps.artifactStore.run(stage, cacheInputFor('local'), ARTIFACT_META, () => run('local'));
+    deps.artifactStore.reuseWithinRun(stage, cacheInputFor('local'), ARTIFACT_META, cached.artifact);
+    return deliver(cached.artifact.payload, cached.cacheHit, { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit });
   }
-  const stage = sceneAudioStage(request.sceneId);
-  const cached = await deps.artifactStore.run(stage, cacheInput, ARTIFACT_META, generate);
-  // A later stage in this run may ask for the same scene; serve it from memory, not a second synthesis.
-  deps.artifactStore.reuseWithinRun(stage, cacheInput, ARTIFACT_META, cached.artifact);
-  return { ...fromPayload(cached.artifact.payload), cacheHit: cached.cacheHit, artifact: { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit } };
+  const attemptElevenlabs = async () => {
+    if (!deps.artifactStore) return deliver(await run('elevenlabs'), false);
+    const stage = sceneAudioStage(request.sceneId);
+    const cached = await deps.artifactStore.run(stage, cacheInputFor('elevenlabs'), ARTIFACT_META, () => run('elevenlabs'));
+    deps.artifactStore.reuseWithinRun(stage, cacheInputFor('elevenlabs'), ARTIFACT_META, cached.artifact);
+    return deliver(cached.artifact.payload, cached.cacheHit, { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit });
+  };
+  try {
+    return await attemptElevenlabs();
+  } catch (error) {
+    if (!ttsLocalFallbackEnabled()) throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    const payload = deps.artifactStore
+      ? await deps.artifactStore.run(sceneAudioStage(request.sceneId), cacheInputFor('local'), ARTIFACT_META, () => run('local')).then((cached) => {
+        deps.artifactStore!.reuseWithinRun(sceneAudioStage(request.sceneId), cacheInputFor('local'), ARTIFACT_META, cached.artifact);
+        return deliver(cached.artifact.payload, cached.cacheHit, { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit });
+      })
+      : deliver(await run('local'), false);
+    return { ...payload, ttsFallback: { from: 'elevenlabs', reason } };
+  }
 }
 
 function fromPayload(payload: { durationMs: number; words: AlignedWord[]; aligner?: AlignerIdentity; repairedWordIndexes?: number[]; audioBase64: string; providerMetadata?: SceneAudio['providerMetadata'] }): Omit<SceneAudio, 'cacheHit' | 'artifact'> {

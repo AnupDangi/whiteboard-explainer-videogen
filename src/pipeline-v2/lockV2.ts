@@ -45,7 +45,7 @@ export type RenderSegment = LessonLockV2['renderPlan'][number];
 const Rect = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).strict();
 const PlacedRect = z.object({ id: z.string(), rect: Rect }).strict();
 const Point = z.object({ x: z.number(), y: z.number() }).strict();
-const EdgeRoute = z.object({ id: z.string(), points: z.tuple([Point, Point]), arrowhead: z.tuple([Point, Point, Point]), arrowheadBounds: Rect, label: z.object({ x: z.number(), y: z.number(), text: z.string(), size: z.number(), bounds: Rect }).strict().optional() }).strict();
+const EdgeRoute = z.object({ id: z.string(), points: z.tuple([Point, Point]), controlPoint: Point.optional(), arrowhead: z.tuple([Point, Point, Point]), arrowheadBounds: Rect, label: z.object({ x: z.number(), y: z.number(), text: z.string(), size: z.number(), bounds: Rect }).strict().optional() }).strict();
 const CapturedSchema = z.object({
   sceneId: z.string(), title: z.string(), seedBase: z.string(),
   concepts: z.array(z.tuple([z.string(), z.unknown()])),

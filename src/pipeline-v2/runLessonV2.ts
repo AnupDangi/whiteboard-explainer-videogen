@@ -152,6 +152,10 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       try {
         const audio = await synthesizeSceneAudio({ sceneId: section.id, text: narration.text, language: speechContext?.language ?? language, ...(input.voice ? { voice: input.voice } : {}), ...(speechContext?.speechLanguagePolicy === 'native-plus-english-terms' ? { languagePolicy: 'native-plus-english-terms/v1' as const } : {}), ...(speechContext?.terminology?.length ? { terminology: speechContext.terminology } : {}), ...(input.calibrationMedianErrorMs !== undefined ? { calibrationMedianErrorMs: input.calibrationMedianErrorMs } : {}) }, { ...(input.artifactStore ? { artifactStore: input.artifactStore } : {}), ...(input.aligner ? { aligner: input.aligner } : {}), onElevenLabsUsage: (event) => { providerUsageEvents.push(event); input.onElevenLabsUsage?.(event); } });
         if (audio.providerMetadata) speechUsage.push({ sceneId: section.id, model: audio.providerMetadata.model, voice: audio.providerMetadata.voice, credits: audio.providerMetadata.credits, cacheHit: audio.cacheHit, ...(audio.providerMetadata.capabilitySnapshotId ? { capabilitySnapshotId: audio.providerMetadata.capabilitySnapshotId } : {}) });
+        if (audio.ttsFallback) {
+          metrics['v2.ttsFallbackScenes'] = (metrics['v2.ttsFallbackScenes'] ?? 0) + 1;
+          if (!failures.some((failure) => failure.code === 'v2-tts-fallback-local')) failures.push({ code: 'v2-tts-fallback-local', stage: 'align', message: `elevenlabs failed, local synthesis carried the scene(s): ${audio.ttsFallback.reason.slice(0, 200)}`, hard: false });
+        }
         synthesized.set(section.id, { text: narration.text, audio });
         return { ok: true as const, section, narration, audio };
       } catch (error) {

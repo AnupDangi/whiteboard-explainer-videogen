@@ -25,6 +25,8 @@ export interface Point { x: number; y: number }
 export interface EdgeRoute {
   id: string;
   points: [Point, Point];
+  /** Quadratic control point used only when a clear straight shaft is impossible. */
+  controlPoint?: Point;
   arrowhead: [Point, Point, Point];
   arrowheadBounds: Rect;
   label?: { x: number; y: number; text: string; size: number; bounds: Rect };
@@ -245,7 +247,17 @@ function layoutCore(states: readonly BoardState[], pins: ReadonlyMap<string, Rec
     if (!edge || edge.lifecycle.removedAtBeat !== undefined) return undefined;
     const from0 = renderedRectFor({ kitRect: (id) => kitRects.get(id), rectFor }, state, edge.from); const to0 = renderedRectFor({ kitRect: (id) => kitRects.get(id), rectFor }, state, edge.to);
     if (!from0 || !to0) return undefined;
-    return routeEdge(edgeId, from0, to0, edge.label);
+    const related = new Set<string>([edge.from, edge.to]);
+    for (const id of Object.keys(state.elements)) {
+      for (let up: string | undefined = state.elements[id]?.placement.container; up; up = state.elements[up]?.placement.container) {
+        if (up === edge.from || up === edge.to) related.add(id);
+        if (up === id) break;
+      }
+      for (const end of [edge.from, edge.to]) for (let up: string | undefined = state.elements[end]?.placement.container; up; up = state.elements[up]?.placement.container) if (up === id) related.add(id);
+    }
+    const obstacles = Object.values(state.elements).filter(live).filter((element) => !related.has(element.id))
+      .flatMap((element) => { const rect = renderedRectFor({ kitRect: (id) => kitRects.get(id), rectFor }, state, element.id); return rect ? [rect] : []; });
+    return routeEdge(edgeId, from0, to0, edge.label, obstacles);
   };
   return { contentRect: CONTENT_RECT, regionRects, rectFor, kitGeometry: (id) => kitGeometries.get(id), kitRect: (id) => kitRects.get(id), allRects, edgeRouteFor, moved: [] };
 }
@@ -406,15 +418,55 @@ function kitInkSegments(paths: ReadonlyArray<{ d: string }>, home: Rect | undefi
   }
   return out;
 }
-function routeSegments(route: EdgeRoute): Array<[Point, Point]> {
-  return [[route.points[0], route.points[1]], [route.arrowhead[0], route.arrowhead[1]], [route.arrowhead[1], route.arrowhead[2]]];
+function routeSamples(route: EdgeRoute, steps = 24): Point[] {
+  const [a, b] = route.points;
+  if (!route.controlPoint) return [a, b];
+  const c = route.controlPoint;
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const t = i / steps; const u = 1 - t;
+    return { x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y };
+  });
 }
-export function routeEdge(id: string, from: Rect, to: Rect, label?: string): EdgeRoute {
+function routeShaftSegments(route: EdgeRoute): Array<[Point, Point]> {
+  const points = routeSamples(route);
+  return points.slice(1).map((point, i) => [points[i]!, point]);
+}
+function routeSegments(route: EdgeRoute): Array<[Point, Point]> {
+  return [...routeShaftSegments(route), [route.arrowhead[0], route.arrowhead[1]], [route.arrowhead[1], route.arrowhead[2]]];
+}
+function quadraticLength(points: Point[]): number {
+  return points.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - points[i]!.x, p.y - points[i]!.y), 0);
+}
+/** Build a repeatable quadratic detour when the direct shaft would cross an unrelated element. */
+export function routeEdge(id: string, from: Rect, to: Rect, label?: string, obstacles: readonly Rect[] = [], content: Rect = CONTENT_RECT): EdgeRoute {
   const a = borderPoint(from, center(to), 8); const b = borderPoint(to, center(from), 8);
-  const arrowhead = edgeHead(a, b);
-  const x = (a.x + b.x) / 2; const y = (a.y + b.y) / 2 - 16;
+  const dx = b.x - a.x; const dy = b.y - a.y; const length = Math.hypot(dx, dy) || 1;
+  const normal = { x: -dy / length, y: dx / length };
+  const direct: EdgeRoute = { id, points: [a, b], arrowhead: edgeHead(a, b), arrowheadBounds: boundsOfPoints(edgeHead(a, b)) };
+  const blocked = obstacles.some((rect) => segmentCrossesRect(a, b, rect));
+  let route = direct;
+  if (blocked) {
+    const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const offsets = [72, 112, 160, 216, 280];
+    for (const offset of offsets) {
+      const candidates = [1, -1].map((side) => ({ x: middle.x + normal.x * offset * side, y: middle.y + normal.y * offset * side }));
+      const clear = candidates.find((controlPoint) => {
+        const candidate: EdgeRoute = { ...direct, controlPoint };
+        const samples = routeSamples(candidate);
+        return samples.every((point) => point.x >= content.x && point.x <= content.x + content.w && point.y >= content.y && point.y <= content.y + content.h) &&
+          !routeShaftSegments(candidate).some(([p, q]) => obstacles.some((rect) => segmentCrossesRect(p, q, rect)));
+      });
+      if (clear) { route = { ...direct, controlPoint: clear }; break; }
+    }
+  }
+  const points = routeSamples(route);
+  const tangent = route.controlPoint ? { x: b.x - route.controlPoint.x, y: b.y - route.controlPoint.y } : { x: dx, y: dy };
+  const arrowhead = edgeHead({ x: b.x - tangent.x, y: b.y - tangent.y }, b);
+  route = { ...route, arrowhead, arrowheadBounds: boundsOfPoints(arrowhead) };
+  const mid = route.controlPoint ? points[Math.floor(points.length / 2)]! : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const x = mid.x + (route.controlPoint ? normal.x * 20 : 0); const y = mid.y + (route.controlPoint ? normal.y * 20 : -16);
   const displayed = label ? textRun(x, y, label, STYLE.font.sizes.note).text : undefined;
-  return { id, points: [a, b], arrowhead, arrowheadBounds: boundsOfPoints(arrowhead),
+  return { ...route,
     ...(displayed ? { label: { x, y, text: displayed, size: STYLE.font.sizes.note, bounds: inkRect({ x, y, text: displayed, size: STYLE.font.sizes.note, anchor: 'middle' }) } } : {}) };
 }
 
@@ -483,14 +535,13 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
       if (edge.lifecycle.removedAtBeat !== undefined) continue;
       const route = geometry.edgeRouteFor(state, edge.id);
       if (!route) continue;
-      const [a, b] = route.points;
       const related = new Set<string>([edge.from, edge.to]);
       for (const id of liveIds) { for (let up: string | undefined = state.elements[id]!.placement.container; up; up = state.elements[up]?.placement.container) if (up === edge.from || up === edge.to) related.add(id); }
       for (const end of [edge.from, edge.to]) for (let up: string | undefined = state.elements[end]?.placement.container; up; up = state.elements[up]?.placement.container) related.add(up);
       for (const id of liveIds) {
         if (related.has(id)) continue;
         const rect = renderedRectFor(geometry, state, id);
-        if (rect && segmentCrossesRect(a, b, rect)) add({ code: 'edge_crossing', stateIndex: index, message: `state ${index + 1}: arrow ${edge.id} (${edge.from} to ${edge.to}) crosses ${id}; place them so the arrow has a clear path`, elementIds: [id], edgeId: edge.id, fields: [pointer('edges', edge.id, 'from'), pointer('edges', edge.id, 'to'), pointer('elements', id, 'placement')] });
+        if (rect && routeShaftSegments(route).some(([p, q]) => segmentCrossesRect(p, q, rect))) add({ code: 'edge_crossing', stateIndex: index, message: `state ${index + 1}: arrow ${edge.id} (${edge.from} to ${edge.to}) crosses ${id}; place them so the arrow has a clear path`, elementIds: [id], edgeId: edge.id, fields: [pointer('edges', edge.id, 'from'), pointer('edges', edge.id, 'to'), pointer('elements', id, 'placement')] });
       }
       const head = route.arrowheadBounds;
       const edgeLabels: InkLabel[] = route.label ? [{ owner: edge.id, rect: route.label.bounds, field: 'label' }] : [];
@@ -500,7 +551,7 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
         for (const id of liveIds) if (!related.has(id)) { const rawBox = geometry.rectFor(state, id); const box = rawBox ? scaled(rawBox, state.elements[id]?.props.scale) : undefined; if (box && overlaps(label.rect, box, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: label on arrow ${edge.id} collides with ${id}`, elementIds: [id], edgeId: edge.id, fields: [pointer('edges', edge.id, 'label'), pointer('elements', id, 'placement')] }); }
       }
       for (const other of labels) if (overlaps(head, other.rect, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: arrowhead on ${edge.id} collides with text on ${other.owner}`, elementIds: [other.owner], edgeId: edge.id, fields: [pointer('edges', edge.id, 'to'), pointer('elements', other.owner, other.field)] });
-      for (const other of labels) if (!related.has(other.owner) && segmentCrossesRect(a, b, other.rect, 1)) add({ code: 'edge_text_collision', stateIndex: index, message: `state ${index + 1}: arrow ${edge.id} crosses text on ${other.owner}`, elementIds: [other.owner], edgeId: edge.id, fields: [pointer('edges', edge.id, 'from'), pointer('edges', edge.id, 'to'), pointer('elements', other.owner, other.field)] });
+      for (const other of labels) if (!related.has(other.owner) && routeShaftSegments(route).some(([p, q]) => segmentCrossesRect(p, q, other.rect, 1))) add({ code: 'edge_text_collision', stateIndex: index, message: `state ${index + 1}: arrow ${edge.id} crosses text on ${other.owner}`, elementIds: [other.owner], edgeId: edge.id, fields: [pointer('edges', edge.id, 'from'), pointer('edges', edge.id, 'to'), pointer('elements', other.owner, other.field)] });
     }
     const activeEdges = Object.values(state.edges).filter((edge) => edge.lifecycle.removedAtBeat === undefined).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     for (let i = 0; i < activeEdges.length; i++) for (let j = i + 1; j < activeEdges.length; j++) {
@@ -511,19 +562,21 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
       if (sharedIds.length) {
         // Arrows that meet at an element are allowed to touch there, but must fan out instead of running on one line.
         const edgeFields = [pointer('edges', first.id, 'from'), pointer('edges', second.id, 'from')];
-        const away = (edge: typeof first, route: EdgeRoute, shared: string): Point => edge.from === shared
-          ? { x: route.points[1].x - route.points[0].x, y: route.points[1].y - route.points[0].y }
-          : { x: route.points[0].x - route.points[1].x, y: route.points[0].y - route.points[1].y };
-        const lengthOf = (route: EdgeRoute) => Math.hypot(route.points[1].x - route.points[0].x, route.points[1].y - route.points[0].y);
-        const sameLine = sharedIds.length === 2 && segmentDistance(a.points[0], a.points[1], b.points[0], b.points[1]) < EDGE_CLEARANCE_PX;
+        const away = (edge: typeof first, route: EdgeRoute, shared: string): Point => {
+          const start = edge.from === shared ? 0 : 1; const samples = routeSamples(route);
+          const near = samples[start === 0 ? 1 : samples.length - 2]!; const origin = samples[start === 0 ? 0 : samples.length - 1]!;
+          return { x: near.x - origin.x, y: near.y - origin.y };
+        };
+        const lengthOf = (route: EdgeRoute) => quadraticLength(routeSamples(route));
+        const sameLine = sharedIds.length === 2 && routeShaftSegments(a).some(([a0, a1]) => routeShaftSegments(b).some(([b0, b1]) => segmentDistance(a0, a1, b0, b1) < EDGE_CLEARANCE_PX));
         const stacked = sharedIds.length === 1 && lengthOf(a) > 40 && lengthOf(b) > 40 && angleBetween(away(first, a, sharedIds[0]!), away(second, b, sharedIds[0]!)) < EDGE_MIN_ANGLE_RAD;
         if (sameLine || stacked) add({ code: 'edge_overlap', stateIndex: index, message: `state ${index + 1}: arrows ${first.id} and ${second.id} run on top of each other${sharedIds.length === 1 ? ` out of ${sharedIds[0]}` : ''}; place their ends so they fan out`, elementIds: [], edgeId: first.id, fields: edgeFields });
         continue;
       }
       const aSegments = routeSegments(a); const bSegments = routeSegments(b);
       if (aSegments.some(([a0, a1]) => bSegments.some(([b0, b1]) => segmentsIntersect(a0, a1, b0, b1)))) add({ code: 'edge_crossing', stateIndex: index, message: `state ${index + 1}: arrows ${first.id} and ${second.id} cross; reroute or reposition their endpoints`, elementIds: [], edgeId: first.id, fields: [pointer('edges', first.id, 'from'), pointer('edges', first.id, 'to'), pointer('edges', second.id, 'from'), pointer('edges', second.id, 'to')] });
-      else if (segmentDistance(a.points[0], a.points[1], b.points[0], b.points[1]) < EDGE_CLEARANCE_PX) add({ code: 'edge_clearance', stateIndex: index, message: `state ${index + 1}: arrows ${first.id} and ${second.id} run less than ${EDGE_CLEARANCE_PX}px apart and read as one line; move their ends apart`, elementIds: [], edgeId: first.id, fields: [pointer('edges', first.id, 'from'), pointer('edges', second.id, 'from')] });
-      const shaftOrHeadCrosses = (route: EdgeRoute, box: Rect): boolean => segmentCrossesRect(route.points[0], route.points[1], box, 1) || route.arrowhead.some((point, k) => k > 0 && segmentCrossesRect(route.arrowhead[k - 1]!, point, box, 1));
+      else if (routeShaftSegments(a).some(([a0, a1]) => routeShaftSegments(b).some(([b0, b1]) => segmentDistance(a0, a1, b0, b1) < EDGE_CLEARANCE_PX))) add({ code: 'edge_clearance', stateIndex: index, message: `state ${index + 1}: arrows ${first.id} and ${second.id} run less than ${EDGE_CLEARANCE_PX}px apart and read as one line; move their ends apart`, elementIds: [], edgeId: first.id, fields: [pointer('edges', first.id, 'from'), pointer('edges', second.id, 'from')] });
+      const shaftOrHeadCrosses = (route: EdgeRoute, box: Rect): boolean => routeShaftSegments(route).some(([p, q]) => segmentCrossesRect(p, q, box, 1)) || route.arrowhead.some((point, k) => k > 0 && segmentCrossesRect(route.arrowhead[k - 1]!, point, box, 1));
       if (a.label && shaftOrHeadCrosses(b, a.label.bounds)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: arrow ${second.id} or its arrowhead crosses the label on ${first.id}`, elementIds: [], edgeId: first.id, fields: [pointer('edges', first.id, 'label'), pointer('edges', second.id, 'from'), pointer('edges', second.id, 'to')] });
       if (b.label && shaftOrHeadCrosses(a, b.label.bounds)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: arrow ${first.id} or its arrowhead crosses the label on ${second.id}`, elementIds: [], edgeId: second.id, fields: [pointer('edges', second.id, 'label'), pointer('edges', first.id, 'from'), pointer('edges', first.id, 'to')] });
       if (a.label && b.label && overlaps(a.label.bounds, b.label.bounds, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: labels on arrows ${first.id} and ${second.id} overlap`, elementIds: [], edgeId: first.id, fields: [pointer('edges', first.id, 'label'), pointer('edges', second.id, 'label')] });

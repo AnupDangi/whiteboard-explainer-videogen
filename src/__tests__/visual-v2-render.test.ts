@@ -185,12 +185,16 @@ test('text that cannot fit its slot at the smallest readable font is reported, t
   assert.equal(fitFont('transformer layers', 120), 32, 'the shared readability floor is 32 px; legality is decided by fitsWidth');
 });
 
-test('an arrow whose straight path crosses an unrelated element is a geometry problem; a clear arrow is not', () => {
+test('an arrow whose straight path crosses an unrelated element takes a clear curve; a clear arrow stays straight', () => {
   const connect = BoardOpSchema.parse({ op: 'connect', opId: 'b1.c', beatId: 'b1', id: 'link', from: 'l', to: 'r', relation: 'causes' });
   const board = (middle: boolean): BoardOp[] => [add('l', tok('left'), { region: 'left' }, 'b0'), ...(middle ? [add('m', tok('middle'), { region: 'center' }, 'b0')] : []), add('r', tok('right'), { region: 'right' }, 'b0'), connect];
-  const run = (ops: BoardOp[]) => { const t = compileSceneTimeline({ ops, initial: emptyBoardState(), beats: [timed('b0', 0), timed('b1', 1)] }); return validateSceneGeometry(compileScene('s', 'S', t).geometry, t.states); };
-  assert.ok(run(board(true)).some((m) => /arrow link .* crosses m/.test(m)));
-  assert.ok(!run(board(false)).some((m) => /arrow/.test(m)));
+  const run = (ops: BoardOp[]) => { const t = compileSceneTimeline({ ops, initial: emptyBoardState(), beats: [timed('b0', 0), timed('b1', 1)] }); const geometry = compileScene('s', 'S', t).geometry; return { t, geometry, problems: validateSceneGeometry(geometry, t.states) }; };
+  const blocked = run(board(true));
+  assert.ok(blocked.geometry.edgeRouteFor(blocked.t.states.at(-1)!, 'link')?.controlPoint);
+  assert.ok(!blocked.problems.some((m) => /arrow link .* crosses m/.test(m)));
+  const clear = run(board(false));
+  assert.ok(!clear.geometry.edgeRouteFor(clear.t.states.at(-1)!, 'link')?.controlPoint);
+  assert.equal(clear.problems.some((m) => /arrow/.test(m)), false);
 });
 
 test('settled edge SVG consumes the scene route geometry', () => {

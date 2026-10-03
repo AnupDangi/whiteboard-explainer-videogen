@@ -159,13 +159,18 @@ export function boardEnums(input: PlannerSceneInput): BoardEnums {
 
 /**
  * The scene concept a spoken mention refers to: the concept with the mention's
- * id, else the concept whose label shares the most word stems with the phrase.
+ * id, else the concept sharing the most word stems with the phrase. A label
+ * word names the concept, so it counts double; a definition word only
+ * describes it. Without this, mentions whose labels tie (or miss) all land on
+ * the first concept, and a later claim's only instance becomes an earlier
+ * claim's target — which can never be revealed inside that claim's sentence.
  */
 export function conceptForMention(input: Pick<PlannerSceneInput, 'teachingContext'>, mention: { id: string; phrase: string }): { id: string; label: string } | undefined {
   const concepts = input.teachingContext?.concepts ?? [];
   const phrase = new Set(words(mention.phrase).map(stem));
+  const shared = (value: string | undefined): number => !value ? 0 : words(value).map(stem).filter((word) => phrase.has(word)).length;
   return concepts.find((item) => item.id === mention.id)
-    ?? [...concepts].map((item) => ({ item, overlap: words(item.label).map(stem).filter((word) => phrase.has(word)).length })).filter((entry) => entry.overlap > 0).sort((a, b) => b.overlap - a.overlap)[0]?.item;
+    ?? [...concepts].map((item) => ({ item, score: shared(item.label) * 2 + shared(item.definition) })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score)[0]?.item;
 }
 
 /** zod schema with this scene's enums; structuredCall derives the provider JSON schema from it. */
@@ -816,7 +821,7 @@ export function validateBoard(value: unknown, input: PlannerSceneInput, options:
   const parsed = boardSchema(enums).safeParse(normalizedValue);
   if (!parsed.success) return { problems: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`) };
   // Model output only: direct validation keeps reporting redundant instances as problems.
-  const board = options.normalizeInstances ? withDerivedIllustrativeFlag(pruneLateTargets(completeEdgeIntents(dropRedundantInstances(parsed.data as Board), input), input), input) : parsed.data as Board;
+  const board = options.normalizeInstances ? withDerivedIllustrativeFlag(coverLateTargets(pruneLateTargets(completeEdgeIntents(dropRedundantInstances(parsed.data as Board), input), input), input), input) : parsed.data as Board;
   if (options.normalizeInstances) for (const entry of diffCoercions(parsed.data, board, 'board-normalize')) recordCoercion(entry);
   const problems = boardProblems(board, input, enums, options.lenientBinding);
   const compiled = compileBoard(board, input);
@@ -904,6 +909,111 @@ export function pruneLateTargets(board: Board, input: PlannerSceneInput): Board 
   });
   return { ...board, visualIntents };
 }
+
+/**
+ * A claim is drawn while its sentence is spoken, so a target revealed in a
+ * later sentence fails the claim-timing gate. pruneLateTargets drops such
+ * targets when an on-time alternative stays; what is still late here has none.
+ * When the claim sentence itself speaks the target's concept (an unused
+ * mention mapping to it), the board gains one more instance anchored there and
+ * the intent follows it; a late target with an on-time same-concept instance
+ * is retargeted to it. Otherwise the late target stays and still fails
+ * visibly — a depiction code cannot invent is never manufactured.
+ */
+export function coverLateTargets(board: Board, input: PlannerSceneInput): Board {
+  if (!board.visualIntents?.length || !input.claimSpans?.length) return board;
+  const starts = new Map(parseMarkers(input.raw).mentions.map((mention) => [mention.id, mention.plainStart]));
+  const nodes = [...board.nodes];
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const usedMentions = new Set(nodes.map((node) => node.mention));
+  const instances = new Map<string, number>();
+  for (const node of nodes) instances.set(node.concept, (instances.get(node.concept) ?? 0) + 1);
+  const at = (mentionId: string): number | undefined => starts.get(mentionId);
+  const inside = (mentionId: string, span: { plainStart: number; plainEnd: number }): boolean => {
+    const start = at(mentionId);
+    // Same rule as pruneLateTargets: a mention with no marked position cannot be judged late.
+    return start === undefined || (start >= span.plainStart && start < span.plainEnd);
+  };
+  const lateNode = (nodeId: string, span: { plainStart: number; plainEnd: number }): boolean => {
+    const node = nodeById.get(nodeId);
+    return !node || !inside(node.mention, span);
+  };
+  const onTimeInstance = (concept: string, span: { plainStart: number; plainEnd: number }): BoardNode | undefined =>
+    nodes.find((node) => node.concept === concept && inside(node.mention, span));
+  // The compiled board draws every source example at the first target example
+  // and vice versa (compileBoard): only pairs drawn by that rule are valid remaps.
+  const compiledPair = (fromId: string, toId: string, type: string): boolean => {
+    const from = nodeById.get(fromId);
+    const to = nodeById.get(toId);
+    if (!from || !to || from.id === to.id) return false;
+    const relation = input.teachingContext?.relations?.find((candidate) => candidate.from === from.concept && candidate.to === to.concept && candidate.type === type);
+    if (!relation) return false;
+    const fromNodes = nodes.filter((node) => node.concept === relation.from);
+    const toNodes = nodes.filter((node) => node.concept === relation.to);
+    if (!fromNodes.length || !toNodes.length) return false;
+    return fromNodes.length > 1 ? to.id === toNodes[0]!.id : from.id === fromNodes[0]!.id;
+  };
+  const duplicateFor = (concept: string, span: { plainStart: number; plainEnd: number }): BoardNode | undefined => {
+    if (nodes.length >= MAX_BOARD_NODES || (instances.get(concept) ?? 0) >= MAX_INSTANCES_PER_CONCEPT) return undefined;
+    const id = NODE_IDS.find((candidate) => !nodeById.has(candidate));
+    const mention = input.mentions.find((candidate) => !usedMentions.has(candidate.id) && at(candidate.id) !== undefined && inside(candidate.id, span) && conceptForMention(input, candidate)?.id === concept);
+    if (!id || !mention) return undefined;
+    const source = nodes.find((node) => node.concept === concept);
+    const label = mention.phrase.split(/\s+/).slice(0, MAX_LABEL_WORDS).join(' ');
+    const node: BoardNode = { id, mention: mention.id, concept, representation: { ...source?.representation ?? { kind: 'literal' } } as BoardNode['representation'], label, role: source?.role ?? 'item' };
+    nodes.push(node);
+    nodeById.set(id, node);
+    usedMentions.add(mention.id);
+    instances.set(concept, (instances.get(concept) ?? 0) + 1);
+    return node;
+  };
+  const resolveElement = (nodeId: string, span: { plainStart: number; plainEnd: number }): string | undefined => {
+    const node = nodeById.get(nodeId);
+    if (!node) return undefined;
+    if (!lateNode(nodeId, span)) return nodeId;
+    return onTimeInstance(node.concept, span)?.id ?? duplicateFor(node.concept, span)?.id;
+  };
+  let changed = false;
+  const visualIntents = board.visualIntents.map((intent) => {
+    const span = input.claimSpans!.find((candidate) => candidate.claimId === intent.claimId);
+    if (!span) return intent;
+    // Elements first, so edge remaps can reuse the resolved endpoints.
+    const remapped = new Map<string, string>();
+    const targets: typeof intent.targets = [];
+    for (const target of intent.targets) {
+      if (target.kind === 'element') {
+        const resolved = resolveElement(target.elementId, span);
+        if (!resolved) continue;
+        if (resolved !== target.elementId) { remapped.set(target.elementId, resolved); changed = true; }
+        targets.push({ ...target, elementId: resolved });
+      }
+    }
+    for (const target of intent.targets) {
+      if (target.kind !== 'edge') continue;
+      const from = remapped.get(target.fromElementId) ?? target.fromElementId;
+      const to = remapped.get(target.toElementId) ?? target.toElementId;
+      if (!lateNode(from, span) && !lateNode(to, span) && compiledPair(from, to, target.relationType)) {
+        if (from !== target.fromElementId || to !== target.toElementId) changed = true;
+        targets.push({ ...target, fromElementId: from, toElementId: to });
+        continue;
+      }
+      // A remapped endpoint the board does not draw is not a depiction: drop
+      // the edge and let the coverage gate report the missing relation.
+      const fromNode = nodeById.get(from);
+      const toNode = nodeById.get(to);
+      const fromOnTime = fromNode && !lateNode(from, span) ? from : onTimeInstance(fromNode?.concept ?? '', span)?.id;
+      const toOnTime = toNode && !lateNode(to, span) ? to : onTimeInstance(toNode?.concept ?? '', span)?.id;
+      if (fromOnTime && toOnTime && compiledPair(fromOnTime, toOnTime, target.relationType)) {
+        changed = true;
+        targets.push({ ...target, fromElementId: fromOnTime, toElementId: toOnTime });
+      } else if (!lateNode(target.fromElementId, span) && !lateNode(target.toElementId, span)) {
+        targets.push(target);
+      } else changed = true;
+    }
+    return targets.length === intent.targets.length && targets.every((target, index) => target === intent.targets[index]) ? intent : { ...intent, targets };
+  });
+  return changed ? { ...board, nodes, visualIntents } : board;
+};
 
 /**
  * A concept may show at most MAX_INSTANCES_PER_CONCEPT nodes, each a distinct example

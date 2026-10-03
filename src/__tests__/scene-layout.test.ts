@@ -164,7 +164,7 @@ test('edge routes pin the exact shaft, label ink, and arrowhead across repeated 
   assert.equal(layoutScene(states).edgeRouteFor(states[0]!, 'edge'), undefined);
 });
 
-test('a shaft through unrelated text emits an edge and text diagnostic', () => {
+test('a shaft detours around unrelated text with a deterministic pinned curve', async () => {
   const ops: BoardOp[] = [
     add('a', token('A'), { region: 'left' }, 'b0'),
     add('word', token('MIDDLE'), { region: 'center' }, 'b0'),
@@ -172,8 +172,14 @@ test('a shaft through unrelated text emits an edge and text diagnostic', () => {
     BoardOpSchema.parse({ op: 'connect', opId: 'b1.edge', beatId: 'b1', id: 'edge', from: 'a', to: 'b', relation: 'causes' }),
   ];
   const states = statesOf(ops);
-  const diagnostics = diagnoseSceneGeometry(layoutScene(states), states);
-  assert.ok(diagnostics.some((d) => d.code === 'edge_text_collision' && d.edgeId === 'edge' && d.elementIds.includes('word')));
+  const geometry = layoutScene(states);
+  const route = geometry.edgeRouteFor(states.at(-1)!, 'edge');
+  assert.ok(route?.controlPoint, 'the direct shaft crosses the center element, so a quadratic detour is pinned');
+  assert.deepEqual(route, layoutScene(states).edgeRouteFor(states.at(-1)!, 'edge'));
+  assert.equal(diagnoseSceneGeometry(geometry, states).some((d) => d.edgeId === 'edge' && ['edge_crossing', 'edge_text_collision'].includes(d.code)), false);
+  const { edgeVisual } = await import('../visual-v2/renderer/visuals.js');
+  const rendered = edgeVisual(states.at(-1)!.edges.edge!, geometry.rectFor(states.at(-1)!, 'a')!, geometry.rectFor(states.at(-1)!, 'b')!, route);
+  assert.ok(rendered.paths[0]!.d.includes(' Q '), 'the exact control point is consumed by the renderer');
 });
 
 test('compound graph places nested groups by their links and keeps child identities fixed', () => {

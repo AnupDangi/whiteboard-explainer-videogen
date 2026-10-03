@@ -94,7 +94,16 @@ export function edgeVisual(edge: BoardEdge, from: Rect, to: Rect, pinnedRoute?: 
   const [a, b] = route.points;
   const width = 3 + 7 * (edge.weight ?? 0.3) + (edge.emphasis === 'highlight' ? 5 : 0);
   const color = edge.emphasis === 'highlight' ? STYLE.palette.orange : edge.emphasis === 'struck' ? STYLE.palette.red : undefined;
-  const paths = [linePath(a.x, a.y, b.x, b.y), polylinePath(route.arrowhead)].map((p) => ({ ...p, width, ...(color ? { color } : {}) }));
+  let shaft = linePath(a.x, a.y, b.x, b.y);
+  if (route.controlPoint) {
+    const control = route.controlPoint;
+    const samples = Array.from({ length: 25 }, (_, i) => {
+      const t = i / 24; const u = 1 - t;
+      return { x: u * u * a.x + 2 * u * t * control.x + t * t * b.x, y: u * u * a.y + 2 * u * t * control.y + t * t * b.y };
+    });
+    shaft = { ...polylinePath(samples), d: `M ${a.x} ${a.y} Q ${control.x} ${control.y} ${b.x} ${b.y}` };
+  }
+  const paths = [shaft, polylinePath(route.arrowhead)].map((p) => ({ ...p, width, ...(color ? { color } : {}) }));
   const texts = route.label ? [textRun(route.label.x, route.label.y, route.label.text, route.label.size)] : [];
   return { paths, fills: [], texts };
 }

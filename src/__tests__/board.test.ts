@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { z } from 'zod';
 import type { PlannerSceneInput } from '../planner/prompt.js';
 import { goodBoard, makeScene, WORDS } from './support/boardScene.js';
-import { boardEnums, boardProblems, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
+import { BOARD_SCHEMA_VERSION, boardEnums, boardProblems, boardSchema, buildBoardPrompt, compileBoard, conceptForMention, coverLateTargets, fallbackBoard, planBoardScene, validateBoard, type Board } from '../planner/board.js';
 import type { MoleculeGraph } from '../render/chemistry.js';
 
 const scene = makeScene(WORDS);
@@ -548,6 +548,106 @@ test('conceptForMention matches a mention to its scene concept by id, then by sh
   assert.equal(conceptForMention(scene, { id: 'm_x', phrase: 'the doughs rest' })?.label, 'dough');
   assert.equal(conceptForMention(scene, { id: 'm_y', phrase: 'unrelated words' }), undefined);
   assert.equal(conceptForMention({ teachingContext: undefined }, { id: 'm_a', phrase: 'flour' }), undefined);
+});
+
+test('conceptForMention scores definition words when labels tie, with labels outranking definitions', () => {
+  const ctx = { teachingContext: { concepts: [
+    { id: 'c1', label: 'Desired temperature', definition: 'resident chosen reference value' },
+    { id: 'c2', label: 'Room sensing', definition: 'sensor measures room temperature' },
+  ] } } as Pick<PlannerSceneInput, 'teachingContext'>;
+  // 'room temperature' ties 1-1 on labels; the definition breaks it toward Room sensing.
+  assert.equal(conceptForMention(ctx, { id: 'm1', phrase: 'room temperature' })?.id, 'c2');
+  assert.equal(conceptForMention(ctx, { id: 'm2', phrase: 'desired temperature' })?.id, 'c1');
+  // One label word still beats two definition words.
+  const ctx2 = { teachingContext: { concepts: [
+    { id: 'c1', label: 'Error value', definition: 'nothing relevant here' },
+    { id: 'c2', label: 'Other thing', definition: 'error value reading' },
+  ] } } as Pick<PlannerSceneInput, 'teachingContext'>;
+  assert.equal(conceptForMention(ctx2, { id: 'm3', phrase: 'error value' })?.id, 'c1');
+});
+
+test('fallback board depicts a claim only with instances spoken inside its sentence', async () => {
+  const { parseMarkers } = await import('../narration/markers.js');
+  const raw = '[[m1|thermostat]] reads [[m2|room temperature]] [[m3|positive]]';
+  const starts = new Map(parseMarkers(raw).mentions.map((mention) => [mention.id, mention.plainStart]));
+  const claim2Start = starts.get('m3')!;
+  const plain = 'thermostat reads room temperature positive';
+  const input = {
+    sceneId: 's1', raw, plainText: plain,
+    mentions: [{ id: 'm1', phrase: 'thermostat' }, { id: 'm2', phrase: 'room temperature' }, { id: 'm3', phrase: 'positive' }],
+    claimSpans: [
+      { claimId: 'claim1', exactText: plain.slice(0, claim2Start), plainStart: 0, plainEnd: claim2Start },
+      { claimId: 'claim2', exactText: plain.slice(claim2Start), plainStart: claim2Start, plainEnd: plain.length },
+    ],
+    teachingContext: {
+      concepts: [
+        { id: 'c1', label: 'Desired temperature', definition: 'resident chosen reference value' },
+        { id: 'c2', label: 'Room sensing', definition: 'sensor measures room temperature' },
+      ],
+      relations: [{ from: 'c2', to: 'c1', type: 'compares', evidenceRefs: [] }],
+    },
+    planningContext: { sceneContract: { essentialClaims: [
+      { id: 'claim1', conceptIds: ['c1', 'c2'], relations: [{ from: 'c2', to: 'c1', type: 'compares' }], evidenceSpanIds: ['s1'] },
+      { id: 'claim2', conceptIds: ['c2'], relations: [], evidenceSpanIds: ['s1'] },
+    ] } },
+  } as unknown as PlannerSceneInput;
+  const board = fallbackBoard(input);
+  // 'room temperature' must map to Room sensing (definition), giving claim1 an on-time instance.
+  assert.equal(board.nodes.find((node) => node.mention === 'm2')?.concept, 'c2');
+  const nodeById = new Map(board.nodes.map((node) => [node.id, node]));
+  const intent = board.visualIntents!.find((candidate) => candidate.claimId === 'claim1')!;
+  assert.ok(intent.targets.length > 0);
+  for (const target of intent.targets) {
+    for (const id of target.kind === 'element' ? [target.elementId] : [target.fromElementId, target.toElementId]) {
+      const at = starts.get(nodeById.get(id)!.mention)!;
+      assert.ok(at < claim2Start, `${id} is spoken after claim1 ends`);
+    }
+  }
+});
+
+test('late targets gain an on-time instance: retarget, duplicate, or caps keep the visible failure', async () => {
+  const { parseMarkers } = await import('../narration/markers.js');
+  const raw = '[[m1|apple harvest]] then [[m2|winter storage]]';
+  const starts = new Map(parseMarkers(raw).mentions.map((mention) => [mention.id, mention.plainStart]));
+  const claim2Start = starts.get('m2')!;
+  const plain = 'apple harvest then winter storage';
+  const base = {
+    sceneId: 's1', raw, plainText: plain,
+    mentions: [{ id: 'm1', phrase: 'apple harvest' }, { id: 'm2', phrase: 'winter storage' }],
+    claimSpans: [
+      { claimId: 'claim1', exactText: plain.slice(0, claim2Start), plainStart: 0, plainEnd: claim2Start },
+      { claimId: 'claim2', exactText: plain.slice(claim2Start), plainStart: claim2Start, plainEnd: plain.length },
+    ],
+    teachingContext: {
+      concepts: [
+        { id: 'c1', label: 'Orchard work', definition: 'apple harvest handling' },
+        { id: 'c2', label: 'Cold keeping', definition: 'winter storage cooling' },
+      ],
+      relations: [],
+    },
+    planningContext: { sceneContract: { essentialClaims: [
+      { id: 'claim1', conceptIds: ['c1'], relations: [], evidenceSpanIds: ['s1'] },
+      { id: 'claim2', conceptIds: ['c2'], relations: [], evidenceSpanIds: ['s1'] },
+    ] } },
+  } as unknown as PlannerSceneInput;
+  const node = (id: string, mention: string, concept: string) => ({ id, mention, concept, representation: { kind: 'literal' as const }, label: mention === 'm1' ? 'apple harvest' : 'winter storage', role: 'item' as const });
+  const boardOf = (nodes: ReturnType<typeof node>[]): Board => ({ schemaVersion: BOARD_SCHEMA_VERSION, title: 't', layout: 'list', nodes, visual: { kind: 'process' as const }, visualIntents: [{ claimId: 'claim1', strategy: 'literal' as const, targets: [{ kind: 'element' as const, elementId: 'n1', evidenceSpanIds: ['s1'] }] }] });
+  // No on-time c1 instance: the claim sentence speaks the concept, so a new instance anchored there is added and targeted.
+  const duplicated = coverLateTargets(boardOf([node('n1', 'm2', 'c1')]), base);
+  assert.equal(duplicated.nodes.length, 2);
+  const added = duplicated.nodes.find((candidate) => candidate.id !== 'n1')!;
+  assert.equal(added.mention, 'm1');
+  assert.equal(added.concept, 'c1');
+  assert.deepEqual(duplicated.visualIntents![0]!.targets, [{ kind: 'element', elementId: added.id, evidenceSpanIds: ['s1'] }]);
+  // An on-time instance of the same concept exists: retarget to it, add nothing.
+  const retargeted = coverLateTargets(boardOf([node('n1', 'm2', 'c1'), node('n2', 'm1', 'c1')]), base);
+  assert.equal(retargeted.nodes.length, 2);
+  assert.deepEqual(retargeted.visualIntents![0]!.targets, [{ kind: 'element', elementId: 'n2', evidenceSpanIds: ['s1'] }]);
+  // Board is full: nothing can be added, the late target stays and still fails visibly.
+  const filler: Array<ReturnType<typeof node>> = ['m1', 'm2', 'm1', 'm2', 'm1', 'm2'].map((mention, index) => node(`n${index + 2}`, mention, 'c2'));
+  const full = coverLateTargets(boardOf([node('n1', 'm2', 'c1'), ...filler]), base);
+  assert.equal(full.nodes.length, 7);
+  assert.deepEqual(full.visualIntents![0]!.targets, [{ kind: 'element', elementId: 'n1', evidenceSpanIds: ['s1'] }]);
 });
 
 test('icon labels wrap onto at most two balanced lines, so nodes stay narrow and icons can grow', async () => {

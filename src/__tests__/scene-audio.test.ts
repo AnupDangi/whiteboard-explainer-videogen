@@ -14,6 +14,59 @@ test('fixed duration gate accepts only the requested clock within the declared t
   assert.match(audioDurationProblems(Number.NaN, 60_000)[0]!, /invalid/);
 });
 
+test('elevenlabs failure falls back to local synthesis with the reason recorded', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'scene-audio-fallback-'));
+  const audioPath = path.join(root, 'fake.wav');
+  await writeFile(audioPath, Buffer.from('offline synthetic audio'));
+  const previousProvider = process.env.TTS_PROVIDER;
+  const previousFallback = process.env.TTS_FALLBACK_LOCAL;
+  process.env.TTS_PROVIDER = 'elevenlabs';
+  delete process.env.TTS_FALLBACK_LOCAL;
+  try {
+    const store = new ContentAddressedArtifactStore(path.join(root, 'cache'));
+    let calls = 0;
+    const localDouble: NonNullable<SceneAudioDeps['aligner']> = async () => { calls++; return { durationMs: 1000, words: [{ word: 'osmosis', startMs: 0, endMs: 500 }], aligner: 'stable-ts', repairedWordIndexes: [], audioPath }; };
+    const base = { sceneId: 's1', text: 'osmosis', language: 'en' };
+    const first = await synthesizeSceneAudio(base, { aligner: localDouble, artifactStore: store });
+    assert.equal(first.cacheHit, false);
+    assert.equal(first.providerMetadata, undefined);
+    assert.equal(first.ttsFallback?.from, 'elevenlabs');
+    assert.match(first.ttsFallback?.reason ?? '', /capability snapshot|ElevenLabs/);
+    const same = await synthesizeSceneAudio(base, { aligner: localDouble, artifactStore: store });
+    assert.equal(same.cacheHit, true);
+    assert.equal(same.ttsFallback?.from, 'elevenlabs');
+    assert.equal(calls, 1);
+    // The fallback artifact lives under the local cache identity: plain local synthesis reuses it.
+    delete process.env.TTS_PROVIDER;
+    const local = await synthesizeSceneAudio(base, { aligner: localDouble, artifactStore: store });
+    assert.equal(local.cacheHit, true);
+    assert.equal(local.ttsFallback, undefined);
+    assert.equal(calls, 1);
+  } finally {
+    if (previousProvider === undefined) delete process.env.TTS_PROVIDER; else process.env.TTS_PROVIDER = previousProvider;
+    if (previousFallback === undefined) delete process.env.TTS_FALLBACK_LOCAL; else process.env.TTS_FALLBACK_LOCAL = previousFallback;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('TTS_FALLBACK_LOCAL=0 keeps an elevenlabs failure hard', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'scene-audio-no-fallback-'));
+  const audioPath = path.join(root, 'fake.wav');
+  await writeFile(audioPath, Buffer.from('offline synthetic audio'));
+  const previousProvider = process.env.TTS_PROVIDER;
+  const previousFallback = process.env.TTS_FALLBACK_LOCAL;
+  process.env.TTS_PROVIDER = 'elevenlabs';
+  process.env.TTS_FALLBACK_LOCAL = '0';
+  try {
+    const localDouble: NonNullable<SceneAudioDeps['aligner']> = async () => ({ durationMs: 1000, words: [], aligner: 'stable-ts', repairedWordIndexes: [], audioPath });
+    await assert.rejects(() => synthesizeSceneAudio({ sceneId: 's1', text: 'osmosis', language: 'en' }, { aligner: localDouble }));
+  } finally {
+    if (previousProvider === undefined) delete process.env.TTS_PROVIDER; else process.env.TTS_PROVIDER = previousProvider;
+    if (previousFallback === undefined) delete process.env.TTS_FALLBACK_LOCAL; else process.env.TTS_FALLBACK_LOCAL = previousFallback;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('audio cache identity includes language policy and canonical lesson terminology', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'scene-audio-policy-'));
   const audioPath = path.join(root, 'fake.wav');
