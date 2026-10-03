@@ -5,6 +5,22 @@ import path from 'node:path';
 import type { AlignedAudio, LaidOutScene, Timeline } from '../../shared/types.js';
 import type { VideoScene } from '../frame.js';
 import type { EvaluationBundle } from '../../shared/contracts.js';
+import { LESSON_LOCK_V2_VERSION, verifiedInputs, type LessonLockV2 } from '../../pipeline-v2/lockV2.js';
+
+export interface LockedV2Preview {
+  fps: number;
+  frames: number;
+  renderPlan: LessonLockV2['renderPlan'];
+  audioUrl: '/locked/audio.wav';
+}
+
+/** The lock itself is the only source of frame and audio locations. */
+export function lockedFrameHashAt(lock: Pick<LessonLockV2, 'render' | 'renderPlan'>, timeMs: number): string {
+  const frame = Math.max(0, Math.min(lock.render.frames - 1, Math.floor(Math.max(0, timeMs) * lock.render.fps / 1000)));
+  const segment = lock.renderPlan.find((item) => item.firstFrame <= frame && frame < item.firstFrame + item.frameCount);
+  if (!segment) throw new Error(`Locked frame ${frame} has no render segment`);
+  return segment.kind === 'hold' ? segment.svgHash : segment.svgHashes[frame - segment.firstFrame]!;
+}
 
 export interface BrowserPreviewPayload {
   schemaVersion: 'hypothesis-browser-preview/v1';
@@ -19,6 +35,7 @@ export interface BrowserPreviewPayload {
   eventUrl: string;
   audioUrl?: string;
   captionsUrl?: string;
+  lockedV2?: LockedV2Preview;
 }
 
 export interface SceneAudioReference {
@@ -67,6 +84,25 @@ async function readSceneEvents(dir: string): Promise<ScenePlayableEvent[]> {
 /** Load renderer outputs only; do not accept source code, arbitrary SVG, or model-produced paths. */
 export async function loadBrowserPreview(runDir: string): Promise<BrowserPreviewPayload> {
   const dir = path.resolve(runDir);
+  const primary = await readFile(path.join(dir, 'lesson.lock.json'), 'utf8').catch(() => undefined);
+  if (primary) {
+    let candidate: { schemaVersion?: string };
+    try { candidate = JSON.parse(primary) as { schemaVersion?: string }; }
+    catch { throw new Error('Lesson lock JSON is invalid'); }
+    if (candidate.schemaVersion === LESSON_LOCK_V2_VERSION) {
+      const { lock, alignment } = await verifiedInputs(dir);
+      const evaluationRaw = await readFile(path.join(dir, 'evaluation-bundle.json'), 'utf8').catch(() => undefined);
+      const evaluation = evaluationRaw ? JSON.parse(evaluationRaw) as EvaluationBundle : undefined;
+      const alignmentRecord = JSON.parse(alignment.toString('utf8')) as { scenes: Array<{ sceneId: string; words: Array<{ word: string; startMs: number; endMs: number }> }> };
+      const starts = new Map(lock.scenes.map((scene) => [scene.sceneId, scene.startMs]));
+      const alignedWords = alignmentRecord.scenes.flatMap((scene) => scene.words.map((word) => ({ w: word.word, startMs: (starts.get(scene.sceneId) ?? 0) + word.startMs, endMs: (starts.get(scene.sceneId) ?? 0) + word.endMs })));
+      return {
+        schemaVersion: 'hypothesis-browser-preview/v1', status: evaluation?.status ?? 'draft', runClass: evaluation?.runClass ?? 'generated-lesson',
+        durationMs: lock.render.durationMs, scenes: [], alignedWords, events: [], sceneAudio: [], streaming: false, eventUrl: '/scene-events.jsonl',
+        lockedV2: { fps: lock.render.fps, frames: lock.render.frames, renderPlan: lock.renderPlan, audioUrl: '/locked/audio.wav' },
+      };
+    }
+  }
   const [manifestRaw, evaluationRaw, audioRaw, names, events] = await Promise.all([
     readFile(path.join(dir, 'run-manifest.json'), 'utf8').catch(() => undefined),
     readFile(path.join(dir, 'evaluation-bundle.json'), 'utf8').catch(() => undefined),
@@ -178,6 +214,17 @@ export function createBrowserPreviewHandler(payload: BrowserPreviewPayload, runP
       if (req.method !== 'GET') return send(res, 405, 'text/plain; charset=utf-8', 'Method not allowed');
       if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', html);
       if (url.pathname === '/run.json') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(refresh ? await refresh() : payload));
+      if (url.pathname.startsWith('/locked/')) {
+        if (!payload.lockedV2) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        // Inspect again for every request; use only the buffers returned by verification.
+        const { lock, svgs, audio } = await verifiedInputs(runPath);
+        if (url.pathname === '/locked/audio.wav') return send(res, 200, 'audio/wav', audio[0]!);
+        const match = /^\/locked\/svg\/([a-f0-9]{64})\.svg$/.exec(url.pathname);
+        const hash = match?.[1];
+        if (!hash || !lock.renderPlan.some((segment) => segment.kind === 'hold' ? segment.svgHash === hash : segment.svgHashes.includes(hash))) return send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+        const svg = svgs.get(hash);
+        return svg ? send(res, 200, 'image/svg+xml; charset=utf-8', svg) : send(res, 404, 'text/plain; charset=utf-8', 'Not found');
+      }
       if (url.pathname === '/scene-events.jsonl') return send(res, 200, 'application/x-ndjson; charset=utf-8', await readFile(path.join(runPath, 'scene-events.jsonl'), 'utf8').catch(() => ''));
       if (url.pathname.startsWith('/artifact/')) {
         const relative = decodeURIComponent(url.pathname.slice('/artifact/'.length));

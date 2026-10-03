@@ -13,6 +13,7 @@ interface PreviewRun {
   eventUrl: string;
   audioUrl?: string;
   captionsUrl?: string;
+  lockedV2?: { fps: number; frames: number; renderPlan: Array<{ kind: 'hold' | 'transition'; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }>; audioUrl: string };
 }
 
 interface SceneAudioReference { sceneId: string; path: string; contentHash: string; startMs: number; endMs: number }
@@ -51,12 +52,59 @@ let raf = 0;
 let durationMs = 0;
 let lastEventSequence = 0;
 let activeProgressiveAudio: SceneAudioReference | undefined;
+const lockedSvgCache = new Map<string, string>();
+let lockedRequest = 0;
+let requestedHash: string | undefined;
+
+function lockedHashAt(t: number): string {
+  const locked = run?.lockedV2;
+  if (!locked) throw new Error('No locked V2 frame plan');
+  const frame = Math.max(0, Math.min(locked.frames - 1, Math.floor(Math.max(0, t) * locked.fps / 1000)));
+  const segment = locked.renderPlan.find((item) => item.firstFrame <= frame && frame < item.firstFrame + item.frameCount);
+  const hash = segment?.kind === 'hold' ? segment.svgHash : segment?.svgHashes?.[frame - (segment?.firstFrame ?? 0)];
+  if (!hash || !/^[a-f0-9]{64}$/.test(hash)) throw new Error(`Locked frame ${frame} is unavailable`);
+  return hash;
+}
+
+function drawLockedFrame(t: number): void {
+  const hash = lockedHashAt(t);
+  if (hash === requestedHash) return;
+  requestedHash = hash;
+  const request = ++lockedRequest;
+  const cached = lockedSvgCache.get(hash);
+  if (cached) { board.innerHTML = cached; return; }
+  message.textContent = 'BUFFERING · loading verified frame';
+  if (playing && !audio.paused) audio.pause();
+  void fetch(`/locked/svg/${hash}.svg`, { cache: 'no-store' }).then(async (response) => {
+    if (!response.ok) throw new Error(`Frame request failed (${response.status})`);
+    const svg = await response.text();
+    if (!svg.startsWith('<svg')) throw new Error('Locked frame content is invalid');
+    lockedSvgCache.set(hash, svg);
+    if (request === lockedRequest) {
+      board.innerHTML = svg;
+      message.textContent = `${run!.status.toUpperCase()} · ${run!.runClass} · verified locked playback`;
+      if (playing) void audio.play().catch((error: unknown) => {
+        message.textContent = `Preview unavailable: ${error instanceof Error ? error.message : String(error)}`;
+        message.dataset.state = 'failed';
+        setPlaying(false);
+        playButton.disabled = true;
+      });
+    }
+  }).catch((error: unknown) => {
+    if (request !== lockedRequest) return;
+    message.textContent = `Preview unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    message.dataset.state = 'failed';
+    setPlaying(false);
+    playButton.disabled = true;
+  });
+}
 
 function draw(t: number): void {
   timeMs = Math.max(0, Math.min(durationMs, t));
   // This is the same pure scene/timeline frame composer sampled by encodeVideo.
   // Only renderer-produced markup is inserted; the loaded data is validated run output.
-  board.innerHTML = frameSvgAt(run!.scenes, timeMs);
+  if (run!.lockedV2) drawLockedFrame(timeMs);
+  else board.innerHTML = frameSvgAt(run!.scenes, timeMs);
   seek.value = String(timeMs);
   clock.value = `${fmt(timeMs)} / ${fmt(durationMs)}`;
   const word = run!.alignedWords.find((x) => x.startMs <= timeMs && timeMs < x.endMs);
@@ -72,8 +120,9 @@ function setPlaying(value: boolean): void {
     cancelAnimationFrame(raf);
   } else {
     lastTick = performance.now();
-    if (run?.audioUrl && audio.paused) void audio.play().catch((error: unknown) => {
-      message.textContent = `Audio could not start: ${error instanceof Error ? error.message : String(error)}. Visual playback continues.`;
+    if ((run?.audioUrl || run?.lockedV2) && audio.paused && (!run.lockedV2 || lockedSvgCache.has(lockedHashAt(timeMs)))) void audio.play().catch((error: unknown) => {
+      if (run?.lockedV2) { message.textContent = `Preview unavailable: ${error instanceof Error ? error.message : String(error)}`; message.dataset.state = 'failed'; setPlaying(false); playButton.disabled = true; }
+      else message.textContent = `Audio could not start: ${error instanceof Error ? error.message : String(error)}. Visual playback continues.`;
     });
     else if (!run?.audioUrl) void playProgressiveAudio(timeMs);
     raf = requestAnimationFrame(tick);
@@ -83,9 +132,14 @@ function setPlaying(value: boolean): void {
 function tick(now: number): void {
   if (!playing || !run) return;
   const rate = Number(speed.value) || 1;
+  if (run.lockedV2 && audio.paused && !audio.ended) {
+    message.textContent = 'BUFFERING · waiting for locked audio';
+    raf = requestAnimationFrame(tick);
+    return;
+  }
   if (activeProgressiveAudio && audio.src) {
     timeMs = Math.min(activeProgressiveAudio.endMs, activeProgressiveAudio.startMs + audio.currentTime * 1000);
-  } else if (run.audioUrl && audio.src) {
+  } else if ((run.audioUrl || run.lockedV2) && audio.src) {
     timeMs = Math.min(durationMs, audio.currentTime * 1000);
   } else {
     timeMs = Math.min(durationMs, timeMs + (now - lastTick) * rate);
@@ -113,18 +167,21 @@ async function start(): Promise<void> {
     throw new Error('Run data does not match the browser-player schema');
   }
   run = payload;
+  if (payload.lockedV2) {
+    if (!Number.isSafeInteger(payload.lockedV2.frames) || payload.lockedV2.frames < 1 || !Number.isSafeInteger(payload.lockedV2.fps) || payload.lockedV2.fps < 1 || !Array.isArray(payload.lockedV2.renderPlan)) throw new Error('Locked V2 preview has an invalid frame plan');
+  }
   durationMs = payload.durationMs;
   lastEventSequence = payload.events.length;
   if (payload.scenes.length) durationMs = Math.max(durationMs, ...payload.scenes.map((scene) => scene.endMs));
   seek.max = String(durationMs);
   seek.disabled = durationMs <= 0;
-  if (payload.audioUrl) {
-    audio.src = payload.audioUrl;
+  if (payload.audioUrl || payload.lockedV2) {
+    audio.src = payload.lockedV2?.audioUrl ?? payload.audioUrl!;
     audio.playbackRate = Number(speed.value) || 1;
     audio.hidden = false;
   }
   if (payload.captionsUrl) $<HTMLTrackElement>('captions').src = payload.captionsUrl;
-  message.textContent = `${payload.status.toUpperCase()} · ${payload.runClass} · ${payload.scenes.length} scenes`;
+  message.textContent = payload.lockedV2 ? `${payload.status.toUpperCase()} · ${payload.runClass} · verified locked playback` : `${payload.status.toUpperCase()} · ${payload.runClass} · ${payload.scenes.length} scenes`;
   if (payload.status !== 'passed') message.dataset.state = payload.status;
   draw(0);
   if (payload.streaming) scheduleRefresh();
@@ -239,7 +296,7 @@ function scheduleRefresh(): void {
 playButton.addEventListener('click', () => setPlaying(!playing));
 seek.addEventListener('input', () => {
   const t = Number(seek.value);
-  if (run?.audioUrl && audio.src) audio.currentTime = t / 1000;
+  if ((run?.audioUrl || run?.lockedV2) && audio.src) audio.currentTime = Math.max(0, Math.min(durationMs, t)) / 1000;
   else void playProgressiveAudio(t, playing);
   draw(t);
 });
@@ -253,7 +310,12 @@ audio.addEventListener('ended', () => {
     void playProgressiveAudio(timeMs);
   } else setPlaying(false);
 });
-audio.addEventListener('error', () => { message.textContent = 'Audio failed to load; visual preview remains available.'; });
+audio.addEventListener('waiting', () => { if (run?.lockedV2) message.textContent = 'BUFFERING · waiting for locked audio'; });
+audio.addEventListener('playing', () => { if (run?.lockedV2) message.textContent = `${run.status.toUpperCase()} · ${run.runClass} · verified locked playback`; });
+audio.addEventListener('error', () => {
+  if (run?.lockedV2) { message.textContent = 'Preview unavailable: verified audio failed to load'; message.dataset.state = 'failed'; setPlaying(false); playButton.disabled = true; }
+  else message.textContent = 'Audio failed to load; visual preview remains available.';
+});
 void start().catch((error: unknown) => {
   message.textContent = `Preview unavailable: ${error instanceof Error ? error.message : String(error)}`;
   playButton.disabled = true;
