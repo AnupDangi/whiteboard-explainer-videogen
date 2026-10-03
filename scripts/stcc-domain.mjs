@@ -30,7 +30,7 @@ const workdir = path.join(ROOT, '.data', 'stcc-proof', `${name}-a${attempt}`);
 const env = { ...process.env, TEACHING_COMPILER_VERSION: 'v2', TEACHING_BEATS_V2: '1', BOARD_OPS_V2: '1', PERSISTENT_BOARD_V2: '1', TYPE_RESOLVER_V2: '1', LAYOUT_V2: '1', RENDER_PLAN_V2: '1' };
 
 console.log(`== ${name} attempt ${attempt}: ${item.source} (${item.duration}s)`);
-const run = spawnSync('node', ['dist/src/run/lessonCli.js', `--source=${item.source}`, '--instruction=Teach the main idea of this source to a beginner.', `--duration=${item.duration}`, `--id=${item.id}`, '--cache=cold', '--tts=local', `--language=${lang}`, `--out=${workdir}`], { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+const run = spawnSync('node', ['dist/src/run/lessonCli.js', `--source=${item.source}`, '--instruction=Teach the main idea of this source to a beginner.', `--duration=${item.duration}`, `--id=${item.id}`, '--cache=cold', '--tts=local', `--language=${lang}`, '--diagnostic-video', `--out=${workdir}`], { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 writeFileSync(path.join(workdir + '.log'), (run.stdout ?? '') + '\n' + (run.stderr ?? ''));
 console.log((run.stdout ?? '').split('\n').filter((l) => /status=|\[HARD\]/.test(l)).map((l) => l.slice(0, 300)).join('\n'));
 
@@ -62,6 +62,7 @@ try {
   costUsd = '$' + (score.costUsd ?? score.cost ?? '?');
   scenes_ = score.scenes ?? 0;
 } catch { /* keep estimates */ }
-writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify({ domain: item.domain, title: item.title, description: item.description, durationS, costUsd: String(costUsd), scenes: scenes_, status: 'complete', attempt, source: item.source }, null, 2) + '\n');
+const hardCount = (run.stdout ?? '').split('\n').filter((l) => l.includes('[HARD]')).length;
+writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify({ domain: item.domain, title: item.title, description: item.description, durationS, costUsd: String(costUsd), scenes: scenes_, status: hardCount === 0 ? 'complete' : 'diagnostic', hardFailures: hardCount, attempt, source: item.source }, null, 2) + '\n');
 spawnSync('node', ['scripts/stcc-gallery.mjs'], { cwd: ROOT, encoding: 'utf8' });
 console.log(`done: ${outDir}/video.mp4`);

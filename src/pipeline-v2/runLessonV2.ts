@@ -63,6 +63,13 @@ export interface RunLessonV2Input {
   remainingBudgetUsd?: number;
   /** Wall-clock timestamp captured when the CLI accepted this request, before intake and S1–S4. */
   requestStartedAtMs?: number;
+  /**
+   * Diagnostic mode: when the fixed lesson clock misses, keep building boards,
+   * frames, and video instead of stopping at audio. The duration failure stays
+   * hard and the status stays failed; the video is evidence, not a pass. V1
+   * has the same concept (--allow-partial-video). Release still requires the gate.
+   */
+  diagnosticVideo?: boolean;
   /** Monotonic clock captured at the same request-acceptance boundary. */
   requestStartedMonotonicMs?: number;
   /** Provider usage is retained even when synthesis fails after a charged request. */
@@ -187,7 +194,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   // repair loop (re-prompt longest scene), not with more constants.
   const durationProblems = audioDurationProblems(totalMs, requestedDurationMs, 6000);
   for (const message of durationProblems) failures.push({ code: 'v2-fixed-duration', stage: 'audio', message, hard: true });
-  if (durationProblems.length) return finish('failed', { durationMs: totalMs });
+  if (durationProblems.length && !input.diagnosticVideo) return finish('failed', { durationMs: totalMs });
 
   timing['v2.audioMs'] = Date.now() - startedAt;
   const conceptIndex = new Map(graph.concepts.map((c) => [c.id, { id: c.id, label: c.label, kind: c.kind } as ConceptInfo]));
