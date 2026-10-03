@@ -2523,3 +2523,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - Verification at checkpoint entry: `pnpm run typecheck:hypothesis` and `pnpm run test:hypothesis` passed before the new implementation wave; current test verification is pending. `git diff --check` is pending after the active workers' edits.
 - Active bounded work: typed BoardOps and preservation-safe repairs; multilingual audio/capability and usage contracts; layout geometry validation. Next integration work: lock/version provenance, playable scene streaming, artifact-backed V2 reports, and cold-grid runner hardening.
 - Limit: the correction record is marked `pending-human`; baseline command integrity is verified, but independent review of the historical relocation equivalence is not claimed here.
+
+## Continuation — 2026-10-03, geometry diagnostics
+
+- `src/visual-v2/layout/sceneLayout.ts` now exports `diagnoseSceneGeometry` with stable diagnostic codes, element/edge IDs, state indexes, and JSON-pointer-like fields. `validateSceneGeometry` retains its string result for compatibility; the planner consumes the typed diagnostics.
+- Text collision bounds use measured Resvg glyph ink (`src/layout/measure.ts`), including fitted element labels and kit frame labels. Validation covers transformed sizes/safe-area bounds, element/text and sibling collisions, edge label/head/text collisions, and existing unrelated-element arrow crossings.
+- Focused verification: `pnpm run build`; `node --test dist/src/__tests__/scene-layout.test.js` (9/9) and `node --test dist/src/__tests__/visual-v2-render.test.js` (15/15); `pnpm run typecheck:hypothesis` passed before the planner's typed diagnostic integration. A direct isolated TypeScript compile of the layout and text-measure modules passes. Subsequent full typecheck is pending integration because planner-owned geometry fixtures still expected string diagnostics during this checkpoint.
+- Exact edge routes and label bounds are not yet serialized or consumed by the renderer; that requires the separate frame/lock work. Compound graph layout remains the deterministic existing ring/grid kit; no extra dependency was added.

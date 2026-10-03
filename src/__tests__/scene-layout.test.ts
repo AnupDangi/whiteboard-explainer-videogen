@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BoardOpSchema, type BoardOp } from '../visual-v2/board-ops/types.js';
 import { applyOp, emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import type { BoardState } from '../visual-v2/board-state/types.js';
-import { layoutScene, validateSceneGeometry, CONTENT_RECT } from '../visual-v2/layout/sceneLayout.js';
+import { diagnoseSceneGeometry, layoutScene, validateSceneGeometry, CONTENT_RECT } from '../visual-v2/layout/sceneLayout.js';
 import { contains, overlaps } from '../visual-v2/kits/geometry.js';
 
 const add = (id: string, element: unknown, at: unknown, beat = 'b1') => BoardOpSchema.parse({ op: 'add', opId: `${beat}.${id}`, beatId: beat, id, element, at });
@@ -96,4 +96,51 @@ test('geometry validation reports overflow, overlap and unreadable size instead 
   const rect = g.rectFor(states[0]!, 'a')!;
   const broken = { ...g, rectFor: () => ({ ...rect, x: -50 }), allRects: () => [{ id: 'a', rect: { ...rect, x: -50 } }] } as unknown as typeof g;
   assert.ok(validateSceneGeometry(broken, states).some((p) => /outside the safe area/.test(p)));
+});
+
+test('structured geometry diagnostics identify stable fields and measured ink collisions', () => {
+  const ops = [
+    add('alpha', token('ALPHA'), { region: 'left' }, 'b0'),
+    add('beta', token('BETA'), { region: 'right' }, 'b0'),
+  ];
+  const states = statesOf(ops, () => 'b0');
+  const geometry = layoutScene(states);
+  const left = geometry.rectFor(states[0]!, 'alpha')!;
+  const colliding = { ...geometry,
+    rectFor: (_state: BoardState, _id: string) => ({ ...left }),
+    allRects: () => [{ id: 'alpha', rect: left }, { id: 'beta', rect: left }],
+  } as typeof geometry;
+  const diagnostics = diagnoseSceneGeometry(colliding, states);
+  const overlap = diagnostics.find((diagnostic) => diagnostic.code === 'top_level_overlap');
+  const textCollision = diagnostics.find((diagnostic) => diagnostic.code === 'text_collision');
+  assert.deepEqual(overlap?.elementIds, ['alpha', 'beta']);
+  assert.deepEqual(overlap?.fields, ['/elements/alpha/placement', '/elements/beta/placement']);
+  assert.deepEqual(textCollision?.elementIds, ['alpha', 'beta']);
+  assert.ok(textCollision?.fields.every((field) => field.startsWith('/elements/')));
+});
+
+test('transformed element geometry is checked at its rendered scale', () => {
+  const ops: BoardOp[] = [
+    add('a', token('A'), { region: 'left' }, 'b0'),
+    BoardOpSchema.parse({ op: 'transform', opId: 'b1.scale', beatId: 'b1', target: 'a', changes: [{ key: 'scale', value: 0.1 }] }),
+  ];
+  const states = statesOf(ops);
+  const geometry = layoutScene(states);
+  assert.ok(diagnoseSceneGeometry(geometry, states).some((diagnostic) => diagnostic.code === 'element_too_small' && diagnostic.elementIds.includes('a')));
+});
+
+test('edge labels colliding with unrelated geometry are reported with the edge label pointer', () => {
+  const ops: BoardOp[] = [
+    add('a', token('A'), { region: 'left' }, 'b0'),
+    add('middle', token('MIDDLE'), { region: 'center' }, 'b0'),
+    add('b', token('B'), { region: 'right' }, 'b0'),
+    BoardOpSchema.parse({ op: 'connect', opId: 'b1.edge', beatId: 'b1', id: 'edge', from: 'a', to: 'b', relation: 'causes', label: 'causes' }),
+  ];
+  const states = statesOf(ops);
+  const geometry = layoutScene(states);
+  const rect = geometry.rectFor(states.at(-1)!, 'a')!;
+  const collapsed = { ...geometry, rectFor: () => ({ ...rect }) } as unknown as typeof geometry;
+  const diagnostic = diagnoseSceneGeometry(collapsed, states).find((item) => item.code === 'edge_label_collision' && item.edgeId === 'edge' && item.fields.includes('/edges/edge/label'));
+  assert.ok(diagnostic, 'the arrow label overlaps unrelated element geometry');
+  assert.ok(diagnostic.fields.includes('/edges/edge/label'));
 });

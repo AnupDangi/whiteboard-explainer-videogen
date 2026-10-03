@@ -1,12 +1,12 @@
 import { STYLE } from '../../render/style.js';
-import { measureTextWidth } from '../../layout/measure.js';
+import { measureTextInkBounds, measureTextWidth } from '../../layout/measure.js';
 import { typesetTex } from '../../render/math.js';
 import type { ElementSpec, KitName, RegionId } from '../board-ops/types.js';
 import type { BoardElement, BoardState } from '../board-state/types.js';
 import { KIT_REGISTRY, parseKitParams } from '../kits/registry.js';
 import type { KitGeometry } from '../kits/types.js';
 import { borderPoint, center, contains, overlaps, segmentCrossesRect, type Rect } from '../kits/geometry.js';
-import { textOverflow } from './textFit.js';
+import { fitText, lineBaselines, textOverflow, textSlot } from './textFit.js';
 
 /**
  * Scene geometry (V2 plan Phase 9, first layer). The writer names semantic regions and slots; this solver turns them into
@@ -35,6 +35,17 @@ export interface SceneGeometry {
 
 /** The previous scene's final board and geometry, so objects that stay keep their position and size across the cut. */
 export interface PriorLayout { geometry: SceneGeometry; state: BoardState }
+
+export type GeometryDiagnosticCode = 'safe_area' | 'top_level_overlap' | 'missing_rect' | 'element_too_small' | 'text_overflow' | 'child_outside_container' | 'edge_crossing' | 'edge_label_collision' | 'text_collision' | 'sibling_overlap';
+export interface GeometryDiagnostic {
+  code: GeometryDiagnosticCode;
+  message: string;
+  stateIndex?: number;
+  elementIds: string[];
+  edgeId?: string;
+  /** Stable JSON-pointer-like input fields for targeted repairs. */
+  fields: string[];
+}
 
 interface Known { id: string; spec: ElementSpec; seq: number; regions: Set<RegionId>; topLevel: boolean }
 
@@ -233,33 +244,98 @@ export function layoutScene(states: readonly BoardState[], prior?: PriorLayout):
   return { ...fresh, moved: [...pins].filter(([id, rect]) => !sameRect(fresh.rectFor(states[0]!, id), rect)).map(([id]) => id).sort() };
 }
 
-/** Geometry problems that would change meaning on screen: overflow, overlap between siblings, children outside their kit, slots too small. */
-export function validateSceneGeometry(geometry: SceneGeometry, states: readonly BoardState[]): string[] {
-  const problems: string[] = [];
-  for (const { id, rect } of geometry.allRects()) if (!contains(geometry.contentRect, rect, 1)) problems.push(`${id} is outside the safe area`);
+const pointer = (kind: 'elements' | 'edges', id: string, field: string): string => `/${kind}/${id.replaceAll('~', '~0').replaceAll('/', '~1')}/${field}`;
+const scaled = (rect: Rect, scale: unknown): Rect => {
+  const k = typeof scale === 'number' && Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return k === 1 ? rect : { x: rect.x + rect.w * (1 - k) / 2, y: rect.y + rect.h * (1 - k) / 2, w: rect.w * k, h: rect.h * k };
+};
+
+interface InkLabel { owner: string; rect: Rect; field: string }
+function inkRect(run: { x: number; y: number; text: string; size: number; anchor: 'start' | 'middle' | 'end' }): Rect {
+  const ink = measureTextInkBounds(run.text, run.size);
+  const x0 = run.x + ink.x - (run.anchor === 'middle' ? ink.width / 2 : run.anchor === 'end' ? ink.width : 0);
+  return { x: x0, y: run.y + ink.y, w: ink.width, h: ink.height };
+}
+
+function elementInkLabels(state: BoardState, geometry: SceneGeometry, ids: readonly string[]): InkLabel[] {
+  const out: InkLabel[] = [];
+  for (const id of ids) {
+    const el = state.elements[id]!;
+    const raw = geometry.rectFor(state, id);
+    if (!raw) continue;
+    const rect = scaled(raw, el.props.scale);
+    const slot = textSlot(el, rect);
+    if (slot) {
+      const fit = fitText(slot.text, slot.width, slot.height, slot.base);
+      const baselines = lineBaselines(rect.y + rect.h / 2, fit);
+      const field = el.spec.type === 'token' ? 'spec.text' : el.spec.type === 'entity' ? 'spec.label' : el.spec.type === 'value' ? 'value' : el.spec.type === 'text' ? 'spec.text' : el.spec.type === 'equation' ? 'value' : 'spec';
+      fit.lines.forEach((text, i) => out.push({ owner: id, rect: inkRect({ x: rect.x + rect.w / 2, y: baselines[i]!, text, size: fit.size, anchor: 'middle' }), field }));
+    }
+    const kit = geometry.kitGeometry(id);
+    for (const [i, run] of (kit?.frame.texts ?? []).entries()) out.push({ owner: id, rect: inkRect(run), field: `kit.frame.texts.${i}` });
+  }
+  return out;
+}
+
+function edgeHeadRect(a: { x: number; y: number }, b: { x: number; y: number }, head = 22): Rect {
+  const angle = Math.atan2(b.y - a.y, b.x - a.x);
+  const p1 = { x: b.x - head * Math.cos(angle + 0.5), y: b.y - head * Math.sin(angle + 0.5) };
+  const p2 = { x: b.x - head * Math.cos(angle - 0.5), y: b.y - head * Math.sin(angle - 0.5) };
+  const xs = [b.x, p1.x, p2.x]; const ys = [b.y, p1.y, p2.y];
+  return { x: Math.min(...xs) - 4, y: Math.min(...ys) - 4, w: Math.max(...xs) - Math.min(...xs) + 8, h: Math.max(...ys) - Math.min(...ys) + 8 };
+}
+
+/** Structured geometry failures for planner repairs. IDs and fields remain stable even if diagnostic wording changes. */
+export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly BoardState[]): GeometryDiagnostic[] {
+  const out: GeometryDiagnostic[] = [];
+  const add = (d: GeometryDiagnostic) => out.push(d);
+  for (const { id, rect } of geometry.allRects()) if (!contains(geometry.contentRect, rect, 1)) add({ code: 'safe_area', message: `${id} is outside the safe area`, elementIds: [id], fields: [pointer('elements', id, 'placement')] });
   states.forEach((state, index) => {
-    const liveIds = Object.values(state.elements).filter(live).map((el) => el.id);
+    const liveIds = Object.values(state.elements).filter(live).map((el) => el.id).sort();
     const tops = liveIds.filter((id) => !state.elements[id]!.placement.container);
     for (let i = 0; i < tops.length; i++) for (let j = i + 1; j < tops.length; j++) {
-      const a = geometry.rectFor(state, tops[i]!);
-      const b = geometry.rectFor(state, tops[j]!);
-      if (a && b && overlaps(a, b, 2)) problems.push(`state ${index + 1}: ${tops[i]} overlaps ${tops[j]}`);
+      const a0 = geometry.rectFor(state, tops[i]!); const b0 = geometry.rectFor(state, tops[j]!);
+      const a = a0 ? scaled(a0, state.elements[tops[i]!]!.props.scale) : undefined;
+      const b = b0 ? scaled(b0, state.elements[tops[j]!]!.props.scale) : undefined;
+      if (a && b && overlaps(a, b, 2)) add({ code: 'top_level_overlap', stateIndex: index, message: `state ${index + 1}: ${tops[i]} overlaps ${tops[j]}`, elementIds: [tops[i]!, tops[j]!], fields: [pointer('elements', tops[i]!, 'placement'), pointer('elements', tops[j]!, 'placement')] });
     }
     for (const id of liveIds) {
-      const el = state.elements[id]!;
-      const rect = geometry.rectFor(state, id);
-      if (!rect) { problems.push(`state ${index + 1}: ${id} has no rectangle`); continue; }
-      if (rect.w < 24 || rect.h < 24) problems.push(`state ${index + 1}: ${id} is too small to read (${Math.round(rect.w)}x${Math.round(rect.h)})`);
+      const el = state.elements[id]!; const raw = geometry.rectFor(state, id);
+      if (!raw) { add({ code: 'missing_rect', stateIndex: index, message: `state ${index + 1}: ${id} has no rectangle`, elementIds: [id], fields: [pointer('elements', id, 'placement')] }); continue; }
+      const rect = scaled(raw, el.props.scale);
+      if (!contains(geometry.contentRect, rect, 1)) add({ code: 'safe_area', stateIndex: index, message: `state ${index + 1}: ${id} is outside the safe area after transform`, elementIds: [id], fields: [pointer('elements', id, 'props.scale')] });
+      if (rect.w < 24 || rect.h < 24) add({ code: 'element_too_small', stateIndex: index, message: `state ${index + 1}: ${id} is too small to read (${Math.round(rect.w)}x${Math.round(rect.h)})`, elementIds: [id], fields: [pointer('elements', id, 'placement')] });
       const overflow = textOverflow(el, rect);
-      if (overflow) problems.push(`state ${index + 1}: ${id} text "${overflow}" does not fit its ${Math.round(rect.w)}px slot at a readable size; shorten the text`);
+      if (overflow) add({ code: 'text_overflow', stateIndex: index, message: `state ${index + 1}: ${id} text "${overflow}" does not fit its ${Math.round(rect.w)}px slot at a readable size; shorten the text`, elementIds: [id], fields: [pointer('elements', id, 'spec')] });
       if (el.placement.container) {
-        const parent = geometry.rectFor(state, el.placement.container);
-        if (parent && !contains(parent, rect, 1)) problems.push(`state ${index + 1}: ${id} is outside ${el.placement.container}`);
+        const rawParent = geometry.rectFor(state, el.placement.container);
+        const parent = rawParent ? scaled(rawParent, state.elements[el.placement.container]?.props.scale) : undefined;
+        if (parent && !contains(parent, rect, 1)) add({ code: 'child_outside_container', stateIndex: index, message: `state ${index + 1}: ${id} is outside ${el.placement.container}`, elementIds: [id, el.placement.container], fields: [pointer('elements', id, 'placement')] });
       }
     }
-    for (const edge of Object.values(state.edges)) {
+    const labels = elementInkLabels(state, geometry, liveIds);
+    // Text ink must clear unrelated shapes and other labels. A label is allowed inside its own element/container.
+    for (const label of labels) {
+      for (const id of liveIds) {
+        if (id === label.owner) continue;
+        let ancestor = state.elements[label.owner]?.placement.container;
+        let related = false;
+        while (ancestor) { if (ancestor === id) { related = true; break; } ancestor = state.elements[ancestor]?.placement.container; }
+        if (related) continue;
+        const rawBox = geometry.rectFor(state, id);
+        const box = rawBox ? scaled(rawBox, state.elements[id]?.props.scale) : undefined;
+        if (box && overlaps(label.rect, box, 1)) add({ code: 'text_collision', stateIndex: index, message: `state ${index + 1}: text on ${label.owner} collides with ${id}`, elementIds: [label.owner, id], fields: [pointer('elements', label.owner, label.field), pointer('elements', id, 'placement')] });
+      }
+    }
+    for (let i = 0; i < labels.length; i++) for (let j = i + 1; j < labels.length; j++) {
+      const a = labels[i]!; const b = labels[j]!;
+      if (a.owner !== b.owner && overlaps(a.rect, b.rect, 1)) add({ code: 'text_collision', stateIndex: index, message: `state ${index + 1}: text on ${a.owner} collides with text on ${b.owner}`, elementIds: [a.owner, b.owner], fields: [pointer('elements', a.owner, a.field), pointer('elements', b.owner, b.field)] });
+    }
+    for (const edge of Object.values(state.edges).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) {
       if (edge.lifecycle.removedAtBeat !== undefined) continue;
-      const from = geometry.rectFor(state, edge.from); const to = geometry.rectFor(state, edge.to);
+      const from0 = geometry.rectFor(state, edge.from); const to0 = geometry.rectFor(state, edge.to);
+      const from = from0 ? scaled(from0, state.elements[edge.from]?.props.scale) : undefined;
+      const to = to0 ? scaled(to0, state.elements[edge.to]?.props.scale) : undefined;
       if (!from || !to) continue;
       const a = borderPoint(from, center(to), 8); const b = borderPoint(to, center(from), 8);
       const related = new Set<string>([edge.from, edge.to]);
@@ -267,17 +343,32 @@ export function validateSceneGeometry(geometry: SceneGeometry, states: readonly 
       for (const end of [edge.from, edge.to]) for (let up: string | undefined = state.elements[end]?.placement.container; up; up = state.elements[up]?.placement.container) related.add(up);
       for (const id of liveIds) {
         if (related.has(id)) continue;
-        const rect = geometry.rectFor(state, id);
-        if (rect && segmentCrossesRect(a, b, rect)) problems.push(`state ${index + 1}: arrow ${edge.id} (${edge.from} to ${edge.to}) crosses ${id}; place them so the arrow has a clear path`);
+        const rawRect = geometry.rectFor(state, id);
+        const rect = rawRect ? scaled(rawRect, state.elements[id]?.props.scale) : undefined;
+        if (rect && segmentCrossesRect(a, b, rect)) add({ code: 'edge_crossing', stateIndex: index, message: `state ${index + 1}: arrow ${edge.id} (${edge.from} to ${edge.to}) crosses ${id}; place them so the arrow has a clear path`, elementIds: [id], edgeId: edge.id, fields: [pointer('edges', edge.id, 'from'), pointer('edges', edge.id, 'to'), pointer('elements', id, 'placement')] });
       }
+      const head = edgeHeadRect(a, b);
+      const edgeLabels: InkLabel[] = edge.label ? [{ owner: edge.id, rect: inkRect({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 16, text: edge.label, size: STYLE.font.sizes.note, anchor: 'middle' }), field: 'label' }] : [];
+      for (const label of edgeLabels) {
+        if (overlaps(label.rect, head, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: label on arrow ${edge.id} collides with its arrowhead`, elementIds: [], edgeId: edge.id, fields: [pointer('edges', edge.id, 'label')] });
+        for (const other of labels) if (overlaps(label.rect, other.rect, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: label on arrow ${edge.id} collides with text on ${other.owner}`, elementIds: [other.owner], edgeId: edge.id, fields: [pointer('edges', edge.id, 'label'), pointer('elements', other.owner, other.field)] });
+        for (const id of liveIds) if (!related.has(id)) { const rawBox = geometry.rectFor(state, id); const box = rawBox ? scaled(rawBox, state.elements[id]?.props.scale) : undefined; if (box && overlaps(label.rect, box, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: label on arrow ${edge.id} collides with ${id}`, elementIds: [id], edgeId: edge.id, fields: [pointer('edges', edge.id, 'label'), pointer('elements', id, 'placement')] }); }
+      }
+      for (const other of labels) if (overlaps(head, other.rect, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: arrowhead on ${edge.id} collides with text on ${other.owner}`, elementIds: [other.owner], edgeId: edge.id, fields: [pointer('edges', edge.id, 'to'), pointer('elements', other.owner, other.field)] });
     }
     const siblings = new Map<string, string[]>();
     for (const id of liveIds) { const c = state.elements[id]!.placement.container; if (c) siblings.set(c, [...(siblings.get(c) ?? []), id]); }
     for (const [container, ids] of siblings) for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
-      const a = geometry.rectFor(state, ids[i]!);
-      const b = geometry.rectFor(state, ids[j]!);
-      if (a && b && overlaps(a, b, 1)) problems.push(`state ${index + 1}: ${ids[i]} overlaps ${ids[j]} inside ${container}`);
+      const a0 = geometry.rectFor(state, ids[i]!); const b0 = geometry.rectFor(state, ids[j]!);
+      const a = a0 ? scaled(a0, state.elements[ids[i]!]!.props.scale) : undefined;
+      const b = b0 ? scaled(b0, state.elements[ids[j]!]!.props.scale) : undefined;
+      if (a && b && overlaps(a, b, 1)) add({ code: 'sibling_overlap', stateIndex: index, message: `state ${index + 1}: ${ids[i]} overlaps ${ids[j]} inside ${container}`, elementIds: [ids[i]!, ids[j]!], fields: [pointer('elements', ids[i]!, 'placement'), pointer('elements', ids[j]!, 'placement')] });
     }
   });
-  return problems;
+  return out;
+}
+
+/** Compatibility message API retained for callers; planner repairs should use diagnoseSceneGeometry. */
+export function validateSceneGeometry(geometry: SceneGeometry, states: readonly BoardState[]): string[] {
+  return diagnoseSceneGeometry(geometry, states).map((diagnostic) => diagnostic.message);
 }

@@ -15,7 +15,7 @@ import { compileMolecule, compileReaction } from '../render/chemistry.js';
  * same width (which is especially wrong for strings such as "iiii" and
  * "WWWW").
  */
-const textWidthCache = new Map<string, number>();
+const textInkCache = new Map<string, { x: number; y: number; width: number; height: number }>();
 const TEXT_MARGIN = 32;
 const MAX_TEXT_CODEPOINTS = 512;
 export const LINE_H: Record<'title' | 'body' | 'note', number> = { title: 76, body: 52, note: 38 };
@@ -27,15 +27,18 @@ export const CODE_PAD_Y = 24;
 const displayText = (text: string, uppercase: boolean): string =>
   (uppercase ? text.toUpperCase() : text).replace(/\s+/g, ' ').trim();
 
-export function measureTextWidth(text: string, fontSize: number, uppercase: boolean = STYLE.font.uppercaseLabels): number {
+export interface TextInkBounds { x: number; y: number; width: number; height: number }
+
+/** Actual glyph ink bounds in the same Resvg font engine used by rendering. */
+export function measureTextInkBounds(text: string, fontSize: number, uppercase: boolean = STYLE.font.uppercaseLabels): TextInkBounds {
   if (!Number.isFinite(fontSize) || fontSize <= 0) throw new Error(`invalid text font size ${fontSize}`);
   const value = displayText(text, uppercase);
-  if (!value) return 0;
+  if (!value) return { x: 0, y: 0, width: 0, height: 0 };
   const codepoints = [...value].length;
   if (codepoints > MAX_TEXT_CODEPOINTS) throw new Error(`text exceeds ${MAX_TEXT_CODEPOINTS} codepoints and cannot be measured safely`);
 
   const key = `${STYLE.font.family}\0${STYLE.font.weight}\0${fontSize}\0${uppercase}\0${value}`;
-  const cached = textWidthCache.get(key);
+  const cached = textInkCache.get(key);
   if (cached !== undefined) return cached;
 
   // Two em per codepoint is a deliberately generous viewBox bound, not the
@@ -46,8 +49,9 @@ export function measureTextWidth(text: string, fontSize: number, uppercase: bool
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><text x="${TEXT_MARGIN}" y="${baseline}" font-family="${escapeXml(STYLE.font.family)}" font-weight="${STYLE.font.weight}" font-size="${fontSize}">${escapeXml(value)}</text></svg>`;
   const bounds = new Resvg(svg, RESVG_FONT_OPTIONS).getBBox();
   if (!bounds) {
-    textWidthCache.set(key, 0);
-    return 0;
+    const empty = { x: 0, y: 0, width: 0, height: 0 };
+    textInkCache.set(key, empty);
+    return empty;
   }
   // Round-bodied glyphs (e.g. "3", "6", "8") legitimately overshoot their pen
   // origin by a small optical amount; scale the clipping tolerance with font
@@ -57,9 +61,13 @@ export function measureTextWidth(text: string, fontSize: number, uppercase: bool
   if (bounds.x < TEXT_MARGIN - overshoot || bounds.x + bounds.width > width - TEXT_MARGIN + overshoot || bounds.y < 0 || bounds.y + bounds.height > height) {
     throw new Error(`text measurement viewport clipped a ${codepoints}-codepoint label`);
   }
-  const measured = Math.ceil(bounds.width);
-  textWidthCache.set(key, measured);
+  const measured = { x: bounds.x - TEXT_MARGIN, y: bounds.y - baseline, width: Math.ceil(bounds.width), height: Math.ceil(bounds.height) };
+  textInkCache.set(key, measured);
   return measured;
+}
+
+export function measureTextWidth(text: string, fontSize: number, uppercase: boolean = STYLE.font.uppercaseLabels): number {
+  return measureTextInkBounds(text, fontSize, uppercase).width;
 }
 
 /** A box label stays on one line unless its padded single-line width would exceed this. */
