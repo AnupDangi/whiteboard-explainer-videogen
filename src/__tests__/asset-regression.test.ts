@@ -21,10 +21,10 @@ const CATALOG = [
 
 const rung = (concept: string, extra: Record<string, unknown> = {}, catalog = CATALOG) => resolveObject(concept, { size: SIZE, label: concept, ...extra }, catalog).resolution;
 
-test('a literal without bridge type/domain metadata fails closed and a typed Flaticon literal remains eligible', () => {
+test('an exact source-approved literal keeps legacy catalogs compatible; a typed Flaticon literal remains eligible', () => {
   const lamp = rung('lamp');
-  assert.equal(lamp.strategy, 'R10-labelled-primitive');
-  assert.ok(lamp.eligibilityNotes?.some((note) => note.includes('concept type metadata is missing')));
+  assert.equal(lamp.strategy, 'R3-house-literal');
+  assert.equal(lamp.selectionBasis, 'exact');
   assert.equal(rung('beaker').strategy, 'R4-curated-flaticon');
 });
 test('metaphor approved: R5 with its reconnect term', () => {

@@ -148,6 +148,11 @@ export interface AssetEligibilityContext {
   conceptId?: string;
   lessonDomain?: string;
   sceneFamily?: string;
+  /** A lexical literal may use its own Bridge concept when a broader teaching ID is attached. */
+  exactReferent?: boolean;
+  exactReferentName?: string;
+  /** A semantic validator may authorize one candidate; its own taxonomy still must be known. */
+  validatedAssetId?: string;
 }
 
 /** Candidate eligibility runs before literal, pin, validation and similarity ranking. */
@@ -162,12 +167,17 @@ export function assetEligibilityProblems(entry: CatalogEntry, request: AssetElig
     else if (!exempt && entry.houseFamily !== request.sceneFamily) problems.push(`candidate family does not match scene family ${request.sceneFamily}`);
   }
 
+  const validated = request.validatedAssetId === entry.id;
   const requestConcept = request.conceptId ? uniqueBridgeConcept(request.conceptId) : undefined;
-  if (!request.conceptId || !requestConcept || requestConcept.inferred || !requestConcept.conceptType) {
+  const entryConcept = entry.conceptId ? uniqueBridgeConcept(entry.conceptId) : uniqueBridgeConcept(entry.names[0] ?? '');
+  const trustedEntryType = Boolean(entryConcept && !entryConcept.inferred && entryConcept.conceptType);
+  const exactLiteral = request.exactReferent === true && entry.names.some((name) => normalizedName(name) === request.exactReferentName);
+  if ((!requestConcept || requestConcept.inferred || !requestConcept.conceptType) && !exactLiteral && !validated) {
     problems.push('request concept type metadata is missing or inferred');
   }
-  const entryConcept = entry.conceptId ? uniqueBridgeConcept(entry.conceptId) : uniqueBridgeConcept(entry.names[0] ?? '');
-  if (!entryConcept || entryConcept.inferred || !entryConcept.conceptType) problems.push('candidate concept type metadata is missing or inferred');
+  if (entryConcept?.inferred) problems.push('candidate concept type metadata is inferred');
+  else if ((!entryConcept || !entryConcept.conceptType) && !exactLiteral) problems.push('candidate concept type metadata is missing');
+  if (validated && !trustedEntryType) problems.push('validated candidate has missing or inferred concept type metadata');
   if (requestConcept && !requestConcept.inferred && requestConcept.conceptType && entryConcept && !entryConcept.inferred && entryConcept.conceptType
     && requestConcept.conceptType !== entryConcept.conceptType) problems.push(`candidate concept type ${entryConcept.conceptType} does not match ${requestConcept.conceptType}`);
 
@@ -175,8 +185,7 @@ export function assetEligibilityProblems(entry: CatalogEntry, request: AssetElig
   const requestedConceptDomain = requestConcept?.domain;
   const specific = (domain: string | undefined): domain is string => Boolean(domain && domain.toLowerCase() !== 'general');
   if (specific(requestedConceptDomain)) {
-    if (!specific(candidateDomain)) problems.push('candidate taxonomy domain metadata is missing or too broad');
-    else if (requestedConceptDomain.toLowerCase() !== candidateDomain.toLowerCase()) {
+    if (specific(candidateDomain) && requestedConceptDomain.toLowerCase() !== candidateDomain.toLowerCase()) {
       problems.push(`candidate taxonomy domain ${candidateDomain} does not match concept domain ${requestedConceptDomain}`);
     }
   }
@@ -184,6 +193,7 @@ export function assetEligibilityProblems(entry: CatalogEntry, request: AssetElig
     if (!specific(candidateDomain)) problems.push('candidate taxonomy domain metadata is missing or too broad');
     else if (!domainMatches({ domain: candidateDomain }, request.lessonDomain)) problems.push(`candidate taxonomy domain ${candidateDomain} does not match lesson domain ${request.lessonDomain}`);
   }
+  if (validated && !candidateDomain) problems.push('validated candidate has missing taxonomy domain metadata');
   return [...new Set(problems)];
 }
 
@@ -192,24 +202,31 @@ export function resolveObject(
   opts: VisualRequest,
   fullCatalog: CatalogEntry[] = allCatalogEntries(),
 ): ObjectResolution {
-  // Filter every candidate before any resolution rung ranks or accepts it. Missing type/domain/family metadata fails closed.
+  const conceptLower = normalizedName(concept);
+  const wanted = new Set([conceptLower, singular(conceptLower), ...referentKeys(conceptLower).slice(0, 1)]);
+  const exactOf = (entry: CatalogEntry): boolean => entry.names.some((name) => wanted.has(normalizedName(name)));
+  // Filter every candidate before any resolution rung ranks or accepts it. A same-name literal is
+  // allowed through when old provider catalogs predate Bridge type fields; it is still an exact,
+  // source-approved referent. Similarity and validator-selected assets need explicit Bridge types.
   const eligibilityNotes = new Set<string>();
+  const literalConcept = uniqueBridgeConcept(concept);
   const eligibilityContext: AssetEligibilityContext = {
-    ...((opts.conceptId ?? uniqueBridgeConcept(concept)?.conceptId) ? { conceptId: opts.conceptId ?? uniqueBridgeConcept(concept)!.conceptId } : {}),
+    ...((opts.conceptId ?? literalConcept?.conceptId) ? { conceptId: opts.conceptId ?? literalConcept?.conceptId } : {}),
     ...(opts.lessonDomain ? { lessonDomain: opts.lessonDomain } : {}),
     ...(opts.sceneFamily ? { sceneFamily: opts.sceneFamily } : {}),
+    exactReferent: true,
+    ...(opts.validatedAssetId ? { validatedAssetId: opts.validatedAssetId } : {}),
+    exactReferentName: conceptLower,
   };
   const catalog = fullCatalog.filter((entry) => {
-    const problems = assetEligibilityProblems(entry, eligibilityContext);
+    const conceptId = exactOf(entry) && literalConcept ? literalConcept.conceptId : opts.conceptId ?? literalConcept?.conceptId;
+    const problems = assetEligibilityProblems(entry, { ...eligibilityContext, ...(conceptId ? { conceptId } : {}) });
     if (problems.length) problems.forEach((problem) => eligibilityNotes.add(problem));
     return problems.length === 0;
   });
-  const conceptLower = normalizedName(concept);
   // Exact literals match the full referent after determiner/plural normalisation only. Head-noun
   // suffixes (keys[1..]) are deliberately NOT exact keys: "passive transport" must not resolve to
   // a "transport" icon (a wrong icon is worse than none); Visual Discovery reports them as partial.
-  const wanted = new Set([conceptLower, singular(conceptLower), ...referentKeys(conceptLower).slice(0, 1)]);
-  const exactOf = (entry: CatalogEntry): boolean => entry.names.some((name) => wanted.has(normalizedName(name)));
   const bridge = loadBridge();
   const bConcept = requestConcept(opts, concept);
   // One teaching concept may depict multiple literal referents. Exactness is
