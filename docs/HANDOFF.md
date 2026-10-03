@@ -2628,3 +2628,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Credit reality (measured, read-only balance check):** KEY_1 1/10000 left, KEY_2 invalid (401), KEY_3 32/10000 left. Paid smoke and 1-min runs are BLOCKED until reset or fresh keys. No further paid probes made.
 - **Verification:** typecheck clean; `elevenlabs.test.js` 12/12 pass (offline doubles, zero spend).
 - **Next:** fresh credits → `elevenlabs-smoke.mjs en hi ne` → 1-min EN osmosis via `v2-lang-demo.mjs` → then T1 S12 pedagogy evals.
+
+## Continuation — 2026-10-03, T1 S12 pedagogy evals (wt/stcc/charter)
+
+- **Built:** `src/harness/pedagogy.ts` — deterministic offline evals over compiled beats + narration: worked-example (demonstrate/transform need before+after), misconception-repair (visible + muted-inspectable), divergence-clarity (contrast needs 2+ entities), lesson-shape (motivate/introduce open, summarize/connect close), muted-comprehension (STCC §48), narration-continuity (no verbatim repeats, no "in this video"). Hard findings block promotion; soft advisory.
+- **Separation proof:** `src/__tests__/pedagogy.test.ts` — 1 competent arc passes clean, 6 weak variants each fail their own dimension. 7/7 pass.
+- **Verification:** build + typecheck clean, shared manifest verified. Full `test:hypothesis` not rerun (long suite; targeted suites green).
+- **Honest limits:** structural preconditions only; semantic correctness (is the repair right?) stays with human/VLM judges. Ops-level checks (state-changing ops present) deferred to T7.
+- **Next:** T2 S3b Teaching Strategy Director.
