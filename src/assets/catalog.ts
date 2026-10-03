@@ -26,6 +26,12 @@ export interface CatalogEntry {
   conceptId?: string;
   houseFamily?: string;
   domain?: string;
+  /** Source evidence carried through catalogue ingest for export attribution. */
+  contentHash?: string;
+  attribution?: string;
+  author?: string;
+  sourceUrl?: string;
+  providerId?: string;
   /** `fill` is the element's palette token; procedural entries keep their own fixed accents. */
   render: (size: { w: number; h: number }, fill?: PaletteToken) => PrimitiveVisual;
 }
@@ -143,4 +149,3 @@ export const CATALOG: CatalogEntry[] = [
     return { paths: [ring, needle], fills: [], texts: [] };
   }, 2),
 ];
-

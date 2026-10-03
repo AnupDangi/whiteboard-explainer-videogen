@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { svgPathProperties } from 'svg-path-properties';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PaletteToken, PrimitiveVisual } from '../shared/types.js';
 import { STYLE, paletteFill } from '../render/style.js';
 import type { CatalogEntry } from './catalog.js';
+import { stableJson } from '../shared/artifacts.js';
 import { ALL_LIBRARIES, ENABLED_LIBRARIES, setCatalogDataDir, type CatalogLibrary } from './registry.js';
 
 /**
@@ -28,6 +30,10 @@ interface RawEntry {
   strokes: Array<{ d: string; len: number; w: number; color?: string }>;
   fills: Array<{ d: string; role: 'main' | 'white' | 'ink'; rule?: 'evenodd'; color?: string }>;
   license: string;
+  contentHash?: string;
+  author?: string;
+  sourceUrl?: string;
+  providerId?: string;
   conceptId?: string;
   houseFamily?: string;
   domain?: string;
@@ -148,6 +154,11 @@ export function loadCatalogLibraries(libraries: readonly CatalogLibrary[] = ENAB
       license: entry.license,
       lane: entry.strokes.length + entry.fills.length > 10 ? 'rich-illustration' : 'simple-symbol',
       strokePaths: entry.strokes.length + entry.fills.length,
+      contentHash: entry.contentHash ?? createHash('sha256').update(stableJson({ vb: entry.vb, strokes: entry.strokes, fills: entry.fills }), 'utf8').digest('hex'),
+      attribution: raw.attribution,
+      ...(entry.author ? { author: entry.author } : {}),
+      ...(entry.sourceUrl ? { sourceUrl: entry.sourceUrl } : {}),
+      ...(entry.providerId ? { providerId: entry.providerId } : {}),
       ...(entry.conceptId ? { conceptId: entry.conceptId } : {}),
       houseFamily: entry.houseFamily ?? defaultHouseFamily(library.libraryId),
       ...(entry.domain ? { domain: entry.domain } : {}),

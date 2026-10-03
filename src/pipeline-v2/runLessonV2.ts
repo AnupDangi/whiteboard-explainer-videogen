@@ -26,6 +26,10 @@ import { writeLessonLockV2 } from './lockV2.js';
 import { encodeLockedLessonV2Clips } from './clipsV2.js';
 import type { ConceptInfo } from '../visual-v2/resolver/typeGate.js';
 import { depictEntity } from '../visual-v2/resolver/typeGate.js';
+import { CATALOG } from '../assets/catalog.js';
+import { loadCatalogLibraries } from '../assets/streamline.js';
+import { loadBridge } from '../assets/bridge.js';
+import { bridgeRecordForCatalogEntry, buildAssetRightsEvidence, rightsEvidenceFailure } from '../assets/rightsEvidence.js';
 import { buildScorecard, type Scorecard } from '../harness/scorecard.js';
 import { TEACHING_COMPILER_VERSION } from '../run/featureFlags.js';
 
@@ -195,14 +199,21 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const beatsWithOps = new Set(allOps.map((o) => o.beatId));
   const entityKeys = new Map(allOps.flatMap((o) => (o.op === 'add' || o.op === 'replace') && o.element.type === 'entity' ? [[`${o.element.conceptId}|${o.element.label}`, o.element] as const] : []));
   const entityDepictions = [...entityKeys.values()].map((spec) => depictEntity(conceptIndex.get(spec.conceptId), spec.label, { x: 0, y: 0, w: 240, h: 210 }));
-  const pictures = entityDepictions.flatMap((d) => d.meaningful && d.assetId ? [{ assetId: d.assetId, license: d.license ?? 'unknown', releaseClean: d.releaseClean === true, attributionRequired: d.attributionRequired === true, ownerApproved: d.ownerApproved === true }] : []);
-  await dump('asset-provenance.json', { schemaVersion: 'v2-asset-provenance/v1', assets: pictures });
-  const credits = [...new Set(pictures.filter((p) => p.attributionRequired).map((p) => `${p.assetId} (${p.license})`))].sort();
+  const catalogueAssets = new Map([...CATALOG, ...loadCatalogLibraries().entries].map((entry) => [entry.id, entry]));
+  const bridge = loadBridge();
+  const pictures = entityDepictions.flatMap((d) => {
+    if (!d.meaningful || !d.assetId) return [];
+    const entry = catalogueAssets.get(d.assetId);
+    const sourceAsset = entry ? bridgeRecordForCatalogEntry(entry, bridge.assets) : undefined;
+    return [buildAssetRightsEvidence({ assetId: d.assetId, license: d.license, releaseClean: d.releaseClean, attributionRequired: d.attributionRequired, ownerApproved: d.ownerApproved }, entry, sourceAsset)];
+  });
+  await dump('asset-provenance.json', { schemaVersion: 'v2-asset-provenance/v2', assets: pictures });
+  const credits = [...new Set(pictures.filter((p) => p.attribution.required).map((p) => p.attribution.text ? `${p.attribution.text} [${p.license.identifier}; ${p.assetId}]` : `[MISSING ATTRIBUTION] ${p.assetId} (${p.license.identifier})`))].sort();
   if (credits.length) await writeFile(path.join(outputDir, 'attribution.txt'), `Picture credits required by licence:\n${credits.map((c) => `- ${c}`).join('\n')}\n`, 'utf8');
-  for (const picture of pictures.filter((p) => !p.releaseClean)) failures.push({ code: 'v2-asset-license', stage: 'assets', message: `asset ${picture.assetId} has licence ${picture.license}, which is not release-clean; draft only`, hard: false });
+  for (const picture of pictures) { const failure = rightsEvidenceFailure(picture); if (failure) failures.push(failure); }
   Object.assign(metrics, {
-    'v2.assetsNeedingReview': pictures.filter((p) => !p.releaseClean).length,
-    'v2.assetsNeedingAttribution': pictures.filter((p) => p.attributionRequired).length,
+    'v2.assetsNeedingReview': pictures.filter((p) => !p.releaseEligible).length,
+    'v2.assetsNeedingAttribution': pictures.filter((p) => p.attribution.required).length,
     'v2.scenes': compiled.length,
     'v2.ops': allOps.length,
     'v2.stateChangingOps': allOps.filter((o) => STATE_CHANGING.has(o.op)).length,
