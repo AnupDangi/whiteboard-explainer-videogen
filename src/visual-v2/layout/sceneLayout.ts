@@ -46,7 +46,7 @@ export interface SceneGeometry {
 /** The previous scene's final board and geometry, so objects that stay keep their position and size across the cut. */
 export interface PriorLayout { geometry: SceneGeometry; state: BoardState }
 
-export type GeometryDiagnosticCode = 'safe_area' | 'top_level_overlap' | 'missing_rect' | 'element_too_small' | 'text_overflow' | 'child_outside_container' | 'edge_crossing' | 'edge_label_collision' | 'edge_text_collision' | 'text_collision' | 'sibling_overlap';
+export type GeometryDiagnosticCode = 'safe_area' | 'top_level_overlap' | 'missing_rect' | 'element_too_small' | 'text_overflow' | 'child_outside_container' | 'edge_crossing' | 'edge_label_collision' | 'edge_text_collision' | 'text_collision' | 'sibling_overlap' | 'movement_path_collision';
 export interface GeometryDiagnostic {
   code: GeometryDiagnosticCode;
   message: string;
@@ -242,9 +242,9 @@ function layoutCore(states: readonly BoardState[], pins: ReadonlyMap<string, Rec
   const edgeRouteFor = (state: BoardState, edgeId: string): EdgeRoute | undefined => {
     const edge = state.edges[edgeId];
     if (!edge || edge.lifecycle.removedAtBeat !== undefined) return undefined;
-    const from0 = rectFor(state, edge.from); const to0 = rectFor(state, edge.to);
+    const from0 = renderedRectFor({ kitRect: (id) => kitRects.get(id), rectFor }, state, edge.from); const to0 = renderedRectFor({ kitRect: (id) => kitRects.get(id), rectFor }, state, edge.to);
     if (!from0 || !to0) return undefined;
-    return routeEdge(edgeId, scaled(from0, state.elements[edge.from]?.props.scale), scaled(to0, state.elements[edge.to]?.props.scale), edge.label);
+    return routeEdge(edgeId, from0, to0, edge.label);
   };
   return { contentRect: CONTENT_RECT, regionRects, rectFor, kitGeometry: (id) => kitGeometries.get(id), kitRect: (id) => kitRects.get(id), allRects, edgeRouteFor, moved: [] };
 }
@@ -297,6 +297,33 @@ const scaled = (rect: Rect, scale: unknown): Rect => {
   return k === 1 ? rect : { x: rect.x + rect.w * (1 - k) / 2, y: rect.y + rect.h * (1 - k) / 2, w: rect.w * k, h: rect.h * k };
 };
 
+/** Match the renderer's nested-kit mapping and per-element scale for validation and exact routes. */
+function renderedRectFor(geometry: Pick<SceneGeometry, 'rectFor' | 'kitRect'>, state: BoardState, id: string, seen = new Set<string>()): Rect | undefined {
+  if (seen.has(id)) return undefined;
+  const el = state.elements[id];
+  let rect = geometry.rectFor(state, id);
+  if (!el || !rect) return undefined;
+  seen.add(id);
+  if (el.placement.container) {
+    const parent = renderedRectFor(geometry, state, el.placement.container, seen);
+    const home = geometry.kitRect(el.placement.container);
+    if (parent && home) rect = mapRect(rect, home, parent);
+  }
+  return scaled(rect, el.props.scale);
+}
+
+function mapRect(rect: Rect, home: Rect, now: Rect): Rect {
+  const k = Math.min(now.w / Math.max(1, home.w), now.h / Math.max(1, home.h));
+  const hc = center(home); const nc = center(now);
+  return { x: nc.x + (rect.x - hc.x) * k, y: nc.y + (rect.y - hc.y) * k, w: rect.w * k, h: rect.h * k };
+}
+
+function mapTextRun(run: { x: number; y: number; text: string; size: number; anchor: 'start' | 'middle' | 'end' }, home: Rect, now: Rect) {
+  const k = Math.min(now.w / Math.max(1, home.w), now.h / Math.max(1, home.h));
+  const hc = center(home); const nc = center(now);
+  return { ...run, x: nc.x + (run.x - hc.x) * k, y: nc.y + (run.y - hc.y) * k, size: run.size * k };
+}
+
 interface InkLabel { owner: string; rect: Rect; field: string }
 function inkRect(run: { x: number; y: number; text: string; size: number; anchor: 'start' | 'middle' | 'end' }): Rect {
   const ink = measureTextInkBounds(run.text, run.size);
@@ -308,9 +335,8 @@ function elementInkLabels(state: BoardState, geometry: SceneGeometry, ids: reado
   const out: InkLabel[] = [];
   for (const id of ids) {
     const el = state.elements[id]!;
-    const raw = geometry.rectFor(state, id);
-    if (!raw) continue;
-    const rect = scaled(raw, el.props.scale);
+    const rect = renderedRectFor(geometry, state, id);
+    if (!rect) continue;
     const slot = textSlot(el, rect);
     if (slot) {
       const fit = fitText(slot.text, slot.width, slot.height, slot.base);
@@ -319,7 +345,8 @@ function elementInkLabels(state: BoardState, geometry: SceneGeometry, ids: reado
       fit.lines.forEach((text, i) => out.push({ owner: id, rect: inkRect({ x: rect.x + rect.w / 2, y: baselines[i]!, text, size: fit.size, anchor: 'middle' }), field }));
     }
     const kit = geometry.kitGeometry(id);
-    for (const [i, run] of (kit?.frame.texts ?? []).entries()) out.push({ owner: id, rect: inkRect(run), field: `kit.frame.texts.${i}` });
+    const home = geometry.kitRect(id);
+    for (const [i, run] of (kit?.frame.texts ?? []).entries()) out.push({ owner: id, rect: inkRect(home ? mapTextRun(run, home, rect) : run), field: `kit.frame.texts.${i}` });
   }
   return out;
 }
@@ -335,6 +362,16 @@ function boundsOfPoints(points: readonly Point[]): Rect {
   return { x: Math.min(...xs) - 4, y: Math.min(...ys) - 4, w: Math.max(...xs) - Math.min(...xs) + 8, h: Math.max(...ys) - Math.min(...ys) + 8 };
 }
 
+function orientation(a: Point, b: Point, c: Point): number { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); }
+function onSegment(a: Point, b: Point, p: Point): boolean { return p.x >= Math.min(a.x, b.x) - 1 && p.x <= Math.max(a.x, b.x) + 1 && p.y >= Math.min(a.y, b.y) - 1 && p.y <= Math.max(a.y, b.y) + 1; }
+function segmentsIntersect(a: Point, b: Point, c: Point, d: Point): boolean {
+  const o1 = orientation(a, b, c); const o2 = orientation(a, b, d); const o3 = orientation(c, d, a); const o4 = orientation(c, d, b);
+  if (((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0))) return true;
+  return (Math.abs(o1) < 1 && onSegment(a, b, c)) || (Math.abs(o2) < 1 && onSegment(a, b, d)) || (Math.abs(o3) < 1 && onSegment(c, d, a)) || (Math.abs(o4) < 1 && onSegment(c, d, b));
+}
+function routeSegments(route: EdgeRoute): Array<[Point, Point]> {
+  return [[route.points[0], route.points[1]], [route.arrowhead[0], route.arrowhead[1]], [route.arrowhead[1], route.arrowhead[2]]];
+}
 export function routeEdge(id: string, from: Rect, to: Rect, label?: string): EdgeRoute {
   const a = borderPoint(from, center(to), 8); const b = borderPoint(to, center(from), 8);
   const arrowhead = edgeHead(a, b);
@@ -353,22 +390,23 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
     const liveIds = Object.values(state.elements).filter(live).map((el) => el.id).sort();
     const tops = liveIds.filter((id) => !state.elements[id]!.placement.container);
     for (let i = 0; i < tops.length; i++) for (let j = i + 1; j < tops.length; j++) {
-      const a0 = geometry.rectFor(state, tops[i]!); const b0 = geometry.rectFor(state, tops[j]!);
-      const a = a0 ? scaled(a0, state.elements[tops[i]!]!.props.scale) : undefined;
-      const b = b0 ? scaled(b0, state.elements[tops[j]!]!.props.scale) : undefined;
+      const a = renderedRectFor(geometry, state, tops[i]!);
+      const b = renderedRectFor(geometry, state, tops[j]!);
       if (a && b && overlaps(a, b, 2)) add({ code: 'top_level_overlap', stateIndex: index, message: `state ${index + 1}: ${tops[i]} overlaps ${tops[j]}`, elementIds: [tops[i]!, tops[j]!], fields: [pointer('elements', tops[i]!, 'placement'), pointer('elements', tops[j]!, 'placement')] });
     }
     for (const id of liveIds) {
-      const el = state.elements[id]!; const raw = geometry.rectFor(state, id);
-      if (!raw) { add({ code: 'missing_rect', stateIndex: index, message: `state ${index + 1}: ${id} has no rectangle`, elementIds: [id], fields: [pointer('elements', id, 'placement')] }); continue; }
-      const rect = scaled(raw, el.props.scale);
+      const el = state.elements[id]!; const rect = renderedRectFor(geometry, state, id);
+      if (!rect) { add({ code: 'missing_rect', stateIndex: index, message: `state ${index + 1}: ${id} has no rectangle`, elementIds: [id], fields: [pointer('elements', id, 'placement')] }); continue; }
       if (!contains(geometry.contentRect, rect, 1)) add({ code: 'safe_area', stateIndex: index, message: `state ${index + 1}: ${id} is outside the safe area after transform`, elementIds: [id], fields: [pointer('elements', id, 'props.scale')] });
       if (rect.w < 24 || rect.h < 24) add({ code: 'element_too_small', stateIndex: index, message: `state ${index + 1}: ${id} is too small to read (${Math.round(rect.w)}x${Math.round(rect.h)})`, elementIds: [id], fields: [pointer('elements', id, 'placement')] });
+      if (el.spec.type === 'kit') {
+        const home = geometry.kitRect(id); const k = home ? Math.min(rect.w / Math.max(1, home.w), rect.h / Math.max(1, home.h)) : 1;
+        if (k < 1 - 1e-6 && geometry.kitGeometry(id)?.frame.texts.some((run) => run.size * k < 32 - 1e-6)) add({ code: 'element_too_small', stateIndex: index, message: `state ${index + 1}: ${id} scales kit text below the 32px readability floor; remove the scale or revise the kit content`, elementIds: [id], fields: [pointer('elements', id, 'props.scale')] });
+      }
       const overflow = textOverflow(el, rect);
       if (overflow) add({ code: 'text_overflow', stateIndex: index, message: `state ${index + 1}: ${id} text "${overflow}" does not fit its ${Math.round(rect.w)}px slot at a readable size; shorten the text`, elementIds: [id], fields: [pointer('elements', id, 'spec')] });
       if (el.placement.container) {
-        const rawParent = geometry.rectFor(state, el.placement.container);
-        const parent = rawParent ? scaled(rawParent, state.elements[el.placement.container]?.props.scale) : undefined;
+        const parent = renderedRectFor(geometry, state, el.placement.container);
         if (parent && !contains(parent, rect, 1)) add({ code: 'child_outside_container', stateIndex: index, message: `state ${index + 1}: ${id} is outside ${el.placement.container}`, elementIds: [id, el.placement.container], fields: [pointer('elements', id, 'placement')] });
       }
     }
@@ -381,8 +419,7 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
         let related = false;
         while (ancestor) { if (ancestor === id) { related = true; break; } ancestor = state.elements[ancestor]?.placement.container; }
         if (related) continue;
-        const rawBox = geometry.rectFor(state, id);
-        const box = rawBox ? scaled(rawBox, state.elements[id]?.props.scale) : undefined;
+        const box = renderedRectFor(geometry, state, id);
         if (box && overlaps(label.rect, box, 1)) add({ code: 'text_collision', stateIndex: index, message: `state ${index + 1}: text on ${label.owner} collides with ${id}`, elementIds: [label.owner, id], fields: [pointer('elements', label.owner, label.field), pointer('elements', id, 'placement')] });
       }
     }
@@ -400,8 +437,7 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
       for (const end of [edge.from, edge.to]) for (let up: string | undefined = state.elements[end]?.placement.container; up; up = state.elements[up]?.placement.container) related.add(up);
       for (const id of liveIds) {
         if (related.has(id)) continue;
-        const rawRect = geometry.rectFor(state, id);
-        const rect = rawRect ? scaled(rawRect, state.elements[id]?.props.scale) : undefined;
+        const rect = renderedRectFor(geometry, state, id);
         if (rect && segmentCrossesRect(a, b, rect)) add({ code: 'edge_crossing', stateIndex: index, message: `state ${index + 1}: arrow ${edge.id} (${edge.from} to ${edge.to}) crosses ${id}; place them so the arrow has a clear path`, elementIds: [id], edgeId: edge.id, fields: [pointer('edges', edge.id, 'from'), pointer('edges', edge.id, 'to'), pointer('elements', id, 'placement')] });
       }
       const head = route.arrowheadBounds;
@@ -414,15 +450,60 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
       for (const other of labels) if (overlaps(head, other.rect, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: arrowhead on ${edge.id} collides with text on ${other.owner}`, elementIds: [other.owner], edgeId: edge.id, fields: [pointer('edges', edge.id, 'to'), pointer('elements', other.owner, other.field)] });
       for (const other of labels) if (!related.has(other.owner) && segmentCrossesRect(a, b, other.rect, 1)) add({ code: 'edge_text_collision', stateIndex: index, message: `state ${index + 1}: arrow ${edge.id} crosses text on ${other.owner}`, elementIds: [other.owner], edgeId: edge.id, fields: [pointer('edges', edge.id, 'from'), pointer('edges', edge.id, 'to'), pointer('elements', other.owner, other.field)] });
     }
+    const activeEdges = Object.values(state.edges).filter((edge) => edge.lifecycle.removedAtBeat === undefined).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    for (let i = 0; i < activeEdges.length; i++) for (let j = i + 1; j < activeEdges.length; j++) {
+      const first = activeEdges[i]!; const second = activeEdges[j]!;
+      if ([first.from, first.to].some((id) => id === second.from || id === second.to)) continue;
+      const a = geometry.edgeRouteFor(state, first.id); const b = geometry.edgeRouteFor(state, second.id);
+      if (!a || !b) continue;
+      const aSegments = routeSegments(a); const bSegments = routeSegments(b);
+      if (aSegments.some(([a0, a1]) => bSegments.some(([b0, b1]) => segmentsIntersect(a0, a1, b0, b1)))) add({ code: 'edge_crossing', stateIndex: index, message: `state ${index + 1}: arrows ${first.id} and ${second.id} cross; reroute or reposition their endpoints`, elementIds: [], edgeId: first.id, fields: [pointer('edges', first.id, 'from'), pointer('edges', first.id, 'to'), pointer('edges', second.id, 'from'), pointer('edges', second.id, 'to')] });
+      const shaftOrHeadCrosses = (route: EdgeRoute, box: Rect): boolean => segmentCrossesRect(route.points[0], route.points[1], box, 1) || route.arrowhead.some((point, k) => k > 0 && segmentCrossesRect(route.arrowhead[k - 1]!, point, box, 1));
+      if (a.label && shaftOrHeadCrosses(b, a.label.bounds)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: arrow ${second.id} or its arrowhead crosses the label on ${first.id}`, elementIds: [], edgeId: first.id, fields: [pointer('edges', first.id, 'label'), pointer('edges', second.id, 'from'), pointer('edges', second.id, 'to')] });
+      if (b.label && shaftOrHeadCrosses(a, b.label.bounds)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: arrow ${first.id} or its arrowhead crosses the label on ${second.id}`, elementIds: [], edgeId: second.id, fields: [pointer('edges', second.id, 'label'), pointer('edges', first.id, 'from'), pointer('edges', first.id, 'to')] });
+      if (a.label && b.label && overlaps(a.label.bounds, b.label.bounds, 1)) add({ code: 'edge_label_collision', stateIndex: index, message: `state ${index + 1}: labels on arrows ${first.id} and ${second.id} overlap`, elementIds: [], edgeId: first.id, fields: [pointer('edges', first.id, 'label'), pointer('edges', second.id, 'label')] });
+    }
     const siblings = new Map<string, string[]>();
     for (const id of liveIds) { const c = state.elements[id]!.placement.container; if (c) siblings.set(c, [...(siblings.get(c) ?? []), id]); }
     for (const [container, ids] of siblings) for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
-      const a0 = geometry.rectFor(state, ids[i]!); const b0 = geometry.rectFor(state, ids[j]!);
-      const a = a0 ? scaled(a0, state.elements[ids[i]!]!.props.scale) : undefined;
-      const b = b0 ? scaled(b0, state.elements[ids[j]!]!.props.scale) : undefined;
+      const a = renderedRectFor(geometry, state, ids[i]!);
+      const b = renderedRectFor(geometry, state, ids[j]!);
       if (a && b && overlaps(a, b, 1)) add({ code: 'sibling_overlap', stateIndex: index, message: `state ${index + 1}: ${ids[i]} overlaps ${ids[j]} inside ${container}`, elementIds: [ids[i]!, ids[j]!], fields: [pointer('elements', ids[i]!, 'placement'), pointer('elements', ids[j]!, 'placement')] });
     }
   });
+  // The renderer interpolates moves linearly. Test relative center trajectories against the Minkowski sum
+  // of the two rendered rectangles so a collision between valid endpoints cannot pass unnoticed.
+  for (let index = 1; index < states.length; index++) {
+    const before = states[index - 1]!; const after = states[index]!;
+    const ids = Object.keys(before.elements).filter((id) => live(before.elements[id]) && live(after.elements[id])).sort();
+    const ancestor = (state: BoardState, child: string, parent: string): boolean => {
+      for (let up = state.elements[child]?.placement.container; up; up = state.elements[up]?.placement.container) if (up === parent) return true;
+      return false;
+    };
+    const placementChanged = (id: string): boolean => {
+      const chain = (state: BoardState): string => {
+        const parts: string[] = []; const seen = new Set<string>();
+        for (let current: string | undefined = id; current && !seen.has(current); current = state.elements[current]?.placement.container) {
+          seen.add(current); const el = state.elements[current]; if (!el) break;
+          parts.push(`${current}:${JSON.stringify(el.placement)}`);
+        }
+        return parts.join('|');
+      };
+      return chain(before) !== chain(after);
+    };
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+      const aId = ids[i]!; const bId = ids[j]!;
+      if (ancestor(before, aId, bId) || ancestor(after, aId, bId) || ancestor(before, bId, aId) || ancestor(after, bId, aId)) continue;
+      const a0 = renderedRectFor(geometry, before, aId); const a1 = renderedRectFor(geometry, after, aId);
+      const b0 = renderedRectFor(geometry, before, bId); const b1 = renderedRectFor(geometry, after, bId);
+      if (!a0 || !a1 || !b0 || !b1 || (sameRect(a0, a1) && sameRect(b0, b1))) continue;
+      if (!placementChanged(aId) && !placementChanged(bId)) continue;
+      const ac0 = center(a0); const ac1 = center(a1); const bc0 = center(b0); const bc1 = center(b1);
+      const relative0 = { x: ac0.x - bc0.x, y: ac0.y - bc0.y }; const relative1 = { x: ac1.x - bc1.x, y: ac1.y - bc1.y };
+      const halfW = Math.max(a0.w, a1.w) / 2 + Math.max(b0.w, b1.w) / 2; const halfH = Math.max(a0.h, a1.h) / 2 + Math.max(b0.h, b1.h) / 2;
+      if (segmentCrossesRect(relative0, relative1, { x: -halfW, y: -halfH, w: halfW * 2, h: halfH * 2 }, 0)) add({ code: 'movement_path_collision', stateIndex: index, message: `transition ${index}: ${aId} and ${bId} collide along a movement path; change placement or simplify the move`, elementIds: [aId, bId], fields: [pointer('elements', aId, 'placement'), pointer('elements', bId, 'placement')] });
+    }
+  }
   return out;
 }
 

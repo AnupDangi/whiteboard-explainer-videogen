@@ -63,7 +63,7 @@ test('semantic regions become separate areas: left, center and right do not over
   assert.deepEqual(validateSceneGeometry(g, states), []);
 });
 
-test('zoned kits place children by zone and index, and capacity follows the busiest moment of the scene', () => {
+test('zoned kit placement is stable and reports a move path through occupied slots', () => {
   const cell = kit('compartment', '{"zones":["outside","inside"],"zoneLabels":["OUT","IN"]}', 'cell');
   const ops: BoardOp[] = [add('cell', cell, { region: 'center' }, 'b0')];
   for (let i = 1; i <= 6; i++) ops.push(add(`p${i}`, token(String(i)), { region: 'center', container: 'cell', zone: i <= 4 ? 'outside' : 'inside' }, 'b1'));
@@ -74,7 +74,9 @@ test('zoned kits place children by zone and index, and capacity follows the busi
   const outside = g.rectFor(last, 'p2')!;
   const inside = g.rectFor(last, 'p1')!;
   assert.ok(outside.x < inside.x, 'outside is left of inside');
-  assert.deepEqual(validateSceneGeometry(g, states), []);
+  const diagnostics = diagnoseSceneGeometry(g, states);
+  assert.ok(diagnostics.some((diagnostic) => diagnostic.code === 'movement_path_collision' && diagnostic.message.startsWith('transition 2: p1')));
+  assert.ok(diagnostics.every((diagnostic) => diagnostic.message.startsWith('transition 2:')));
 });
 
 test('an element that moves between slots has a rect in both places, so the move can be drawn', () => {
@@ -210,4 +212,37 @@ test('the pinned arrowhead and its own label cannot occupy the same ink', () => 
     return route?.label ? { ...route, label: { ...route.label, bounds: route.arrowheadBounds } } : route;
   } };
   assert.ok(diagnoseSceneGeometry(crowded, states).some((d) => d.code === 'edge_label_collision' && d.edgeId === 'edge' && d.elementIds.length === 0));
+});
+
+test('independent exact edge routes are checked for crossings and arrowhead/label collisions', () => {
+  const ops: BoardOp[] = [
+    add('a', token('A'), { region: 'left' }, 'b0'), add('b', token('B'), { region: 'right' }, 'b0'),
+    add('c', token('C'), { region: 'left' }, 'b0'), add('d', token('D'), { region: 'right' }, 'b0'),
+    BoardOpSchema.parse({ op: 'connect', opId: 'b1.e1', beatId: 'b1', id: 'e1', from: 'a', to: 'b', relation: 'causes', label: 'first' }),
+    BoardOpSchema.parse({ op: 'connect', opId: 'b1.e2', beatId: 'b1', id: 'e2', from: 'c', to: 'd', relation: 'causes' }),
+  ];
+  const states = statesOf(ops); const base = layoutScene(states);
+  const custom = { ...base, edgeRouteFor: (_state: BoardState, id: string) => id === 'e1'
+    ? { id, points: [{ x: 0, y: 50 }, { x: 100, y: 50 }], arrowhead: [{ x: 90, y: 45 }, { x: 100, y: 50 }, { x: 90, y: 55 }], arrowheadBounds: { x: 88, y: 43, w: 16, h: 14 }, label: { x: 50, y: 20, text: 'first', size: 32, bounds: { x: 40, y: 10, w: 20, h: 20 } } }
+    : { id, points: [{ x: 50, y: 0 }, { x: 50, y: 100 }], arrowhead: [{ x: 45, y: 90 }, { x: 50, y: 100 }, { x: 55, y: 90 }], arrowheadBounds: { x: 43, y: 88, w: 14, h: 16 } } } as typeof base;
+  const diagnostics = diagnoseSceneGeometry(custom, states);
+  assert.ok(diagnostics.some((d) => d.code === 'edge_crossing' && d.fields.includes('/edges/e1/from') && d.fields.includes('/edges/e2/from')));
+  assert.ok(diagnostics.some((d) => d.code === 'edge_label_collision' && d.fields.includes('/edges/e1/label') && d.fields.includes('/edges/e2/from')));
+});
+
+test('scaled kit text below 32px is rejected and moving objects are checked between endpoints', () => {
+  const kitStates = statesOf([
+    add('box', kit('queue', '{"capacity":2}', 'queue'), { region: 'center' }, 'b0'),
+    BoardOpSchema.parse({ op: 'transform', opId: 'b1.shrink', beatId: 'b1', target: 'box', changes: [{ key: 'scale', value: 0.5 }] }),
+  ]);
+  assert.ok(diagnoseSceneGeometry(layoutScene(kitStates), kitStates).some((d) => d.code === 'element_too_small' && d.fields.includes('/elements/box/props.scale')));
+
+  const moveStates = statesOf([
+    add('source', kit('queue', '{"capacity":2}'), { region: 'left' }, 'b0'),
+    add('dest', kit('queue', '{"capacity":2}'), { region: 'right' }, 'b0'),
+    add('obstacle', token('obstacle'), { region: 'center' }, 'b0'),
+    add('traveler', token('traveler'), { region: 'left', container: 'source', slot: 'end' }, 'b0'),
+    BoardOpSchema.parse({ op: 'move', opId: 'b1.move', beatId: 'b1', target: 'traveler', to: { region: 'right', container: 'dest', slot: 'end' } }),
+  ]);
+  assert.ok(diagnoseSceneGeometry(layoutScene(moveStates), moveStates).some((d) => d.code === 'movement_path_collision' && d.stateIndex === 1 && d.elementIds.includes('traveler') && d.elementIds.includes('obstacle')));
 });
