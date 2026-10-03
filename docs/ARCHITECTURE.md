@@ -453,9 +453,12 @@ record speech usage and make the $0.10 lesson cost gate unmeasured whenever TTS
 has no USD valuation.
 
 Per-scene clips are immutable, hash-verified cache entries and are concatenated
-against the locked master audio. The current `onClipReady` callback signals a
-silent video clip: it does not establish first-audible-playable readiness. The
-runner still locks the full lesson before clip encoding, and buffering, ready-
-prefix seeking, starvation recovery, and audible progressive playback have not
-been implemented. See `docs/HANDOFF.md` for current checks and the explicit
-unmeasured gates; the frozen V2 plan remains unchanged.
+against the locked master audio. The loopback preview can also play a published
+V2 lock directly: it serves only the lock's hash-listed SVG frames and verified
+master WAV, synchronizes the timeline to audio, bounds seeking to the locked
+duration, and reports buffering or media-verification failure. `onClipReady`
+still signals only a silent clip. The runner locks the full lesson before clip
+encoding, so the preview does not overlap board preparation, does not consume
+the clip-ready prefix, and does not emit a measured first-audible-playable
+latency. Scene-lock aggregation, preparation overlap, and first-playable
+telemetry remain open; see `docs/HANDOFF.md` for current evidence and limits.

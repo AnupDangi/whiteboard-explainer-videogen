@@ -37,7 +37,7 @@ const twoBindings = { conceptIds: ['frame', 'stack'], claimIds: ['two_c'] };
 const board: Record<string, unknown> = {
   one: { transition: { mode: 'clean' }, ops: [
     { op: 'add', opId: 'o1', beatId: 'one.b1', id: 'pile', element: { type: 'kit', kit: 'stack', label: 'stack', paramsJson: '{}', provenance: 'metaphorical', bindings: oneBindings }, at: { region: 'center' }, cue: 0 },
-    { op: 'add', opId: 'o2', beatId: 'one.b1', id: 'f1', element: { type: 'entity', conceptId: 'frame', label: 'frame', provenance: 'source', bindings: oneBindings }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 0 },
+    { op: 'add', opId: 'o2', beatId: 'one.b1', id: 'f1', element: { type: 'entity', conceptId: 'frame', label: 'frame', provenance: 'illustrative', bindings: oneBindings }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 0 },
     { op: 'add', opId: 'o3', beatId: 'one.b1', id: 'f2', element: { type: 'token', text: 'newest', provenance: 'illustrative', bindings: oneBindings }, at: { region: 'center', container: 'pile', slot: 'top' }, cue: 1 },
   ] },
   two: { transition: { mode: 'retain-all' }, ops: [
