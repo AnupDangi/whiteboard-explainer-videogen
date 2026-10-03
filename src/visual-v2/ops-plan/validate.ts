@@ -134,6 +134,55 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
     problems.push({ path: '/ops', message: `scene treatment includes ${ctx.moves!.filter((m) => CHANGING_MOVES.has(m.move)).map((m) => m.move).join(', ')} but the board only adds or connects; show the mechanism as a state change (move, transform, value, equation step, strike, reveal)` });
   }
 
+  // A requested representation family must actually appear (STCC §14): a plot
+  // beat drawn as boxes, or an equation beat with no equation, is a wrong
+  // representation even when every other gate passes.
+  const FAMILY_ELEMENTS: Readonly<Record<string, (op: BoardOp) => boolean>> = {
+    plot: (op) => op.op === 'add' && op.element.type === 'kit' && op.element.kit === 'axes-plot',
+    equation: (op) => op.op === 'equationStep' || (op.op === 'add' && ((op.element.type === 'equation') || (op.element.type === 'kit' && op.element.kit === 'equation'))),
+  };
+  for (const beat of ctx.beats) {
+    if (beat.narrationOnly) continue;
+    const matches = FAMILY_ELEMENTS[beat.representationFamily];
+    if (!matches) continue;
+    const beatOps = draft.ops.filter((op) => op.beatId === beat.beatId);
+    if (beatOps.length > 0 && !beatOps.some(matches)) {
+      problems.push({ path: '/ops', message: `beat ${beat.beatId} asks for representation family ${beat.representationFamily} but none of its ops draws one; add the matching element instead of substituting another picture` });
+    }
+  }
+
+  // Board vocabulary must come from the lesson (STCC S12 terminology fidelity):
+  // every word of an element label or text is either a concept label or a word
+  // the narration actually speaks. Invented shorthand (BATT, SHIFT) fails here,
+  // not in layout. Kit names and equation latex are compiler vocabulary or
+  // separately verified, so kits and equations are exempt.
+  const vocab = new Set<string>();
+  const harvest = (text: string): void => {
+    for (const word of text.toLowerCase().match(/[\p{L}\p{M}]+/gu) ?? []) if (word.length >= 2) vocab.add(word);
+  };
+  for (const concept of ctx.concepts) harvest(concept.label);
+  for (const narration of ctx.narration) for (const sentence of narration.sentences) harvest(sentence);
+  const wordingOf = (spec: ElementSpec): string[] => {
+    switch (spec.type) {
+      case 'entity': return [spec.label];
+      case 'token': return [spec.text];
+      case 'text': return [spec.text];
+      case 'value': return [spec.label, String(spec.value), ...(spec.unit ? [spec.unit] : [])];
+      default: return [];
+    }
+  };
+  draft.ops.forEach((op, i) => {
+    for (const { spec, path } of opSpecs(op, `/ops/${i}`)) {
+      for (const text of wordingOf(spec)) {
+        // Over-long labels already fail the length gate above; this gate targets
+        // short invented shorthand (BATT, SHIFT) that fits anywhere but means nothing.
+        if (text.trim().split(/\s+/).filter(Boolean).length > 4) continue;
+        const invented = (text.toLowerCase().match(/[\p{L}\p{M}]+/gu) ?? []).filter((word) => word.length >= 2 && !vocab.has(word));
+        if (invented.length > 0) problems.push({ path: `${path}/${spec.type === 'token' || spec.type === 'text' ? 'text' : spec.type === 'value' ? 'label' : 'label'}`, message: `${[...new Set(invented)].map((w) => `"${w}"`).join(', ')} ${invented.length === 1 ? 'is' : 'are'} not lesson vocabulary (no concept label or spoken word matches); use the source's own terms` });
+      }
+    }
+  });
+
   // Every concept a beat names must be on the board by the end of that beat (an element that shows it or carries its label).
   const states: BoardState[] = [initial];
   draft.ops.forEach((op, i) => {

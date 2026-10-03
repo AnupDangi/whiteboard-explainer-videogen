@@ -6,7 +6,7 @@
 // Names (8-domain set): biology-osmosis, math-squares, physics-rc,
 //   cs-lru, systems-tcp, chemistry-halflife, bio-vaccine, general-spaced.
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -53,15 +53,51 @@ if (!video) {
 copyFileSync(video, path.join(outDir, 'video.mp4'));
 if (runDir && existsSync(path.join(runDir, 'captions.vtt'))) copyFileSync(path.join(runDir, 'captions.vtt'), path.join(outDir, 'captions.vtt'));
 if (runDir && existsSync(path.join(runDir, 'scorecard.json'))) copyFileSync(path.join(runDir, 'scorecard.json'), path.join(outDir, 'scorecard.json'));
-const scenes = spawnSync('node', ['scripts/stcc-scenes-png.mjs', runDir, path.join(outDir, 'scenes.png')], { cwd: ROOT, encoding: 'utf8' });
-console.log(scenes.stdout ?? '', scenes.stderr ?? '');
-let durationS = item.duration, costUsd = 'unknown', scenes_ = 0;
+if (existsSync(path.join(outDir, 'MISSING.txt'))) {
+  rmSync(path.join(outDir, 'MISSING.txt'));
+}
+// One image of complete scenes: final rendered frame of each scene from the
+// lesson lock's scene boundaries, tiled. Falls back to locked-SVG tiling.
+let sceneEnds = [];
 try {
-  const score = JSON.parse(readFileSync(path.join(outDir, 'scorecard.json'), 'utf8'));
-  durationS = Math.round(score.durationMs / 1000) || item.duration;
-  costUsd = '$' + (score.costUsd ?? score.cost ?? '?');
-  scenes_ = score.scenes ?? 0;
-} catch { /* keep estimates */ }
+  const lock = JSON.parse(readFileSync(path.join(runDir, 'lesson.lock.json'), 'utf8'));
+  sceneEnds = lock.scenes.map((s) => ({ id: s.sceneId, t: Math.max(0, (s.endMs - 500) / 1000) }));
+} catch { /* fallback below */ }
+if (sceneEnds.length) {
+  const tmp = path.join(ROOT, '.data', 'stcc-proof', `frames-${name}-a${attempt}`);
+  mkdirSync(tmp, { recursive: true });
+  const thumbs = [];
+  sceneEnds.forEach((s, i) => {
+    // Top row of 3 at 640px, bottom rows of 2 at 960px: no black bars.
+    const row = Math.floor(i / 3);
+    const scale = row === 0 ? '640:360' : '960:540';
+    const out = path.join(tmp, `f${i}.png`);
+    spawnSync('ffmpeg', ['-v', 'error', '-ss', String(s.t), '-i', path.join(outDir, 'video.mp4'), '-frames:v', '1', '-vf', `scale=${scale}`, out, '-y'], { encoding: 'utf8' });
+    thumbs.push(out);
+  });
+  const top = thumbs.slice(0, 3);
+  const bottom = thumbs.slice(3);
+  const inputs = [...top, ...bottom].flatMap((t) => ['-i', t]);
+  let filter, maps;
+  if (bottom.length === 0) {
+    filter = `xstack=inputs=${top.length}:layout=${top.map((_, i) => `${i * 640}_0`).join('|')}`;
+    spawnSync('ffmpeg', ['-v', 'error', ...inputs, '-filter_complex', filter, path.join(outDir, 'scenes.png'), '-y'], { encoding: 'utf8' });
+  } else {
+    const topLayout = top.map((_, i) => `${i * 640}_0`).join('|');
+    const botLayout = bottom.map((_, i) => `${i * 960}_0`).join('|');
+    spawnSync('ffmpeg', ['-v', 'error', ...inputs, '-filter_complex', `${top.slice(0).map((_, i) => `[${i}]`).join('')}xstack=inputs=${top.length}:layout=${topLayout}[top];${bottom.map((_, i) => `[${i + top.length}]`).join('')}xstack=inputs=${bottom.length}:layout=${botLayout}[bot];[top][bot]xstack=inputs=2:layout=0_0|0_360`, path.join(outDir, 'scenes.png'), '-y'], { encoding: 'utf8' });
+  }
+  console.log(`wrote scenes.png (${thumbs.length} scene frames)`);
+} else {
+  const scenes = spawnSync('node', ['scripts/stcc-scenes-png.mjs', runDir, path.join(outDir, 'scenes.png')], { cwd: ROOT, encoding: 'utf8' });
+  console.log(scenes.stdout ?? '', scenes.stderr ?? '');
+}
+let durationS = item.duration, costUsd = 'unknown', scenes_ = sceneEnds.length;
+const statusLine = (run.stdout ?? '').split('\n').find((l) => l.startsWith('status=')) ?? '';
+const costMatch = /cost=\$([0-9.]+)/.exec(statusLine);
+const durMatch = /encodedDuration=([0-9.]+)/.exec(statusLine);
+if (costMatch) costUsd = '$' + costMatch[1];
+if (durMatch) durationS = Math.round(Number(durMatch[1]) / 1000);
 const hardCount = (run.stdout ?? '').split('\n').filter((l) => l.includes('[HARD]')).length;
 writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify({ domain: item.domain, title: item.title, description: item.description, durationS, costUsd: String(costUsd), scenes: scenes_, status: hardCount === 0 ? 'complete' : 'diagnostic', hardFailures: hardCount, attempt, source: item.source }, null, 2) + '\n');
 spawnSync('node', ['scripts/stcc-gallery.mjs'], { cwd: ROOT, encoding: 'utf8' });

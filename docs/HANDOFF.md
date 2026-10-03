@@ -2714,3 +2714,17 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Built for diagnosis:** V2 `--diagnostic-video` mode (evidence video despite hard duration finding; status stays failed; release still gated) + relative lesson-clock tolerance (10%, floor 500ms; duration-gate test preserved unedited).
 - **Attempt 3 (diagnostic on):** died earlier at S4 recap — 55 words vs 25 stated, repair converged to 27 vs 25 and exhausted. Recap scenes cannot cover a whole lesson in ~12 words/beat. MISSING stands. Open hypothesis: recap minimum budgets scale with scenes summarized (S1b owner).
 - **Next:** physics-rc attempt 1.
+
+## Continuation — 2026-10-04, first video + reviewer audit + validator fixes
+
+- **First end-to-end video:** physics-rc attempt 5 — draft, 5/5 scenes, 0 hard, 46 ops (14 state-changing), 88.3s, $0.0511. `output/stcc-proof/physics-rc/` holds video.mp4, scenes.png (5 final frames), captions.vtt, scorecard.json, meta.json; gallery has 1 card.
+- **Reviewer audit (separate agent, read-only):** 5 defects root-caused — (1) zero pictorial S7, (2) generic cycle triangle S6, (3) plot/causal beats drawn as comparison S6, (4) stale dominance + micro-text S8, (5) invented shorthand labels S6. Full table in task record.
+- **Fixed (validators/compilers only, zero prompt edits):** representation-family→element mapping + lesson-vocabulary gate in `validateSceneBoard` (`board-semantics.test.ts` 2/2 new); existing suites green (ops-plan 20, board 45, lesson-v2 8, visual-model 4, beat-pipeline 2, grounding 9, board-state 21).
+- **Driver:** meta.json now parsed from status line + lock; stale MISSING removed on success; scenes.png from rendered scene-end frames (3+2 layout, no bars); gallery regenerates.
+- **Deferred with reasons:** S7 pictorial wiring (needs depiction-LLM cost design), circuit diagram adapter (new renderer surface), S8 retained-demotion (zero-sum space needs design, not a tie-break tweak).
+
+## Continuation — 2026-10-04, docs mass-deletion incident (resolved)
+
+- **Observed:** untracked deletions of docs/ARCHITECTURE.md, AUDITs, SIMI-60-BENCHMARK.md, docs/archive/*, and the frozen 2026-09-25 plan + amendments appeared in this worktree (and the same pattern in the main checkout). No commit made them; no command of this session deletes docs.
+- **Action:** restored byte-identical from git (`git checkout -- docs/`), re-applied local 444 on the frozen plan; plan-lock 3/3 green. Nothing invented, nothing lost.
+- **Flag:** matches an external archive reorganization discussed elsewhere; if another agent is mutating checkouts, worktree isolation (§35) is violated. This worktree's docs are intact as of this entry.
