@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "voice-engine:setup": "pnpm --dir voice-engine run setup",
     "typecheck:hypothesis": "tsc --noEmit -p tsconfig.json",
-    "test:hypothesis": "pnpm run build && node scripts/shared-manifest.mjs --check && node --test dist/src/__tests__/*.test.js && python3 -m unittest discover -s src/shared/alignment -p 'test_*.py' && python3 -m unittest discover -s rag-engine -p 'test_*.py'",
+    "test:hypothesis": "pnpm run build && node scripts/shared-manifest.mjs --check && node --test dist/src/__tests__/*.test.js && node --test scripts/audit-retained-board-v2.test.mjs && python3 -m unittest discover -s src/shared/alignment -p 'test_*.py' && python3 -m unittest discover -s rag-engine -p 'test_*.py'",
     "fixture:hypothesis": "pnpm run test:hypothesis",
     "run:hypothesis": "pnpm run build && node dist/src/run/cli.js",
     "preview:hypothesis": "pnpm run build && node dist/src/export/player/previewCli.js",
