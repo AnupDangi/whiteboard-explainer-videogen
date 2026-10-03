@@ -2685,3 +2685,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Verification:** ops-plan 20/20, lesson-v2 8/8; typecheck clean, manifest verified.
 - **Honest limits:** scene-level moves (per-beat distribution needs S3b-before-beats reordering — recorded, not done); whether the state change teaches stays with judges.
 - **Next:** T8 improvement loop, then paid proof runs when credits allow.
+
+## Continuation — 2026-10-03, T8 improvement loop (wt/stcc/charter)
+
+- **Built:** `src/harness/improvement.ts` — `clusterFailures` (stage+code grouping, hard-first, bounded evidence) and `ExperimentRecord` + `promotionVerdict` implementing the STCC §27 rule (target improved AND gates pass AND no regressions AND determinism preserved AND ≥2 topics AND PROMOTE recommendation).
+- **Gates:** `src/__tests__/improvement.test.ts` — clustering order/evidence, safe-winner promotion, six independent blockers, unmeasured-target block. 4/4 pass.
+- **Verification:** typecheck clean, manifest verified.
+- **Teaching track T1–T8 now complete as offline architecture** (evals → strategy → moves → narration → error-contrast → prediction → visual model → loop). Live proof (paid runs, cold grid, muted review) blocked on ElevenLabs credits; local-TTS proof runs remain available.
+- **Next:** paid proof when credits allow, or S7 icon-universe offline work.
