@@ -2728,3 +2728,13 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Observed:** untracked deletions of docs/ARCHITECTURE.md, AUDITs, SIMI-60-BENCHMARK.md, docs/archive/*, and the frozen 2026-09-25 plan + amendments appeared in this worktree (and the same pattern in the main checkout). No commit made them; no command of this session deletes docs.
 - **Action:** restored byte-identical from git (`git checkout -- docs/`), re-applied local 444 on the frozen plan; plan-lock 3/3 green. Nothing invented, nothing lost.
 - **Flag:** matches an external archive reorganization discussed elsewhere; if another agent is mutating checkouts, worktree isolation (§35) is violated. This worktree's docs are intact as of this entry.
+
+## Continuation — docs deletions recurring (wt/stcc/charter)
+
+- **Observed:** `claude_pipeline.md` + frozen 2026-09-25 plan/amendments + 3 more plan files deleted from working tree again (same external pattern). Restored byte-identical via git; 444 re-applied; plan-lock 3/3 green.
+
+## Continuation — Phase 1 sync timing: degenerate cue spread (wt/stcc/charter)
+
+- **Measured:** physics-rc video ops 45/46 carry cue=0 — planner stamps every reveal at sentence zero, piling the whole beat at its opening (reviewer: visuals 2-4s early).
+- **Fix (compiler-owned, zero prompt edits):** `compileSceneTimeline` detects unanimous cue-0 on multi-sentence beats and spreads round-robin exactly like omitted cues; any explicit nonzero cue disables spreading and is respected verbatim; single-sentence beats untouched.
+- **Verification:** new `timeline-cue-spread.test.ts` 3/3; all timeline suites green with zero golden changes (render 17, encode 2, lock 7, clips 4, player 3, deadlines 3, warnings 3, composition 10, prediction 3, timeline 12, arrows 5); typecheck clean.

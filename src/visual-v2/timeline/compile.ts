@@ -60,6 +60,19 @@ export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: 
   const beatById = new Map(input.beats.map((beat) => [beat.beatId, beat]));
   const countByBeat = new Map<string, number>();
   for (const op of input.ops) countByBeat.set(op.beatId, (countByBeat.get(op.beatId) ?? 0) + 1);
+  // Degenerate contract: the planner stamped cue 0 on every op of a beat with
+  // several sentences (observed 45/46 ops in production). cue means "the
+  // sentence that introduces this change", so unanimous cue 0 contradicts the
+  // contract and would pile every reveal at the beat opening. Spread those ops
+  // round-robin exactly as for omitted cues; any explicit nonzero cue keeps
+  // the beat out of this path and is respected verbatim.
+  const spreadByBeat = new Map<string, boolean>();
+  for (const beat of input.beats) {
+    if (beat.sentences.length > 1) {
+      const cues = input.ops.filter((op) => op.beatId === beat.beatId).map((op) => op.cue ?? 0);
+      spreadByBeat.set(beat.beatId, cues.length > 0 && cues.every((cue) => cue === 0));
+    }
+  }
   const seenByBeat = new Map<string, number>();
   const states: BoardState[] = [input.initial];
   const scheduled: ScheduledOp[] = [];
@@ -76,7 +89,9 @@ export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: 
     const i = seenByBeat.get(op.beatId) ?? 0;
     seenByBeat.set(op.beatId, i + 1);
     const sentenceCount = Math.max(1, beat.sentences.length);
-    const cue = Math.min(sentenceCount - 1, op.cue ?? Math.floor((i * sentenceCount) / n));
+    const cue = spreadByBeat.get(op.beatId)
+      ? Math.floor((i * sentenceCount) / n)
+      : Math.min(sentenceCount - 1, op.cue ?? Math.floor((i * sentenceCount) / n));
     const sentence = beat.sentences[cue] ?? { startMs: beat.startMs, endMs: beat.endMs };
     const anchorMs = Math.max(beat.startMs - SCHEDULE.beatLeadMs, sentence.startMs - SCHEDULE.leadMs);
     const natural = naturalDuration(op, result.effects);

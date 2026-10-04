@@ -20,3 +20,4 @@ a passing rerun, a committed fix, or a named blocker.
 
 Autopsy tool: `node scripts/stcc-autopsy.mjs <run-dir>`.
 Prompt recording lands with the recorder change (prompt.json per call); rows before it cite input via replay-fixture + report only.
+| physics-video | all beats | S9 timeline | spread rule | early reveals (45/46 cue=0) | S9 compiler | degenerate-cue spread in compileSceneTimeline |
