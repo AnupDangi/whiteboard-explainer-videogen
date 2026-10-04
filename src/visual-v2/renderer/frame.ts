@@ -10,6 +10,7 @@ import { layoutScene, type PriorLayout, type SceneGeometry } from '../layout/sce
 import type { SceneTimeline } from '../timeline/compile.js';
 import type { Rect } from '../kits/geometry.js';
 import { edgeVisual, elementVisual, ringVisual, strikeVisual, type ConceptIndex } from './visuals.js';
+import type { EntityResolver } from '../resolver/typeGate.js';
 
 export interface CompiledScene {
   sceneId: string;
@@ -87,8 +88,8 @@ function mapTransform(home: Rect, now: Rect): string | undefined {
 }
 const scaleOf = (el: BoardElement): number => { const k = Number(el.props.scale); return Number.isFinite(k) && k > 0 ? k : 1; };
 
-/** Inner markup of the frame at `tMs` (scene-relative): the board after finished ops plus the ops in flight. */
-export function renderSceneBody(scene: CompiledScene, tMs: number): string {
+/** Inner markup of the frame at `tMs` (scene-relative): the board after finished ops plus the ops in flight. A resolver draws approved pictures; without one every entity is a labelled box. */
+export function renderSceneBody(scene: CompiledScene, tMs: number, resolver?: EntityResolver): string {
   const { timeline, geometry } = scene;
   const k = timeline.ops.filter((s) => s.t1 <= tMs).length;
   const base = timeline.states[k]!;
@@ -152,8 +153,8 @@ export function renderSceneBody(scene: CompiledScene, tMs: number): string {
     const place = (visual: PrimitiveVisual, key: string, vis: Reveal, alpha: number): string => home
       ? drawVisual(visual, home, vis, scene.seedBase, key, alpha, mapTransform(home, rect))
       : drawVisual(visual, rect, vis, scene.seedBase, key, alpha);
-    let svg = place(elementVisual(el, rect, geometry, scene.concepts), el.id, reveal, opacity);
-    if (ov?.fade) svg += place(elementVisual(ov.fade.to, rect, geometry, scene.concepts), `${el.id}.next`, FULL, ease(ov.fade.p));
+    let svg = place(elementVisual(el, rect, geometry, scene.concepts, resolver), el.id, reveal, opacity);
+    if (ov?.fade) svg += place(elementVisual(ov.fade.to, rect, geometry, scene.concepts, resolver), `${el.id}.next`, FULL, ease(ov.fade.p));
     if (el.emphasis === 'highlight' || (ov?.ring ?? 0) > 0) svg += drawVisual(ringVisual(rect), rect, { stroke: ov?.ring !== undefined ? ease(ov.ring) : 1, fill: 1, text: 1 }, scene.seedBase, `${el.id}.ring`);
     if (el.emphasis === 'struck' || (ov?.strike ?? 0) > 0) svg += drawVisual(strikeVisual(rect), rect, { stroke: ov?.strike !== undefined ? ease(ov.strike) : 1, fill: 1, text: 1 }, scene.seedBase, `${el.id}.strike`);
     return svg;
@@ -193,4 +194,4 @@ export function holdKey(scene: CompiledScene, tMs: number): string | undefined {
   return `${scene.sceneId}|${done}`;
 }
 
-export const renderSceneSvg = (scene: CompiledScene, tMs: number): string => svgDocument(renderSceneBody(scene, tMs));
+export const renderSceneSvg = (scene: CompiledScene, tMs: number, resolver?: EntityResolver): string => svgDocument(renderSceneBody(scene, tMs, resolver));

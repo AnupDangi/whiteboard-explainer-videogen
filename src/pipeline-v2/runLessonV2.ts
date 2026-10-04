@@ -16,6 +16,7 @@ import { alignedWordTimingProblems } from '../narration/align.js';
 import { emptyBoardState, startScene } from '../visual-v2/board-state/reducer.js';
 import type { BoardState } from '../visual-v2/board-state/types.js';
 import { planSceneBoard } from '../visual-v2/ops-plan/plan.js';
+import { validateSceneBoard } from '../visual-v2/ops-plan/validate.js';
 import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
 import { anchorQuote } from '../plan/evidenceAnchor.js';
 import { validateSceneGeometry, type PriorLayout } from '../visual-v2/layout/sceneLayout.js';
@@ -26,6 +27,9 @@ import { writeLessonLockV2 } from './lockV2.js';
 import { encodeLockedLessonV2Clips } from './clipsV2.js';
 import type { ConceptInfo } from '../visual-v2/resolver/typeGate.js';
 import { depictEntity } from '../visual-v2/resolver/typeGate.js';
+import { approvedResolver, approveSceneDepictions, upgradeTokensToEntities, type ApprovedPick } from '../visual-v2/resolver/approved.js';
+import { EMBEDDING_MODEL } from '../assets/semantic.js';
+import { QueryEmbeddingCache } from '../assets/queryEmbeddingCache.js';
 import { CATALOG } from '../assets/catalog.js';
 import { loadCatalogLibraries } from '../assets/streamline.js';
 import { loadBridge } from '../assets/bridge.js';
@@ -60,6 +64,8 @@ export interface RunLessonV2Input {
   audioConcurrency?: number;
   /** Notified, in lesson order, as each scene's clip is ready (progressive playback). */
   onClipReady?: (clip: { sceneId: string; path: string; index: number }) => void;
+  /** Skip pictorial depiction entirely (labelled path only); recorded when set. */
+  noPictorial?: boolean;
   remainingBudgetUsd?: number;
   /** Wall-clock timestamp captured when the CLI accepted this request, before intake and S1–S4. */
   requestStartedAtMs?: number;
@@ -204,6 +210,14 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   let carried: BoardState = emptyBoardState();
   let prior: PriorLayout | undefined;
   const timings: BeatTiming[][] = [];
+  // Pictorial depiction memo, lesson-wide and in scene order: a referent
+  // directed once keeps the same icon everywhere; one picture never serves two
+  // referents. Part of run identity via the recorded picks, not the lock hash.
+  const takenEntries = new Set<string>();
+  const takenNouns = new Set<string>();
+  const depictionMemo = new Map<string, ApprovedPick | null>();
+  const sceneDepictions: Record<string, Record<string, { entryId: string; noun: string }>> = {};
+  const queryEmbeddingCache = new QueryEmbeddingCache(path.join(outputDir, 'query-embeddings.json'), EMBEDDING_MODEL);
   for (const { section, narration, audio } of audioScenes) {
     let intervals;
     try { intervals = beatIntervals(narration, audio.words.map((w) => ({ w: w.word, startMs: w.startMs, endMs: w.endMs }))); } catch (error) {
@@ -226,8 +240,42 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     const result = await planSceneBoard({ ctx }, { model: input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: input.remainingBudgetUsd ?? 0.2, ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}) });
     addUsage(usage, result.usage); failures.push(...result.failures); reports.push(...result.reports);
     if (!result.value) { failures.push({ code: 'v2-board-failed', stage: 'board-ops', message: `${section.id}: no valid board operations`, hard: true }); return finish('failed'); }
+    // 2b. Pictorial depiction (S7): approve pictures for entity-kind concepts,
+    // then rewrite exactly-matching tokens into entity elements and re-validate.
+    // Dirty upgrades never reach the timeline; approved picks flow into the
+    // renderer resolver and the recorded provenance below.
+    let ops = result.value.ops;
+    if (!input.noPictorial) {
+      try {
+        const depiction = await approveSceneDepictions({
+          concepts: section.conceptIds.flatMap((id) => { const c = graph.concepts.find((x) => x.id === id); return c ? [{ id: c.id, label: c.label, kind: c.kind }] : []; }),
+          sceneTitle: section.title, cache: queryEmbeddingCache,
+          model: input.plannerModel, apiKey: input.apiKey,
+          remainingBudgetUsd: Math.max(0.01, (input.remainingBudgetUsd ?? 0.2) - usage.costUsd),
+          ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}),
+          takenEntries, takenNouns, memo: depictionMemo,
+        });
+        addUsage(usage, depiction.usage); failures.push(...depiction.failures);
+        if (depiction.picks.size) {
+          const upgraded = upgradeTokensToEntities(ops, depiction.picks, conceptIndex);
+          if (upgraded.upgraded.length) {
+            const recheck = validateSceneBoard({ transition: result.value.transition, ops: upgraded.ops }, ctx);
+            if (!recheck.length) {
+              ops = upgraded.ops;
+              sceneDepictions[section.id] = Object.fromEntries([...depiction.picks].map(([referent, pick]) => [referent, { entryId: pick.entryId, noun: pick.noun }]));
+            } else {
+              failures.push({ code: 'v2-depiction-upgrade-rejected', stage: 'depiction', message: `${section.id}: token-to-entity upgrade failed re-validation, keeping planner ops`, hard: false });
+            }
+          } else if ([...depiction.picks.keys()].length) {
+            sceneDepictions[section.id] = Object.fromEntries([...depiction.picks].map(([referent, pick]) => [referent, { entryId: pick.entryId, noun: pick.noun }]));
+          }
+        }
+      } catch (error) {
+        failures.push({ code: 'v2-depiction-skipped', stage: 'depiction', message: `${section.id}: pictorial depiction skipped: ${error instanceof Error ? error.message : String(error)}`, hard: false });
+      }
+    }
     const initial = startScene(carried, result.value.transition, section.id);
-    const timeline = compileSceneTimeline({ ops: result.value.ops, initial, beats: beatTimings });
+    const timeline = compileSceneTimeline({ ops, initial, beats: beatTimings });
     const scene = compileScene(section.id, section.title, timeline, input.lessonId, conceptIndex, prior);
     for (const message of validateSceneGeometry(scene.geometry, timeline.states)) failures.push({ code: 'v2-geometry', stage: 'layout', message: `${section.id}: ${message}`, hard: true });
     for (const opId of timeline.lateOps) failures.push({ code: 'v2-late-op', stage: 'timeline', message: `${section.id}: ${opId} could not finish inside its sentence`, hard: false });
@@ -235,7 +283,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     compiled.push(scene);
     carried = timeline.states[timeline.states.length - 1]!;
     prior = { geometry: scene.geometry, state: carried };
-    await dump(`scene.${section.id}.json`, { transition: result.value.transition, ops: result.value.ops, beats, narration, beatTimings, schedule: timeline.ops.map((s) => ({ opId: s.op.opId, t0: Math.round(s.t0), t1: Math.round(s.t1), late: s.late })), timelineHash: timeline.hash });
+    await dump(`scene.${section.id}.json`, { transition: result.value.transition, ops, beats, narration, beatTimings, depictions: sceneDepictions[section.id] ?? {}, schedule: timeline.ops.map((s) => ({ opId: s.op.opId, t0: Math.round(s.t0), t1: Math.round(s.t1), late: s.late })), timelineHash: timeline.hash });
   }
 
   timing['v2.boardsMs'] = Date.now() - startedAt - timing['v2.audioMs']!;
@@ -244,7 +292,9 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const visualBeats = plan.sections.flatMap((s) => prepared.beatPlans![s.id]!).filter((b) => !b.narrationOnly);
   const beatsWithOps = new Set(allOps.map((o) => o.beatId));
   const entityKeys = new Map(allOps.flatMap((o) => (o.op === 'add' || o.op === 'replace') && o.element.type === 'entity' ? [[`${o.element.conceptId}|${o.element.label}`, o.element] as const] : []));
-  const entityDepictions = [...entityKeys.values()].map((spec) => depictEntity(conceptIndex.get(spec.conceptId), spec.label, { x: 0, y: 0, w: 240, h: 210 }));
+  const lessonPicks = new Map<string, ApprovedPick>([...depictionMemo].flatMap(([referent, pick]) => (pick ? [[referent, pick] as const] : [])));
+  const depictionResolver = approvedResolver(lessonPicks);
+  const entityDepictions = [...entityKeys.values()].map((spec) => depictEntity(conceptIndex.get(spec.conceptId), spec.label, { x: 0, y: 0, w: 240, h: 210 }, depictionResolver));
   const catalogueAssets = new Map([...CATALOG, ...loadCatalogLibraries().entries].map((entry) => [entry.id, entry]));
   const bridge = loadBridge();
   const pictures = entityDepictions.flatMap((d) => {
@@ -271,6 +321,8 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     'v2.retainedMoved': compiled.reduce((n, s) => n + s.geometry.moved.length, 0),
     'v2.lateOps': compiled.reduce((n, s) => n + s.timeline.lateOps.length, 0),
     'v2.hardGeometryProblems': failures.filter((f) => f.code === 'v2-geometry').length,
+    'v2.depictionSkipped': input.noPictorial ? 1 : 0,
+    'v2.pictorialReferents': lessonPicks.size,
   });
 
   // 4. Master audio, video and captions.
@@ -287,7 +339,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await dump('lesson-context.json', { sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: prepared.beatNarrations });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
-    await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });
+    await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30, resolver: depictionResolver });
     if (!input.skipEncode) {
       videoPath = path.join(outputDir, 'video.mp4');
       const encodeStart = Date.now();

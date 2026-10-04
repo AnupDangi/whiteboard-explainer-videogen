@@ -252,6 +252,7 @@ async function main(): Promise<void> {
   const diagnosticCaptionlessVideo = hasFlag(args, 'diagnostic-video-with-invalid-captions');
   const allowPartialVideo = hasFlag(args, 'allow-partial-video');
   const diagnosticVideo = hasFlag(args, 'diagnostic-video');
+  const noPictorial = hasFlag(args, 'no-pictorial');
   const scenePlanner = scenePlannerById(arg('scene-planner')).id;
   if (activeRunFailureContext) {
     activeRunFailureContext.settingsHash = sha256(JSON.stringify({ contentModel, plannerModel, cacheMode }));
@@ -394,7 +395,7 @@ async function main(): Promise<void> {
     for (const f of prepFailures) console.error(`  [HARD] ${f.stage}/${f.code}: ${f.message}`);
     if (FEATURE_FLAGS.enabled.BOARD_OPS_V2) {
       // Teaching Compiler V2: beats -> real audio -> board operations -> persistent board -> frames. No V1 board planner.
-      const v2 = await runLessonV2({ lessonId: lesson.id, outputDir, prepared, plannerModel, apiKey: env.apiKey, budgetLedger, artifactStore, language, requestStartedAtMs: executionStartedAtMs, requestStartedMonotonicMs: executionStartedMonotonicMs, ...(calibration.status === 'measured' ? { calibrationMedianErrorMs: calibration.medianAbsoluteBoundaryErrorMs! } : {}), ...(diagnosticVideo ? { diagnosticVideo: true } : {}), remainingBudgetUsd: Math.max(0.01, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd) });
+      const v2 = await runLessonV2({ lessonId: lesson.id, outputDir, prepared, plannerModel, apiKey: env.apiKey, budgetLedger, artifactStore, language, requestStartedAtMs: executionStartedAtMs, requestStartedMonotonicMs: executionStartedMonotonicMs, ...(calibration.status === 'measured' ? { calibrationMedianErrorMs: calibration.medianAbsoluteBoundaryErrorMs! } : {}), ...(diagnosticVideo ? { diagnosticVideo: true } : {}), ...(noPictorial ? { noPictorial: true } : {}), remainingBudgetUsd: Math.max(0.01, requestedBudgetUsd - (await budgetLedger.snapshot()).spentUsd) });
       const v2Hard = v2.failures.filter((f) => f.hard);
       const v2CompletedAtMs = Date.now();
       await writeFile(path.join(outputDir, 'scorecard.json'), `${JSON.stringify(buildScorecard({ compilerVersion: TEACHING_COMPILER_VERSION, reports: [...callRecorder.reports()], coverageMetrics: v2.metrics }), null, 2)}\n`, 'utf8');

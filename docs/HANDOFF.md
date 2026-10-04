@@ -2738,3 +2738,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Measured:** physics-rc video ops 45/46 carry cue=0 — planner stamps every reveal at sentence zero, piling the whole beat at its opening (reviewer: visuals 2-4s early).
 - **Fix (compiler-owned, zero prompt edits):** `compileSceneTimeline` detects unanimous cue-0 on multi-sentence beats and spreads round-robin exactly like omitted cues; any explicit nonzero cue disables spreading and is respected verbatim; single-sentence beats untouched.
 - **Verification:** new `timeline-cue-spread.test.ts` 3/3; all timeline suites green with zero golden changes (render 17, encode 2, lock 7, clips 4, player 3, deadlines 3, warnings 3, composition 10, prediction 3, timeline 12, arrows 5); typecheck clean.
+
+## Continuation — Phase 2 S7 pictorial wiring (wt/stcc/charter)
+
+- **Built:** `src/visual-v2/resolver/approved.ts` — approved-picture resolver (validated picks win, default literal fallback), deterministic token→entity upgrade (exact referent + entity-kind only), `approveSceneDepictions` (offline embedding rank + director/judge for novel referents, lesson memo, soft-skip on trouble). Renderer (`frame.ts`), lock capture (`lockV2.ts`), and provenance/metrics all take the approved resolver; replay stays frozen bytes.
+- **Wired:** `runLessonV2` board loop — depict after planning, upgrade + re-validate (dirty upgrades rejected), picks recorded per scene + lock-covered; `--no-pictorial` fallback flag via lessonCli.
+- **Verification:** `approved-pictures.test.ts` 6/6 new; lesson-v2 8, lock-v2 7, ops-plan 20, board-semantics 2, render 17, encode 2, clips 4, player 3, replay/media determinism green; typecheck clean, manifest verified. No prompt rewrites; no existing tests edited.
+- **Known:** first live depiction downloads the Xenova MiniLM query model once (~90MB, then cached); failures skip pictorial softly. Vision check deferred (no vision model plumbed).
+- **Next:** live proof run measuring pictorialEntities + depiction spend.

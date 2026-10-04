@@ -12,6 +12,7 @@ import { STYLE } from '../render/style.js';
 import { RasterPool } from '../export/rasterPool.js';
 import { spawnFrameEncoder } from '../export/ffmpeg.js';
 import { holdKey, renderSceneSvg } from '../visual-v2/renderer/frame.js';
+import type { EntityResolver } from '../visual-v2/resolver/typeGate.js';
 import type { V2VideoScene } from '../visual-v2/renderer/encode.js';
 
 export const LESSON_LOCK_V2_VERSION = 'lesson.lock/v5-teaching-compiler-v2';
@@ -147,8 +148,8 @@ function raster(svg: string, lock: Pick<LessonLockV2, 'font' | 'render'>, fontFi
   return Buffer.from(new Resvg(svg, { font: { loadSystemFonts: false, fontFiles: [fontFile], defaultFontFamily: lock.font.family, sansSerifFamily: lock.font.family }, fitTo: { mode: 'width', value: lock.render.width } }).render().asPng());
 }
 
-/** Freeze SVG compilation before the lock. No timeline, layout, resolver or semantic renderer runs on the replay side. */
-export async function writeLessonLockV2(input: { outputDir: string; lessonId: string; scenes: readonly V2VideoScene[]; durationMs: number; audioPath: string; fps: number }): Promise<LessonLockV2> {
+/** Freeze SVG compilation before the lock. No timeline, layout, resolver or semantic renderer runs on the replay side. An approved-picture resolver draws validated depictions into the frozen SVGs; replay replays bytes. */
+export async function writeLessonLockV2(input: { outputDir: string; lessonId: string; scenes: readonly V2VideoScene[]; durationMs: number; audioPath: string; fps: number; resolver?: EntityResolver }): Promise<LessonLockV2> {
   const { outputDir, lessonId, fps, durationMs } = input;
   for (const name of ['lesson.lock.json', 'lesson.lock.v2.json']) {
     try { await access(path.join(outputDir, name)); } catch { continue; }
@@ -218,7 +219,7 @@ export async function writeLessonLockV2(input: { outputDir: string; lessonId: st
     const local = Math.max(0, globalTime - item.startMs);
     const key = holdKey(item.scene, local);
     let svgHash = key === undefined ? undefined : holds.get(key);
-    if (!svgHash) { svgHash = await storeSvg(renderSceneSvg(item.scene, local)); if (key !== undefined) holds.set(key, svgHash); }
+    if (!svgHash) { svgHash = await storeSvg(renderSceneSvg(item.scene, local, input.resolver)); if (key !== undefined) holds.set(key, svgHash); }
     const captured = capturedById.get(item.scene.sceneId)!;
     const done = captured.timeline.ops.filter((s) => s.t1 <= local).length;
     const stateHash = (index: number) => canonicalHash([captured.geometry, captured.timeline.states[index]]);
@@ -249,7 +250,7 @@ export async function writeLessonLockV2(input: { outputDir: string; lessonId: st
       const selected = transitions[index]; if (selected) sample(sceneId, 'transition', selected.svgHash, selected.sampleTimeMs, selected.frame);
     }
     const finalTime = Math.max(700, item.scene.timeline.durationMs);
-    sample(sceneId, 'final', await storeSvg(renderSceneSvg(item.scene, finalTime)), finalTime);
+    sample(sceneId, 'final', await storeSvg(renderSceneSvg(item.scene, finalTime, input.resolver)), finalTime);
   }
   const lock = LockSchema.parse({ schemaVersion: LESSON_LOCK_V2_VERSION, lessonId, context, alignment, scenes: records, media: { audio, captions }, font, render, renderPlan, svgAssets, samples, versions, contentHash: '0'.repeat(64) });
   lock.contentHash = lockHash(lock);
