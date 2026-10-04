@@ -51,13 +51,16 @@ Leave out the optional expects field of every op; the board is checked by code. 
     : '';
   const beatBlocks = ctx.beats.map((beat) => {
     const speech = ctx.narration.find((n) => n.beatId === beat.beatId)?.sentences ?? [];
-  return `BEAT ${beat.beatId} [${beat.beatType}; ${beat.cognitiveOperation}; family ${beat.representationFamily}]${beat.narrationOnly ? ' (narration only: no board change needed)' : ''}
+    const contrast = beat.errorContrast
+      ? `  error contrast on ${beat.errorContrast.misconceptionId}: shared "${beat.errorContrast.sharedPrefix.map((s) => s.step).join(' / ')}" then WRONG "${beat.errorContrast.divergence.wrongStep.step}" versus CORRECT "${beat.errorContrast.divergence.correctStep.step}"; repair: ${beat.errorContrast.repair.explanation}${beat.errorContrast.repair.diagnosticIntent ? ` (show: ${beat.errorContrast.repair.diagnosticIntent})` : ''}`
+      : '';
+    return `BEAT ${beat.beatId} [${beat.beatType}; ${beat.cognitiveOperation}; family ${beat.representationFamily}]${beat.narrationOnly ? ' (narration only: no board change needed)' : ''}
   claims to support: ${JSON.stringify(beat.claimIds)}
   learner should see: ${beat.mutedMeaning || '(nothing)'}
   visible when it ends: ${beat.visualInvariant}
   concepts: ${JSON.stringify(beat.entities)}
   relations: ${JSON.stringify(beat.relationships)}
-  before: ${beat.stateBefore ? JSON.stringify(beat.stateBefore) : '(none)'}  after: ${beat.stateAfter ? JSON.stringify(beat.stateAfter) : '(none)'}
+  before: ${beat.stateBefore ? JSON.stringify(beat.stateBefore) : '(none)'}  after: ${beat.stateAfter ? JSON.stringify(beat.stateAfter) : '(none)'}${contrast}
   speech:
 ${speech.map((sentence, i) => `    ${i}: ${sentence}`).join('\n')}`;
   }).join('\n');

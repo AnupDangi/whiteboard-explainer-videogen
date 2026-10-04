@@ -6,6 +6,31 @@ import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import { SceneBoardDraftSchema } from '../visual-v2/ops-plan/types.js';
 function SceneDraft(value: unknown) { return SceneBoardDraftSchema.parse(value); }
 
+describe('error contrast reaches the board', () => {
+  it('misconception beats carry their divergence into the board prompt', async () => {
+    const { buildBoardPrompt } = await import('../visual-v2/ops-plan/prompt.js');
+    const contrastBeat: TeachingBeat = {
+      beatId: 'sc.b1', sceneId: 'sc', order: 1, claimIds: ['c1'], learnerDelta: 'd',
+      beatType: 'contrast', cognitiveOperation: 'compare', representationFamily: 'comparison',
+      entities: [{ conceptId: 'charge' }], relationships: [], misconceptionIds: ['m1'],
+      narrationGoal: 'g', visualInvariant: 'v', mutedMeaning: 'm', narrationOnly: false,
+      persistence: 'scene', pauseIntent: 'none', evidenceSpanIds: ['S1'],
+      errorContrast: {
+        misconceptionId: 'm1', problem: { problem: 'Which way?' },
+        sharedPrefix: [{ step: 'Water spreads.' }],
+        divergence: {
+          decision: 'Which side gains?', wrongStep: { step: 'Salt pulls.' }, correctStep: { step: 'Crowding eases.' },
+          whyWrongSeemsPlausible: 'Salt seems active.', violatedInvariant: 'Water follows its gradient.',
+        },
+        repair: { explanation: 'Track the water.', repairedStep: { step: 'Water leaves.' } },
+      },
+    };
+    const withContrast = { ...ctx, beats: [contrastBeat] };
+    const { user } = buildBoardPrompt(withContrast);
+    assert.match(user, /WRONG "Salt pulls\."/);
+  });
+});
+
 /** Representation-family mapping + lesson-vocabulary gates (reviewer defects 3+5). */
 
 const beat = (over: Partial<TeachingBeat> = {}): TeachingBeat => ({

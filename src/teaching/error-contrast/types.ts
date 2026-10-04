@@ -32,6 +32,8 @@ export const ErrorContrastSchema = z.object({
     violatedInvariant: z.string().min(1).max(200),
   }).strict(),
   repair: z.object({
+    /** What the repair must make visible (STCC §10 diagnosticIntent). */
+    diagnosticIntent: z.string().min(1).max(160).optional(),
     explanation: z.string().min(1).max(300),
     repairedStep: ReasoningStepSchema,
   }).strict(),

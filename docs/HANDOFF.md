@@ -2746,3 +2746,11 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Verification:** `approved-pictures.test.ts` 6/6 new; lesson-v2 8, lock-v2 7, ops-plan 20, board-semantics 2, render 17, encode 2, clips 4, player 3, replay/media determinism green; typecheck clean, manifest verified. No prompt rewrites; no existing tests edited.
 - **Known:** first live depiction downloads the Xenova MiniLM query model once (~90MB, then cached); failures skip pictorial softly. Vision check deferred (no vision model plumbed).
 - **Next:** live proof run measuring pictorialEntities + depiction spend.
+
+## Continuation — Phase 3 S3 signals + error-contrast wiring (wt/stcc/charter)
+
+- **Built:** `src/teaching/strategy/signals.ts` — `deriveStrategySignals` from contract+graph (threshold mechanisms, condition/boundary intents+relations, threshold claim text; state-change intents, transforms/causes relations, process/event kinds), wired into `runBeatStages` replacing hardcoded false. Boundary-case + predict-reveal branches now reachable.
+- **Built:** `diagnosticIntent` (optional) on ErrorContrast repair + S6 board prompt renders the full divergence (shared → WRONG vs CORRECT → repair + show-intent).
+- **Extended:** family mapping comparison/topology/hierarchy → comparison/graph/tree kits.
+- **Decision (recorded deviation):** snake_case enum tokens stay; STCC prose uses kebab. Renaming breaks cached plans/locks for zero semantic gain — 1:1 mapping documented here instead.
+- **Verification:** strategy-signals 5/5 new; ops-plan 20, beat-plan 11, beat-pipeline 2, strategy 9, lesson-v2 8, pedagogy 7, error-contrast 5, moves 5, prediction 3, visual-model 4, board-semantics 3; typecheck clean, manifest verified. No prompt rewrites (data rendering only); no existing tests edited.

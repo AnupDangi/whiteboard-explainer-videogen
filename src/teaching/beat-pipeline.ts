@@ -10,6 +10,7 @@ import type { TeachingBeat } from './beat-plan/types.js';
 import { wordsPerSecFor } from '../plan/analyze.js';
 import { ttsProvider } from '../audio/sceneAudio.js';
 import { compileStrategyPlan } from './strategy/plan.js';
+import { deriveStrategySignals } from './strategy/signals.js';
 import { compileMovePlan } from './moves/compile.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
 import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
@@ -69,12 +70,13 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
   for (const { section, beats, stage } of beatOutcomes) {
     if (!beats.value || !beats.context) { outcomes.push({ section, beats, narration: undefined, ctx: undefined }); previousTakeaway = undefined; continue; }
     const contract = section.contract;
+    const signals = deriveStrategySignals(contract, graph, section.conceptIds);
     const strategyPlan = compileStrategyPlan({
       sceneId: section.id, teachingSkill: contract?.teachingSkill ?? 'definition', sectionKind: section.kind,
       misconceptionCount: contract?.misconceptionRisk?.length ?? 0,
       // priorKnowledge holds labels, not ids, so novelty is approximated by concept count; an S3-owned count replaces this when available.
       newConceptCount: section.conceptIds.length, claimCount: contract?.essentialClaims?.length ?? 1, budgetSec: section.budgetSec,
-      hasMentalModel: !!contract?.mentalModel, hasBoundaryClaim: false, hasStateChange: false,
+      hasMentalModel: !!contract?.mentalModel, hasBoundaryClaim: signals.hasBoundaryClaim, hasStateChange: signals.hasStateChange,
     });
     const movePlan = compileMovePlan(section.id, strategyPlan.strategy);
     const claims = beats.context.claims;

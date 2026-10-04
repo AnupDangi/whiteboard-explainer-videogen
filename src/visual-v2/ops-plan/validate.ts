@@ -140,6 +140,9 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
   const FAMILY_ELEMENTS: Readonly<Record<string, (op: BoardOp) => boolean>> = {
     plot: (op) => op.op === 'add' && op.element.type === 'kit' && op.element.kit === 'axes-plot',
     equation: (op) => op.op === 'equationStep' || (op.op === 'add' && ((op.element.type === 'equation') || (op.element.type === 'kit' && op.element.kit === 'equation'))),
+    comparison: (op) => op.op === 'add' && op.element.type === 'kit' && op.element.kit === 'comparison',
+    topology: (op) => op.op === 'add' && op.element.type === 'kit' && op.element.kit === 'graph',
+    hierarchy: (op) => op.op === 'add' && op.element.type === 'kit' && op.element.kit === 'tree',
   };
   for (const beat of ctx.beats) {
     if (beat.narrationOnly) continue;
