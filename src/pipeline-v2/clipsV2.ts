@@ -97,7 +97,7 @@ export async function encodeLockedLessonV2Clips(outputDir: string, outPath: stri
   await mkdir(cacheDir, { recursive: true });
   await mkdir(progressDir, { recursive: true });
   await mkdir(path.dirname(outPath), { recursive: true });
-  const workers = Math.max(1, Math.min(2, availableParallelism() - 1));
+  const workers = Math.max(1, Math.min(4, availableParallelism() - 1));
   const createPool = deps.createRasterPool ?? ((size: number) => new RasterPool(size));
   const attemptsMax = Math.max(1, deps.attempts ?? 2);
   const probe = deps.probeDurationMs ?? probeMediaDurationMs;

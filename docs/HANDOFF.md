@@ -2760,3 +2760,9 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Built:** arrow-leads-the-eye in `compileSceneTimeline` — connect reveals wait only for the source element; the target may still be drawing (reference: arrow leads eye to what comes next). Validator untouched (both endpoints must still exist; op order unchanged).
 - **Observed, not built:** outline→fill→text sequencing already exists (`revealAt` stroke/fill/text phases); board-clear vs retain is planner semantic choice (no deterministic rule available); kit-children pinning needs solver redesign (deferred with reason).
 - **Verification:** cue-spread suite 4/4 (incl. new arrow test); render 17, timeline 12, arrows 5, composition 10, prediction 3, lock 7, clips 4; typecheck clean.
+
+## Continuation — Phase 5 safe speed (wt/stcc/charter)
+
+- **Built:** `--audio-concurrency=N` flag → runLessonV2 (default still 1; host lease already caps at 2); clip raster workers 2→4 (10-core host, bounded).
+- **Skipped with reason:** compile/validate parallelization (sync CPU-bound functions — Promise.all interleaves nothing); board-chain parallelization (STCC §29 forbids; needs constitution review, excluded by plan).
+- **Verification:** clips 4, encode 2, cli-attempt 3, lesson-v2 8; typecheck clean.
