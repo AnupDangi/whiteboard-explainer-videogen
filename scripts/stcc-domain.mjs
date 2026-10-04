@@ -30,7 +30,7 @@ const workdir = path.join(ROOT, '.data', 'stcc-proof', `${name}-a${attempt}`);
 const env = { ...process.env, TEACHING_COMPILER_VERSION: 'v2', TEACHING_BEATS_V2: '1', BOARD_OPS_V2: '1', PERSISTENT_BOARD_V2: '1', TYPE_RESOLVER_V2: '1', LAYOUT_V2: '1', RENDER_PLAN_V2: '1' };
 
 console.log(`== ${name} attempt ${attempt}: ${item.source} (${item.duration}s)`);
-const run = spawnSync('node', ['dist/src/run/lessonCli.js', `--source=${item.source}`, '--instruction=Teach the main idea of this source to a beginner.', `--duration=${item.duration}`, `--id=${item.id}`, '--cache=cold', '--tts=local', `--language=${lang}`, '--diagnostic-video', `--out=${workdir}`], { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+const run = spawnSync('node', ['dist/src/run/lessonCli.js', `--source=${item.source}`, '--instruction=Teach the main idea of this source to a beginner.', `--duration=${item.duration}`, `--id=${item.id}`, '--cache=cold', '--tts=local', `--language=${lang}`, '--diagnostic-video', '--audio-concurrency=2', `--out=${workdir}`], { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 writeFileSync(path.join(workdir + '.log'), (run.stdout ?? '') + '\n' + (run.stderr ?? ''));
 console.log((run.stdout ?? '').split('\n').filter((l) => /status=|\[HARD\]/.test(l)).map((l) => l.slice(0, 300)).join('\n'));
 
