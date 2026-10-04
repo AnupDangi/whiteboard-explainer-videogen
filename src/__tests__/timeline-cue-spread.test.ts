@@ -49,3 +49,25 @@ describe('degenerate cue spread', () => {
     assert.ok(timeline.ops.every((s) => s.t0 < 3000));
   });
 });
+
+describe('arrow leads the eye', () => {
+  it('a connect reveal waits for its source, not its target', async () => {
+    const { BoardOpSchema } = await import('../visual-v2/board-ops/types.js');
+    const { compileSceneTimeline: compile } = await import('../visual-v2/timeline/compile.js');
+    const { emptyBoardState } = await import('../visual-v2/board-state/reducer.js');
+    const tok = (text: string) => ({ type: 'token', text, provenance: 'illustrative' });
+    const at = (region: string) => ({ region });
+    const ops = [
+      BoardOpSchema.parse({ op: 'add', opId: 's.a', beatId: 's.b1', id: 'a', element: tok('source'), at: at('left'), cue: 0 }),
+      BoardOpSchema.parse({ op: 'add', opId: 's.b', beatId: 's.b1', id: 'b', element: tok('target'), at: at('right'), cue: 2 }),
+      BoardOpSchema.parse({ op: 'connect', opId: 's.e', beatId: 's.b1', id: 'e', from: 'a', to: 'b', relation: 'causes', cue: 1 }),
+    ];
+    const timeline = compile({
+      initial: emptyBoardState(), ops,
+      beats: [{ beatId: 's.b1', startMs: 0, endMs: 12000, sentences: [{ startMs: 0, endMs: 4000 }, { startMs: 4000, endMs: 8000 }, { startMs: 8000, endMs: 12000 }] }],
+    });
+    const edge = timeline.ops.find((s) => s.op.opId === 's.e')!;
+    const target = timeline.ops.find((s) => s.op.opId === 's.b')!;
+    assert.ok(edge.t0 < target.t1, `arrow starts (${edge.t0}) before its target finishes drawing (${target.t1})`);
+  });
+});

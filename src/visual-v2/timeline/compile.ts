@@ -97,7 +97,11 @@ export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: 
     const natural = naturalDuration(op, result.effects);
     // Ops keep their written order; at most `maxConcurrent` run at once.
     // An op that touches an element waits for the op that drew it, so a change never starts on something not yet there.
-    const needs = Math.max(0, ...dependenciesOf(op).map((id) => drawnAt.get(id) ?? 0));
+    // Reference choreography: an arrow leads the eye, so a connect reveal waits
+    // only for its source; the target may still be drawing when the arrow starts
+    // toward it. (Validation still requires both endpoints to exist.)
+    const lead = op.op === 'connect' ? [op.from] : dependenciesOf(op);
+    const needs = Math.max(0, ...lead.map((id) => drawnAt.get(id) ?? 0));
     const running = active.filter((a) => a.t1 > Math.max(anchorMs, lastStart, needs));
     let start = Math.max(anchorMs, lastStart, needs);
     if (running.length >= SCHEDULE.maxConcurrent) start = Math.max(start, running.map((a) => a.t1).sort((a, b) => a - b)[running.length - SCHEDULE.maxConcurrent]!);

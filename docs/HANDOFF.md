@@ -2754,3 +2754,9 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Extended:** family mapping comparison/topology/hierarchy → comparison/graph/tree kits.
 - **Decision (recorded deviation):** snake_case enum tokens stay; STCC prose uses kebab. Renaming breaks cached plans/locks for zero semantic gain — 1:1 mapping documented here instead.
 - **Verification:** strategy-signals 5/5 new; ops-plan 20, beat-plan 11, beat-pipeline 2, strategy 9, lesson-v2 8, pedagogy 7, error-contrast 5, moves 5, prediction 3, visual-model 4, board-semantics 3; typecheck clean, manifest verified. No prompt rewrites (data rendering only); no existing tests edited.
+
+## Continuation — Phase 4 draw choreography (wt/stcc/charter)
+
+- **Built:** arrow-leads-the-eye in `compileSceneTimeline` — connect reveals wait only for the source element; the target may still be drawing (reference: arrow leads eye to what comes next). Validator untouched (both endpoints must still exist; op order unchanged).
+- **Observed, not built:** outline→fill→text sequencing already exists (`revealAt` stroke/fill/text phases); board-clear vs retain is planner semantic choice (no deterministic rule available); kit-children pinning needs solver redesign (deferred with reason).
+- **Verification:** cue-spread suite 4/4 (incl. new arrow test); render 17, timeline 12, arrows 5, composition 10, prediction 3, lock 7, clips 4; typecheck clean.
