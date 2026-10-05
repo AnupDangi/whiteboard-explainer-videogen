@@ -285,6 +285,29 @@ export function teachingDirectorProblems(plan: TeachingPlan): string[] {
   return problems;
 }
 
+/**
+ * Drawable components must be depictable (S7 needs entity-kind concepts to
+ * picture anything). An intent that declares a claim's concept a literal,
+ * pointable object while the concept graph calls it a process/event/quantity
+ * fails here with the kind fix — no topic lists, purely the contract's own
+ * conceptType against the graph's kind.
+ */
+export function conceptKindProblems(plan: TeachingPlan, kinds: ReadonlyMap<string, string>): string[] {
+  const problems: string[] = [];
+  for (const section of plan.sections) {
+    for (const intent of section.contract?.semanticVisualIntents ?? []) {
+      if (intent.conceptType !== 'entity' || intent.strategy !== 'literal') continue;
+      for (const conceptId of intent.conceptIds) {
+        const kind = kinds.get(conceptId);
+        if (kind !== undefined && kind !== 'entity') {
+          problems.push(`section ${section.id}: intent for claim ${intent.claimId} declares ${conceptId} a literal drawable object but the concept graph calls it ${kind}; change the concept kind to entity (or the intent to a non-literal family)`);
+        }
+      }
+    }
+  }
+  return problems;
+}
+
 const claimTokens = (statement: string): Set<string> => new Set((statement.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((token) => token.length > 3));
 
 /** Scenes must not re-teach: two claims in different scenes with heavy token overlap are a restatement. */

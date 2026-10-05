@@ -2778,3 +2778,8 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Ingested:** all 24 simi_benchmark_v1_1 fixtures to `bench/simi-smoke/*.md` (candidate-visible source + objective + duration only; truth/comprehension never read). Smoke-8 video list: math, phys, bio, chem, cs, sys, aiml, stat (+ existing physics-rc).
 - **Driver:** 8 catalog entries + per-video generation timing (genStartedAt/genWallS in meta.json, shown on gallery cards).
 - **Reference:** lamina-labs-video holds 4 videos (Attention, simi.mp4, 2 photosynthesis); style reference only, per OBSERVATIONS.md.
+
+## Continuation — A1 concept-kind gate (wt/stcc/charter)
+
+- **Built:** `conceptKindProblems` in plan/contracts.ts — entity+literal intents on non-entity concepts fail with the kind fix; wired into S3 plan validation. No topic lists: the contract's own conceptType against the graph's kind.
+- **Verification:** concept-kind 3/3 new; contracts 5, plan 15, preparation 3, prompt-schema 2, hierarchical 16, lesson-v2 8, benchmark-resolver 1; typecheck clean.

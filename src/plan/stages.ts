@@ -12,7 +12,7 @@ import type { StageRunRecord } from '../shared/contracts.js';
 import { sourceDocFromText, spanExcerptPrompt, type SourceDoc, type SourceBundle } from '../intake/sourceDoc.js';
 import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
 import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
-import { continuityProblems, deriveTeachingPlan, teachingContractProblems, teachingDirectorProblems } from './contracts.js';
+import { conceptKindProblems, continuityProblems, deriveTeachingPlan, teachingContractProblems, teachingDirectorProblems } from './contracts.js';
 import { CONCEPT_STRUCTURE_GUIDANCE, PLAN_COMPONENT_GUIDANCE, relationalGraphProblems } from './goalShape.js';
 import { schemaKeywordLeaks } from '../planner/builder.js';
 
@@ -415,7 +415,7 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
         // Restatement is a teaching-quality rule the S3 prompt already states; it is recorded below, never a reason to lose the plan.
         const restatement: string[] = [];
         // Report shape limits (e.g. a section whose concepts cite no evidence) together with every planning problem.
-        return [...(shape.success ? [] : shape.error.issues.map((issue) => `derived plan ${issue.path.join('.')}: ${issue.message}`)), ...planProblems(plan), ...teachingDirectorProblems(plan), ...restatement];
+        return [...(shape.success ? [] : shape.error.issues.map((issue) => `derived plan ${issue.path.join('.')}: ${issue.message}`)), ...planProblems(plan), ...teachingDirectorProblems(plan), ...conceptKindProblems(plan, new Map(graph.concepts.map((concept) => [concept.id, concept.kind] as const))), ...restatement];
       },
     });
     const { value, ...rest } = result;
