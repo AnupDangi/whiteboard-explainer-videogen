@@ -62,7 +62,6 @@ const wordCount = (text: string, language?: string): number => tokenizeWords(tex
 /** Simi-level teaching gates: short sentences, addressed learner, original bridges. Shared with the pedagogy evaluator. */
 export const MAX_SENTENCE_WORDS = 16;
 export const SECOND_PERSON = /\b(you|your|yours|we|us|our|ours|let's|lets)\b/i;
-export const LIST_GLUE = /;|:\s*\S/;
 export const ngrams = (text: string, n: number): Set<string> => {
   const words = normalize(text).split(' ').filter(Boolean);
   const out = new Set<string>();
@@ -117,7 +116,6 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
       if (key && seen.has(key)) problems.push({ path: `${at}/sentences/${j}`, message: 'repeats a sentence already spoken in this scene; move the idea forward instead' });
       seen.add(key);
       if (wordCount(sentence, ctx.language) > MAX_SENTENCE_WORDS) problems.push({ path: `${at}/sentences/${j}`, message: `packs ${wordCount(sentence, ctx.language)} words into one sentence (at most ${MAX_SENTENCE_WORDS}); split it so one sentence carries one idea` });
-      if (LIST_GLUE.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'joins ideas with a semicolon or colon list; write short sentences instead, one idea each' });
     });
     const anchored = new Set<string>();
     narration.claimSentences.forEach((anchor, j) => {
