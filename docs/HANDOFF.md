@@ -2806,3 +2806,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 
 - **Built:** retain-all/retain-regions with zero references to inherited live elements fails (`use transition clean, or reuse what the last scene drew`). Touching (move/restyle/connect/remove/build-inside) passes; clean always passes; empty initial skips.
 - **Verification:** board-semantics 5/5 (incl. new retain test); ops-plan 20, lesson-v2 8, board-state 21, visual-model 4; typecheck clean, manifest verified. No prompt rewrites; no existing tests edited.
+
+## Continuation — simi-math 3 attempts closed (wt/stcc/charter)
+
+- **b1:** semicolon-gate overfire on contrastive prose → dropped the ban (word cap already forces splits).
+- **b2:** 10s scene 67 words vs ~20 stated → narration maxRepairs 2→3 (67→21, still 1 over).
+- **b3:** repair converged, then S5 aligner flaked (stable-ts zero-interval word 1 in both modes; CTC fallback fails closed on digits). MISSING stands.
+- **Horizontal issue (not math-specific):** stable-ts zero-interval flakiness + CTC digit intolerance. Needs its own aligner-robustness task; not blocking rotation.
