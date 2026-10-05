@@ -76,11 +76,10 @@ test('source-grounded modes reject unreferenced factual claims, while explicit i
     claims: [claim({ epistemicType: 'derived_relation', sourceRefs: [] })],
   }), /requires at least one hash-pinned primary source reference/u);
 
-  const open = createEvidenceLedger({
+  assert.throws(() => createEvidenceLedger({
     groundingMode: 'OPEN_EXPLANATION',
     claims: [claim({ epistemicType: 'direct_source', sourceRefs: [] })],
-  });
-  assert.equal(validateEvidenceLedger(open).valid, true);
+  }), /OPEN_EXPLANATION requires an explicit unverified-claim status/u);
 });
 
 test('ledger validation detects edits and refuses caller-supplied semantics at construction', () => {
@@ -133,6 +132,9 @@ test('strict grounding rejects background citations and source-plus-background r
   assert.throws(() => createEvidenceLedger({
     groundingMode: 'SOURCE_PLUS_BACKGROUND', claims: [claim({ sourceRefs: [backgroundRef] })],
   }), /background provenance cannot support direct_source/u);
+  assert.throws(() => createEvidenceLedger({
+    groundingMode: 'SOURCE_PLUS_BACKGROUND', claims: [claim({ sourceRefs: [sourceRef(), backgroundRef] })],
+  }), /background provenance cannot support direct_source/u, 'a primary ref cannot launder a background ref onto a factual claim');
 
   const bridge = createEvidenceLedger({
     groundingMode: 'SOURCE_PLUS_BACKGROUND',

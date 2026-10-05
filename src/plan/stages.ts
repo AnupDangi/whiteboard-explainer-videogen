@@ -9,11 +9,11 @@ import { splitSpokenSentences } from '../narration/sentences.js';
 import { ConceptGraphSchema, ScopedConceptGraphSchema, TeachingPlanDraftSchema, RELATION_TYPES, SECTION_KINDS, VISUAL_CONCEPT_TYPES, VISUAL_INTENT_STRATEGIES, VISUAL_FORMS, SECTION_TITLE_MAX_WORDS, TEACHING_SKILLS, VISUAL_MECHANISMS, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
 import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan, sceneCountFor } from './analyze.js';
 import type { StageRunRecord } from '../shared/contracts.js';
-import type { GroundingMode } from '../evidence/ledger.js';
+import { createEvidenceLedgerFromClaims, type GroundingMode } from '../evidence/ledger.js';
 import { sourceDocFromText, spanExcerptPrompt, type SourceDoc, type SourceBundle } from '../intake/sourceDoc.js';
 import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
 import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
-import { continuityProblems, deriveTeachingPlan, teachingContractProblems, teachingDirectorProblems } from './contracts.js';
+import { canonicalizePlanClaims, continuityProblems, deriveTeachingPlan, teachingContractProblems, teachingDirectorProblems } from './contracts.js';
 import { CONCEPT_STRUCTURE_GUIDANCE, PLAN_COMPONENT_GUIDANCE, relationalGraphProblems } from './goalShape.js';
 import { schemaKeywordLeaks } from '../planner/builder.js';
 
@@ -44,7 +44,7 @@ export interface LessonRequest {
   audience?: string;
   sourceDoc?: SourceDoc;
   sourceBundle?: SourceBundle;
-  /** Evidence policy for this lesson. Only STRICT_SOURCE is currently implemented. */
+  /** Evidence policy for this lesson. OPEN_EXPLANATION remains disabled until unverified claims have their own ledger status. */
   groundingMode?: GroundingMode;
   sources?: LessonSourceInput[];
   sourceFormat?: SourceDoc['format'];
@@ -192,6 +192,19 @@ export const TEACHING_PLAN_PROMPT_SCHEMA_RULES = `SCHEMA LIMITS — follow these
 - A recap is a synthesis, contrast, or source-supported transfer that gives the learner a new combined takeaway. It is the final scene, has a distinct learningDelta, and at least one essential claim links two or more concepts or a source-backed relation. Do not repeat an earlier claim as a recap; if the source graph cannot support an integrative recap, omit the recap rather than inventing one.
 - The schema also rejects unknown fields at every object level. All IDs must use lowercase snake_case and be at most 40 characters. Follow the requested duration, scene budget, graph coverage, relation, evidence, and teaching rules above as well as these shape limits.`;
 
+function groundingPolicyPrompt(mode: GroundingMode = 'STRICT_SOURCE'): string {
+  if (mode === 'SOURCE_PLUS_BACKGROUND') return `GROUNDING POLICY (SOURCE_PLUS_BACKGROUND):
+- Every direct_source or derived_relation claim must cite only primary-source spans. A background span cannot support a factual claim, even when the same claim also cites a primary span.
+- A pedagogical_bridge may cite hash-pinned primary or background spans; preserve each reference's sourceRole. Every claim still needs provenance.
+- Keep illustrative_example and analogy claims explicitly typed and visibly framed; they never establish factual truth.
+- Do not treat background material as primary evidence or remove provenance labels.`;
+  if (mode === 'OPEN_EXPLANATION') return 'GROUNDING POLICY: OPEN_EXPLANATION is not supported by the current claim ledger; do not generate an uncited claim.';
+  return `GROUNDING POLICY (STRICT_SOURCE):
+- Every direct_source, derived_relation, or pedagogical_bridge claim must cite hash-pinned primary-source spans only. Background spans cannot support claims.
+- Keep illustrative_example and analogy claims explicitly typed and visibly framed; they never establish factual truth.
+- Do not remove provenance labels.`;
+}
+
 /** Production default until a calibration run (`harness/planCalibrationCli.ts`) measures a challenger ahead of it. */
 const buildV3BaselinePrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
   system: `You are a teaching architect. Turn a concept graph into a time-budgeted plan for a narrated whiteboard video, one scene per section.
@@ -210,6 +223,7 @@ Rules:
 
 ${TEACHING_PLAN_PROMPT_SCHEMA_RULES}`,
   user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
+${groundingPolicyPrompt(req.groundingMode)}
 
 VALID CONCEPT IDS (copy IDs exactly into both arrays for every section):
 ${conceptIdChecklist}
@@ -248,6 +262,7 @@ ${TEACHING_PLAN_PROMPT_SCHEMA_RULES}`;
 const buildV4ExplicitConceptsPrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
   system: buildV4SystemPrompt({ scenes, req }),
   user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
+${groundingPolicyPrompt(req.groundingMode)}
 
 VALID CONCEPT IDS (copy IDs exactly into both arrays for every section):
 ${conceptIdChecklist}
@@ -275,6 +290,7 @@ ${JSON.stringify(graph, null, 1)}`,
 const buildV5FullyWorkedExamplePrompt: PlanPromptBuilder = ({ scenes, req, graph, conceptIdChecklist }) => ({
   system: buildV4SystemPrompt({ scenes, req }),
   user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
+${groundingPolicyPrompt(req.groundingMode)}
 
 VALID CONCEPT IDS (copy IDs exactly into both arrays for every section):
 ${conceptIdChecklist}
@@ -330,6 +346,7 @@ Rules:
 - intro.sections: use short outline headings of 2-5 words, each under 60 characters; keep explanations in the section goals.
 SCHEMA LIMITS: section ids are unique lowercase snake_case (at most 40 characters); goal 1-240 characters; kind one of ${SECTION_KINDS.join(', ')}; budgetSec positive; intro.sourceTitle 1-80 characters and intro.sections at most 12 strings of 1-80 characters; recap.keyPoints at most 6 strings of 1-160 characters; no other fields.`,
   user: `targetDurationSec: ${req.targetDurationSec}\nAudience: ${req.audience ?? 'general learner'}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
+${groundingPolicyPrompt(req.groundingMode)}
 
 VALID CONCEPT IDS:
 ${conceptIdChecklist}
@@ -402,6 +419,12 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
     if (p.targetDurationSec !== req.targetDurationSec) problems.push(`targetDurationSec must be ${req.targetDurationSec}`);
     problems.push(...analyzeTeachingPlan(p, graph).findings.filter((f) => f.severity === 'error').map((f) => f.message));
     problems.push(...teachingContractProblems(p, graph, audience));
+    try {
+      const canonical = canonicalizePlanClaims(p, graph);
+      createEvidenceLedgerFromClaims(canonical.sections.flatMap((section) => section.contract?.essentialClaims ?? []), req.groundingMode ?? 'STRICT_SOURCE');
+    } catch (error) {
+      problems.push(`grounding policy: ${error instanceof Error ? error.message : String(error)}`);
+    }
     const leakedIds = schemaKeywordLeaks(p.sections.flatMap((s) => [...s.conceptIds, ...(s.contract?.requiredConceptIds ?? [])]));
     if (leakedIds.length) problems.push(`section concept ids ${[...new Set(leakedIds)].map((id) => `"${id}"`).join(', ')} are JSON field names; use only ids from VALID CONCEPT IDS`);
     return problems;
@@ -434,7 +457,8 @@ export async function buildTeachingPlan(req: LessonRequest, graph: ConceptGraph,
   }
   // Full-plan variants (v3-v5): every section includes a copied contract, so output size tracks
   // scenes as well as graph size, with a bounded 10k completion ceiling.
-  return structuredCall({ ...common, schema: TeachingPlanSchema, schemaName: 'teaching_plan', maxTokens: teachingPlanTokenBudget(scenes, graph.concepts.length, graph.relations.length), validate: planProblems });
+  const result = await structuredCall({ ...common, schema: TeachingPlanSchema, schemaName: 'teaching_plan', maxTokens: teachingPlanTokenBudget(scenes, graph.concepts.length, graph.relations.length), validate: planProblems });
+  return result.value ? { ...result, value: canonicalizePlanClaims(result.value, graph) } : result;
 }
 
 // ---------------------------------------------------------------------------

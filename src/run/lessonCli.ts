@@ -247,12 +247,13 @@ async function main(): Promise<void> {
   const benchmarkAttemptId = arg('benchmark-attempt');
   const benchmarkAttempt = benchmarkAttemptId ? resolveDevelopmentAttempt(process.cwd(), benchmarkAttemptId) : undefined;
   const groundingMode: GroundingMode = (arg('grounding-mode') ?? 'STRICT_SOURCE') as GroundingMode;
-  if (groundingMode !== 'STRICT_SOURCE') {
-    if (groundingMode === 'SOURCE_PLUS_BACKGROUND' || groundingMode === 'OPEN_EXPLANATION') {
-      throw new Error(`grounding mode ${groundingMode} is not supported yet; only STRICT_SOURCE has an enforced evidence policy`);
-    }
+  if (groundingMode === 'OPEN_EXPLANATION') {
+    throw new Error('grounding mode OPEN_EXPLANATION is not supported yet; uncited claims need an explicit unverified-claim status');
+  }
+  if (groundingMode !== 'STRICT_SOURCE' && groundingMode !== 'SOURCE_PLUS_BACKGROUND') {
     throw new Error(`unknown grounding mode: ${groundingMode}`);
   }
+  if (benchmarkAttempt && groundingMode !== 'STRICT_SOURCE') throw new Error('frozen development trials require STRICT_SOURCE grounding');
   // --language=<ISO 639-1> sets the narration and speech language (default en); --tts=elevenlabs switches speech and word timing to ElevenLabs.
   const language = arg('language') ?? 'en';
   if (arg('tts')) process.env.TTS_PROVIDER = arg('tts');

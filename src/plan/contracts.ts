@@ -6,6 +6,46 @@ import { fitBudgetsToTarget, rebalanceSceneBudgets } from './analyze.js';
 
 const relationKey = (relation: { from: string; to: string; type: string }): string => `${relation.from}|${relation.type}|${relation.to}`;
 
+/** Rebuild hash-pinned claim provenance from graph evidence and the claim's explicit span IDs. */
+export function deriveClaimSourceRefs(
+  claim: Pick<NonNullable<TeachingPlan['sections'][number]['contract']>['essentialClaims'][number], 'conceptIds' | 'relations' | 'evidenceSpanIds'>,
+  graph: ConceptGraph,
+) {
+  const citedSpans = new Set(claim.evidenceSpanIds);
+  const concepts = new Map(graph.concepts.map((concept) => [concept.id, concept]));
+  const sourceEvidence = [
+    ...claim.conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence ?? []),
+    ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence ?? []),
+  ].filter((ref) => citedSpans.has(ref.spanId));
+  return [...new Map(sourceEvidence.filter((ref) => ref.documentSha256 && ref.quoteSha256).map((ref) => [
+    `${ref.sourceId}:${ref.spanId}:${ref.startChar}:${ref.endChar}:${ref.quoteSha256}:${ref.sourceRole ?? 'primary'}`,
+    { documentId: ref.sourceId, sourceHash: ref.documentSha256!, spanId: ref.spanId, startOffset: ref.startChar, endOffset: ref.endChar, quoteHash: ref.quoteSha256!, sourceRole: ref.sourceRole ?? 'primary' },
+  ])).values()];
+}
+
+/** Rebuild claim semantics and source refs for full-plan variants; neither field is model-owned. */
+export function canonicalizePlanClaims(plan: TeachingPlan, graph: ConceptGraph): TeachingPlan {
+  return {
+    ...plan,
+    sections: plan.sections.map((section) => section.contract ? {
+      ...section,
+      contract: {
+        ...section.contract,
+        essentialClaims: section.contract.essentialClaims.map((claim) => {
+          const { semantics: _untrustedSemantics, sourceRefs: _untrustedSourceRefs, ...claimFields } = claim;
+          const semantics = claimSemanticsFromText(claim.statement);
+          const sourceRefs = deriveClaimSourceRefs(claim, graph);
+          return {
+            ...claimFields,
+            ...(semantics ? { semantics } : {}),
+            ...(sourceRefs.length ? { sourceRefs } : {}),
+          };
+        }),
+      },
+    } : section),
+  };
+}
+
 /** One stable machine code per distinct rule below, for aggregating failure counts across many attempts (e.g. a calibration harness). Message text is the sole source of truth for existing test assertions — never change a message without checking `__tests__/scene-context.test.ts` and `__tests__/source-lesson-preparation.test.ts`. */
 export const CONTRACT_CODES = {
   LESSON_BIBLE_MISSING: 'LESSON_BIBLE_MISSING',
@@ -236,15 +276,7 @@ export function deriveTeachingPlan(rawDraft: TeachingPlanDraft, graph: ConceptGr
           essentialClaims: essentialClaims.map((claim) => {
             const { semantics: _untrustedSemantics, sourceRefs: _untrustedSourceRefs, ...claimFields } = claim;
             const semantics = claimSemanticsFromText(claim.statement);
-            const explicitlyCitedSpans = new Set(claim.evidenceSpanIds);
-            const sourceEvidence = [
-              ...claim.conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence ?? []),
-              ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence ?? []),
-            ].filter((ref) => explicitlyCitedSpans.has(ref.spanId));
-            const sourceRefs = [...new Map(sourceEvidence.filter((ref) => ref.documentSha256 && ref.quoteSha256).map((ref) => [
-              `${ref.sourceId}:${ref.spanId}:${ref.startChar}:${ref.endChar}:${ref.quoteSha256}:${ref.sourceRole ?? 'primary'}`,
-              { documentId: ref.sourceId, sourceHash: ref.documentSha256!, spanId: ref.spanId, startOffset: ref.startChar, endOffset: ref.endChar, quoteHash: ref.quoteSha256!, sourceRole: ref.sourceRole ?? 'primary' },
-            ])).values()];
+            const sourceRefs = deriveClaimSourceRefs(claim, graph);
             return {
               ...claimFields,
               ...(semantics ? { semantics } : {}),

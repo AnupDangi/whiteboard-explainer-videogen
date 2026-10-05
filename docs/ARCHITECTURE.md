@@ -139,10 +139,17 @@ concatenated bundle hash. New runs write `lesson-context/v3`; lock verification
 requires each claim's explicit type and checks its source refs against the
 claim's cited spans. `lesson-context/v2` remains readable through the
 compatibility path. The CLI carries grounding mode through request and run
-identity, but only `STRICT_SOURCE` is accepted; `SOURCE_PLUS_BACKGROUND` and
-`OPEN_EXPLANATION` remain unsupported. Confidence is optional informational
-metadata, is not calibrated, and does not certify claim truth. Legacy refs
-without both document and quote hashes cannot enter the new ledger.
+identity. `STRICT_SOURCE` and `SOURCE_PLUS_BACKGROUND` are accepted:
+direct-source and derived-relation claims require primary-only citations;
+pedagogical bridges may cite primary or explicitly role-marked background
+sources. A factual claim cannot mix in a background citation, even if a primary
+reference is also present. `OPEN_EXPLANATION` remains unsupported until
+uncited claims have an explicit unverified status in the ledger and lock.
+During S3 validation, claim refs are reconstructed from the claim's cited spans
+and linked graph evidence; model-supplied refs are not used to satisfy policy.
+Confidence is optional informational metadata, is not calibrated, and does not
+certify claim truth. Legacy refs without both document and quote hashes cannot
+enter the new ledger.
 
 Software owns evidence resolution, icon retrieval, board reduction, layout,
 edge routing, exact audio-derived timing, SVG generation, rasterization, and

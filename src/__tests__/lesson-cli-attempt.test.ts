@@ -85,6 +85,17 @@ test('lesson CLI rejects grounding modes whose evidence policy is not implemente
   assert.match(result.stderr, /grounding mode OPEN_EXPLANATION is not supported yet/);
 });
 
+test('lesson CLI accepts SOURCE_PLUS_BACKGROUND and continues to provider setup', () => {
+  const root = os.tmpdir();
+  const result = spawnSync(process.execPath, [
+    path.resolve('dist/src/run/lessonCli.js'),
+    '--source=bench/sources/osmosis.md', '--grounding-mode=SOURCE_PLUS_BACKGROUND',
+  ], { cwd: process.cwd(), env: { ...process.env, HYPOTHESIS_ENV_FILE: path.join(root, 'missing-source-plus.env'), OPENROUTER_API_KEY: '' }, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Could not read OpenRouter configuration/);
+  assert.doesNotMatch(result.stderr, /grounding mode SOURCE_PLUS_BACKGROUND is not supported/);
+});
+
 test('lesson CLI requires each background role to identify an exact supplied source input', () => {
   const result = spawnSync(process.execPath, [
     path.resolve('dist/src/run/lessonCli.js'),
@@ -102,4 +113,13 @@ test('lesson CLI prevents source-role overrides on frozen benchmark trials', () 
   ], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /frozen development trials do not allow source-role overrides/u);
+});
+
+test('lesson CLI keeps frozen benchmark trials on STRICT_SOURCE', () => {
+  const result = spawnSync(process.execPath, [
+    path.resolve('dist/src/run/lessonCli.js'),
+    '--benchmark-attempt=osmosis-trial-1', '--grounding-mode=SOURCE_PLUS_BACKGROUND',
+  ], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /frozen development trials require STRICT_SOURCE grounding/u);
 });

@@ -229,7 +229,7 @@ function freezeDeep<T>(value: T): T {
 }
 
 function policyErrors(groundingMode: GroundingMode, claims: readonly EvidenceClaim[]): string[] {
-  if (groundingMode === 'OPEN_EXPLANATION') return [];
+  if (groundingMode === 'OPEN_EXPLANATION') return ['OPEN_EXPLANATION requires an explicit unverified-claim status, which the current ledger contract does not provide'];
   return claims.flatMap((claim) => {
     const isFactual = claim.epistemicType === 'direct_source' || claim.epistemicType === 'derived_relation';
     const needsPrimary = isFactual || (groundingMode === 'STRICT_SOURCE' && claim.epistemicType === 'pedagogical_bridge');

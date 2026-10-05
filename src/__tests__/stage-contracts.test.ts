@@ -89,6 +89,30 @@ for (const words of [{ a: 'heat', b: 'pressure', c: 'volume' }, { a: 'tariff', b
   });
 }
 
+test('S3 refuses to ground a factual claim in a background-only span under SOURCE_PLUS_BACKGROUND', async () => {
+  const doc = sourceDocFromText('Background note: water moves through the filter.', 'text');
+  const span = doc.spans[0]!;
+  const backgroundEvidence = resolveSourceEvidence(doc, span.id, span.text.trim())!;
+  backgroundEvidence.sourceRole = 'background';
+  const graph: ConceptGraph = {
+    concepts: [{ id: 'water', label: 'Water', kind: 'entity', definition: 'Water moves through the filter.', evidence: [backgroundEvidence], level: 'one-step' }],
+    relations: [], prerequisites: [],
+  };
+  const plan = {
+    targetDurationSec: 18, intro: { sourceTitle: 'Background note', sections: [] }, recap: { keyPoints: [] },
+    sections: [{ id: 'water_fact', title: 'Water', goal: 'Describe water.', kind: 'explain', conceptIds: ['water'], budgetSec: 18, teachingSkill: 'definition', candidateMechanisms: ['focus'], essentialClaims: [{ id: 'water_fact_claim', statement: 'Water moves through the filter.', epistemicType: 'direct_source', conceptIds: ['water'], relations: [], evidenceSpanIds: [span.id] }] }],
+  };
+  let calls = 0;
+  const result = await buildTeachingPlan({ source: doc.text, sourceDoc: doc, targetDurationSec: 18, groundingMode: 'SOURCE_PLUS_BACKGROUND' }, graph, {
+    model: 'test/background-grounding', apiKey: 'test-only', remainingBudgetUsd: 0.05,
+    fetcher: async () => { calls++; return response(plan); },
+  });
+  assert.equal(calls, 2, 'one invalid plan plus the single permitted repair');
+  assert.equal(result.value, undefined);
+  assert.ok(result.failures.some((failure) => /background provenance cannot support direct_source/u.test(failure.message)));
+  assert.ok(result.failures.some((failure) => /requires at least one hash-pinned primary source reference/u.test(failure.message)));
+});
+
 test('S4 exact claim spans are code-offset into marker-stripped speech and reject missing, duplicate, and forged text', () => {
   const raw = 'A [[a|warm cup]] transfers heat to a [[b|cool cup]]. [[c|Heat]] moves. [[d|Both cups]] change.';
   const section: TeachingPlan['sections'][number] = { id: 's1', title: 'Heat', goal: 'Heat moves', kind: 'explain', conceptIds: ['heat'], budgetSec: 15, contract: { learningDelta: 'Heat moves', targetDurationSec: 15, requiredConceptIds: ['heat'], requiredRelations: [], evidenceSpanIds: ['span'], essentialClaims: [{ id: 'heat_transfer', statement: 'Heat moves', conceptIds: ['heat'], relations: [], evidenceSpanIds: ['span'] }], teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } };

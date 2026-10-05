@@ -48,8 +48,11 @@ test('v5 worked example demonstrates a filled terminology array and a multi-rela
   const req: LessonRequest = { source: sourceDoc.text, sourceDoc, targetDurationSec: 18 };
   const m: StageModel = { model: 'test/model', apiKey: 'test-only', remainingBudgetUsd: 0.05, fetcher };
   const result = await buildTeachingPlan(req, graph, m, 'v5-fully-worked-example');
-  assert.equal(result.usage.repairs, 0);
+  assert.equal(result.usage.repairs, 0, JSON.stringify(result.failures));
   assert.ok(result.value, 'v5 must still produce a valid plan for an already-valid response');
+  const canonicalClaim = result.value.sections[0]!.contract!.essentialClaims[0]!;
+  assert.deepEqual(canonicalClaim.sourceRefs?.map((ref) => ref.spanId), [sourceSpan.id], 'full-plan variants reconstruct claim provenance from cited graph spans');
+  assert.ok(canonicalClaim.sourceRefs?.every((ref) => ref.sourceHash === sourceDoc.contentSha256 && ref.quoteHash.length === 64));
 
   // The worked example must show terminology non-empty (v4's gap) ...
   assert.match(capturedUser, /"terminology":\[\{"conceptId":"concept_a"/);

@@ -93,7 +93,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       return { durationMs, words, aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
     };
     const out = path.join(dir, 'run');
-    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...prepared, requestedDurationSec: fixtureDurationSec(300, 100) }, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, fps: 8 });
+    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...prepared, groundingMode: 'SOURCE_PLUS_BACKGROUND', requestedDurationSec: fixtureDurationSec(300, 100) }, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, fps: 8 });
     assert.equal(result.status, 'draft', JSON.stringify(result.failures));
     assert.equal(result.artifactCertification.artifactStatus, 'DRAFT', 'an encoded video is still a draft while required QA gates are unmeasured');
     assert.ok(result.artifactCertification.artifactGates.some((gate) => gate.id === 'complete-semantic-qa-suite' && gate.status === 'unmeasured'));
@@ -106,10 +106,13 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.equal(result.metrics['v2.scenesWithIconFamily'], 2);
     const lessonContext = JSON.parse(await readFile(path.join(out, 'v2', 'lesson-context.json'), 'utf8')) as {
       schemaVersion: string;
+      groundingMode: string;
       plan: { sections: Array<{ contract: { essentialClaims: Array<{ epistemicType?: string }> } }> };
-      evidenceLedger: { claims: Array<{ epistemicType: string; sourceRefs: Array<Record<string, unknown>> }> };
+      evidenceLedger: { groundingMode: string; claims: Array<{ epistemicType: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
     assert.equal(lessonContext.schemaVersion, 'lesson-context/v3');
+    assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
+    assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.ok(lessonContext.plan.sections.flatMap((section) => section.contract.essentialClaims).every((claim) => claim.epistemicType === 'direct_source'));
     assert.ok(lessonContext.evidenceLedger.claims.every((claim) => claim.epistemicType === 'direct_source'));
     assert.ok(lessonContext.evidenceLedger.claims.flatMap((claim) => claim.sourceRefs).every((ref) => !('spanId' in ref)), 'the ledger stores hash-pinned document ranges; plan span identity remains in the canonical plan');
