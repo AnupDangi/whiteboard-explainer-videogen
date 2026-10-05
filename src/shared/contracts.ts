@@ -19,7 +19,7 @@ export type NativeSourceLocation =
   | {kind:'docx-paragraph';bodyBlock:number;paragraph:number}
   | {kind:'docx-table';bodyBlock:number;table:number}
   | {kind:'web-url';url:string;selector?:string};
-export interface EvidenceReference {sourceId:string;spanId:string;startChar:number;endChar:number;startLine:number;endLine:number;quote:string;sourceLocation?:NativeSourceLocation}
+export interface EvidenceReference {sourceId:string;spanId:string;startChar:number;endChar:number;startLine:number;endLine:number;quote:string;documentSha256?:string;quoteSha256?:string;sourceLocation?:NativeSourceLocation}
 export interface GoldenSourceFigure {id:string;path?:string;caption:string;mediaType:string;sha256?:string}
 export interface GoldenCase {
   schemaVersion:'golden-case/v1';
@@ -110,6 +110,7 @@ export interface GateRunRecord {
 }
 export type RunClass='renderer-fixture'|'hand-authored-script'|'generated-lesson';
 export type RunStatus='draft'|'failed'|'passed';
+import type { ArtifactCertification } from './artifactStatus.js';
 export interface NeutralElement {id:string;kind:string;label?:string;bbox:{x:number;y:number;w:number;h:number};sourceRef?:string;evidenceRefs?:EvidenceReference[]}
 export interface NeutralTimelineEvent {elementId:string;action:string;startMs:number;endMs:number;anchor?:string;pedagogicalHold?:boolean}
 export interface EvaluationBundle {
@@ -117,10 +118,14 @@ export interface EvaluationBundle {
   pipeline:'chatgpt'|'claude';
   runClass:RunClass;
   status:RunStatus;
+  /** Additive V2 certification state; never inferred from the legacy lowercase status. */
+  artifactCertification?:ArtifactCertification;
   caseId:string;
   runId:string;
   commit:string;
   configHash:string;
+  /** Canonical effective configuration whose JSON bytes are hashed by configHash. */
+  configIdentity?:Record<string,unknown>;
   nativeArtifacts:Record<string,string>;
   claims:string[];
   claimEvidence:Record<string,EvidenceReference[]>;
@@ -142,6 +147,10 @@ export interface HypothesisRunManifest {
   runClass?: RunClass;
   runId:string;
   caseId:string;
+  /** Additive V2 certification state; never inferred from the legacy lowercase status. */
+  artifactCertification?:ArtifactCertification;
+  /** Canonical identity for effective run configuration, separate from the source-code digest. */
+  configHash?:string;
   benchmark?: HypothesisBenchmarkMeta;
   startedAt:string;
   completedAt:string;

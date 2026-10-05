@@ -61,6 +61,8 @@ const EvidenceReferenceSchema = z.object({
   startLine: z.number().int().positive(),
   endLine: z.number().int().positive(),
   quote: z.string().min(1).max(600),
+  documentSha256: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  quoteSha256: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   sourceLocation: NativeSourceLocationSchema.optional(),
 }).strict().refine((ref) => ref.endChar > ref.startChar && ref.endLine >= ref.startLine, 'invalid source evidence range');
 const evidenceRefs = z.array(EvidenceReferenceSchema).min(1).max(6).optional();

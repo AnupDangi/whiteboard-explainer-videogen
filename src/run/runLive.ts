@@ -35,7 +35,7 @@ import { assembleModuleVideos, encodeModuleVideos, type ModuleVideoArtifact, typ
 import { probeMediaDurationMs } from '../export/ffmpeg.js';
 import { attributionForSources } from '../assets/streamline.js';
 import { buildWebVtt, buildWebVttForRun } from '../export/captions.js';
-import { resolveSourceEvidence, type SourceDoc, type SourceBundle } from '../intake/sourceDoc.js';
+import { sourceEvidenceRefMatches, type SourceDoc, type SourceBundle } from '../intake/sourceDoc.js';
 import { lessonCostCapUsd } from '../plan/hierarchical.js';
 import { budgetLedgerAccountingProblems, type PersistentBudgetLedger } from './budgetLedger.js';
 import { withHostResourcePermit } from '../shared/hostResourcePool.js';
@@ -356,8 +356,7 @@ export async function runHypothesisLive(input: HypothesisLiveInput, options: Hyp
     if (input.runClass === 'generated-lesson') {
       const refs = sceneInput.teachingContext?.sourceEvidenceRefs ?? [];
       const sourceRefsValid = Boolean(input.sourceDoc) && refs.length > 0 && refs.every((ref) => {
-        const resolved = resolveSourceEvidence(input.sourceDoc!, ref.spanId, ref.quote);
-        return Boolean(resolved && resolved.sourceId === ref.sourceId && resolved.startChar === ref.startChar && resolved.endChar === ref.endChar && resolved.startLine === ref.startLine && resolved.endLine === ref.endLine);
+        return sourceEvidenceRefMatches(input.sourceDoc!, ref);
       });
       if (!sourceRefsValid) {
         return { failure: { code: 'source-evidence-invalid', stage: 'provenance', message: `${sceneInput.sceneId}: source references are absent or do not resolve to exact source offsets`, hard: true } };

@@ -289,5 +289,25 @@ export function resolveSourceEvidence(doc: SourceDoc, spanId: string, quote: str
   const lineOffset = span.text.slice(0, relative).split('\n').length - 1;
   const startLine = (span.documentStartLine ?? span.startLine) + lineOffset;
   const endLine = startLine + quote.split('\n').length - 1;
-  return { sourceId: span.citationSourceId ?? doc.sourceId, spanId, startChar, endChar: startChar + quote.length, startLine, endLine, quote, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}) };
+  return {
+    sourceId: span.citationSourceId ?? doc.sourceId,
+    spanId,
+    startChar,
+    endChar: startChar + quote.length,
+    startLine,
+    endLine,
+    quote,
+    ...(doc.contentSha256 ? { documentSha256: doc.contentSha256 } : {}),
+    quoteSha256: hash(quote),
+    ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}),
+  };
+}
+
+/** Verify source offsets and any immutable digests carried by a source citation. */
+export function sourceEvidenceRefMatches(doc: SourceDoc, ref: EvidenceReference): boolean {
+  const resolved = resolveSourceEvidence(doc, ref.spanId, ref.quote);
+  if (!resolved || resolved.sourceId !== ref.sourceId || resolved.startChar !== ref.startChar || resolved.endChar !== ref.endChar || resolved.startLine !== ref.startLine || resolved.endLine !== ref.endLine) return false;
+  if (ref.documentSha256 !== undefined && ref.documentSha256 !== resolved.documentSha256) return false;
+  if (ref.quoteSha256 !== undefined && ref.quoteSha256 !== resolved.quoteSha256) return false;
+  return true;
 }

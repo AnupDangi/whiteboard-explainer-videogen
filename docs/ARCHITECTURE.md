@@ -24,11 +24,14 @@ S1b syllabus and duration budget
 S2 concept graph → S3 teaching contracts
        │
 S4 beat plan + locked narration
-       ├─────────────────────────────┐
-       ▼                             ▼
-S5 speech + word alignment      S6 semantic board planning
-       └──────────────┬──────────────┘
-                      ▼
+       │
+       ▼
+S5 speech + word alignment + duration fit
+       │
+       ▼
+S6 semantic board planning (sequential, retained board)
+       │
+       ▼
           BoardOps + persistent board state
                       │
           deterministic compile and layout
@@ -50,6 +53,12 @@ geometry and deterministic rendering are in `src/visual-v2/layout/`,
 `src/visual-v2/kits/`, and `src/visual-v2/renderer/`. Export code is under
 `src/export/`.
 
+By default, the V2 `plannerModel` is shared by beat narration and S6 BoardOps.
+The CLI now supports `--s6-planner` to override only BoardOps; the benchmark
+harness maps `V2_BENCH_PLANNER` to that option and records both model IDs.
+This isolated route has passed typecheck and offline suite verification but
+does not yet have a live scaled trial under the per-lesson budget cap.
+
 ## Ownership and trust boundaries
 
 Models decide teaching order, claims, narration, representation intent, and
@@ -59,6 +68,24 @@ response is parsed against a bounded schema and checked against source
 evidence, the board state, and the spoken beat. Bounded repairs may adjust
 invalid responses; repair or deterministic fallback remains recorded and
 cannot be silently counted as a pass.
+
+Source-grounded BoardOps text also passes a conservative semantic-signal check
+in `src/visual-v2/provenance/ground.ts`: recognized polarity, comparison,
+change-direction, temporal/spatial, quantifier, extreme, and condition cues may
+not contradict or be dropped from the matching quoted proposition. This is a
+finite English lexicon layered on lexical grounding; it does not establish
+general entailment or verify every paraphrase. Canonical `essentialClaims` now
+carry derived `ClaimSemantics` for explicit polarity, comparison/value,
+temporal relation, and quantities. Beat narration checks the sentence anchored
+to each claim for those cue reversals. This remains a finite lexical safeguard;
+typed source quote hashes, claim epistemic modes, comprehensive visual
+realization checks, and broad entailment validation are still open Phase 0
+work. Player telemetry records first browser playback after verified-frame
+readiness and a user gesture, but request-to-first-audio remains unmeasured
+until run acceptance has a trustworthy timestamp. Resolved source evidence now
+carries SHA-256 digests for the exact quote and, when present, its document;
+live-run S6 verifies these digests along with source offsets. Legacy citations
+without digests remain readable but are checked against the in-memory source.
 
 Software owns evidence resolution, icon retrieval, board reduction, layout,
 edge routing, exact audio-derived timing, SVG generation, rasterization, and
@@ -72,6 +99,50 @@ shared reducer; the next scene starts from the retained state. Identity and
 geometry are carried forward where valid. The runner currently plans this
 chain sequentially because each board depends on the previous one. It does not
 create independent boards concurrently.
+
+V2 results carry an additive `artifact-status/v1` decision alongside
+the legacy lowercase run status. A video stays `DRAFT` when fallback was used,
+required scorecard evidence is missing, or the full G1–G12 semantic QA suite is
+unmeasured. `FAILED` means the run did not produce a valid video artifact.
+`PASSED_REVIEW` requires the exact UTF-8 review report bytes, a matching SHA-256,
+and a report bound to the same artifact hash. This verifies content integrity
+and artifact binding, but not reviewer identity or authenticity. The CLI does
+not yet ingest a review report, so current V2 runs cannot reach this state.
+The benchmark's persisted-certificate verifier requires the canonical automatic
+gate IDs to be present exactly once and passed before it counts either pass
+state; review reports, when integrated, must be pinned as
+`human-review-report.json` in the run manifest.
+
+`scripts/v2-review-bundle.mjs` exports an independent run directory into a
+portable bundle with the lock, run manifest, evaluation, hash-indexed
+artifacts, derived timing summary, and repair evidence. Its verifier checks
+the internal run hashes, V2 lock, media streams, identities, and the outer
+file inventory. The outer SHA-256 is a tamper-evident digest only; it is not
+signed or bound to a trusted reviewer. First-audible player latency remains
+unmeasured, and derived repair evidence is explicitly incomplete until every
+salvage path is captured in the run artifacts.
+
+## Speech provider routing
+
+The lesson CLI reads `TTS_PROVIDER` and `TTS_FALLBACK_LOCAL` from the same
+environment file as provider configuration (`HYPOTHESIS_ENV_FILE`, or `.env`
+by default). Explicit process environment values take precedence, and `--tts`
+takes precedence over the file setting. The default provider remains local
+synthesis.
+
+ElevenLabs keys are read from `ELEVENLABS_API_KEY_1` through `_9` (with the
+legacy unsuffixed key also accepted), deduplicated, and selected by the shared
+credit reservation pool. Refused, invalid, quota-exhausted keys are retired for
+the current process; a repeated HTTP 429 advances to another key after one
+retry per key. A lost response, unusable success response, or HTTP 5xx is
+recorded as uncertain; its estimated credit hold remains reserved and that key
+is skipped for the rest of the process while the next configured key is tried.
+An uncertain attempt is never counted as a success. If the ElevenLabs key pool
+is exhausted, local synthesis carries the scene by default and records a soft
+fallback finding; setting `TTS_FALLBACK_LOCAL=0` keeps that failure hard.
+Uncertain attempts and estimated credits at risk are included in run metrics.
+Fallback does not convert a duration, alignment, or other quality-gate failure
+into a pass.
 
 ## Clock, layout, and rendering
 
@@ -105,7 +176,12 @@ library inputs are vendored for offline rendering; retrieval and SVG
 normalization are deterministic. Usage context filters libraries whose
 rights are still under review. An icon being present in a local catalog is not
 evidence that it is cleared for release. Rights review is an independent
-human gate.
+human gate. Current integration limitation: V2's `defaultResolver` passes the
+lesson domain through `ConceptInfo.domain`, but does not pass the selected scene
+representation family, so family filtering is not active on this call path. The
+production catalog has 19,058 entries across 11 enabled libraries; the larger
+~24k local-dev catalog includes review-only libraries and is not release
+evidence.
 
 ## Locks and publication
 
@@ -150,3 +226,17 @@ node scripts/render-bench.mjs <source-generated-v2-run-dir> --sizes=1,2,3,4 --fr
 
 The render benchmark is a manual measurement tool and intentionally has no
 package script. Never use a fixture lock as evidence of live worker throughput.
+The available 120-frame × 3 report selects eight workers from a single 10-core
+host; cross-host throughput and thermal behavior remain unmeasured. The latest
+bounded V2 domain outcomes and current gates are in [`HANDOFF.md`](HANDOFF.md).
+
+## S6 failure containment (2026-10-04)
+
+A BoardOps draft passes through four layers, each recorded and none able to turn a failure into a pass:
+
+1. **Validators (unchanged, fail closed):** schema, source evidence, bindings, dependencies, concept coverage, layout and move paths.
+2. **Deterministic salvage** (`visual-v2/ops-plan/salvage.ts`, `structuredCall` `salvage` hook): only removes or downgrades a claim, or re-points it at evidence the unchanged validator accepts; accepted only if the whole draft then validates. Changes are coercion-ledger entries, the call reports `firstTryValid=false`, and the run records a soft `board-ops-salvaged` failure.
+3. **Pointer-scoped model repair** (two attempts), as before.
+4. **Fallback board** (`ops-plan/fallback.ts`): a concept-only board from the scene's own data when 1-3 fail. Soft failures `board-ops-repair-failed-fallback` + `v2-board-fallback`, metric `v2.fallbackScenes`; the lesson stays `DRAFT`. `V2_BOARD_FALLBACK=0` makes a failing scene fail the run (strict benchmark mode). Later Phase 0 work removed semantic label/token shortening; current code preserves the approved text and lets repair or failure handle an unfit label. Earlier Oct. 4 samples used a different pipeline digest and are historical diagnostics, not results for this current behavior.
+
+Layout facts the validators rely on: band heights follow what each band must draw; children keep their slot while siblings leave; kits grow until their children's text fits; a move whose straight path would cross another element follows a deterministic quadratic detour computed by `moveRoutesFor` (shared by validation and the renderer, derived from locked rectangles).
