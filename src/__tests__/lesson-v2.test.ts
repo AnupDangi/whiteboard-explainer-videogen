@@ -107,8 +107,10 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     const lessonContext = JSON.parse(await readFile(path.join(out, 'v2', 'lesson-context.json'), 'utf8')) as {
       schemaVersion: string;
       groundingMode: string;
-      plan: { sections: Array<{ contract: { essentialClaims: Array<{ epistemicType?: string; verificationStatus?: string }> } }> };
-      evidenceLedger: { groundingMode: string; claims: Array<{ epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
+      plan: { sections: Array<{ id: string; contract: { evidenceSpanIds: string[]; essentialClaims: Array<{ id: string; epistemicType?: string; verificationStatus?: string; evidenceSpanIds: string[]; sourceRefs?: Array<{ spanId: string }> }> } }> };
+      beatPlans: Record<string, Array<{ claimIds: string[]; evidenceSpanIds: string[] }>>;
+      beatNarrations: Record<string, { claimSpans: Array<{ claimId: string }> }>;
+      evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
     assert.equal(lessonContext.schemaVersion, 'lesson-context/v4');
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
@@ -118,6 +120,20 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.ok(lessonContext.evidenceLedger.claims.every((claim) => claim.epistemicType === 'direct_source'));
     assert.ok(lessonContext.evidenceLedger.claims.every((claim) => claim.verificationStatus === 'source_cited'));
     assert.ok(lessonContext.evidenceLedger.claims.flatMap((claim) => claim.sourceRefs).every((ref) => !('spanId' in ref)), 'the ledger stores hash-pinned document ranges; plan span identity remains in the canonical plan');
+    const canonicalOne = lessonContext.plan.sections.find((section) => section.id === 'one')!.contract.essentialClaims.find((claim) => claim.id === 'one_c')!;
+    assert.deepEqual(canonicalOne.evidenceSpanIds, claims('one')[0]!.evidenceSpanIds);
+    assert.deepEqual(canonicalOne.sourceRefs?.map((ref) => ref.spanId), canonicalOne.evidenceSpanIds);
+    assert.equal(lessonContext.evidenceLedger.claims.find((claim) => claim.id === 'one_c')?.id, 'one_c');
+    assert.deepEqual(lessonContext.beatPlans.one![0]!.claimIds, ['one_c']);
+    assert.deepEqual(lessonContext.beatPlans.one![0]!.evidenceSpanIds, canonicalOne.evidenceSpanIds);
+    assert.ok(lessonContext.beatNarrations.one!.claimSpans.some((span) => span.claimId === 'one_c'));
+    const lockedSceneOne = JSON.parse(await readFile(path.join(out, 'v2', 'scene.one.json'), 'utf8')) as {
+      beats: Array<{ claimIds: string[] }>;
+      ops: Array<{ op: string; beatId: string; bindings?: { claimIds?: string[] }; element?: { bindings?: { claimIds?: string[] } } }>;
+    };
+    assert.deepEqual(lockedSceneOne.beats[0]!.claimIds, ['one_c']);
+    assert.ok(lockedSceneOne.ops.every((op) => op.beatId === 'one.b1'));
+    assert.ok(lockedSceneOne.ops.filter((op) => op.op === 'add').every((op) => op.element?.bindings?.claimIds?.includes('one_c')));
     const iconFamilies = JSON.parse(await readFile(path.join(out, 'v2', 'scene-icon-families.json'), 'utf8')) as { scenes: Array<{ sceneId: string; houseFamily: string | null }> };
     assert.ok(iconFamilies.scenes.every((scene) => scene.houseFamily === 'simi-house-v1/domain-outline'));
     assert.ok(Number.isFinite(result.metrics['v2.requestToCompleteMs']));

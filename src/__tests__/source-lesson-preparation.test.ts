@@ -109,6 +109,15 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     assert.equal(warmSceneRun?.artifactApiCostUsd, 0.001, 'cached scene records distinguish current spend from original artifact spend');
     assert.equal(warmSceneRun?.durationMs, 0);
 
+    const providerCallsBeforeModeChange = received.length;
+    const openWithSharedStore = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15, groundingMode: 'OPEN_EXPLANATION' }, {
+      model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
+      artifactStore: new ContentAddressedArtifactStore(root, 'warm'), fetcher: fakeProvider,
+    });
+    assert.deepEqual(openWithSharedStore.failures, []);
+    assert.deepEqual(openWithSharedStore.cacheHits, ['S3b-visual-discovery'], 'mode-sensitive S2, S3 and S4 artifacts cannot be reused; discovery may reuse only its identical graph/plan inputs');
+    assert.equal(received.length - providerCallsBeforeModeChange, 3, 'the changed mode reaches each mode-sensitive provider stage');
+
     // Contracts are derived from the graph (plan/contracts.ts deriveTeachingPlan), so a relation is lost
     // when no section teaches both of its endpoints; that must still fail S3 after its one repair.
     const relationOmittingPlan = structuredClone(plan);
