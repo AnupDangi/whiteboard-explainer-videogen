@@ -26,7 +26,7 @@ const graph: ConceptGraph = {
 const contract: SceneContract = {
   learningDelta: 'Explain how heat raises pressure', targetDurationSec: 20, requiredConceptIds: ['heat', 'pressure'],
   requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_heat', 'span_pressure', 'span_relation'],
-  essentialClaims: [{ id: 'heat_causes_pressure', statement: 'Heat causes pressure to rise.', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_heat', 'span_pressure', 'span_relation'] }],
+  essentialClaims: [{ id: 'heat_causes_pressure', statement: 'Heat causes pressure to rise.', epistemicType: 'derived_relation', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_heat', 'span_pressure', 'span_relation'] }],
   teachingSkill: 'mechanism', candidateMechanisms: ['convergence', 'threshold'],
 };
 const bible = { audience: 'general learner', terminology: [{ conceptId: 'heat', label: 'Heat' }, { conceptId: 'pressure', label: 'Pressure' }], persistentConceptIds: ['heat'] };

@@ -51,6 +51,20 @@ test('an anchored claim sentence cannot reverse explicit polarity or comparison 
   assert.ok(comparisonProblems.some((problem) => (problem as { path: string }).path === '/beats/0/sentences/0' && /comparison must remain lt 5/.test((problem as { message: string }).message)));
 });
 
+test('anchored examples and analogies keep their explicit nonfactual framing in narration', () => {
+  const example = draft([{ sentences: ['For example, every call is a frame.', 'The frame remembers where to return.'] }]);
+  const exampleContext = { ...ctx, canonicalClaims: { c1: { statement: 'For example, every call is a frame.', epistemicType: 'illustrative_example' as const } } };
+  assert.deepEqual(validateSceneNarration(example, exampleContext), []);
+  const unframedExample = draft([{ sentences: ['Every call is a frame.', 'The frame remembers where to return.'] }]);
+  assert.ok(validateSceneNarration(unframedExample, exampleContext).some((problem) => /epistemic framing mismatch: needs explicit example framing/.test((problem as { message: string }).message)));
+
+  const analogy = draft([{ sentences: ['A queue is like a line at a shop.', 'The frame remembers where to return.'] }]);
+  const analogyContext = { ...ctx, canonicalClaims: { c1: { statement: 'A queue is like a line at a shop.', epistemicType: 'analogy' as const } } };
+  assert.deepEqual(validateSceneNarration(analogy, analogyContext), []);
+  const unframedAnalogy = draft([{ sentences: ['A queue stores tasks.', 'The frame remembers where to return.'] }]);
+  assert.ok(validateSceneNarration(unframedAnalogy, analogyContext).some((problem) => /epistemic framing mismatch: needs explicit analogy framing/.test((problem as { message: string }).message)));
+});
+
 test('claim identity preserves graph concepts and directed predicates with controlled active/passive aliases', () => {
   const graphConcepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
   const source = {

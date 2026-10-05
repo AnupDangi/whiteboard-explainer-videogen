@@ -42,6 +42,14 @@ export const EvidenceSourceRefSchema = z.object({
 });
 export type EvidenceSourceRef = z.infer<typeof EvidenceSourceRefSchema>;
 
+/** Canonical plan references retain their source-span ID until projected into the compact evidence ledger. */
+export const CanonicalClaimSourceRefSchema = EvidenceSourceRefSchema.safeExtend({
+  spanId: z.string().min(1),
+  startOffset: z.number().int().nonnegative(),
+  endOffset: z.number().int().positive(),
+}).strict().refine((ref) => ref.endOffset > ref.startOffset, 'endOffset must be greater than startOffset');
+export type CanonicalClaimSourceRef = z.infer<typeof CanonicalClaimSourceRefSchema>;
+
 /** A canonical teaching claim plus its epistemic class and provenance. */
 const EvidenceClaimInputSchema = z.object({
   id: z.string().min(1).refine((value) => value === value.trim(), 'claim id must be canonical'),
@@ -92,13 +100,31 @@ export interface CanonicalTeachingClaimEvidence {
   id: string;
   statement: string;
   relations: readonly unknown[];
-  sourceRefs?: readonly EvidenceSourceRef[];
+  /** Absent only in pre-v3 lesson contexts; new V2 runs reject missing classifications. */
+  epistemicType?: EpistemicType;
+  sourceRefs?: readonly (EvidenceSourceRef | CanonicalClaimSourceRef)[];
   confidence?: number;
 }
 
 export interface EvidenceLedgerValidation {
   valid: boolean;
   errors: string[];
+}
+
+/** Conservative structural checks for explicit claim classes; this is not an entailment classifier. */
+export function epistemicTextFramingProblem(type: EpistemicType, text: string): string | undefined {
+  if (type === 'illustrative_example' && !/\b(?:for example|as an example|for instance|suppose|imagine|hypothetical(?:ly)?)\b/iu.test(text)) return 'needs explicit example framing';
+  if (type === 'analogy' && !/\b(?:analogy|analogous|as if|similar to|think of .{1,48} as|(?:is|are|works|functions|acts) like|imagine)\b/iu.test(text)) return 'needs explicit analogy framing';
+  return undefined;
+}
+
+export function epistemicClaimProblems(claim: Pick<CanonicalTeachingClaimEvidence, 'id' | 'statement' | 'relations' | 'epistemicType'>): string[] {
+  if (!claim.epistemicType) return [`claim ${claim.id} needs an explicit epistemicType`];
+  if (claim.epistemicType === 'direct_source' && claim.relations.length) return [`claim ${claim.id} is direct_source but lists a graph relation; classify relation claims as derived_relation`];
+  if (claim.epistemicType === 'derived_relation' && !claim.relations.length) return [`claim ${claim.id} is derived_relation but lists no graph relation`];
+  const framingProblem = epistemicTextFramingProblem(claim.epistemicType, claim.statement);
+  if (framingProblem) return [`claim ${claim.id} ${framingProblem}`];
+  return [];
 }
 
 /** Convert only a source reference that already carries both immutable digests. */
@@ -139,11 +165,19 @@ export function createEvidenceLedgerFromClaims(
 ): EvidenceLedger {
   const byId = new Map<string, EvidenceClaimInput>();
   for (const claim of claims) {
+    const sourceRefs = (claim.sourceRefs ?? []).map((ref) => {
+      if ('spanId' in ref) {
+        const canonicalRef = CanonicalClaimSourceRefSchema.parse(ref);
+        const { spanId: _spanId, ...ledgerRef } = canonicalRef;
+        return EvidenceSourceRefSchema.parse(ledgerRef);
+      }
+      return EvidenceSourceRefSchema.parse(ref);
+    });
     const candidate: EvidenceClaimInput = {
       id: claim.id,
       canonicalText: claim.statement,
-      sourceRefs: [...(claim.sourceRefs ?? [])],
-      epistemicType: claim.relations.length ? 'derived_relation' : 'direct_source',
+      sourceRefs,
+      epistemicType: claim.epistemicType ?? (claim.relations.length ? 'derived_relation' : 'direct_source'),
       ...(claim.confidence !== undefined ? { confidence: claim.confidence } : {}),
     };
     const existing = byId.get(candidate.id);

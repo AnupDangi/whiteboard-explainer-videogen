@@ -34,8 +34,8 @@ const claims = (id: string) => {
   const statement = sentences[id]![0]!;
   const evidence = sourceEvidenceFor(statement);
   return [{
-    id: `${id}_c`, statement, conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: [evidence.spanId],
-    sourceRefs: [{ documentId: evidence.sourceId, sourceHash: evidence.documentSha256!, startOffset: evidence.startChar, endOffset: evidence.endChar, quoteHash: evidence.quoteSha256! }],
+    id: `${id}_c`, statement, epistemicType: 'direct_source' as const, conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: [evidence.spanId],
+    sourceRefs: [{ documentId: evidence.sourceId, sourceHash: evidence.documentSha256!, spanId: evidence.spanId, startOffset: evidence.startChar, endOffset: evidence.endChar, quoteHash: evidence.quoteSha256!, sourceRole: evidence.sourceRole ?? 'primary' }],
   }];
 };
 const beatDraft = (sceneId: string) => BeatPlanDraftSchema.parse({ beats: [{
@@ -104,6 +104,15 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.equal(result.metrics['v2.hardGeometryProblems'], 0);
     assert.equal(result.metrics['v2.pictorialEntities'], 1, 'the exact vendored frame icon is counted after scene-family filtering');
     assert.equal(result.metrics['v2.scenesWithIconFamily'], 2);
+    const lessonContext = JSON.parse(await readFile(path.join(out, 'v2', 'lesson-context.json'), 'utf8')) as {
+      schemaVersion: string;
+      plan: { sections: Array<{ contract: { essentialClaims: Array<{ epistemicType?: string }> } }> };
+      evidenceLedger: { claims: Array<{ epistemicType: string; sourceRefs: Array<Record<string, unknown>> }> };
+    };
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v3');
+    assert.ok(lessonContext.plan.sections.flatMap((section) => section.contract.essentialClaims).every((claim) => claim.epistemicType === 'direct_source'));
+    assert.ok(lessonContext.evidenceLedger.claims.every((claim) => claim.epistemicType === 'direct_source'));
+    assert.ok(lessonContext.evidenceLedger.claims.flatMap((claim) => claim.sourceRefs).every((ref) => !('spanId' in ref)), 'the ledger stores hash-pinned document ranges; plan span identity remains in the canonical plan');
     const iconFamilies = JSON.parse(await readFile(path.join(out, 'v2', 'scene-icon-families.json'), 'utf8')) as { scenes: Array<{ sceneId: string; houseFamily: string | null }> };
     assert.ok(iconFamilies.scenes.every((scene) => scene.houseFamily === 'simi-house-v1/domain-outline'));
     assert.ok(Number.isFinite(result.metrics['v2.requestToCompleteMs']));
@@ -315,6 +324,33 @@ test('the V2 lock pins ops, narration, timings, audio and versions before render
     assert.ok((await verifyLessonLockV2(out)).some((p) => /scene one.*hash/.test(p)));
     await writeFile(scenePath, original);
     assert.deepEqual(await verifyLessonLockV2(out), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('the V2 lock rejects an untyped claim in a rehashed lesson-context/v3', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
+  try {
+    const out = await fixtureRun(dir);
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { context: { file: string; hash: string }; contentHash: string };
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8')) as {
+      schemaVersion: string;
+      plan: { sections: Array<{ contract: { essentialClaims: Array<Record<string, unknown>> } }> };
+    };
+    assert.equal(context.schemaVersion, 'lesson-context/v3');
+    delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
+    const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    lock.context.hash = sha256(contextBytes);
+    const { contentHash: _oldHash, ...body } = lock;
+    lock.contentHash = canonicalHash(body);
+    const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, lockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+
+    const problems = await verifyLessonLockV2(out);
+    assert.ok(problems.some((problem) => /canonical plan claim one_c has no valid epistemicType/.test(problem)), problems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

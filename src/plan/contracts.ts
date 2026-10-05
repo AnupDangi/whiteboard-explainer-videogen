@@ -1,5 +1,6 @@
 import { recordCoercion } from '../structured/coercionLedger.js';
 import { claimSemanticsFromText } from '../evidence/claims.js';
+import { epistemicClaimProblems } from '../evidence/ledger.js';
 import type { ConceptGraph, TeachingPlan, TeachingPlanDraft } from './schemas.js';
 import { fitBudgetsToTarget, rebalanceSceneBudgets } from './analyze.js';
 
@@ -33,6 +34,7 @@ export const CONTRACT_CODES = {
   ESSENTIAL_CLAIM_CONCEPT: 'ESSENTIAL_CLAIM_CONCEPT',
   ESSENTIAL_CLAIM_RELATION: 'ESSENTIAL_CLAIM_RELATION',
   ESSENTIAL_CLAIM_EVIDENCE: 'ESSENTIAL_CLAIM_EVIDENCE',
+  ESSENTIAL_CLAIM_EPISTEMIC_TYPE: 'ESSENTIAL_CLAIM_EPISTEMIC_TYPE',
 } as const;
 
 export type ContractCode = (typeof CONTRACT_CODES)[keyof typeof CONTRACT_CODES];
@@ -97,6 +99,9 @@ export function teachingContractFindings(plan: TeachingPlan, graph: ConceptGraph
     for (const claim of claims) {
       if (claimIds.has(claim.id)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_DUPLICATE, `${section.id} repeats lesson claim id ${claim.id}`);
       claimIds.add(claim.id);
+      for (const problem of epistemicClaimProblems({ id: claim.id, statement: claim.statement, relations: claim.relations, epistemicType: claim.epistemicType })) {
+        push(CONTRACT_CODES.ESSENTIAL_CLAIM_EPISTEMIC_TYPE, `${section.id} ${problem}`);
+      }
       const linkedEvidence = new Set<string>();
       for (const conceptId of claim.conceptIds) {
         if (!contract.requiredConceptIds.includes(conceptId) || !concepts.has(conceptId)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_CONCEPT, `${section.id} claim ${claim.id} links an invalid concept ${conceptId}`);
@@ -231,10 +236,11 @@ export function deriveTeachingPlan(rawDraft: TeachingPlanDraft, graph: ConceptGr
           essentialClaims: essentialClaims.map((claim) => {
             const { semantics: _untrustedSemantics, sourceRefs: _untrustedSourceRefs, ...claimFields } = claim;
             const semantics = claimSemanticsFromText(claim.statement);
+            const explicitlyCitedSpans = new Set(claim.evidenceSpanIds);
             const sourceEvidence = [
               ...claim.conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence ?? []),
               ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence ?? []),
-            ];
+            ].filter((ref) => explicitlyCitedSpans.has(ref.spanId));
             const sourceRefs = [...new Map(sourceEvidence.filter((ref) => ref.documentSha256 && ref.quoteSha256).map((ref) => [
               `${ref.sourceId}:${ref.spanId}:${ref.startChar}:${ref.endChar}:${ref.quoteSha256}:${ref.sourceRole ?? 'primary'}`,
               { documentId: ref.sourceId, sourceHash: ref.documentSha256!, spanId: ref.spanId, startOffset: ref.startChar, endOffset: ref.endChar, quoteHash: ref.quoteSha256!, sourceRole: ref.sourceRole ?? 'primary' },

@@ -39,7 +39,7 @@ import { loadBridge } from '../assets/bridge.js';
 import { bridgeRecordForCatalogEntry, buildAssetRightsEvidence, rightsEvidenceFailure } from '../assets/rightsEvidence.js';
 import { buildScorecard, type Scorecard } from '../harness/scorecard.js';
 import { TEACHING_COMPILER_VERSION } from '../run/featureFlags.js';
-import { createEvidenceLedgerFromClaims, validateEvidenceLedgerSources, type EvidenceLedger } from '../evidence/ledger.js';
+import { createEvidenceLedgerFromClaims, epistemicClaimProblems, validateEvidenceLedgerSources, type EvidenceLedger } from '../evidence/ledger.js';
 
 /**
  * Teaching Compiler V2 run: locked beats and beat narration -> real audio and alignment -> board operations -> persistent board
@@ -166,6 +166,8 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   let evidenceLedger: EvidenceLedger;
   try {
     const canonicalClaims = plan.sections.flatMap((section) => section.contract?.essentialClaims ?? []);
+    const epistemicProblems = canonicalClaims.flatMap((claim) => epistemicClaimProblems({ id: claim.id, statement: claim.statement, relations: claim.relations, epistemicType: claim.epistemicType }));
+    if (epistemicProblems.length) throw new Error(epistemicProblems.join('; '));
     evidenceLedger = createEvidenceLedgerFromClaims(canonicalClaims, prepared.groundingMode ?? 'STRICT_SOURCE');
     const graphEvidence = [
       ...graph.concepts.flatMap((concept) => concept.evidence),
@@ -405,7 +407,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v2', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations });
+  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v3', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });

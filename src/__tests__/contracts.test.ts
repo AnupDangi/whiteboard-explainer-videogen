@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CONTRACT_CODES, teachingContractFindings, teachingContractProblems } from '../plan/contracts.js';
 import { SceneContractSchema, type ConceptGraph, type SceneContract, type TeachingPlan } from '../plan/schemas.js';
+import { epistemicClaimProblems } from '../evidence/ledger.js';
 
 const heatRef = { sourceId: 'source_a', spanId: 'span_heat', startChar: 0, endChar: 11, startLine: 1, endLine: 1, quote: 'heat enters' };
 const pressureRef = { sourceId: 'source_a', spanId: 'span_pressure', startChar: 12, endChar: 26, startLine: 2, endLine: 2, quote: 'pressure rises' };
@@ -16,7 +17,7 @@ const graph: ConceptGraph = {
 const contract: SceneContract = {
   learningDelta: 'Explain how heat raises pressure', targetDurationSec: 20, requiredConceptIds: ['heat', 'pressure'],
   requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_heat', 'span_pressure', 'span_relation'],
-  essentialClaims: [{ id: 'heat_raises_pressure', statement: 'Heat raises pressure', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_relation'] }],
+  essentialClaims: [{ id: 'heat_raises_pressure', statement: 'Heat raises pressure', epistemicType: 'derived_relation', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: ['span_relation'] }],
   teachingSkill: 'mechanism', candidateMechanisms: ['convergence', 'threshold'],
 };
 const bible = { audience: 'general learner', terminology: [{ conceptId: 'heat', label: 'Heat' }, { conceptId: 'pressure', label: 'Pressure' }], persistentConceptIds: ['heat'] };
@@ -69,4 +70,24 @@ test('teachingContractProblems (legacy string view) stays byte-identical to teac
   missingContract.sections[0].contract = undefined;
   const findings = teachingContractFindings(missingContract, graph, 'general learner');
   assert.deepEqual(teachingContractProblems(missingContract, graph, 'general learner'), findings.map((f) => f.message));
+});
+
+test('generated claims require consistent explicit epistemic types and framed examples or analogies', () => {
+  const untyped = structuredClone(plan);
+  delete untyped.sections[0]!.contract!.essentialClaims[0]!.epistemicType;
+  assert.ok(teachingContractFindings(untyped, graph).some((finding) => finding.code === CONTRACT_CODES.ESSENTIAL_CLAIM_EPISTEMIC_TYPE && /explicit epistemicType/.test(finding.message)));
+
+  const directWithRelation = structuredClone(plan);
+  directWithRelation.sections[0]!.contract!.essentialClaims[0]!.epistemicType = 'direct_source';
+  assert.ok(teachingContractFindings(directWithRelation, graph).some((finding) => /direct_source but lists a graph relation/.test(finding.message)));
+
+  const noRelation = structuredClone(plan);
+  noRelation.sections[0]!.contract!.essentialClaims[0]!.epistemicType = 'derived_relation';
+  noRelation.sections[0]!.contract!.essentialClaims[0]!.relations = [];
+  assert.ok(teachingContractFindings(noRelation, graph).some((finding) => /derived_relation but lists no graph relation/.test(finding.message)));
+
+  assert.deepEqual(epistemicClaimProblems({ id: 'example', statement: 'The river carries the water.', relations: [], epistemicType: 'illustrative_example' }), ['claim example needs explicit example framing']);
+  assert.deepEqual(epistemicClaimProblems({ id: 'example', statement: 'For example, a river carries water.', relations: [], epistemicType: 'illustrative_example' }), []);
+  assert.deepEqual(epistemicClaimProblems({ id: 'analogy', statement: 'A queue works like a line at a shop.', relations: [], epistemicType: 'analogy' }), []);
+  assert.deepEqual(epistemicClaimProblems({ id: 'analogy', statement: 'A queue stores tasks.', relations: [], epistemicType: 'analogy' }), ['claim analogy needs explicit analogy framing']);
 });

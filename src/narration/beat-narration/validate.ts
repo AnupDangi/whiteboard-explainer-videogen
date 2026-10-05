@@ -5,6 +5,7 @@ import type { CoercionEntry } from '../../structured/coercionLedger.js';
 import type { SceneNarrationDraft } from './types.js';
 import { tokenizeWords } from '../align.js';
 import { claimSemanticsMismatch, type ClaimSemantics } from '../../evidence/claims.js';
+import { epistemicTextFramingProblem, type EpistemicType } from '../../evidence/ledger.js';
 import { claimIdentityMismatch, formatClaimIdentityMismatch, type ClaimIdentity } from '../../evidence/claimIdentity.js';
 
 export interface NarrationContext {
@@ -16,7 +17,7 @@ export interface NarrationContext {
   /** Concept labels the speaker may stress. */
   emphasisCandidates: string[];
   /** Canonical claim meanings keyed by claim id; used only to validate the anchored sentence. */
-  canonicalClaims?: Record<string, { statement: string; semantics?: ClaimSemantics; identity?: ClaimIdentity }>;
+  canonicalClaims?: Record<string, { statement: string; semantics?: ClaimSemantics; identity?: ClaimIdentity; epistemicType?: EpistemicType }>;
   /** ISO 639-1 language of the speech (default en). */
   language?: string;
   /** Native-language teaching with established English technical terms kept where natural. */
@@ -96,6 +97,10 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
           const sentence = narration.sentences[anchor.sentenceIndex]!;
           for (const mismatch of claimSemanticsMismatch(claim.statement, sentence, claim.semantics)) {
             problems.push({ path: `${at}/sentences/${anchor.sentenceIndex}`, message: `claim ${anchor.claimId} semantic mismatch: ${mismatch}` });
+          }
+          if (claim.epistemicType) {
+            const framingProblem = epistemicTextFramingProblem(claim.epistemicType, sentence);
+            if (framingProblem) problems.push({ path: `${at}/sentences/${anchor.sentenceIndex}`, message: `claim ${anchor.claimId} epistemic framing mismatch: ${framingProblem}` });
           }
           if (claim.identity) for (const mismatch of claimIdentityMismatch(claim.identity, sentence)) {
             problems.push({ path: `${at}/sentences/${anchor.sentenceIndex}`, message: `claim ${anchor.claimId} identity mismatch: ${formatClaimIdentityMismatch(mismatch)}` });

@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { canonicalHash, type ReplayDigest } from '../harness/replayDeterminism.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
 import { claimIdentityMismatch, deriveClaimIdentity, formatClaimIdentityMismatch } from '../evidence/claimIdentity.js';
-import { parseEvidenceLedger, validateEvidenceLedger, validateEvidenceLedgerClaims, validateEvidenceLedgerSources, type CanonicalTeachingClaimEvidence } from '../evidence/ledger.js';
+import { EpistemicTypeSchema, epistemicClaimProblems, parseEvidenceLedger, validateEvidenceLedger, validateEvidenceLedgerClaims, validateEvidenceLedgerSources, type CanonicalTeachingClaimEvidence } from '../evidence/ledger.js';
 import type { EvidenceReference } from '../shared/contracts.js';
 import type { SourceDoc } from '../intake/sourceDoc.js';
 import { probeToolVersions } from '../run/lessonLock.js';
@@ -120,10 +120,11 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
   const plan = recordOf(context.plan);
   const sections = arrayOf(plan?.sections)?.map(recordOf).filter((section): section is JsonRecord => Boolean(section));
   const contextV2 = context.schemaVersion === 'lesson-context/v2';
-  if (context.schemaVersion !== undefined && !contextV2) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
+  const contextV3 = context.schemaVersion === 'lesson-context/v3';
+  if (context.schemaVersion !== undefined && !contextV2 && !contextV3) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
   // Older synthetic and cached V2 locks predate the claim graph / beat identity contract.
   if (!sections?.some((section) => recordOf(section.contract))) {
-    return contextV2 ? ['lesson context v2 has no canonical scene contracts'] : [];
+    return contextV2 || contextV3 ? [`lesson context ${contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
   }
 
   const problems: string[] = [];
@@ -140,7 +141,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
     if (parsed && (typeof parsed.from !== 'string' || typeof parsed.to !== 'string' || !conceptLabels.has(parsed.from) || !conceptLabels.has(parsed.to))) problems.push('pinned concept graph relation endpoint is missing');
   }
 
-  if (contextV2) {
+  if (contextV2 || contextV3) {
     const ledgerValidation = validateEvidenceLedger(context.evidenceLedger);
     if (!ledgerValidation.valid) problems.push(...ledgerValidation.errors.map((problem) => `pinned evidence ledger: ${problem}`));
     else {
@@ -155,10 +156,25 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
             problems.push('canonical plan has a malformed claim in the evidence-ledger projection');
             continue;
           }
+          const epistemicType = EpistemicTypeSchema.safeParse(claim.epistemicType);
+          if (contextV3 && !epistemicType.success) problems.push(`canonical plan claim ${claim.id} has no valid epistemicType`);
+          if (epistemicType.success) {
+            for (const issue of epistemicClaimProblems({ id: claim.id, statement: claim.statement, relations: arrayOf(claim.relations) ?? [], epistemicType: epistemicType.data })) {
+              problems.push(`canonical plan ${issue}`);
+            }
+          }
+          const citedSpanIds = new Set((arrayOf(claim.evidenceSpanIds) ?? []).filter((id): id is string => typeof id === 'string'));
+          for (const sourceRef of arrayOf(claim.sourceRefs) ?? []) {
+            const ref = recordOf(sourceRef);
+            if (typeof ref?.spanId !== 'string' || !citedSpanIds.has(ref.spanId)) {
+              problems.push(`canonical plan claim ${claim.id} has a source reference outside its explicitly cited evidence spans`);
+            }
+          }
           canonicalClaims.push({
             id: claim.id,
             statement: claim.statement,
             relations: arrayOf(claim.relations) ?? [],
+            ...(epistemicType.success ? { epistemicType: epistemicType.data } : {}),
             ...(Array.isArray(claim.sourceRefs) ? { sourceRefs: claim.sourceRefs as CanonicalTeachingClaimEvidence['sourceRefs'] } : {}),
             ...(typeof claim.confidence === 'number' ? { confidence: claim.confidence } : {}),
           });
@@ -167,7 +183,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
       problems.push(...validateEvidenceLedgerClaims(ledger, canonicalClaims));
       const sourceDoc = recordOf(context.sourceDoc);
       if (!sourceDoc || typeof sourceDoc.sourceId !== 'string' || typeof sourceDoc.text !== 'string' || !Array.isArray(sourceDoc.spans)) {
-        problems.push('lesson context v2 has no verifiable source document for its evidence ledger');
+        problems.push(`lesson context ${contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
       } else {
         const graphEvidence = [
           ...concepts.flatMap((concept) => arrayOf(concept.evidence) ?? []),

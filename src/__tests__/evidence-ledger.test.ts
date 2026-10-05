@@ -112,6 +112,19 @@ test('source reference conversion refuses legacy refs without both digests', () 
   });
 });
 
+test('canonical plan source references retain span identity outside the compact evidence ledger', () => {
+  const canonicalClaim = {
+    id: 'claim-1',
+    statement: 'A sourced fact.',
+    relations: [],
+    epistemicType: 'direct_source' as const,
+    sourceRefs: [{ documentId: 'source-1', sourceHash: HASH_A, spanId: 'span-1', startOffset: 12, endOffset: 35, quoteHash: HASH_B, sourceRole: 'primary' as const }],
+  };
+  const ledger = createEvidenceLedgerFromClaims([canonicalClaim], 'STRICT_SOURCE');
+  assert.deepEqual(ledger.claims[0]!.sourceRefs, [sourceRef({ sourceRole: 'primary' })]);
+  assert.deepEqual(validateEvidenceLedgerClaims(ledger, [canonicalClaim]), []);
+});
+
 test('strict grounding rejects background citations and source-plus-background reserves facts for primary sources', () => {
   const backgroundRef = sourceRef({ sourceRole: 'background' });
   assert.throws(() => createEvidenceLedger({

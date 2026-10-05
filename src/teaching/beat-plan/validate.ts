@@ -2,11 +2,12 @@ import type { ConceptGraph, SceneContract } from '../../plan/schemas.js';
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { BeatPlanDraft, RelationSpec } from './types.js';
 import type { ClaimSemantics } from '../../evidence/claims.js';
+import type { EpistemicType } from '../../evidence/ledger.js';
 
 export interface BeatContext {
   sceneId: string;
   conceptIds: string[];
-  claims: Array<{ id: string; statement: string; conceptIds: string[]; relations: RelationSpec[]; evidenceSpanIds: string[]; semantics?: ClaimSemantics }>;
+  claims: Array<{ id: string; statement: string; conceptIds: string[]; relations: RelationSpec[]; evidenceSpanIds: string[]; semantics?: ClaimSemantics; epistemicType?: EpistemicType }>;
   /** Graph-backed relations among this scene's concepts. */
   relations: RelationSpec[];
   /** m1, m2 ... one per scene misconceptionRisk entry. */
@@ -32,7 +33,7 @@ export function beatContextFor(section: { id: string; conceptIds: string[]; budg
   return {
     sceneId: section.id,
     conceptIds,
-    claims: contract.essentialClaims.map((claim) => ({ id: claim.id, statement: claim.statement, conceptIds: claim.conceptIds, relations: claim.relations, evidenceSpanIds: claim.evidenceSpanIds, ...(claim.semantics ? { semantics: claim.semantics } : {}) })),
+    claims: contract.essentialClaims.map((claim) => ({ id: claim.id, statement: claim.statement, conceptIds: claim.conceptIds, relations: claim.relations, evidenceSpanIds: claim.evidenceSpanIds, ...(claim.semantics ? { semantics: claim.semantics } : {}), ...(claim.epistemicType ? { epistemicType: claim.epistemicType } : {}) })),
     relations: graph.relations.filter((r) => inScene.has(r.from) && inScene.has(r.to)).map(({ from, to, type }) => ({ from, to, type })),
     misconceptionIds: (contract.misconceptionRisk ?? []).map((_, index) => `m${index + 1}`),
     durationSec: contract.targetDurationSec || section.budgetSec,

@@ -109,9 +109,8 @@ hashes does not make an inconsistent capture valid.
 The relation forms are a finite lexical inventory; broad semantic entailment,
 unrecognized paraphrases, and ambiguous aggregate visual endpoints remain open.
 This remains a finite safeguard rather than general meaning verification.
-Requiring source quote hashes on every legacy serialized reference, claim
-epistemic modes, comprehensive visual realization checks, and broad entailment
-validation are still open Phase 0 work. Player telemetry records
+Comprehensive visual realization checks and broad entailment validation remain
+open. Player telemetry records
 first browser playback after verified-frame
 readiness and a user gesture. The CLI persists a trustworthy request-acceptance
 epoch in `run-start.json`; review bundles include and validate later browser
@@ -120,27 +119,30 @@ and browser telemetry does not prove physical speaker output. Resolved source ev
 carries SHA-256 digests for the exact quote and, when present, its document;
 live-run S6 verifies these digests along with source offsets. Legacy citations
 without digests remain readable but are checked against the in-memory source.
-Canonical essential claims carry `sourceRefs` reconstructed from their linked
-concept and relation evidence; model-provided refs are discarded. The V2 runner
-now projects those canonical claims into `src/evidence/ledger.ts` before audio
-generation. It validates the ledger digest and policy, then joins every
-hash-pinned reference back to the exact resolved graph evidence and source
-document. For bundled inputs, each source span retains its original document
-digest and original offsets rather than inheriting the concatenated bundle
-hash. A new `lesson-context/v2` records the ledger and `STRICT_SOURCE` mode;
-V2 lock verification compares it to the canonical plan claims and verifies its
-source references again. Older unversioned contexts keep the legacy verification
-path.
+Generated canonical claims now require an explicit `epistemicType`:
+`direct_source`, `derived_relation`, `pedagogical_bridge`,
+`illustrative_example`, or `analogy`. The S3 contract rejects a missing type,
+direct/derived relation mismatches, and examples or analogies without visible
+framing. The anchored narration sentence is checked for the same framing. These
+checks are structural and lexical; they do not prove that a statement is true or
+entailed by its source. Claim `sourceRefs` are rebuilt only from explicitly
+cited spans backed by the linked graph concepts or relations; model-provided
+refs are discarded.
 
-This is a first runtime evidence gate, not completion of Phase 1. The current
-claim projection infers only `direct_source` versus `derived_relation` from the
-presence of relations. The CLI carries grounding mode through request and run
+Before audio generation, V2 projects canonical claims into
+`src/evidence/ledger.ts`, validating the plan reference and dropping its
+`spanId` only from the compact ledger representation. It validates the ledger
+digest and policy, then joins each hash-pinned reference back to exact resolved
+graph evidence and the source document. For bundled inputs, each source span
+retains its original document digest and offsets rather than inheriting the
+concatenated bundle hash. New runs write `lesson-context/v3`; lock verification
+requires each claim's explicit type and checks its source refs against the
+claim's cited spans. `lesson-context/v2` remains readable through the
+compatibility path. The CLI carries grounding mode through request and run
 identity, but only `STRICT_SOURCE` is accepted; `SOURCE_PLUS_BACKGROUND` and
-`OPEN_EXPLANATION` remain unsupported. Explicit example/analogy classification
-and provenance for retrieved background remain incomplete. Confidence is
-optional informational metadata, is not calibrated, and does not certify claim
-truth. Legacy refs without both document and quote hashes cannot enter the new
-ledger.
+`OPEN_EXPLANATION` remain unsupported. Confidence is optional informational
+metadata, is not calibrated, and does not certify claim truth. Legacy refs
+without both document and quote hashes cannot enter the new ledger.
 
 Software owns evidence resolution, icon retrieval, board reduction, layout,
 edge routing, exact audio-derived timing, SVG generation, rasterization, and

@@ -59,6 +59,7 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
       canonicalClaims: Object.fromEntries((section.contract?.essentialClaims ?? claims).map((claim) => [claim.id, {
         statement: claim.statement,
         ...(claim.semantics ? { semantics: claim.semantics } : {}),
+        ...(claim.epistemicType ? { epistemicType: claim.epistemicType } : {}),
         identity: deriveClaimIdentity(claim, graph.concepts),
       }])),
       allowedNumbers: numbersIn([...claims.map((claim) => claim.statement), ...evidence, ...definitions, sourceExcerpt]),

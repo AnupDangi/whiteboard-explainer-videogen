@@ -34,7 +34,7 @@ test('v5 worked example demonstrates a filled terminology array and a multi-rela
       id: 'rising_pressure', title: 'Rising pressure', goal: 'Explain how heat raises pressure', kind: 'explain', conceptIds: ['heat', 'pressure'], budgetSec: 18,
       contract: {
         learningDelta: 'Explain how heat raises pressure', targetDurationSec: 18, requiredConceptIds: ['heat', 'pressure'],
-        requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: [sourceSpan.id], essentialClaims: [{ id: 'pressure_rises', statement: 'Heat raises pressure', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: [sourceSpan.id] }], teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
+        requiredRelations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: [sourceSpan.id], essentialClaims: [{ id: 'pressure_rises', statement: 'Heat raises pressure', epistemicType: 'derived_relation', conceptIds: ['heat', 'pressure'], relations: [{ from: 'heat', to: 'pressure', type: 'causes' }], evidenceSpanIds: [sourceSpan.id] }], teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
       },
     }],
   };

@@ -15,7 +15,7 @@ Learner delta: ${scene.learningDelta}
 ${scene.mentalModel ? `Mental model: ${scene.mentalModel}\n` : ''}${scene.priorKnowledge.length ? `The learner already knows: ${scene.priorKnowledge.join(', ')}\n` : ''}Misconceptions to prevent: ${scene.misconceptionRisk.length ? scene.misconceptionRisk.map((text, i) => `m${i + 1}: ${text}`).join(' | ') : '(none)'}
 Concepts: ${JSON.stringify(concepts.filter((c) => ctx.conceptIds.includes(c.id)).map(({ id, label, kind, definition }) => ({ id, label, kind, definition })))}
 Graph relations you may use: ${JSON.stringify(ctx.relations)}
-Scene claims (cover every one): ${JSON.stringify(ctx.claims.map(({ id, statement, conceptIds, relations }) => ({ id, statement, conceptIds, relations })))}
+Scene claims (cover every one; keep examples and analogies explicitly framed): ${JSON.stringify(ctx.claims.map(({ id, statement, epistemicType, conceptIds, relations }) => ({ id, statement, ...(epistemicType ? { epistemicType } : {}), conceptIds, relations })))}
 Plan ${range.min}-${range.max} beats.`;
   return { system, user };
 }
