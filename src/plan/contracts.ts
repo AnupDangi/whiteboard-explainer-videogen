@@ -236,8 +236,8 @@ export function deriveTeachingPlan(rawDraft: TeachingPlanDraft, graph: ConceptGr
               ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence ?? []),
             ];
             const sourceRefs = [...new Map(sourceEvidence.filter((ref) => ref.documentSha256 && ref.quoteSha256).map((ref) => [
-              `${ref.sourceId}:${ref.spanId}:${ref.startChar}:${ref.endChar}:${ref.quoteSha256}`,
-              { documentId: ref.sourceId, sourceHash: ref.documentSha256!, spanId: ref.spanId, startOffset: ref.startChar, endOffset: ref.endChar, quoteHash: ref.quoteSha256! },
+              `${ref.sourceId}:${ref.spanId}:${ref.startChar}:${ref.endChar}:${ref.quoteSha256}:${ref.sourceRole ?? 'primary'}`,
+              { documentId: ref.sourceId, sourceHash: ref.documentSha256!, spanId: ref.spanId, startOffset: ref.startChar, endOffset: ref.endChar, quoteHash: ref.quoteSha256!, sourceRole: ref.sourceRole ?? 'primary' },
             ])).values()];
             return {
               ...claimFields,

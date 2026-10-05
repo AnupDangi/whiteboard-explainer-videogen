@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { isArtifactStatus, type ArtifactStatus } from '../shared/artifactStatus.js';
 
 /**
  * V2 benchmark contract (plan §4.2, §7): a frozen cold 5 × 3 grid and the Stage A/B latency and failure gates. Every gate is
@@ -41,7 +42,7 @@ export async function verifyFrozenBenchmark(dir: string, manifest: BenchmarkMani
 export interface TrialSummary {
   caseId: string;
   trial: number;
-  status: 'draft' | 'failed' | 'passed';
+  status: ArtifactStatus;
   metrics: Record<string, number>;
   /** Missing is unknown evidence, never a zero-failure result. */
   hardFailures?: number;
@@ -59,6 +60,16 @@ export interface TrialSummary {
   /** Cost gate cannot pass unless every provider component, including TTS, has a USD value. */
   totalCostUsd?: number;
   ttsUsdKnown?: boolean;
+  /** Digest of the pipeline implementation recorded by the verified V2 lesson lock. */
+  pipelineDigest?: string;
+  /** Hash of the effective run configuration, independent from the source-code digest. */
+  configHash?: string;
+  /** Hash of the changed-test and baseline inventory sealed in runner evidence. */
+  testBaselineInventorySha256?: string;
+  /** False means test or baseline files changed while this trial was running. */
+  testBaselineInventoryStable?: boolean;
+  /** Sum of board and speech fallbacks; a fallback cannot be a release-passing trial. */
+  fallbackCount?: number;
 }
 export type GateStatus = 'passed' | 'failed' | 'unmeasured';
 export interface GateResult { gate: string; status: GateStatus; observed?: number; limit?: number; detail?: string }
@@ -69,6 +80,8 @@ const worst = (trials: readonly TrialSummary[], key: string): number | undefined
   const values = trials.map((trial) => trial.metrics[key]);
   return values.some((value) => value === undefined || !Number.isFinite(value) || value < 0) ? undefined : Math.max(...(values as number[]));
 };
+const COMPLETE_PIPELINE_DIGEST = /^pipeline-source\/v2:[a-f0-9]{40,64}:[a-f0-9]{64}$/u;
+const SHA256_DIGEST = /^[a-f0-9]{64}$/u;
 function atMost(gate: string, observed: number | undefined, limit: number, unit = ''): GateResult {
   return observed === undefined ? { gate, status: 'unmeasured', limit } : { gate, status: observed <= limit ? 'passed' : 'failed', observed, limit, ...(unit ? { detail: unit } : {}) };
 }
@@ -89,9 +102,10 @@ export function evaluateStageA(trials: readonly TrialSummary[], expected: { case
   const complete = !duplicate && !invalidSlot && expectedKeys.size === expected.cases * expected.trialsPerCase && seen.size === expectedKeys.size && [...expectedKeys].every((key) => seen.has(key));
   const fullGrid = complete && expected.cases === 5 && expected.trialsPerCase === 3 && expectedKeys.size === 15;
   const artifacts = fullGrid && trials.every((t) => t.artifactsComplete === true);
-  const statusEvidence = fullGrid && trials.every((t) => t.status === 'passed' || t.status === 'failed' || t.status === 'draft');
-  const releasePassing = statusEvidence ? trials.filter((t) => t.status === 'passed' && t.artifactsComplete === true).length : undefined;
-  const numericEvidence = fullGrid && artifacts && trials.every((t) => t.status === 'passed');
+  const statusEvidence = fullGrid && trials.every((t) => isArtifactStatus(t.status));
+  const isPassing = (status: ArtifactStatus) => status === 'PASSED_AUTOMATED' || status === 'PASSED_REVIEW';
+  const releasePassing = statusEvidence ? trials.filter((t) => isPassing(t.status) && t.artifactsComplete === true && t.fallbackCount === 0).length : undefined;
+  const numericEvidence = fullGrid && artifacts && trials.every((t) => isPassing(t.status) && t.fallbackCount === 0);
   const numericStatus = (result: GateResult): GateResult => result.status === 'passed' && !numericEvidence
     ? { ...result, status: 'unmeasured', detail: 'requires a complete cold-v2 grid of verified, passed trials' }
     : result;
@@ -100,6 +114,30 @@ export function evaluateStageA(trials: readonly TrialSummary[], expected: { case
   const silentRepairs = trials.map((t) => t.silentRepairs);
   const requestTiming = trials.length > 0 && trials.every((t) => t.requestStarted === true);
   const cold = trials.length > 0 && trials.every((t) => t.cold === true);
+  const pipelineDigests = trials.map((t) => t.pipelineDigest);
+  const knownPipelineDigests = new Set(pipelineDigests.filter((digest): digest is string => typeof digest === 'string' && digest.length > 0));
+  const pipelineDigestGate: GateResult = !fullGrid || pipelineDigests.some((digest) => typeof digest !== 'string' || !COMPLETE_PIPELINE_DIGEST.test(digest))
+    ? { gate: 'one verified pipeline digest across cold grid', status: 'unmeasured', detail: 'requires a complete compiler working-tree SHA-256 and Git HEAD identity in every lock' }
+    : knownPipelineDigests.size === 1
+      ? { gate: 'one verified pipeline digest across cold grid', status: 'passed', detail: [...knownPipelineDigests][0] }
+      : { gate: 'one verified pipeline digest across cold grid', status: 'failed', detail: `mixed pipeline digests: ${[...knownPipelineDigests].join(', ')}` };
+  const configHashes = trials.map((t) => t.configHash);
+  const knownConfigHashes = new Set(configHashes.filter((hash): hash is string => typeof hash === 'string' && hash.length > 0));
+  const configHashGate: GateResult = !fullGrid || configHashes.some((hash) => typeof hash !== 'string' || hash.length === 0)
+    ? { gate: 'one verified run configuration across cold grid', status: 'unmeasured', detail: 'requires a non-empty effective config hash for all 15 trials' }
+    : knownConfigHashes.size === 1
+      ? { gate: 'one verified run configuration across cold grid', status: 'passed', detail: [...knownConfigHashes][0] }
+      : { gate: 'one verified run configuration across cold grid', status: 'failed', detail: `mixed run configuration hashes: ${[...knownConfigHashes].join(', ')}` };
+  const changeInventoryHashes = trials.map((t) => t.testBaselineInventorySha256);
+  const knownChangeInventoryHashes = new Set(changeInventoryHashes.filter((hash): hash is string => typeof hash === 'string' && SHA256_DIGEST.test(hash)));
+  const inventoryStability = trials.map((t) => t.testBaselineInventoryStable);
+  const changeInventoryGate: GateResult = inventoryStability.some((stable) => stable === false)
+    ? { gate: 'changed test and baseline inventory recorded', status: 'failed', detail: 'test or baseline files changed during a benchmark trial' }
+    : !fullGrid || changeInventoryHashes.some((hash) => typeof hash !== 'string' || !SHA256_DIGEST.test(hash)) || inventoryStability.some((stable) => stable !== true)
+      ? { gate: 'changed test and baseline inventory recorded', status: 'unmeasured', detail: 'requires stable before/after inventory evidence for all 15 trials' }
+      : knownChangeInventoryHashes.size === 1
+        ? { gate: 'changed test and baseline inventory recorded', status: 'passed', detail: [...knownChangeInventoryHashes][0] }
+        : { gate: 'changed test and baseline inventory recorded', status: 'failed', detail: 'the changed test/baseline inventory differs across trials' };
   const hard = trials.length === 0 || trials.some((t) => t.hardFailures === undefined || !Number.isInteger(t.hardFailures) || t.hardFailures < 0) ? undefined : trials.reduce((n, t) => n + t.hardFailures!, 0);
   const r10 = trials.length === 0 || trials.some((t) => t.majorR10OnlyClaims === undefined || !Number.isInteger(t.majorR10OnlyClaims) || t.majorR10OnlyClaims < 0) ? undefined : Math.max(...trials.map((t) => t.majorR10OnlyClaims!));
   return [
@@ -109,8 +147,12 @@ export function evaluateStageA(trials: readonly TrialSummary[], expected: { case
     { gate: 'silent repairs = 0 (15/15)', status: silentRepairs.some((n) => n !== undefined && n > 0) ? 'failed' : !fullGrid || !allKnown(silentRepairs) || silentRepairs.some((n) => n === undefined || !Number.isInteger(n) || (n !== undefined && n < 0)) ? 'unmeasured' : 'passed', ...(allKnown(silentRepairs) ? { observed: silentRepairs.filter((value): value is number => value !== undefined).reduce((n, value) => n + value, 0) } : {}), limit: 0 },
     { gate: 'release-passing trials ≥ 14/15', status: releasePassing === undefined || trials.some((t) => t.artifactsComplete === undefined) ? 'unmeasured' : releasePassing >= 14 ? 'passed' : 'failed', ...(releasePassing === undefined ? {} : { observed: releasePassing }), limit: 14 },
     { gate: 'cold cache profile', status: trials.some((t) => t.cold === undefined) ? 'unmeasured' : cold ? 'passed' : 'failed' },
+    pipelineDigestGate,
+    configHashGate,
+    changeInventoryGate,
+    { gate: 'fallback-free trial outputs', status: trials.some((t) => t.fallbackCount !== undefined && t.fallbackCount > 0) ? 'failed' : !fullGrid || trials.some((t) => t.fallbackCount === undefined || !Number.isInteger(t.fallbackCount) || t.fallbackCount < 0) ? 'unmeasured' : 'passed', ...(trials.every((t) => Number.isInteger(t.fallbackCount) && (t.fallbackCount ?? -1) >= 0) ? { observed: trials.reduce((sum, t) => sum + (t.fallbackCount ?? 0), 0) } : {}), limit: 0 },
     { gate: 'request start timing present', status: trials.some((t) => t.requestStarted === undefined) ? 'unmeasured' : requestTiming ? 'passed' : 'failed' },
-    numericStatus(atMost('time to first playable (s) ≤ 20', seconds(worst(trials, 'v2.timeToFirstPlayableMs')), 20)),
+    numericStatus(atMost('request to first audible playable (s) ≤ 20', seconds(worst(trials, 'v2.firstAudiblePlayableMs')), 20)),
     numericStatus(atMost('full generation (s) ≤ 60', seconds(worst(trials, 'v2.requestToCompleteMs')), 60)),
     numericStatus(atMost('render + encode (s) ≤ 10', seconds(worst(trials, 'v2.encodeMs')), 10)),
     numericStatus({ gate: 'total lesson cost ≤ $0.10 with TTS valued', status: trials.length === 0 || trials.some((t) => t.totalCostUsd === undefined || !Number.isFinite(t.totalCostUsd) || t.totalCostUsd < 0 || t.ttsUsdKnown !== true) ? 'unmeasured' : Math.max(...trials.map((t) => t.totalCostUsd!)) <= 0.1 ? 'passed' : 'failed', ...(trials.length > 0 && trials.every((t) => t.totalCostUsd !== undefined && Number.isFinite(t.totalCostUsd) && t.totalCostUsd >= 0) ? { observed: Math.max(...trials.map((t) => t.totalCostUsd!)) } : {}), limit: 0.1, detail: 'unpriced TTS credits never establish a USD cost pass' }),
@@ -124,3 +166,15 @@ export function evaluateStageA(trials: readonly TrialSummary[], expected: { case
 
 /** True only when every gate passed; anything failed or unmeasured blocks acceptance. */
 export const stageAccepted = (gates: readonly GateResult[]): boolean => gates.every((gate) => gate.status === 'passed');
+
+/** Process failure evidence wins over a terminal artifact written before exit. */
+export function deriveInfrastructureCrash(
+  evidence: { spawnError?: string | null; signal?: string | null; exitCode?: number | null } | undefined,
+  terminalStatus: ArtifactStatus | undefined,
+): boolean | undefined {
+  if (!evidence) return undefined;
+  if (evidence.spawnError || evidence.signal) return true;
+  if (evidence.exitCode !== null && evidence.exitCode !== undefined && evidence.exitCode !== 0) return true;
+  if (isArtifactStatus(terminalStatus)) return false;
+  return undefined;
+}

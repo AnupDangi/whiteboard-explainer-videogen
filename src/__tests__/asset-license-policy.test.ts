@@ -21,3 +21,12 @@ test('a picture carries its licence verdict so the run can record provenance and
   assert.equal(depictEntity(concept, 'cat', rect, resolver('Flaticon-review')).ownerApproved, true);
   assert.equal(depictEntity(concept, 'cat', rect, resolver('CC-BY-4.0')).attributionRequired, true);
 });
+
+test('V2 entity resolution receives the lesson domain from the concept, whatever the topic', () => {
+  const seen: Array<string | undefined> = [];
+  const spy: EntityResolver = (label, size, conceptId, lessonDomain) => { seen.push(lessonDomain); return resolver('MIT')(label, size, conceptId, lessonDomain); };
+  depictEntity({ id: 'c1', label: 'cat', kind: 'entity', domain: 'Wave physics' }, 'cat', rect, spy);
+  depictEntity({ id: 'c2', label: 'cat', kind: 'entity', domain: 'Personal finance' }, 'cat', rect, spy);
+  depictEntity({ id: 'c3', label: 'cat', kind: 'entity' }, 'cat', rect, spy);
+  assert.deepEqual(seen, ['Wave physics', 'Personal finance', undefined]);
+});

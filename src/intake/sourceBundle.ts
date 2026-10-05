@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { NativeSourceLocation } from '../shared/contracts.js';
+import type { NativeSourceLocation, SourceRole } from '../shared/contracts.js';
 import { resolveSourceEvidence, sourceDocFromText, type EvidenceHit, type SourceBundle, type SourceDoc } from './sourceDoc.js';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -23,13 +23,18 @@ export interface BundledSources {
 }
 
 /** Combine exact extracted text while keeping each evidence span attached to its original document. */
-export function buildSourceBundle(docs: SourceDoc[], query: string, options: { sourceUrls?: Map<string, string>; topK?: number; retrievalMode?: SourceBundle['retrievalMode']; retrievalElapsedMs?: number } = {}): BundledSources {
+export function buildSourceBundle(docs: SourceDoc[], query: string, options: { sourceUrls?: Map<string, string>; documentRoles?: ReadonlyMap<string, SourceRole>; topK?: number; retrievalMode?: SourceBundle['retrievalMode']; retrievalElapsedMs?: number } = {}): BundledSources {
   const retrievalStartedAtMs = Date.now();
   if (!docs.length) throw new Error('At least one readable source document is required');
   if (docs.length > 50) throw new Error('A source bundle can contain at most 50 documents');
   const distinctDocs = [...new Map(docs.map((doc) => [doc.sourceId, doc])).values()];
+  const knownSourceIds = new Set(distinctDocs.map((doc) => doc.sourceId));
+  for (const sourceId of options.documentRoles?.keys() ?? []) {
+    if (!knownSourceIds.has(sourceId)) throw new Error(`Source role assigned to unknown document ${sourceId}`);
+  }
+  const roleFor = (docId: string): SourceRole => options.documentRoles?.get(docId) ?? 'primary';
   let text = '';
-  const nativeLocations: Array<{ startChar: number; endChar: number; sourceLocation?: NativeSourceLocation; citationSourceId: string; sourceTitle: string; documentStartChar: number; documentStartLine: number }> = [];
+  const nativeLocations: Array<{ startChar: number; endChar: number; sourceLocation?: NativeSourceLocation; citationSourceId: string; citationDocumentSha256: string; sourceRole: SourceRole; sourceTitle: string; documentStartChar: number; documentStartLine: number }> = [];
   for (const [docIndex, doc] of distinctDocs.entries()) {
     if (docIndex > 0) text += '\n\n';
     const start = text.length;
@@ -42,6 +47,8 @@ export function buildSourceBundle(docs: SourceDoc[], query: string, options: { s
         endChar: start + span.endChar,
         ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}),
         citationSourceId: doc.sourceId,
+        citationDocumentSha256: doc.contentSha256 ?? sha256(`${doc.format}\0${doc.text}`),
+        sourceRole: roleFor(doc.sourceId),
         sourceTitle: title,
         documentStartChar: span.startChar,
         documentStartLine: span.startLine,
@@ -49,7 +56,7 @@ export function buildSourceBundle(docs: SourceDoc[], query: string, options: { s
     }
   }
   const merged = sourceDocFromText(text, distinctDocs.length === 1 ? distinctDocs[0]!.format : 'text', nativeLocations);
-  const bundleId = `srcset_${sha256(distinctDocs.map((doc) => doc.sourceId).join('\0')).slice(0, 20)}`;
+  const bundleId = `srcset_${sha256(distinctDocs.map((doc) => `${doc.sourceId}:${roleFor(doc.sourceId)}`).join('\0')).slice(0, 20)}`;
   merged.sourceId = bundleId;
   merged.figureAssets = distinctDocs.flatMap((doc) => doc.figureAssets ?? []);
 
@@ -117,10 +124,11 @@ export function buildSourceBundle(docs: SourceDoc[], query: string, options: { s
     title: doc.title ?? `Source ${index + 1}`,
     sha256: doc.contentSha256 ?? sha256(`${doc.format}\0${doc.text}`),
     format: doc.format,
+    role: roleFor(doc.sourceId),
     ...(options.sourceUrls?.get(doc.sourceId) ?? doc.sourceUrl ? { sourceUrl: options.sourceUrls?.get(doc.sourceId) ?? doc.sourceUrl } : {}),
   }));
   const sourceBundle: SourceBundle = {
-    schemaVersion: 'source-bundle/v1',
+    schemaVersion: 'source-bundle/v2',
     bundleId,
     documents,
     figures: distinctDocs.flatMap((doc) => doc.figureAssets ?? []),

@@ -6,6 +6,10 @@ import { Resvg } from '@resvg/resvg-js';
 import { z } from 'zod';
 import { canonicalHash, type ReplayDigest } from '../harness/replayDeterminism.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
+import { claimIdentityMismatch, deriveClaimIdentity, formatClaimIdentityMismatch } from '../evidence/claimIdentity.js';
+import { parseEvidenceLedger, validateEvidenceLedger, validateEvidenceLedgerClaims, validateEvidenceLedgerSources, type CanonicalTeachingClaimEvidence } from '../evidence/ledger.js';
+import type { EvidenceReference } from '../shared/contracts.js';
+import type { SourceDoc } from '../intake/sourceDoc.js';
 import { probeToolVersions } from '../run/lessonLock.js';
 import { KALAM_BOLD_FILE, KALAM_FONT_FAMILY, KALAM_FONT_SHA256 } from '../render/fonts.js';
 import { STYLE } from '../render/style.js';
@@ -13,6 +17,9 @@ import { RasterPool } from '../export/rasterPool.js';
 import { spawnFrameEncoder } from '../export/ffmpeg.js';
 import { holdKey, renderSceneSvg } from '../visual-v2/renderer/frame.js';
 import type { V2VideoScene } from '../visual-v2/renderer/encode.js';
+import { BoardOpSchema, SceneTransitionSchema, type BoardOp } from '../visual-v2/board-ops/types.js';
+import { applyOpAfter, emptyBoardState, startScene } from '../visual-v2/board-state/reducer.js';
+import type { BoardState } from '../visual-v2/board-state/types.js';
 
 export const LESSON_LOCK_V2_VERSION = 'lesson.lock/v5-teaching-compiler-v2';
 const Hash = z.string().regex(/^[0-9a-f]{64}$/);
@@ -94,6 +101,250 @@ function alignmentProblems(bytes: Buffer, scenes: Array<{ sceneId: string; start
     if (actual.length !== expected.length || actual.some((word, wordIndex) => word !== expected[wordIndex])) problems.push(`alignment scene ${scene.sceneId} words do not match narration token sequence`);
   });
   return problems;
+}
+
+type JsonRecord = Record<string, unknown>;
+const recordOf = (value: unknown): JsonRecord | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : undefined;
+const arrayOf = (value: unknown): unknown[] | undefined => Array.isArray(value) ? value : undefined;
+const normalizedConceptLabel = (label: string): string => label.normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/gu, ' ').trim();
+const relationKey = (value: unknown): string | undefined => {
+  const relation = recordOf(value);
+  return typeof relation?.from === 'string' && typeof relation.to === 'string' && typeof relation.type === 'string'
+    ? `${relation.from}|${relation.type}|${relation.to}` : undefined;
+};
+
+/** Cross-check the teaching graph and all scene artifacts after their byte hashes have been verified. */
+function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['scenes'], semantic: unknown[], captured: CapturedScene[]): string[] {
+  let context: JsonRecord;
+  try { context = recordOf(JSON.parse(contextBytes.toString('utf8'))) ?? {}; } catch { return []; }
+  const plan = recordOf(context.plan);
+  const sections = arrayOf(plan?.sections)?.map(recordOf).filter((section): section is JsonRecord => Boolean(section));
+  const contextV2 = context.schemaVersion === 'lesson-context/v2';
+  if (context.schemaVersion !== undefined && !contextV2) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
+  // Older synthetic and cached V2 locks predate the claim graph / beat identity contract.
+  if (!sections?.some((section) => recordOf(section.contract))) {
+    return contextV2 ? ['lesson context v2 has no canonical scene contracts'] : [];
+  }
+
+  const problems: string[] = [];
+  const graph = recordOf(context.graph);
+  const concepts = arrayOf(graph?.concepts)?.map(recordOf).filter((concept): concept is JsonRecord => Boolean(concept)) ?? [];
+  const conceptLabels = new Map(concepts.flatMap((concept) => typeof concept.id === 'string' && typeof concept.label === 'string' ? [[concept.id, concept.label] as const] : []));
+  if (conceptLabels.size !== concepts.length) problems.push('pinned concept graph has missing or duplicate concept ids/labels');
+  const rawGraphRelations = arrayOf(graph?.relations) ?? [];
+  const graphRelationKeys = rawGraphRelations.map(relationKey).filter((key): key is string => key !== undefined);
+  if (graphRelationKeys.length !== rawGraphRelations.length || new Set(graphRelationKeys).size !== graphRelationKeys.length) problems.push('pinned concept graph has malformed or duplicate directed relations');
+  const graphRelations = new Set(graphRelationKeys);
+  for (const relation of rawGraphRelations) {
+    const parsed = recordOf(relation);
+    if (parsed && (typeof parsed.from !== 'string' || typeof parsed.to !== 'string' || !conceptLabels.has(parsed.from) || !conceptLabels.has(parsed.to))) problems.push('pinned concept graph relation endpoint is missing');
+  }
+
+  if (contextV2) {
+    const ledgerValidation = validateEvidenceLedger(context.evidenceLedger);
+    if (!ledgerValidation.valid) problems.push(...ledgerValidation.errors.map((problem) => `pinned evidence ledger: ${problem}`));
+    else {
+      const ledger = parseEvidenceLedger(context.evidenceLedger);
+      if (context.groundingMode !== ledger.groundingMode) problems.push('lesson context grounding mode does not match its evidence ledger');
+      const canonicalClaims: CanonicalTeachingClaimEvidence[] = [];
+      for (const section of sections ?? []) {
+        const contract = recordOf(section.contract);
+        for (const rawClaim of arrayOf(contract?.essentialClaims) ?? []) {
+          const claim = recordOf(rawClaim);
+          if (!claim || typeof claim.id !== 'string' || typeof claim.statement !== 'string') {
+            problems.push('canonical plan has a malformed claim in the evidence-ledger projection');
+            continue;
+          }
+          canonicalClaims.push({
+            id: claim.id,
+            statement: claim.statement,
+            relations: arrayOf(claim.relations) ?? [],
+            ...(Array.isArray(claim.sourceRefs) ? { sourceRefs: claim.sourceRefs as CanonicalTeachingClaimEvidence['sourceRefs'] } : {}),
+            ...(typeof claim.confidence === 'number' ? { confidence: claim.confidence } : {}),
+          });
+        }
+      }
+      problems.push(...validateEvidenceLedgerClaims(ledger, canonicalClaims));
+      const sourceDoc = recordOf(context.sourceDoc);
+      if (!sourceDoc || typeof sourceDoc.sourceId !== 'string' || typeof sourceDoc.text !== 'string' || !Array.isArray(sourceDoc.spans)) {
+        problems.push('lesson context v2 has no verifiable source document for its evidence ledger');
+      } else {
+        const graphEvidence = [
+          ...concepts.flatMap((concept) => arrayOf(concept.evidence) ?? []),
+          ...rawGraphRelations.flatMap((relation) => arrayOf(recordOf(relation)?.evidence) ?? []),
+        ].filter((ref): ref is JsonRecord => Boolean(recordOf(ref))).map((ref) => ref as unknown as EvidenceReference);
+        problems.push(...validateEvidenceLedgerSources(ledger, [sourceDoc as unknown as SourceDoc], graphEvidence));
+      }
+    }
+  }
+  const beatPlans = recordOf(context.beatPlans) ?? {};
+  const beatNarrations = recordOf(context.beatNarrations) ?? {};
+  let expectedCarried: BoardState = emptyBoardState();
+
+  scenes.forEach((locked, sceneIndex) => {
+    const section = sections.find((candidate) => candidate.id === locked.sceneId);
+    const contract = recordOf(section?.contract);
+    const claims = arrayOf(contract?.essentialClaims)?.map(recordOf).filter((claim): claim is JsonRecord => Boolean(claim)) ?? [];
+    if (!section || !contract || !claims.length) {
+      problems.push(`scene ${locked.sceneId} has no canonical essential claims in the pinned lesson context`);
+      return;
+    }
+    const claimsById = new Map<string, JsonRecord>();
+    for (const claim of claims) {
+      if (typeof claim.id !== 'string' || claimsById.has(claim.id)) { problems.push(`scene ${locked.sceneId} has missing or duplicate canonical claim ids`); continue; }
+      claimsById.set(claim.id, claim);
+      const claimConceptIds = arrayOf(claim.conceptIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+      if (!claimConceptIds.length || claimConceptIds.some((id) => !conceptLabels.has(id))) problems.push(`scene ${locked.sceneId} claim ${claim.id} has concept ids missing from the canonical graph`);
+      const claimRelations = arrayOf(claim.relations) ?? [];
+      for (const relation of claimRelations) {
+        const key = relationKey(relation);
+        const parsed = recordOf(relation);
+        if (!key || !graphRelations.has(key)) problems.push(`scene ${locked.sceneId} claim ${claim.id} relation is absent from the canonical directed graph`);
+        if (parsed && (!claimConceptIds.includes(String(parsed.from)) || !claimConceptIds.includes(String(parsed.to)))) problems.push(`scene ${locked.sceneId} claim ${claim.id} relation endpoints are outside its linked concepts`);
+      }
+      if (typeof claim.statement === 'string') {
+        const identity = deriveClaimIdentity({ statement: claim.statement, conceptIds: claimConceptIds, relations: claimRelations } as Parameters<typeof deriveClaimIdentity>[0], concepts.flatMap((concept) => typeof concept.id === 'string' && typeof concept.label === 'string' ? [{ id: concept.id, label: concept.label }] : []));
+        if (identity.relations.length !== claimRelations.length) problems.push(`scene ${locked.sceneId} claim ${claim.id} has a relation whose graph endpoints cannot be resolved to labels`);
+        for (const mismatch of claimIdentityMismatch(identity, claim.statement)) problems.push(`scene ${locked.sceneId} claim ${claim.id} canonical identity conflict: ${formatClaimIdentityMismatch(mismatch)}`);
+      }
+    }
+
+    const planBeats = arrayOf(beatPlans[locked.sceneId]);
+    const sceneRecord = recordOf(semantic[sceneIndex]);
+    const sceneBeats = arrayOf(sceneRecord?.beats);
+    if (!planBeats?.length || !sceneBeats?.length || canonicalHash(planBeats) !== canonicalHash(sceneBeats)) {
+      problems.push(`scene ${locked.sceneId} semantic beats do not match the pinned beat plan`);
+    }
+    const beatsById = new Map<string, JsonRecord>();
+    for (const rawBeat of planBeats ?? []) {
+      const beat = recordOf(rawBeat);
+      if (!beat || typeof beat.beatId !== 'string') { problems.push(`scene ${locked.sceneId} has a beat without a stable id`); continue; }
+      beatsById.set(beat.beatId, beat);
+      const beatClaimIds = arrayOf(beat.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+      for (const claimId of beatClaimIds) if (!claimsById.has(claimId)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} cites unknown claim ${claimId}`);
+      const cited = beatClaimIds.map((id) => claimsById.get(id)).filter((claim): claim is JsonRecord => Boolean(claim));
+      for (const rawEntity of arrayOf(beat.entities) ?? []) {
+        const entity = recordOf(rawEntity);
+        if (typeof entity?.conceptId !== 'string' || !cited.some((claim) => (arrayOf(claim.conceptIds) ?? []).includes(entity.conceptId))) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has an entity outside its cited claim concepts`);
+      }
+      for (const relation of arrayOf(beat.relationships) ?? []) {
+        const key = relationKey(relation);
+        if (!key || !cited.some((claim) => (arrayOf(claim.relations) ?? []).some((candidate) => relationKey(candidate) === key))) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has a directed relation outside its cited claims`);
+      }
+    }
+
+    const contextNarration = recordOf(beatNarrations[locked.sceneId]);
+    const sceneNarration = recordOf(sceneRecord?.narration);
+    if (!contextNarration || !sceneNarration || typeof contextNarration.text !== 'string' || canonicalHash(contextNarration) !== canonicalHash(sceneNarration)) {
+      problems.push(`scene ${locked.sceneId} narration does not match the pinned beat narration`);
+    }
+    if (sceneNarration && typeof sceneNarration.text === 'string') {
+      const text = sceneNarration.text;
+      const spans = arrayOf(sceneNarration.claimSpans) ?? [];
+      const seen = new Set<string>();
+      for (const rawSpan of spans) {
+        const span = recordOf(rawSpan);
+        const start = typeof span?.plainStart === 'number' ? span.plainStart : undefined;
+        const end = typeof span?.plainEnd === 'number' ? span.plainEnd : undefined;
+        if (!span || typeof span.claimId !== 'string' || !claimsById.has(span.claimId) || typeof span.exactText !== 'string' || start === undefined || end === undefined) {
+          problems.push(`scene ${locked.sceneId} has an invalid anchored claim span`); continue;
+        }
+        const exact = text.slice(start, end);
+        if (exact !== span.exactText || end <= start) problems.push(`scene ${locked.sceneId} claim ${span.claimId} anchor does not match its narration text`);
+        const claim = claimsById.get(span.claimId)!;
+        if (typeof claim.statement === 'string') {
+          const claimConceptIds = arrayOf(claim.conceptIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+          const claimRelations = arrayOf(claim.relations) ?? [];
+          const identity = deriveClaimIdentity({ statement: claim.statement, conceptIds: claimConceptIds, relations: claimRelations } as Parameters<typeof deriveClaimIdentity>[0], concepts.flatMap((concept) => typeof concept.id === 'string' && typeof concept.label === 'string' ? [{ id: concept.id, label: concept.label }] : []));
+          for (const mismatch of claimIdentityMismatch(identity, span.exactText)) problems.push(`scene ${locked.sceneId} claim ${span.claimId} narration identity mismatch: ${formatClaimIdentityMismatch(mismatch)}`);
+        }
+        const beatSpan = (arrayOf(sceneNarration.beatSpans) ?? []).map(recordOf).find((beat) => typeof beat?.charStart === 'number' && typeof beat.charEnd === 'number' && start >= beat.charStart && end <= beat.charEnd);
+        if (!beatSpan || typeof beatSpan.beatId !== 'string' || !(arrayOf(beatsById.get(beatSpan.beatId)?.claimIds) ?? []).includes(span.claimId)) problems.push(`scene ${locked.sceneId} claim ${span.claimId} anchor is not joined to a beat that cites it`);
+        seen.add(span.claimId);
+      }
+      for (const claimId of claimsById.keys()) if (!seen.has(claimId)) problems.push(`scene ${locked.sceneId} claim ${claimId} has no anchored narration sentence`);
+    }
+
+    const ops = arrayOf(sceneRecord?.ops) ?? [];
+    const capturedScene = captured[sceneIndex];
+    const capturedOps = capturedScene?.timeline.ops.map((scheduled) => scheduled.op) ?? [];
+    if (canonicalHash(ops) !== canonicalHash(capturedOps)) problems.push(`scene ${locked.sceneId} semantic BoardOps do not match the captured timeline`);
+    const transition = SceneTransitionSchema.safeParse(sceneRecord?.transition);
+    const parsedOps = ops.map((op) => BoardOpSchema.safeParse(op));
+    if (!transition.success || parsedOps.some((parsed) => !parsed.success)) {
+      problems.push(`scene ${locked.sceneId} has an invalid transition or BoardOp identity record`);
+    } else if (capturedScene) {
+      try {
+        const beatOrder = (planBeats ?? []).flatMap((beat) => typeof recordOf(beat)?.beatId === 'string' ? [recordOf(beat)!.beatId as string] : []);
+        const validOps = parsedOps.map((parsed) => (parsed as { success: true; data: BoardOp }).data);
+        const initial = startScene(expectedCarried, transition.data, locked.sceneId);
+        if (canonicalHash(initial) !== canonicalHash(capturedScene.timeline.states[0])) problems.push(`scene ${locked.sceneId} captured initial board state does not follow the pinned transition`);
+        let state = initial;
+        validOps.forEach((op, opIndex) => {
+          state = applyOpAfter(state, op, validOps[opIndex - 1]?.beatId, beatOrder).state;
+          if (canonicalHash(state) !== canonicalHash(capturedScene.timeline.states[opIndex + 1])) problems.push(`scene ${locked.sceneId} captured board state after operation ${op.opId} does not match deterministic BoardOp replay`);
+        });
+        if (capturedScene.timeline.states.length !== validOps.length + 1) problems.push(`scene ${locked.sceneId} captured board state count does not match its operations`);
+        expectedCarried = state;
+      } catch (error) {
+        problems.push(`scene ${locked.sceneId} BoardOps cannot reproduce captured board state: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    const stateAt = (index: number): JsonRecord | undefined => recordOf(capturedScene?.timeline.states[index]);
+    const elementSpec = (id: unknown, stateIndex: number): JsonRecord | undefined => {
+      if (typeof id !== 'string') return undefined;
+      const elements = recordOf(stateAt(stateIndex)?.elements);
+      return recordOf(recordOf(elements?.[id])?.spec);
+    };
+    const specsOf = (op: JsonRecord): JsonRecord[] => {
+      if (op.op === 'add' || op.op === 'replace') { const spec = recordOf(op.element); return spec ? [spec] : []; }
+      if (op.op === 'split') return (arrayOf(op.into) ?? []).flatMap((part) => { const spec = recordOf(recordOf(part)?.element); return spec ? [spec] : []; });
+      if (op.op === 'merge') { const spec = recordOf(recordOf(op.into)?.element); return spec ? [spec] : []; }
+      return [];
+    };
+    const opClaimIds = (op: JsonRecord, beatId: string): string[] => {
+      const beatClaims = arrayOf(beatsById.get(beatId)?.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+      if (op.op !== 'connect') return beatClaims;
+      const bindings = recordOf(op.bindings);
+      const claimIds = arrayOf(bindings?.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+      if (!claimIds.length || claimIds.some((id) => !beatClaims.includes(id))) problems.push(`scene ${locked.sceneId} operation is not bound to claims on its beat`);
+      return claimIds;
+    };
+    ops.forEach((rawOp, opIndex) => {
+      const op = recordOf(rawOp);
+      if (!op || typeof op.beatId !== 'string') { problems.push(`scene ${locked.sceneId} has an operation without a beat id`); return; }
+      const parentClaimIds = opClaimIds(op, op.beatId);
+      for (const spec of specsOf(op)) {
+        const bindings = recordOf(spec.bindings);
+        const boundClaims = arrayOf(bindings?.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+        const conceptIds = [ ...(typeof spec.conceptId === 'string' ? [spec.conceptId] : []), ...(arrayOf(bindings?.conceptIds)?.filter((id): id is string => typeof id === 'string') ?? []) ];
+        if (!boundClaims.length || boundClaims.some((id) => !parentClaimIds.includes(id))) problems.push(`scene ${locked.sceneId} visual is not bound to claims on its beat`);
+        const allowed = new Set(boundClaims.flatMap((id) => arrayOf(claimsById.get(id)?.conceptIds)?.filter((value): value is string => typeof value === 'string') ?? []));
+        if (!conceptIds.length || conceptIds.some((id) => !allowed.has(id))) problems.push(`scene ${locked.sceneId} visual concepts do not match its linked claims`);
+        if (spec.type === 'entity' && typeof spec.conceptId === 'string' && typeof spec.label === 'string') {
+          const other = [...conceptLabels].find(([id, label]) => id !== spec.conceptId && normalizedConceptLabel(label) === normalizedConceptLabel(spec.label as string));
+          if (other) problems.push(`scene ${locked.sceneId} entity label ${JSON.stringify(spec.label)} names graph concept ${other[0]}, but is bound to ${spec.conceptId}`);
+        }
+      }
+      if (op.op === 'connect') {
+        const from = elementSpec(op.from, opIndex);
+        const to = elementSpec(op.to, opIndex);
+        const fromIds = from ? [...new Set([...(typeof from.conceptId === 'string' ? [from.conceptId] : []), ...(arrayOf(recordOf(from.bindings)?.conceptIds)?.filter((id): id is string => typeof id === 'string') ?? [])])] : [];
+        const toIds = to ? [...new Set([...(typeof to.conceptId === 'string' ? [to.conceptId] : []), ...(arrayOf(recordOf(to.bindings)?.conceptIds)?.filter((id): id is string => typeof id === 'string') ?? [])])] : [];
+        const bindings = recordOf(op.bindings);
+        const boundConcepts = arrayOf(bindings?.conceptIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+        const allowed = new Set(parentClaimIds.flatMap((id) => arrayOf(claimsById.get(id)?.conceptIds)?.filter((value): value is string => typeof value === 'string') ?? []));
+        if (!boundConcepts.length || boundConcepts.some((id) => !allowed.has(id)) || fromIds.some((id) => !boundConcepts.includes(id)) || toIds.some((id) => !boundConcepts.includes(id))) problems.push(`scene ${locked.sceneId} captured edge concept bindings do not match its endpoints and linked claims`);
+        const predicate = typeof op.relation === 'string' ? op.relation.toLowerCase() : undefined;
+        const relevant = parentClaimIds.flatMap((id) => arrayOf(claimsById.get(id)?.relations) ?? []).map(recordOf).filter((relation): relation is JsonRecord => Boolean(relation));
+        if (relevant.length === 0) problems.push(`scene ${locked.sceneId} captured factual edge has no directed relation on its linked claims`);
+        if (fromIds.length === 1 && toIds.length === 1 && predicate !== undefined) {
+          if (relevant.length > 0 && !relevant.some((relation) => relation.from === fromIds[0] && relation.to === toIds[0] && typeof relation.type === 'string' && relation.type.toLowerCase() === predicate)) problems.push(`scene ${locked.sceneId} captured edge direction or predicate does not match a linked claim relation`);
+        }
+      }
+    });
+  });
+  return [...new Set(problems)];
 }
 
 /** A completed temp file is linked into place atomically; link never overwrites an existing lock. */
@@ -509,6 +760,7 @@ async function inspectLock(outputDir: string, options: { allowRasterOnlyToolDrif
     }
   }
   if (alignment) problems.push(...alignmentProblems(alignment, lock.scenes, semantic));
+  if (context) problems.push(...teachingIdentityProblems(context, lock.scenes, semantic, captured));
   if (endMs !== lock.render.durationMs || lock.render.frames !== Math.max(1, Math.round(lock.render.durationMs * lock.render.fps / 1000))) problems.push('render duration or frame count invalid');
   if (lock.render.width !== STYLE.canvas.w || lock.render.height !== STYLE.canvas.h) problems.push('render canvas version drift');
   const svgs = new Map<string, string>();

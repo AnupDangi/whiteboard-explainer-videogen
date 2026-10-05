@@ -13,13 +13,14 @@ export const EXPERIMENT={
 } as const;
 
 export interface GoldenRelation {from:string;to:string;type:string}
+export type SourceRole = 'primary' | 'background';
 export type NativeSourceLocation =
   | {kind:'pdf-page';page:number}
   | {kind:'pptx-slide';slide:number}
   | {kind:'docx-paragraph';bodyBlock:number;paragraph:number}
   | {kind:'docx-table';bodyBlock:number;table:number}
   | {kind:'web-url';url:string;selector?:string};
-export interface EvidenceReference {sourceId:string;spanId:string;startChar:number;endChar:number;startLine:number;endLine:number;quote:string;documentSha256?:string;quoteSha256?:string;sourceLocation?:NativeSourceLocation}
+export interface EvidenceReference {sourceId:string;spanId:string;startChar:number;endChar:number;startLine:number;endLine:number;quote:string;documentSha256?:string;quoteSha256?:string;sourceRole?:SourceRole;sourceLocation?:NativeSourceLocation}
 export interface GoldenSourceFigure {id:string;path?:string;caption:string;mediaType:string;sha256?:string}
 export interface GoldenCase {
   schemaVersion:'golden-case/v1';

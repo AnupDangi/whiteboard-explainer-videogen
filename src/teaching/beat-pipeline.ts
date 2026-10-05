@@ -11,6 +11,7 @@ import { writeBeatNarration } from '../narration/beat-narration/generate.js';
 import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
 import type { NarrationContext } from '../narration/beat-narration/validate.js';
 import type { StructuredCallAttemptRecord } from '../llm/structuredCall.js';
+import { deriveClaimIdentity } from '../evidence/claimIdentity.js';
 
 export interface BeatStagesValue {
   beatPlans: Record<string, TeachingBeat[]>;
@@ -55,6 +56,11 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
     const sourceExcerpt = sectionSourcePrompt(sourceDoc, section, graph);
     const ctx: NarrationContext = {
       sceneId: section.id, beats: beats.value, durationSec: beats.context.durationSec,
+      canonicalClaims: Object.fromEntries((section.contract?.essentialClaims ?? claims).map((claim) => [claim.id, {
+        statement: claim.statement,
+        ...(claim.semantics ? { semantics: claim.semantics } : {}),
+        identity: deriveClaimIdentity(claim, graph.concepts),
+      }])),
       allowedNumbers: numbersIn([...claims.map((claim) => claim.statement), ...evidence, ...definitions, sourceExcerpt]),
       emphasisCandidates: section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.label ?? []),
       ...(m.language ? { language: m.language } : {}),

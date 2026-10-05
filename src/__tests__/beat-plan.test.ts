@@ -39,7 +39,7 @@ test('the beat schema is strict: unknown enum values and extra keys are rejected
 });
 
 test('a complete plan that covers every claim is valid', () => {
-  assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], beatType: 'transform', cognitiveOperation: 'transform', learnerDelta: 'The learner sees returning remove the top frame.' })]), ctx), []);
+  assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], beatType: 'transform', cognitiveOperation: 'transform', learnerDelta: 'The learner sees returning remove the top frame.' })]), ctx), []);
 });
 
 test('problems carry JSON pointers so a repair patches only the failing location', () => {
@@ -49,7 +49,7 @@ test('problems carry JSON pointers so a repair patches only the failing location
   const byPath = Object.fromEntries(problems.map((p) => [(p as { path: string }).path, (p as { message: string }).message]));
   assert.match(byPath['/beats/0/claimIds/1']!, /unknown claim/);
   assert.match(byPath['/beats/0/entities/0/conceptId']!, /not a concept of this scene/);
-  assert.match(byPath['/beats/0/relationships/0']!, /not backed by the concept graph/);
+  assert.match(byPath['/beats/0/relationships/0']!, /not asserted by any cited claim/);
   assert.match(byPath['/beats/0/misconceptionIds/0']!, /unknown misconception/);
   assert.match(byPath['/beats/0/mutedMeaning']!, /muted/);
   assert.match(byPath['/beats/0/visualInvariant']!, /visualInvariant/);
@@ -57,10 +57,41 @@ test('problems carry JSON pointers so a repair patches only the failing location
   assert.ok(problems.every((p) => typeof p !== 'string'));
 });
 
+test('entities must be linked to a claim cited by the same beat, even when they are known scene concepts', () => {
+  const problems = validateBeatPlan(draft([
+    beat({ claimIds: ['c2'], entities: [{ conceptId: 'call' }], relationships: [] }),
+    beat({ claimIds: ['c1'], relationships: [] }),
+  ]), ctx);
+  const issue = problems.find((p) => (p as { path: string }).path === '/beats/0/entities/0/conceptId') as { path: string; message: string } | undefined;
+  assert.ok(issue);
+  assert.match(issue.message, /not linked to any cited claim/);
+  assert.match(issue.message, /c2/);
+});
+
+test('relationships must match a directed relation on a claim cited by that beat', () => {
+  const otherClaimRelation = { from: 'frame', to: 'stack', type: 'contains' } as const;
+  const linkedContext: BeatContext = {
+    ...ctx,
+    claims: [
+      ctx.claims[0]!,
+      { ...ctx.claims[1]!, relations: [otherClaimRelation] },
+    ],
+    relations: [...ctx.relations, otherClaimRelation],
+  };
+  const problems = validateBeatPlan(draft([
+    beat({ relationships: [{ from: 'frame', to: 'call', type: 'produces' }] }),
+    beat({ claimIds: ['c1'], relationships: [otherClaimRelation] }),
+  ]), linkedContext);
+  const byPath = Object.fromEntries(problems.map((p) => [(p as { path: string }).path, (p as { message: string }).message]));
+  assert.match(byPath['/beats/0/relationships/0']!, /not asserted by any cited claim/);
+  assert.match(byPath['/beats/1/relationships/0']!, /not asserted by any cited claim/);
+  assert.match(byPath['/beats/1/relationships/0']!, /c1/);
+});
+
 test('a narration-only beat may omit its muted meaning, a visual beat may not', () => {
-  const base = [beat(), beat({ claimIds: ['c2'], narrationOnly: true, mutedMeaning: '' })];
+  const base = [beat(), beat({ claimIds: ['c2'], relationships: [], narrationOnly: true, mutedMeaning: '' })];
   assert.deepEqual(validateBeatPlan(draft(base), ctx), []);
-  const visual = [beat(), beat({ claimIds: ['c2'], narrationOnly: false, mutedMeaning: '' })];
+  const visual = [beat(), beat({ claimIds: ['c2'], relationships: [], narrationOnly: false, mutedMeaning: '' })];
   assert.ok(validateBeatPlan(draft(visual), ctx).some((p) => (p as { path: string }).path === '/beats/1/mutedMeaning'));
 });
 
@@ -70,7 +101,7 @@ test('beat count follows scene duration and stays bounded', () => {
   assert.deepEqual(beatCountRange(60), { min: 6, max: 8 });
   const many = Array.from({ length: 9 }, () => beat());
   assert.equal(BeatPlanDraftSchema.safeParse({ beats: many }).success, false);
-  const tooFew = validateBeatPlan(draft([beat({ claimIds: ['c1'] }), beat({ claimIds: ['c2'] })]), { ...ctx, durationSec: 60 });
+  const tooFew = validateBeatPlan(draft([beat({ claimIds: ['c1'] }), beat({ claimIds: ['c2'], relationships: [] })]), { ...ctx, durationSec: 60 });
   assert.ok(tooFew.some((p) => /at least 6 beats/.test((p as { message: string }).message)));
 });
 
@@ -121,7 +152,7 @@ test('beatContextFor reads the scene contract and the concept graph, nothing els
 });
 
 test('planSceneBeats returns compiled beats on a valid first response', async () => {
-  const { client } = scripted([JSON.stringify({ beats: [beat(), beat({ claimIds: ['c2'] })] })]);
+  const { client } = scripted([JSON.stringify({ beats: [beat(), beat({ claimIds: ['c2'], relationships: [] })] })]);
   const result = await planSceneBeats({ section: { ...section, contract: contract() } as never, graph }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
   assert.deepEqual(result.value?.map((b) => b.beatId), ['stack_scene.b1', 'stack_scene.b2']);
   assert.equal(result.reports[0]!.stage, 'beats');
@@ -129,7 +160,7 @@ test('planSceneBeats returns compiled beats on a valid first response', async ()
 });
 
 test('an uncovered claim is repaired by a patch that adds the missing beat, not by regenerating the plan', async () => {
-  const addBeat = { op: 'add', path: '/beats/1', valueJson: JSON.stringify(beat({ claimIds: ['c2'] })) };
+  const addBeat = { op: 'add', path: '/beats/1', valueJson: JSON.stringify(beat({ claimIds: ['c2'], relationships: [] })) };
   const { client, requests } = scripted([JSON.stringify({ beats: [beat()] }), JSON.stringify({ patches: [addBeat] })]);
   const result = await planSceneBeats({ section: { ...section, contract: contract() } as never, graph }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
   assert.equal(result.value?.length, 2);

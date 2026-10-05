@@ -19,9 +19,25 @@ import { sha256 } from '../shared/artifacts.js';
 import { PIPELINE } from '../run/config.js';
 import { DEFAULT_PACING } from '../pipeline-v2/durationFit.js';
 import { pathToFileURL } from 'node:url';
+import { resolveSourceEvidence, sourceDocFromText } from '../intake/sourceDoc.js';
 
 // A contract test for the V2 runner with injected model and aligner. The lesson content is synthetic test data, not a generated lesson.
-const claims = (id: string) => [{ id: `${id}_c`, statement: 'x', conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: ['s1'] }];
+const sentences: Record<string, string[]> = { one: ['Each call pushes a frame onto the stack.', 'The newest frame sits on top.'], two: ['A return pops the top frame.', 'The stack shrinks again.'] };
+const sourceDoc = sourceDocFromText(Object.values(sentences).flat().join('\n'));
+const sourceEvidenceFor = (quote: string) => {
+  const span = sourceDoc.spans.find((candidate) => candidate.text.includes(quote));
+  const evidence = span ? resolveSourceEvidence(sourceDoc, span.id, quote) : undefined;
+  if (!evidence?.documentSha256 || !evidence.quoteSha256) throw new Error(`fixture source evidence is not hash-pinned: ${quote}`);
+  return evidence;
+};
+const claims = (id: string) => {
+  const statement = sentences[id]![0]!;
+  const evidence = sourceEvidenceFor(statement);
+  return [{
+    id: `${id}_c`, statement, conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: [evidence.spanId],
+    sourceRefs: [{ documentId: evidence.sourceId, sourceHash: evidence.documentSha256!, startOffset: evidence.startChar, endOffset: evidence.endChar, quoteHash: evidence.quoteSha256! }],
+  }];
+};
 const beatDraft = (sceneId: string) => BeatPlanDraftSchema.parse({ beats: [{
   claimIds: [`${sceneId}_c`], learnerDelta: 'd', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model', entities: [{ conceptId: 'frame' }, { conceptId: 'stack' }],
   relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'v', mutedMeaning: 'm', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
@@ -29,11 +45,11 @@ const beatDraft = (sceneId: string) => BeatPlanDraftSchema.parse({ beats: [{
 const ctxFor = (sceneId: string) => ({ sceneId, conceptIds: ['frame', 'stack'], claims: claims(sceneId), relations: [], misconceptionIds: [], durationSec: 6 });
 const sceneIds = ['one', 'two'];
 const beatPlans = Object.fromEntries(sceneIds.map((id) => [id, compileBeatPlan(beatDraft(id), ctxFor(id))]));
-const sentences: Record<string, string[]> = { one: ['Each call pushes a frame onto the stack.', 'The newest frame sits on top.'], two: ['A return pops the top frame.', 'The stack shrinks again.'] };
 const narrations = Object.fromEntries(sceneIds.map((id) => [id, compileSceneNarration(id, SceneNarrationDraftSchema.parse({ beats: [{ beatId: `${id}.b1`, sentences: sentences[id], claimSentences: [{ claimId: `${id}_c`, sentenceIndex: 0 }], emphasisTerms: [] }] }), beatPlans[id]!)]));
-const plan = { targetDurationSec: 10, intro: { sourceTitle: 't', sections: [] }, recap: { keyPoints: [] }, sections: sceneIds.map((id) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 6, contract: { learningDelta: 'd', targetDurationSec: 6, requiredConceptIds: ['frame', 'stack'], requiredRelations: [], evidenceSpanIds: ['s1'], essentialClaims: claims(id), teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } })) };
-const graph = { concepts: [{ id: 'frame', label: 'Frame', kind: 'entity', definition: 'd', evidence: [], level: 'one-step' }, { id: 'stack', label: 'Stack', kind: 'entity', definition: 'd', evidence: [], level: 'one-step' }], relations: [], prerequisites: [] };
-const prepared = { plan, graph, beatPlans, beatNarrations: narrations } as unknown as PreparedLesson;
+const plan = { targetDurationSec: 10, intro: { sourceTitle: 't', sections: [] }, recap: { keyPoints: [] }, sections: sceneIds.map((id) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 6, contract: { learningDelta: 'd', targetDurationSec: 6, requiredConceptIds: ['frame', 'stack'], requiredRelations: [], evidenceSpanIds: claims(id)[0]!.evidenceSpanIds, essentialClaims: claims(id), teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } })) };
+const graphEvidence = Object.values(sentences).flatMap((items) => [sourceEvidenceFor(items[0]!)]);
+const graph = { concepts: [{ id: 'frame', label: 'Frame', kind: 'entity', definition: 'd', evidence: graphEvidence, level: 'one-step' }, { id: 'stack', label: 'Stack', kind: 'entity', definition: 'd', evidence: graphEvidence, level: 'one-step' }], relations: [], prerequisites: [] };
+const prepared = { plan, graph, sourceDoc, beatPlans, beatNarrations: narrations } as unknown as PreparedLesson;
 const oneBindings = { conceptIds: ['frame', 'stack'], claimIds: ['one_c'] };
 const twoBindings = { conceptIds: ['frame', 'stack'], claimIds: ['two_c'] };
 const fixtureDurationSec = (perWordMs: number, sceneOverheadMs: number): number => (

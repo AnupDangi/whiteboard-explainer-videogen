@@ -14,7 +14,7 @@ export const arrayKit: KitDef<P> = {
   layout({ params, label, rect }) {
     const n = params.length;
     const labelH = label ? 54 : 0;
-    const cellSize = Math.min((rect.w - 40) / n, rect.h - labelH - (params.indexed === false ? 20 : 70), 150);
+    const cellSize = Math.min((rect.w - 40) / n, rect.h - labelH - (params.indexed === false ? 20 : 70), 150 * Math.max(1, Math.min(2, rect.w / (40 + 130 * n))));
     const x0 = rect.x + (rect.w - cellSize * n) / 2;
     const y0 = rect.y + labelH + (rect.h - labelH - cellSize - (params.indexed === false ? 0 : 50)) / 2;
     const frame = emptyVisual();

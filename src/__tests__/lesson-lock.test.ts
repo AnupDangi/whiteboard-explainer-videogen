@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,7 +11,7 @@ import { layoutScene } from '../layout/solver.js';
 import { compileTimelineFull } from '../timeline/compile.js';
 import { renderSVG } from '../render/renderScene.js';
 import {
-  buildLessonLock, verifyLessonLock, lockContentHash, rerenderFinalFrame, renderLockedFinalFrames, verifyRenderPurity, renderVideoFromLessonLock, writeRenderArtifactsManifest, writeFailureLessonLock, writeLessonLockExclusive,
+  buildLessonLock, verifyLessonLock, lockContentHash, pipelineDigestForRoot, rerenderFinalFrame, renderLockedFinalFrames, verifyRenderPurity, renderVideoFromLessonLock, writeRenderArtifactsManifest, writeFailureLessonLock, writeLessonLockExclusive,
   LESSON_LOCK_VERSION, type LessonLock,
 } from '../run/lessonLock.js';
 
@@ -511,4 +512,28 @@ test('pipeline source drift blocks replay by default; an explicit cross-commit a
     assert.ok(!allowed.some((problem) => problem.includes('pipeline tool version drift')), JSON.stringify(allowed));
     assert.ok(allowed.some((problem) => problem.includes('ffmpeg tool version drift')), 'other tool drift stays a problem');
   } finally { await cleanup(); }
+});
+
+test('pipeline digest changes for uncommitted and untracked compiler code outside src/run', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-pipeline-digest-'));
+  try {
+    for (const subdir of ['src/run', 'src/visual-v2', 'src/narration']) await mkdir(path.join(dir, subdir), { recursive: true });
+    await writeFile(path.join(dir, 'package.json'), '{"name":"digest-fixture"}');
+    await writeFile(path.join(dir, 'src/run/lock.ts'), 'export const lock = 1;');
+    await writeFile(path.join(dir, 'src/visual-v2/validate.ts'), 'export const validate = 1;');
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir });
+    execFileSync('git', ['add', '.'], { cwd: dir });
+    execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: dir });
+
+    const first = pipelineDigestForRoot(dir);
+    await writeFile(path.join(dir, 'src/visual-v2/validate.ts'), 'export const validate = 2;');
+    const edited = pipelineDigestForRoot(dir);
+    assert.notEqual(edited, first, 'an uncommitted validator edit changes the digest');
+    await writeFile(path.join(dir, 'src/narration/new-stage.ts'), 'export const narration = true;');
+    const untracked = pipelineDigestForRoot(dir);
+    assert.notEqual(untracked, edited, 'an untracked compiler module changes the digest');
+    assert.match(untracked, /^pipeline-source\/v2:[a-f0-9]{40,64}:[a-f0-9]{64}$/u);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

@@ -99,7 +99,8 @@ function sourceContentProblems(spec: ElementSpec, path: string, grounding?: Grou
   return message ? [{ path: `${path}/evidence`, message }] : [];
 }
 
-function contentProblems(spec: ElementSpec, path: string, grounding?: Grounding): ValidatorProblem[] {
+/** Source-grounding and equation problems of one element spec (path is only used to address them). */
+export function contentProblems(spec: ElementSpec, path: string, grounding?: Grounding): ValidatorProblem[] {
   return [...sourceContentProblems(spec, path, grounding), ...equationProblems(spec, path, grounding)];
 }
 

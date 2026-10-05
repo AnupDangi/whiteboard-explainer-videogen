@@ -73,7 +73,7 @@ function walkFiles(root, relative = '') {
   return found.sort();
 }
 
-function readPlayerTelemetry(runDir, manifest, lock) {
+export function readPlayerTelemetry(runDir, manifest, lock) {
   const telemetryPath = path.join(runDir, 'player-telemetry.jsonl');
   if (!existsSync(telemetryPath)) return [];
   const telemetryFile = safeFile(runDir, 'player-telemetry.jsonl');
@@ -116,7 +116,7 @@ function readPlayerTelemetry(runDir, manifest, lock) {
   return events;
 }
 
-function buildTimingSummary(manifest, evaluation, runDir, lock) {
+export function buildTimingSummary(manifest, evaluation, runDir, lock) {
   let progressEvents = [];
   const progressPath = path.join(runDir, 'v2/progress.json');
   if (existsSync(progressPath)) {

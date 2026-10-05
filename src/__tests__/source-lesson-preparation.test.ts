@@ -73,6 +73,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     assert.match(requestPrompts.get('scene_narration')!.user, /CONCEPT GRAPH|SOURCE \(facts must come from these source spans/);
     assert.match(requestPrompts.get('scene_narration')!.system, /MENTION MARKERS/);
     assert.deepEqual(cold.failures, []);
+    assert.equal(cold.groundingMode, 'STRICT_SOURCE');
     assert.deepEqual(cold.plan?.lessonBible?.terminology.map((t) => t.conceptId).sort(), ['leaf', 'sugar'], 'single-use model-declared terminology must survive validation, not be stripped');
     assert.ok(cold.graph && cold.plan && cold.script);
     assert.equal(cold.usage.calls, 4, 'S2, S3, S3b depiction director and S4');
@@ -82,6 +83,14 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     const coldSceneRun = cold.stageRuns.find((stage) => stage.stage === 'S4-narration-script:build_sugar');
     assert.ok(coldSceneRun?.startedAt && coldSceneRun.completedAt, 'scene API call records its wall-clock interval');
     assert.equal(coldSceneRun?.apiCostUsd, 0.001, 'per-scene provider spend is retained');
+
+    await assert.rejects(
+      prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15, groundingMode: 'SOURCE_PLUS_BACKGROUND' }, {
+        model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
+        fetcher: async () => { throw new Error('unsupported grounding mode must fail before provider calls'); },
+      }),
+      /only STRICT_SOURCE has an enforced evidence policy/,
+    );
 
     const warm = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15 }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,

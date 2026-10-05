@@ -33,6 +33,7 @@ import { argValue, argValues, hasFlag } from './args.js';
 import { resolveDevelopmentAttempt } from '../harness/developmentBenchmark.js';
 import { renderVideoFromLessonLock, writeFailureLessonLock } from './lessonLock.js';
 import { failedEvaluationEnvelope } from '../harness/failedEvaluation.js';
+import type { GroundingMode } from '../evidence/ledger.js';
 
 let activeRunFailureContext: {
   runId: string;
@@ -127,7 +128,7 @@ async function writeV2RunArtifacts(input: {
   const { outputDir, runId, caseId, startedAtMs, completedAtMs, cacheMode, contentModel, plannerModel, s6PlannerModel, language, result, prepared, estimatedRagCostUsd } = input;
   const runConfig = {
     schemaVersion: 'v2-run-config/v1', compilerVersion: TEACHING_COMPILER_VERSION,
-    featureFlags: FEATURE_FLAGS.enabled, contentModel, plannerModel, s6PlannerModel, language, cacheMode,
+    featureFlags: FEATURE_FLAGS.enabled, contentModel, plannerModel, s6PlannerModel, language, cacheMode, groundingMode: prepared.groundingMode,
     ttsProvider: ttsProvider(), ttsFallbackLocal: ttsLocalFallbackEnabled(),
     boardFallback: process.env.V2_BOARD_FALLBACK !== '0', boardOpsPromptVersion: BOARD_OPS_PROMPT_VERSION,
     targetDurationSec: prepared.requestedDurationSec ?? prepared.plan?.targetDurationSec ?? null,
@@ -244,6 +245,13 @@ async function main(): Promise<void> {
   const outBase = arg('out') ?? '.data/hypothesis-runs/claude/lessons';
   const benchmarkAttemptId = arg('benchmark-attempt');
   const benchmarkAttempt = benchmarkAttemptId ? resolveDevelopmentAttempt(process.cwd(), benchmarkAttemptId) : undefined;
+  const groundingMode: GroundingMode = (arg('grounding-mode') ?? 'STRICT_SOURCE') as GroundingMode;
+  if (groundingMode !== 'STRICT_SOURCE') {
+    if (groundingMode === 'SOURCE_PLUS_BACKGROUND' || groundingMode === 'OPEN_EXPLANATION') {
+      throw new Error(`grounding mode ${groundingMode} is not supported yet; only STRICT_SOURCE has an enforced evidence policy`);
+    }
+    throw new Error(`unknown grounding mode: ${groundingMode}`);
+  }
   // --language=<ISO 639-1> sets the narration and speech language (default en); --tts=elevenlabs switches speech and word timing to ElevenLabs.
   const language = arg('language') ?? 'en';
   if (arg('tts')) process.env.TTS_PROVIDER = arg('tts');
@@ -267,7 +275,7 @@ async function main(): Promise<void> {
       runId, caseId: sourceId, outputDir, startedAtMs, stage: 'cli-setup',
       sourceFiles: ['source-doc.json', 'source-bundle.json'],
       cacheMode, inputSourcePaths: sourcePaths,
-      requestHash: sha256(JSON.stringify({ sourcePaths, sourceUrls, instruction: arg('instruction') ?? benchmarkAttempt?.instruction, duration: arg('duration') ?? benchmarkAttempt?.targetDurationSec })),
+      requestHash: sha256(JSON.stringify({ sourcePaths, sourceUrls, instruction: arg('instruction') ?? benchmarkAttempt?.instruction, duration: arg('duration') ?? benchmarkAttempt?.targetDurationSec, groundingMode })),
       ...(benchmarkAttemptId ? { benchmarkAttemptId } : {}), modelIds: [],
     };
   }
@@ -284,7 +292,7 @@ async function main(): Promise<void> {
   const allowPartialVideo = hasFlag(args, 'allow-partial-video');
   const scenePlanner = scenePlannerById(arg('scene-planner')).id;
   if (activeRunFailureContext) {
-    activeRunFailureContext.settingsHash = sha256(JSON.stringify({ contentModel, plannerModel, s6PlannerModel, cacheMode }));
+    activeRunFailureContext.settingsHash = sha256(JSON.stringify({ contentModel, plannerModel, s6PlannerModel, cacheMode, groundingMode }));
     activeRunFailureContext.modelIds = [...new Set([contentModel, plannerModel, s6PlannerModel])];
   }
   const sharedStageCache = arg('stage-cache') ? path.resolve(arg('stage-cache')!) : undefined;
@@ -293,7 +301,7 @@ async function main(): Promise<void> {
   if (promptArm === 'zero' && exampleOrder !== 'ranked') throw new Error('--example-order=reverse requires --prompt-arm=text|mechanism|diverse');
 
   const which = arg('lesson');
-  const lessons = which === 'all' ? MATH_LESSONS : which ? MATH_LESSONS.filter((l) => l.id === which) : [];
+  const lessons = (which === 'all' ? MATH_LESSONS : which ? MATH_LESSONS.filter((l) => l.id === which) : []).map((lesson) => ({ ...lesson, groundingMode }));
   const sourceArtifacts = new Map<string, Array<{ key: string; contentHash: string; cacheHit: boolean }>>();
   const sourceStageRuns = new Map<string, StageRunRecord[]>();
   const lessonExecutionStartedAt = new Map<string, number>();
@@ -316,7 +324,7 @@ async function main(): Promise<void> {
     lessonExecutionStartedMonotonic.set(id, allocatedSourceRun.startedMonotonicMs);
     if (activeRunFailureContext) {
       activeRunFailureContext.stage = 'S1-source-intake';
-      activeRunFailureContext.requestHash = sha256(JSON.stringify({ sourcePaths, sourceUrls, instruction: arg('instruction') ?? benchmarkAttempt?.instruction, requestedDurationSec }));
+      activeRunFailureContext.requestHash = sha256(JSON.stringify({ sourcePaths, sourceUrls, instruction: arg('instruction') ?? benchmarkAttempt?.instruction, requestedDurationSec, groundingMode }));
     }
       const pathEntries = await Promise.all(sourcePaths.map(async (sourcePath) => {
         const bytes = await readFile(sourcePath);
@@ -348,7 +356,7 @@ async function main(): Promise<void> {
     const docs = sourceEntries.map((entry) => entry.doc);
     const instruction = arg('instruction') ?? benchmarkAttempt?.instruction;
     const { sourceDoc, sourceBundle } = buildSourceBundle(docs, instruction ?? docs.map((doc) => doc.title ?? '').join(' '), { topK: evidenceHitBudget(requestedDurationSec) });
-    lessons.push({ id, title: sourceDoc.title ?? 'lesson', source: sourceDoc.text, sourceDoc, sourceBundle, sources: [...sourcePaths.map((sourcePath) => ({ kind: 'document' as const, path: sourcePath })), ...sourceUrls.map((url) => ({ kind: 'url' as const, url }))], sourceFormat: sourceDoc.format, targetDurationSec: requestedDurationSec, instruction, expect: { level: 'one-step', minStepScenes: 0 } });
+    lessons.push({ id, title: sourceDoc.title ?? 'lesson', source: sourceDoc.text, sourceDoc, sourceBundle, sources: [...sourcePaths.map((sourcePath) => ({ kind: 'document' as const, path: sourcePath })), ...sourceUrls.map((url) => ({ kind: 'url' as const, url }))], sourceFormat: sourceDoc.format, targetDurationSec: requestedDurationSec, instruction, groundingMode, expect: { level: 'one-step', minStepScenes: 0 } });
     if (activeRunFailureContext) activeRunFailureContext.requestHash = sha256(JSON.stringify(lessons[lessons.length - 1]));
   }
   if (lessons.length === 0) throw new Error('nothing to run: pass --lesson=<id>|all or --source=<file>');
@@ -372,7 +380,7 @@ async function main(): Promise<void> {
       sourceFiles: ['lesson-prep.json', ...(lesson.sourceBundle ? ['source-bundle.json'] : [])],
       cacheMode, inputSourcePaths: sourcePaths,
       requestHash: sha256(JSON.stringify(lesson)),
-      settingsHash: sha256(JSON.stringify({ contentModel, plannerModel, s6PlannerModel, cacheMode })),
+      settingsHash: sha256(JSON.stringify({ contentModel, plannerModel, s6PlannerModel, cacheMode, groundingMode })),
       ...(benchmarkAttemptId ? { benchmarkAttemptId } : {}),
       ...(benchmarkAttempt ? { benchmark: benchmarkAttempt } : {}),
       modelIds: [...new Set([contentModel, plannerModel, s6PlannerModel])],
@@ -413,7 +421,7 @@ async function main(): Promise<void> {
         await writeFile(path.join(outputDir, 'evaluation-bundle.json'), `${JSON.stringify(failedEvaluationEnvelope({ runId, caseId: lesson.id, code: 'preparation-hard-failure', stage: 'prepare', message: prepFailures.map(({ stage, code }) => `${stage}/${code}`).join(', ') || 'preparation did not produce a script', stageRuns: prepared.stageRuns }), null, 2)}\n`, { flag: 'wx' });
       } catch { /* diagnosis summary below still lands */ }
       try {
-        await writeFailureLessonLock({ runId, outputDir, sourceFiles: ['lesson-prep.json', ...(lesson.sourceBundle ? ['source-bundle.json'] : [])], inputs: { requestHash: sha256(JSON.stringify(lesson)), settingsHash: sha256(JSON.stringify({ contentModel, plannerModel, cacheMode })) }, execution: { cacheMode }, modelIds: [contentModel, plannerModel], failure: prepFailures.map(({ code, stage, message }) => ({ code, stage, message })) });
+        await writeFailureLessonLock({ runId, outputDir, sourceFiles: ['lesson-prep.json', ...(lesson.sourceBundle ? ['source-bundle.json'] : [])], inputs: { requestHash: sha256(JSON.stringify(lesson)), settingsHash: sha256(JSON.stringify({ contentModel, plannerModel, cacheMode, groundingMode })) }, execution: { cacheMode }, modelIds: [contentModel, plannerModel], failure: prepFailures.map(({ code, stage, message }) => ({ code, stage, message })) });
       } catch (error) { console.error(`  [LOCK FAILED] ${error instanceof Error ? error.message : String(error)}`); }
       try {
         await writeFailedRunManifest(activeRunFailureContext!, { stage: 'prepare', code: 'preparation-hard-failure', message: prepFailures.map(({ stage, code }) => `${stage}/${code}`).join(', ') || 'preparation did not produce a script' });
@@ -480,7 +488,7 @@ async function main(): Promise<void> {
         await writeFile(path.join(outputDir, 'evaluation-bundle.json'), `${JSON.stringify(failedEvaluationEnvelope({ runId, caseId: lesson.id, code: 'run-crashed', stage: 'pipeline', message: error instanceof Error ? error.message : String(error), stageRuns: prepared.stageRuns ?? [] }), null, 2)}\n`, { flag: 'wx' });
       } catch { /* outputDir itself may be the casualty; summary below still lands */ }
       try {
-        await writeFailureLessonLock({ runId, outputDir, sourceFiles: ['lesson-prep.json', ...(lesson.sourceBundle ? ['source-bundle.json'] : [])], inputs: { requestHash: sha256(JSON.stringify(lesson)), settingsHash: sha256(JSON.stringify({ contentModel, plannerModel, cacheMode })) }, execution: { cacheMode }, modelIds: [contentModel, plannerModel], failure: [{ code: 'run-crashed', stage: 'pipeline', message: error instanceof Error ? error.message : String(error) }] });
+        await writeFailureLessonLock({ runId, outputDir, sourceFiles: ['lesson-prep.json', ...(lesson.sourceBundle ? ['source-bundle.json'] : [])], inputs: { requestHash: sha256(JSON.stringify(lesson)), settingsHash: sha256(JSON.stringify({ contentModel, plannerModel, cacheMode, groundingMode })) }, execution: { cacheMode }, modelIds: [contentModel, plannerModel], failure: [{ code: 'run-crashed', stage: 'pipeline', message: error instanceof Error ? error.message : String(error) }] });
       } catch { /* a verified render lock may already exist; preserve it */ }
       try {
         await writeFailedRunManifest(activeRunFailureContext!, { stage: 'pipeline', code: 'run-crashed', message: error instanceof Error ? error.message : String(error) });

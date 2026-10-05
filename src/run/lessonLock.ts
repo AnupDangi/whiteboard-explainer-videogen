@@ -145,24 +145,29 @@ export interface BuildLockInput {
   modules?: LessonLock['modules'];
 }
 
+/** Hash the complete executable/compiler working tree plus dependency/build manifests. */
+export function pipelineDigestForRoot(root: string): string {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  const listing = execFileSync('git', [
+    'ls-files', '-z', '-co', '--exclude-standard', '--',
+    'src', 'scripts', 'voice-engine', 'parse-engine', 'rag-engine', 'bench',
+    'package.json', 'pnpm-lock.yaml', 'package-lock.json', 'npm-shrinkwrap.json', 'tsconfig.json', '.env.example',
+  ], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const files = [...new Set(listing.split('\0').filter(Boolean))].filter((file) => existsSync(path.join(root, file))).sort();
+  const digest = createNodeHash('sha256').update('pipeline-source-snapshot/v2\0');
+  for (const file of files) {
+    digest.update(file).update('\0').update(readFileSync(path.join(root, file))).update('\0');
+  }
+  return `pipeline-source/v2:${head}:${digest.digest('hex')}`;
+}
+
 /** Best-effort tool versions; 'unknown' when the tool cannot be probed (never throws). */
 export function probeToolVersions(): { node: string; pipeline: string; resvg: string; roughjs: string; ffmpeg: string } {
   const sourceDir = path.dirname(fileURLToPath(import.meta.url));
   let pipeline = 'unknown';
   try {
     const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: sourceDir, encoding: 'utf8' }).trim();
-    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-    const files = execFileSync('git', ['ls-files', '-co', '--exclude-standard'], { cwd: root, encoding: 'utf8' })
-      .split('\n').filter(Boolean).filter((file) =>
-        file.startsWith('src/run/') ||
-        file.startsWith('src/shared/') ||
-        file === 'package.json' || file === 'pnpm-lock.yaml' || file === 'package-lock.json' || file === 'npm-shrinkwrap.json')
-      .filter((file) => existsSync(path.join(root, file)));
-    const digest = createNodeHash('sha256');
-    for (const file of files.sort()) {
-      digest.update(file).update('\0').update(readFileSync(path.join(root, file))).update('\0');
-    }
-    pipeline = `${head}+${digest.digest('hex')}`;
+    pipeline = pipelineDigestForRoot(root);
   } catch { /* not a git checkout */ }
   let resvg = 'unknown';
   try {

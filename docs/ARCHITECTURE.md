@@ -75,12 +75,44 @@ change-direction, temporal/spatial, quantifier, extreme, and condition cues may
 not contradict or be dropped from the matching quoted proposition. This is a
 finite English lexicon layered on lexical grounding; it does not establish
 general entailment or verify every paraphrase. Canonical `essentialClaims` now
-carry derived `ClaimSemantics` for explicit polarity, comparison/value,
-temporal relation, and quantities. Beat narration checks the sentence anchored
-to each claim for those cue reversals. This remains a finite lexical safeguard;
-typed source quote hashes, claim epistemic modes, comprehensive visual
-realization checks, and broad entailment validation are still open Phase 0
-work. Player telemetry records first browser playback after verified-frame
+carry derived `ClaimSemantics` for explicit polarity, comparison operators and
+values, every detected temporal relation, quantities with recognized units,
+change direction, spatial relation, quantity scope, extremes, and
+condition/exception cues. Beat narration checks the sentence anchored to each
+claim for cue reversals, unit changes,
+unsupported qualifiers, and quantities added beyond the claim. The parser
+handles decimal,
+exponent, grouped-digit, Unicode-negative, and spelled numbers; preserves SI
+prefix case; recognizes powered and compound units plus spelled temperatures;
+checks each comparison in a chain independent of conjunction order, binds
+values to their comparator, parses whitespace-multiplied compound units such
+as `kg m/s²`, accepts comparator aliases without mistaking them for negation,
+and rejects newly added protected cues. “No/none” and count-zero wording are
+equivalent only when the normalized claim matches after substituting that
+count phrase; extra zero-valued facts and measured-zero units remain distinct.
+This exact-remainder exception may reject other faithful paraphrases.
+
+V2 now derives claim identity from canonical graph-linked concept IDs, their
+labels, and directed relations in `src/evidence/claimIdentity.ts`; it never
+trusts identity metadata supplied by the model. Beat validation ties entities
+and relations to claims cited by that beat. Anchored narration checks explicitly
+named concepts and recognized directed predicates. Visual bindings must stay
+within the linked claim concepts, and factual edge endpoints/direction/predicate
+are checked when their endpoint identities resolve; edges without a canonical
+directed claim relation fail. Entity labels that exactly name a different graph
+concept are also rejected. At lock verification, the
+pinned context is joined to scene beats, narration anchors, BoardOps and
+claim/concept bindings. The verifier reapplies BoardOps across scene transitions
+and compares the resulting states with the capture, so recomputing file and lock
+hashes does not make an inconsistent capture valid.
+
+The relation forms are a finite lexical inventory; broad semantic entailment,
+unrecognized paraphrases, and ambiguous aggregate visual endpoints remain open.
+This remains a finite safeguard rather than general meaning verification.
+Requiring source quote hashes on every legacy serialized reference, claim
+epistemic modes, comprehensive visual realization checks, and broad entailment
+validation are still open Phase 0 work. Player telemetry records
+first browser playback after verified-frame
 readiness and a user gesture. The CLI persists a trustworthy request-acceptance
 epoch in `run-start.json`; review bundles include and validate later browser
 telemetry against it. A live request-to-first-audio sample is still unmeasured,
@@ -89,9 +121,26 @@ carries SHA-256 digests for the exact quote and, when present, its document;
 live-run S6 verifies these digests along with source offsets. Legacy citations
 without digests remain readable but are checked against the in-memory source.
 Canonical essential claims carry `sourceRefs` reconstructed from their linked
-concept and relation evidence; model-provided refs are discarded. The typed
-epistemic classifications and grounding-mode policy from the V3 proposal have
-not been implemented yet.
+concept and relation evidence; model-provided refs are discarded. The V2 runner
+now projects those canonical claims into `src/evidence/ledger.ts` before audio
+generation. It validates the ledger digest and policy, then joins every
+hash-pinned reference back to the exact resolved graph evidence and source
+document. For bundled inputs, each source span retains its original document
+digest and original offsets rather than inheriting the concatenated bundle
+hash. A new `lesson-context/v2` records the ledger and `STRICT_SOURCE` mode;
+V2 lock verification compares it to the canonical plan claims and verifies its
+source references again. Older unversioned contexts keep the legacy verification
+path.
+
+This is a first runtime evidence gate, not completion of Phase 1. The current
+claim projection infers only `direct_source` versus `derived_relation` from the
+presence of relations. The CLI carries grounding mode through request and run
+identity, but only `STRICT_SOURCE` is accepted; `SOURCE_PLUS_BACKGROUND` and
+`OPEN_EXPLANATION` remain unsupported. Explicit example/analogy classification
+and provenance for retrieved background remain incomplete. Confidence is
+optional informational metadata, is not calibrated, and does not certify claim
+truth. Legacy refs without both document and quote hashes cannot enter the new
+ledger.
 
 Software owns evidence resolution, icon retrieval, board reduction, layout,
 edge routing, exact audio-derived timing, SVG generation, rasterization, and
@@ -182,12 +231,13 @@ library inputs are vendored for offline rendering; retrieval and SVG
 normalization are deterministic. Usage context filters libraries whose
 rights are still under review. An icon being present in a local catalog is not
 evidence that it is cleared for release. Rights review is an independent
-human gate. Current integration limitation: V2's `defaultResolver` passes the
-lesson domain through `ConceptInfo.domain`, but does not pass the selected scene
-representation family, so family filtering is not active on this call path. The
-production catalog has 19,058 entries across 11 enabled libraries; the larger
-~24k local-dev catalog includes review-only libraries and is not release
-evidence.
+human gate. Current integration limitation: V2 passes the lesson domain through
+`ConceptInfo.domain`, but does not yet choose and lock one `houseFamily` per
+scene. `representationFamily` describes the teaching picture (such as a
+process or comparison); `houseFamily` is the illustration style shared by the
+scene's icons. The production catalog has 19,058 entries across 11 enabled
+libraries; the larger ~24k local-dev catalog includes review-only libraries and
+is not release evidence.
 
 ## Locks and publication
 
@@ -197,11 +247,16 @@ geometry, render inputs, SVG hashes, and raster pins. A modified or incomplete
 lock is not renderable. Post-encode files are recorded in the run manifest and
 render-artifact report; the lock itself is not amended after rendering.
 
-The current runner publishes after the full lesson lock is ready. Playback of
-a published lock and audio synchronization are implemented, but this does not
-measure time to first audible playable scene or overlap board preparation with
-encoding. Literal parallel board planning conflicts with persistent board
-state and remains a documented deviation. See the P14 entry in
+The current runner publishes after the full lesson lock is ready. It records
+request acceptance in `run-start.json`; a browser player event is tied to the
+run, first locked frame, and audio, and is emitted only after unmuted playback
+advances. The portable review bundle validates that event and derives
+request-to-first-audible timing. Stage A now gates on this validated metric;
+scene readiness remains a separate diagnostic and cannot satisfy the audio
+gate. No live event has yet supplied a measurement, and browser playback does
+not prove acoustic output at the device. Progressive scene publication and
+overlap with encoding are not implemented. Literal parallel board planning
+conflicts with persistent board state and remains a documented deviation. See
 [`HANDOFF.md`](HANDOFF.md).
 
 ## Evaluation and current evidence
@@ -212,6 +267,15 @@ establishes code behavior only; it does not establish generated lesson
 quality. Frozen source sets and every cold attempt stay separate from
 mechanism fixtures and diagnostic runs. Reports preserve infrastructure
 failures and incomplete artifacts.
+
+New benchmark runs seal runner evidence as v2. Each trial captures a
+Git-HEAD-relative test and baseline change inventory before and after execution;
+the report includes the base commit, changed paths and content hashes, inventory
+stability, and the sidecar hash. Stage A marks legacy v1 trials unmeasured and
+fails if inventory changes during a trial or differs across the grid. This is
+disclosure against the recorded HEAD, not a signature or an independent
+approved test-baseline commit; test changes still require human review. No
+qualifying grid using this evidence has been run yet.
 
 The plan's live acceptance gates include the 5-topic × 3 cold grid, an
 untouched held-out set, muted-board human review, rights review, two-reviewer
@@ -241,7 +305,7 @@ bounded V2 domain outcomes and current gates are in [`HANDOFF.md`](HANDOFF.md).
 A BoardOps draft passes through four layers, each recorded and none able to turn a failure into a pass:
 
 1. **Validators (unchanged, fail closed):** schema, source evidence, bindings, dependencies, concept coverage, layout and move paths.
-2. **Deterministic salvage** (`visual-v2/ops-plan/salvage.ts`, `structuredCall` `salvage` hook): only removes or downgrades a claim, or re-points it at evidence the unchanged validator accepts; accepted only if the whole draft then validates. Changes are coercion-ledger entries, the call reports `firstTryValid=false`, and the run records a soft `board-ops-salvaged` failure.
+2. **Deterministic salvage** (`visual-v2/ops-plan/salvage.ts`, `structuredCall` `salvage` hook): re-cites an unchanged assertion where accepted evidence exists, drops unsupported factual operations and their dependents, and uses a generic fallback only if the complete draft validates. It cannot relabel an unsupported source assertion as illustrative or shorten its wording. Changes are coercion-ledger entries, the call reports `firstTryValid=false`, and the run records a soft `board-ops-salvaged` failure.
 3. **Pointer-scoped model repair** (two attempts), as before.
 4. **Fallback board** (`ops-plan/fallback.ts`): a concept-only board from the scene's own data when 1-3 fail. Soft failures `board-ops-repair-failed-fallback` + `v2-board-fallback`, metric `v2.fallbackScenes`; the lesson stays `DRAFT`. `V2_BOARD_FALLBACK=0` makes a failing scene fail the run (strict benchmark mode). Later Phase 0 work removed semantic label/token shortening; current code preserves the approved text and lets repair or failure handle an unfit label. Earlier Oct. 4 samples used a different pipeline digest and are historical diagnostics, not results for this current behavior.
 

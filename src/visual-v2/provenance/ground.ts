@@ -6,6 +6,8 @@
 export interface Grounding {
   /** The verbatim source quote a model citation resolves to, or undefined when the span or quote cannot be found. */
   verify(spanId: string, quote: string): string | undefined;
+  /** The full text of a source span, when known; lets a repair offer the sentence that states a formula. */
+  spanText?(spanId: string): string | undefined;
 }
 
 export interface SourceCitation { spanId: string; quote: string }
@@ -37,11 +39,111 @@ const mentionsAllWords = (quote: string, phrase: string): boolean => {
   return value.split(' ').every((word) => have.has(stemOf(word)));
 };
 
+interface SemanticSignal { value: string; pattern: RegExp }
+interface SemanticSignalFamily { name: string; signals: SemanticSignal[] }
+const semanticSignalFamilies: SemanticSignalFamily[] = [
+  { name: 'polarity', signals: [{ value: 'negative', pattern: /\b(?:not|no|never|without|cannot|can not|can't|doesn't|does not|isn't|is not|aren't|are not|won't|will not|neither|nor)\b/u }] },
+  { name: 'comparison', signals: [
+    { value: 'unequal', pattern: /\b(?:unequal|not equal(?:s| to)?|different from|≠|!=)\b/u },
+    { value: 'at-most', pattern: /\b(?:at most|no more than|up to)\b/u },
+    { value: 'at-least', pattern: /\b(?:at least|no less than)\b/u },
+    { value: 'less', pattern: /\b(?:less(?: than)?|fewer(?: than)?|lower(?: than)?|below|under)\b/u },
+    { value: 'greater', pattern: /\b(?:greater(?: than)?|more(?: than)?|higher(?: than)?|above|over)\b/u },
+    { value: 'equal', pattern: /\b(?:equal(?:s| to)?|the same as|exactly)\b/u },
+  ] },
+  { name: 'change direction', signals: [
+    { value: 'increase', pattern: /\b(?:increase(?:s|d)?|rise(?:s|n)?|grow(?:s|n)?|go(?:es)? up|become(?:s)? larger)\b/u },
+    { value: 'decrease', pattern: /\b(?:decrease(?:s|d)?|fall(?:s|en)?|drop(?:s|ped)?|go(?:es)? down|become(?:s)? smaller)\b/u },
+  ] },
+  { name: 'polarity descriptor', signals: [
+    { value: 'positive', pattern: /\bpositive\b/u },
+    { value: 'negative', pattern: /\bnegative\b/u },
+  ] },
+  { name: 'temporal order', signals: [
+    { value: 'before', pattern: /\b(?:before|earlier than|prior to)\b/u },
+    { value: 'after', pattern: /\b(?:after|later than|following)\b/u },
+    { value: 'during', pattern: /\b(?:during|while|throughout)\b/u },
+  ] },
+  { name: 'spatial relation', signals: [
+    { value: 'inside', pattern: /\b(?:inside|within|in the interior of)\b/u },
+    { value: 'outside', pattern: /\b(?:outside|beyond|external to)\b/u },
+  ] },
+  { name: 'quantity scope', signals: [
+    { value: 'all', pattern: /\ball\b/u },
+    { value: 'some', pattern: /\bsome\b/u },
+    { value: 'none', pattern: /\b(?:none|no)\b/u },
+  ] },
+  { name: 'extreme', signals: [
+    { value: 'minimum', pattern: /\b(?:minimum|minimal|least)\b/u },
+    { value: 'maximum', pattern: /\b(?:maximum|maximal|most)\b/u },
+  ] },
+  { name: 'condition or exception', signals: [
+    { value: 'conditional', pattern: /\b(?:if|when|only if|only when|provided that)\b/u },
+    { value: 'exception', pattern: /\b(?:except|unless)\b/u },
+  ] },
+];
+const cuePattern = (family: SemanticSignalFamily): RegExp => new RegExp(family.signals.map(({ pattern }) => pattern.source.replace(/^\\b|\\b$/g, '')).join('|'), 'u');
+const signalOf = (family: SemanticSignalFamily, text: string): SemanticSignal | undefined => family.signals.find(({ pattern }) => pattern.test(text));
+const assertionClauses = (quote: string): string[] => quote
+  .split(/[.!?;,]+|\b(?:but|whereas|although|and|or)\b/iu)
+  .map((clause) => clause.trim())
+  .filter(Boolean);
+function bestMatchingClause(quote: string, assertion: string): string {
+  const words = normalized(assertion).split(' ').filter(Boolean);
+  const clauses = assertionClauses(quote);
+  const score = (clause: string): number => words.reduce((count, word) => count + (containsPhrase(clause, word) || mentionsAllWords(clause, word) ? 1 : 0), 0);
+  return clauses.map(normalized).sort((a, b) => score(b) - score(a))[0] ?? normalized(quote);
+}
+const signalWords = new Set(semanticSignalFamilies.flatMap((family) => family.signals.flatMap(({ pattern }) => pattern.source.match(/[a-z]{3,}/giu) ?? [])));
+const QUALIFIER_MATCH_STOPWORDS = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'does', 'do', 'did', 'has', 'have', 'had', 'of', 'to']);
+const semanticText = (text: string): string => normalized(text
+  .replace(/≠|!=/gu, ' not equal ')
+  .replace(/≤|<=/gu, ' at most ')
+  .replace(/≥|>=/gu, ' at least ')
+  .replace(/</gu, ' less than ')
+  .replace(/>/gu, ' greater than ')
+  .replace(/=/gu, ' equal '));
+/** Reject explicit operator reversals and cue deletion when the remaining assertion is the quoted proposition's core. */
+function semanticSignalProblem(quote: string, assertion: string): string | undefined {
+  const claim = semanticText(assertion);
+  const clause = bestMatchingClause(quote, assertion);
+  if (!claim || !clause) return undefined;
+  for (const family of semanticSignalFamilies) {
+    const inQuote = signalOf(family, semanticText(clause));
+    const inClaim = signalOf(family, claim);
+    if (inClaim && (!inQuote || inClaim.value !== inQuote.value)) {
+      return `the source ${family.name} is ${inQuote?.value ?? 'unstated'}, but the assertion uses ${inClaim.value}`;
+    }
+    if (inQuote && !inClaim) {
+      const core = semanticText(clause).replace(cuePattern(family), ' ');
+      const assertionWords = claim.split(' ').filter((word) => word && !QUALIFIER_MATCH_STOPWORDS.has(word));
+      const coreWords = core.split(' ').filter((word) => word && !QUALIFIER_MATCH_STOPWORDS.has(word));
+      // Short concept names (for example, "mitosis") do not assert the surrounding clause's time or scope.
+      // Multiword propositions and explicit semantic operators must retain any qualifier attached to their wording.
+      const hasSemanticOperator = assertionWords.some((word) => signalWords.has(word));
+      const coreIsThisAssertion = coreWords.length > 0 && coreWords.length === assertionWords.length && coreWords.every((word, index) => stemOf(word) === stemOf(assertionWords[index]!));
+      if ((assertionWords.length >= 2 || hasSemanticOperator) && coreIsThisAssertion) {
+        return `the assertion omits the source ${family.name} qualifier ${inQuote.value}`;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Check claim-bound visual wording against the canonical claim even if the visual is labelled illustrative. */
+export function sourceClaimSemanticProblem(claim: string, assertion: string): string | undefined {
+  return semanticSignalProblem(claim, assertion);
+}
+
 export function sourceTextProblem(assertions: readonly string[], citation: SourceCitation | undefined, grounding: Grounding | undefined, subject: string): string | undefined {
   if (!citation) return `a source ${subject} needs evidence {spanId, quote} copied from the source`;
   if (!grounding) return `no source is available to check this source ${subject} against`;
   const verbatim = grounding.verify(citation.spanId, citation.quote);
   if (verbatim === undefined) return `evidence span ${citation.spanId} does not contain that quote; copy it verbatim from the source`;
+  for (const assertion of assertions) {
+    const contradiction = semanticSignalProblem(verbatim, assertion);
+    if (contradiction) return `the source ${subject} does not support semantic assertion ${JSON.stringify(assertion)}: ${contradiction}; preserve the source operator or mark your own wording derived or illustrative`;
+  }
   const absent = assertions.find((text) => !containsPhrase(verbatim, text) && !mentionsAllWords(verbatim, text));
   return absent === undefined ? undefined : `the source ${subject} asserts ${JSON.stringify(absent)}, which is absent from its cited quote; use words that appear in the quote, or mark it provenance "derived" or "illustrative" if it is your own wording`;
 }
@@ -73,7 +175,12 @@ export function sourceEdgeProblem(from: string | undefined, relation: string, to
 
 const unsupportedQualifier = (text: string): boolean => /\b(?:not|never|no|without|false|neither|nor|cannot|can't|doesn't|isn't|unlikely|may|might|possibly|perhaps|approximately|roughly|only if|only when|unless|except|if)\b/u.test(text);
 const mathText = (text: string): string => text
-  .replace(/\\mathrm\{([^{}]+)\}/g, '$1')
+  .replace(/\\(?:mathrm|text)\{([^{}]+)\}/g, '$1')
+  // Subscripts are notation, not content: R_{total}, R_total and Rtotal are the same symbol; so are R_1 and R1.
+  // A fraction is the same expression as its slash form: \frac{V}{R} is V / R. Compound parts keep their parentheses.
+  .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, (_m, a: string, b: string) => `${/^[A-Za-z0-9_]+$/.test(a) ? a : `(${a})`}/${/^[A-Za-z0-9_]+$/.test(b) ? b : `(${b})`}`)
+  .replace(/_\{([^{}]*)\}/g, '$1')
+  .replace(/_/g, '')
   .replace(/\\sqrt\b/g, 'sqrt')
   .replace(/\{/g, '(')
   .replace(/\}/g, ')')
@@ -96,7 +203,7 @@ export function formulaProblem(latex: string, quote: string): string | undefined
   if (missingWord) return `"${missingWord}" is not in the cited source text`;
   // Require the same ordered expression, including operators and exponents. A bag of
   // matching numbers/words is insufficient (3+4=5 differs from 3^2+4^2=5^2).
-  if (/\\(?!mathrm\b|sqrt\b)[a-zA-Z]+/.test(latex)) return 'the equation uses notation that cannot be checked against the cited source text';
+  if (/\\(?!mathrm\b|text\b|sqrt\b|frac\b)[a-zA-Z]+/.test(latex)) return 'the equation uses notation that cannot be checked against the cited source text';
   const expected = mathTokens(latex);
   const actual = mathTokens(quote);
   const matches = expected.length > 0 && actual.some((_, index) =>

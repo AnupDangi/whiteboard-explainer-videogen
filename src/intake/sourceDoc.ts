@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { EvidenceReference, NativeSourceLocation } from '../shared/contracts.js';
+import type { EvidenceReference, NativeSourceLocation, SourceRole } from '../shared/contracts.js';
 import type { IntakeRecord } from './types.js';
 
 export type SourceSpanKind = 'heading' | 'paragraph' | 'list' | 'table' | 'equation' | 'figure-reference' | 'figure';
@@ -13,6 +13,9 @@ export interface SourceSpan {
   endLine: number;
   sourceLocation?: NativeSourceLocation;
   citationSourceId?: string;
+  /** Digest of the originating document when this span belongs to a bundle. */
+  citationDocumentSha256?: string;
+  sourceRole?: SourceRole;
   sourceTitle?: string;
   documentStartChar?: number;
   documentStartLine?: number;
@@ -132,9 +135,9 @@ export interface EvidenceHit {
 }
 
 export interface SourceBundle {
-  schemaVersion: 'source-bundle/v1';
+  schemaVersion: 'source-bundle/v1' | 'source-bundle/v2';
   bundleId: string;
-  documents: Array<{ sourceId: string; title: string; sha256: string; format: SourceDoc['format']; sourceUrl?: string }>;
+  documents: Array<{ sourceId: string; title: string; sha256: string; format: SourceDoc['format']; role?: SourceRole; sourceUrl?: string }>;
   figures: SourceFigureAsset[];
   retrievalMode: 'local-text' | 'deep-indexed+local-text';
   ragStatus?: { index: 'complete' | 'partial' | 'failed' | 'not-run'; retrieval: 'matched' | 'miss' | 'failed' | 'not-run'; exactSpanHits: number; expectedMultimodalItems?: number; completedMultimodalItems?: number; failedProviderCalls?: number };
@@ -147,6 +150,8 @@ export interface NativeSourceLocationRange {
   endChar: number;
   sourceLocation?: NativeSourceLocation;
   citationSourceId?: string;
+  citationDocumentSha256?: string;
+  sourceRole?: SourceRole;
   sourceTitle?: string;
   documentStartChar?: number;
   documentStartLine?: number;
@@ -171,7 +176,7 @@ export function spanExcerptPrompt(doc: SourceDoc, options: { spans?: readonly So
     if (remaining < minChars) { omittedSpans++; continue; }
     const text = span.text.slice(0, Math.min(options.perSpanChars ?? Number.POSITIVE_INFINITY, remaining));
     if (text.trim().length < minChars) { omittedSpans++; continue; }
-    excerpts.push({ id: span.id, kind: span.kind, ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}), ...(span.sourceTitle ? { sourceTitle: span.sourceTitle } : {}), text, ...(text.length < span.text.length ? { excerpted: true } : {}) });
+    excerpts.push({ id: span.id, kind: span.kind, ...(span.sourceRole ? { sourceRole: span.sourceRole } : {}), ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}), ...(span.sourceTitle ? { sourceTitle: span.sourceTitle } : {}), text, ...(text.length < span.text.length ? { excerpted: true } : {}) });
     remaining -= text.length;
   }
   return JSON.stringify({ schemaVersion: doc.schemaVersion, sourceId: doc.sourceId, format: doc.format, ...(doc.title ? { title: doc.title } : {}), ...(doc.sourceUrl ? { sourceUrl: doc.sourceUrl } : {}), excerpts, ...(omittedSpans ? { omittedSpans } : {}) });
@@ -221,13 +226,15 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
   let previousLocationKey: string | undefined;
   let currentSourceLocation: NativeSourceLocation | undefined;
   let currentCitationSourceId: string | undefined;
+  let currentCitationDocumentSha256: string | undefined;
+  let currentSourceRole: SourceRole | undefined;
   let currentSourceTitle: string | undefined;
-  let active: { kind: SourceSpanKind; rangeIndex: number; startChar: number; startLine: number; sourceLocation?: NativeSourceLocation; citationSourceId?: string; sourceTitle?: string; documentStartChar?: number; documentStartLine?: number; text: string } | undefined;
+  let active: { kind: SourceSpanKind; rangeIndex: number; startChar: number; startLine: number; sourceLocation?: NativeSourceLocation; citationSourceId?: string; citationDocumentSha256?: string; sourceRole?: SourceRole; sourceTitle?: string; documentStartChar?: number; documentStartLine?: number; text: string } | undefined;
   const flush = (endChar: number, endLine: number) => {
     if (!active) return;
     const body = active.text;
     const id = 'span_' + hash(sourceId + '\0' + active.startChar + '\0' + endChar + '\0' + body).slice(0, 20);
-    spans.push({ id, kind: active.kind, startChar: active.startChar, endChar, startLine: active.startLine, endLine, ...(active.sourceLocation ? { sourceLocation: active.sourceLocation } : {}), ...(active.citationSourceId ? { citationSourceId: active.citationSourceId } : {}), ...(active.sourceTitle ? { sourceTitle: active.sourceTitle } : {}), ...(active.documentStartChar !== undefined ? { documentStartChar: active.documentStartChar } : {}), ...(active.documentStartLine !== undefined ? { documentStartLine: active.documentStartLine } : {}), text: body });
+    spans.push({ id, kind: active.kind, startChar: active.startChar, endChar, startLine: active.startLine, endLine, ...(active.sourceLocation ? { sourceLocation: active.sourceLocation } : {}), ...(active.citationSourceId ? { citationSourceId: active.citationSourceId } : {}), ...(active.citationDocumentSha256 ? { citationDocumentSha256: active.citationDocumentSha256 } : {}), ...(active.sourceRole ? { sourceRole: active.sourceRole } : {}), ...(active.sourceTitle ? { sourceTitle: active.sourceTitle } : {}), ...(active.documentStartChar !== undefined ? { documentStartChar: active.documentStartChar } : {}), ...(active.documentStartLine !== undefined ? { documentStartLine: active.documentStartLine } : {}), text: body });
     active = undefined;
   };
 
@@ -242,6 +249,8 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
     // document text can imitate generated Page/Slide headings and is untrusted.
     currentSourceLocation = rangeLocation;
     currentCitationSourceId = rangeMatches ? range!.citationSourceId : undefined;
+    currentCitationDocumentSha256 = rangeMatches ? range!.citationDocumentSha256 : undefined;
+    currentSourceRole = rangeMatches ? range!.sourceRole : undefined;
     currentSourceTitle = rangeMatches ? range!.sourceTitle : undefined;
     const rangeIndex = rangeMatches ? nativeLocationIndex : -1;
     // Display-math state never leaks across a page, slide or document boundary.
@@ -254,11 +263,11 @@ export function sourceDocFromText(text: string, format: SourceDoc['format'] = 't
     let kind: SourceSpanKind | undefined = blank ? undefined : (insideDisplayEquation || startsDisplayEquation ? 'equation' : kindFor(line));
     // A figure mentioned inside running prose stays part of that paragraph; a caption line starts its own span.
     if (kind === 'figure-reference' && active?.kind === 'paragraph' && active.rangeIndex === rangeIndex && !CAPTION_LINE.test(line)) kind = 'paragraph';
-    const contiguous = active && kind === active.kind && kind !== 'heading' && kind !== 'figure-reference' && active.rangeIndex === rangeIndex && JSON.stringify(active.sourceLocation ?? null) === JSON.stringify(currentSourceLocation ?? null) && active.citationSourceId === currentCitationSourceId;
+    const contiguous = active && kind === active.kind && kind !== 'heading' && kind !== 'figure-reference' && active.rangeIndex === rangeIndex && JSON.stringify(active.sourceLocation ?? null) === JSON.stringify(currentSourceLocation ?? null) && active.citationSourceId === currentCitationSourceId && active.citationDocumentSha256 === currentCitationDocumentSha256 && active.sourceRole === currentSourceRole;
     if (!contiguous) flush(offset, lineNumber - 1);
     if (kind) {
       const rangeLineOffset = rangeMatches ? text.slice(range!.startChar, offset).split('\n').length - 1 : 0;
-      if (!active) active = { kind, rangeIndex, startChar: offset, startLine: lineNumber, ...(currentSourceLocation ? { sourceLocation: currentSourceLocation } : {}), ...(currentCitationSourceId ? { citationSourceId: currentCitationSourceId } : {}), ...(currentSourceTitle ? { sourceTitle: currentSourceTitle } : {}), ...(rangeMatches && range!.documentStartChar !== undefined ? { documentStartChar: range!.documentStartChar + offset - range!.startChar } : {}), ...(rangeMatches && range!.documentStartLine !== undefined ? { documentStartLine: range!.documentStartLine + rangeLineOffset } : {}), text: '' };
+      if (!active) active = { kind, rangeIndex, startChar: offset, startLine: lineNumber, ...(currentSourceLocation ? { sourceLocation: currentSourceLocation } : {}), ...(currentCitationSourceId ? { citationSourceId: currentCitationSourceId } : {}), ...(currentCitationDocumentSha256 ? { citationDocumentSha256: currentCitationDocumentSha256 } : {}), ...(currentSourceRole ? { sourceRole: currentSourceRole } : {}), ...(currentSourceTitle ? { sourceTitle: currentSourceTitle } : {}), ...(rangeMatches && range!.documentStartChar !== undefined ? { documentStartChar: range!.documentStartChar + offset - range!.startChar } : {}), ...(rangeMatches && range!.documentStartLine !== undefined ? { documentStartLine: range!.documentStartLine + rangeLineOffset } : {}), text: '' };
       active.text += line;
     }
     const sentenceEnds = /[.!?][\]"')\u201d\u2019]*\s*$/.test(line);
@@ -297,8 +306,9 @@ export function resolveSourceEvidence(doc: SourceDoc, spanId: string, quote: str
     startLine,
     endLine,
     quote,
-    ...(doc.contentSha256 ? { documentSha256: doc.contentSha256 } : {}),
+    ...((span.citationDocumentSha256 ?? doc.contentSha256) ? { documentSha256: span.citationDocumentSha256 ?? doc.contentSha256 } : {}),
     quoteSha256: hash(quote),
+    ...(span.sourceRole ? { sourceRole: span.sourceRole } : {}),
     ...(span.sourceLocation ? { sourceLocation: span.sourceLocation } : {}),
   };
 }
@@ -309,5 +319,6 @@ export function sourceEvidenceRefMatches(doc: SourceDoc, ref: EvidenceReference)
   if (!resolved || resolved.sourceId !== ref.sourceId || resolved.startChar !== ref.startChar || resolved.endChar !== ref.endChar || resolved.startLine !== ref.startLine || resolved.endLine !== ref.endLine) return false;
   if (ref.documentSha256 !== undefined && ref.documentSha256 !== resolved.documentSha256) return false;
   if (ref.quoteSha256 !== undefined && ref.quoteSha256 !== resolved.quoteSha256) return false;
+  if (ref.sourceRole !== undefined && ref.sourceRole !== (resolved.sourceRole ?? 'primary')) return false;
   return true;
 }

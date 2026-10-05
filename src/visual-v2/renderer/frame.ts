@@ -6,7 +6,7 @@ import { embedSvg, fillSvg, sequentialStrokes, textSvg, wipe } from '../../rende
 import { escapeXml, progress, svgDocument } from '../../shared/svg.js';
 import { canonicalHash } from '../../harness/replayDeterminism.js';
 import type { BoardEdge, BoardElement, BoardState } from '../board-state/types.js';
-import { layoutScene, type PriorLayout, type SceneGeometry } from '../layout/sceneLayout.js';
+import { layoutScene, moveRectAt, moveRoutesFor, type PriorLayout, type SceneGeometry } from '../layout/sceneLayout.js';
 import type { SceneTimeline } from '../timeline/compile.js';
 import type { Rect } from '../kits/geometry.js';
 import { edgeVisual, elementVisual, ringVisual, strikeVisual, type ConceptIndex } from './visuals.js';
@@ -126,7 +126,8 @@ export function renderSceneBody(scene: CompiledScene, tMs: number): string {
         case 'move': {
           const was = base.elements[effect.targetId]; const will = after.elements[effect.targetId];
           const from = was && rectNow(base, was, true); const to = will && rectNow(after, will, true);
-          if (from && to) change(effect.targetId, { rect: lerpRect(from, to, ease(p)) });
+          const route = from && to ? moveRoutesFor(geometry, base, after).get(effect.targetId) : undefined;
+          if (from && to) change(effect.targetId, { rect: route?.control ? moveRectAt(route, ease(p)) : lerpRect(from, to, ease(p)) });
           break;
         }
         case 'emphasize': change(effect.targetId, effect.emphasis === 'struck' ? { strike: p } : effect.emphasis === 'highlight' ? { ring: p } : { opacity: lerp(1, 0.35, p) }); break;

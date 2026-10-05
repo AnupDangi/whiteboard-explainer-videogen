@@ -75,3 +75,12 @@ test('lesson CLI derives a frozen trial request and records it when provider set
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('lesson CLI rejects grounding modes whose evidence policy is not implemented', () => {
+  const result = spawnSync(process.execPath, [
+    path.resolve('dist/src/run/lessonCli.js'),
+    '--source=bench/sources/osmosis.md', '--grounding-mode=OPEN_EXPLANATION',
+  ], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /grounding mode OPEN_EXPLANATION is not supported yet/);
+});

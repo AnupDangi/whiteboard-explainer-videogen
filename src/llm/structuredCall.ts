@@ -68,6 +68,8 @@ export interface StructuredCallOptions<T> {
   schemaName: string;
   /** Semantic checks beyond the zod shape; return a list of problems (empty = valid). */
   validate?: (value: T) => ValidatorProblem[];
+  /** Deterministic fix tried on a schema-valid value that fails `validate`, before any model repair. It may only return a value that `validate` then accepts; each change must be reported as a ledger entry. A salvaged value is never a first-try pass. */
+  salvage?: (value: T, problems: ValidatorProblem[]) => { value: T; entries: CoercionEntry[] } | undefined;
   /** Semantic repair attempts after the first response. Defaults to one for all existing stages. */
   maxRepairs?: 1 | 2 | 3;
   /** `patch` (default): a failure with JSON pointers is repaired by patching those pointers only. `full` regenerates the document. Failures without a pointer always use the full prompt. */
@@ -223,7 +225,7 @@ export function parseJsonLenient(raw: string): unknown {
 }
 
 /** Try candidates last-first (a self-correcting model settles on its final block); each must pass full validation. */
-export function parseCandidates<T>(content: string, schema: z.ZodType<T>, validate?: (value: T) => ValidatorProblem[], optionalPaths: readonly string[] = []): { ok: true; value: T; coercions: CoercionEntry[]; input: unknown } | { ok: false; error: string; issues: Array<{ path: string; message: string }>; json?: unknown } {
+export function parseCandidates<T>(content: string, schema: z.ZodType<T>, validate?: (value: T) => ValidatorProblem[], optionalPaths: readonly string[] = [], salvage?: StructuredCallOptions<T>['salvage']): { ok: true; value: T; coercions: CoercionEntry[]; input: unknown; salvaged?: number } | { ok: false; error: string; issues: Array<{ path: string; message: string }>; json?: unknown } {
   const candidates = extractJsonCandidates(content);
   if (candidates.length === 0) return { ok: false, error: 'response contained no JSON object ({...}) at all', issues: [] };
   let lastError = 'no candidate JSON object validated';
@@ -249,6 +251,14 @@ export function parseCandidates<T>(content: string, schema: z.ZodType<T>, valida
       lastError = `[candidate ${i + 1}/${candidates.length}] ${outcome.issues.map((x) => `${x.path.join('.')}: ${x.message}`).join('; ')}`;
       if (firstIssues === undefined) { firstJson = json; firstIssues = outcome.issues.map((x) => ({ path: pointerFromPath(x.path), message: x.message })); }
       continue;
+    }
+    if (outcome.problems.length > 0 && salvage) {
+      // Deterministic fixes first; the fixed value must pass the same schema and validator, so nothing unchecked is accepted.
+      const fixed = salvage(outcome.data, outcome.problems);
+      const reparsed = fixed ? schema.safeParse(fixed.value) : undefined;
+      if (fixed && reparsed?.success && (validate?.(reparsed.data) ?? []).length === 0) {
+        return { ok: true, value: reparsed.data, coercions: [...entries, ...fixed.entries], input: reparsed.data, salvaged: fixed.entries.length };
+      }
     }
     if (outcome.problems.length > 0) {
       lastError = `[candidate ${i + 1}/${candidates.length}] ${outcome.problems.map(problemText).join('; ')}`;
@@ -434,10 +444,13 @@ async function runStructuredCall<T>(opts: StructuredCallOptions<T>, compiled: Co
   };
   const parseSafely = (content: string) => {
     try {
-      return parseCandidates(content, opts.schema, opts.validate, compiled.optionalPaths);
+      return parseCandidates(content, opts.schema, opts.validate, compiled.optionalPaths, opts.salvage);
     } catch (error) {
       return { threw: error } as const;
     }
+  };
+  const noteSalvage = (changes: number | undefined): void => {
+    if (changes) failures.push({ code: `${opts.stage}-salvaged`, stage: opts.stage, message: `${opts.subject}: ${changes} deterministic correction${changes === 1 ? '' : 's'} applied to the model output (ledgered as coercions; this is not a first-try pass)`, hard: false });
   };
   const validatorThrew = (error: unknown) => failures.push({ code: `${opts.stage}-validator-threw`, stage: opts.stage, message: `${opts.subject}: validation code threw (a pipeline bug, not a model failure): ${error instanceof Error ? error.message : String(error)}`, hard: true });
 
@@ -452,7 +465,7 @@ async function runStructuredCall<T>(opts: StructuredCallOptions<T>, compiled: Co
   if (first === null) return { usage, failures, rawResponses };
   const parsed = parseSafely(first.content);
   if ('threw' in parsed) { validatorThrew(parsed.threw); return { usage, failures, rawResponses }; }
-  if (parsed.ok) { track.firstTryValid = true; track.trace.coercions = parsed.coercions; track.acceptedInput = parsed.input; return { value: parsed.value, usage, failures, rawResponses }; }
+  if (parsed.ok) { noteSalvage(parsed.salvaged); track.firstTryValid = !parsed.salvaged; track.trace.coercions = parsed.coercions; track.acceptedInput = parsed.input; return { value: parsed.value, usage, failures, rawResponses }; }
 
   // Each response is fully validated. A failure at JSON pointers is repaired by patching those pointers only; a failure with
   // no pointer (a validator problem about the whole document) uses the stage's full-document repair prompt.
@@ -508,7 +521,7 @@ async function runStructuredCall<T>(opts: StructuredCallOptions<T>, compiled: Co
     }
     const repaired = parseSafely(candidate.content);
     if ('threw' in repaired) { validatorThrew(repaired.threw); return { usage, failures, rawResponses }; }
-    if (repaired.ok) { track.trace.coercions = repaired.coercions; track.acceptedInput = repaired.input; return { value: repaired.value, usage, failures, rawResponses }; }
+    if (repaired.ok) { noteSalvage(repaired.salvaged); track.trace.coercions = repaired.coercions; track.acceptedInput = repaired.input; return { value: repaired.value, usage, failures, rawResponses }; }
     track.trace.validationErrors.push({ attempt: repairIndex + 1, error: repaired.error, issues: repaired.issues });
     invalid = candidate;
     invalidError = repaired.error;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildSourceBundle } from '../intake/sourceBundle.js';
 import { extractHtmlSource } from '../intake/sourceIntake.js';
-import { resolveSourceEvidence, sourceDocFromText } from '../intake/sourceDoc.js';
+import { resolveSourceEvidence, sourceDocFromText, sourceEvidenceRefMatches } from '../intake/sourceDoc.js';
 import { chunkQuote, ragSkipReason, contentListForRag, indexSourceBundleWithRag, isReusableRagIndexManifest, mapRagChunksToEvidence, ragIndexCompletionProblems, ragQueryCompletionProblems, ragRetrievalStatus, ragWorkingDirectoryNeedsReset } from '../plan/ragSidecar.js';
 import { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -28,9 +28,31 @@ test('source bundle ranks exact evidence across documents and preserves conflict
     const originalRef = resolveSourceEvidence(original, original.spans.find((span) => span.text.includes(hit.text))!.id, hit.text)!;
     assert.equal(bundledRef.startChar, originalRef.startChar, 'citation character offsets refer to the original document');
     assert.equal(bundledRef.startLine, originalRef.startLine, 'citation line numbers refer to the original document');
+    assert.equal(bundledRef.documentSha256, original.contentSha256, 'citation hash refers to its original document, not concatenated bundle text');
+    assert.equal(sourceEvidenceRefMatches(sourceDoc, bundledRef), true, 'the merged source verifies original-document digests with exact offsets and quote bytes');
     assert.equal(hit.citation.quote, hit.text);
   }
   assert.equal(sourceDoc.retrievalEvidence?.length, sourceBundle.evidenceHits.length);
+});
+
+test('source roles remain attached to per-document citations through bundle offsets', () => {
+  const primary = sourceDocFromText('Primary source: water contains two hydrogen atoms.');
+  const background = sourceDocFromText('Background note: a molecule is a group of atoms.');
+  const { sourceDoc, sourceBundle } = buildSourceBundle([primary, background], 'water atoms molecule', {
+    documentRoles: new Map([[background.sourceId, 'background']]),
+  });
+  const allPrimary = buildSourceBundle([primary, background], 'water atoms molecule').sourceBundle;
+
+  assert.equal(sourceBundle.schemaVersion, 'source-bundle/v2');
+  assert.equal(sourceBundle.documents.find((document) => document.sourceId === primary.sourceId)?.role, 'primary');
+  assert.equal(sourceBundle.documents.find((document) => document.sourceId === background.sourceId)?.role, 'background');
+  assert.notEqual(sourceBundle.bundleId, allPrimary.bundleId, 'role changes must invalidate bundle/RAG cache identity');
+  const backgroundSpan = sourceDoc.spans.find((span) => span.citationSourceId === background.sourceId)!;
+  const citation = resolveSourceEvidence(sourceDoc, backgroundSpan.id, backgroundSpan.text.trim())!;
+  assert.equal(citation.sourceRole, 'background');
+  assert.equal(sourceEvidenceRefMatches(sourceDoc, citation), true);
+  assert.equal(sourceEvidenceRefMatches(sourceDoc, { ...citation, sourceRole: 'primary' }), false);
+  assert.throws(() => buildSourceBundle([primary], 'water', { documentRoles: new Map([[background.sourceId, 'background']]) }), /unknown document/u);
 });
 
 test('multimodal content-list carries page, equation, table, and query-relevant embedded figure provenance', async () => {

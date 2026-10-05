@@ -9,6 +9,7 @@ import { writeBeatNarration } from '../narration/beat-narration/generate.js';
 import { tokenizeWords } from '../narration/align.js';
 import type { TeachingBeat } from '../teaching/beat-plan/types.js';
 import type { ModelClient } from '../llm/modelClient.js';
+import { deriveClaimIdentity } from '../evidence/claimIdentity.js';
 
 const planBeat = (n: number, claimIds: string[]): TeachingBeat => ({
   beatId: `scene.b${n}`, sceneId: 'scene', order: n, claimIds, learnerDelta: 'delta', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
@@ -33,6 +34,47 @@ test('the narration draft is strict and bounded', () => {
 
 test('a faithful narration of every beat is valid', () => {
   assert.deepEqual(validateSceneNarration(draft(), ctx), []);
+});
+
+test('an anchored claim sentence cannot reverse explicit polarity or comparison cues', () => {
+  const canonicalClaims = {
+    c1: { statement: 'Not safe during pregnancy.' },
+    c2: { statement: 'Voltage is less than 5 V.' },
+  };
+  const reversedPolarity = draft([{ sentences: ['Safe during pregnancy.', 'The frame remembers where to return.'] }]);
+  const polarityProblems = validateSceneNarration(reversedPolarity, { ...ctx, canonicalClaims });
+  assert.ok(polarityProblems.some((problem) => (problem as { path: string }).path === '/beats/0/sentences/0' && /polarity must remain negative/.test((problem as { message: string }).message)));
+
+  const comparisonClaim = { c1: { statement: 'Voltage is less than 5 V.' } };
+  const reversedComparison = draft([{ sentences: ['Voltage is greater than 5 volts.', 'The frame remembers where to return.'] }]);
+  const comparisonProblems = validateSceneNarration(reversedComparison, { ...ctx, allowedNumbers: new Set(['3', '5']), canonicalClaims: comparisonClaim });
+  assert.ok(comparisonProblems.some((problem) => (problem as { path: string }).path === '/beats/0/sentences/0' && /comparison must remain lt 5/.test((problem as { message: string }).message)));
+});
+
+test('claim identity preserves graph concepts and directed predicates with controlled active/passive aliases', () => {
+  const graphConcepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
+  const source = {
+    statement: 'Alpha causes Beta.', conceptIds: ['alpha', 'beta'],
+    relations: [{ from: 'alpha', to: 'beta', type: 'causes' as const }],
+  };
+  const identity = deriveClaimIdentity(source, graphConcepts);
+  const canonicalClaims = { c1: { statement: source.statement, identity } };
+
+  const aligned = draft([{ sentences: ['Alpha leads to Beta.', 'The frame remembers where to return.'] }]);
+  assert.deepEqual(validateSceneNarration(aligned, { ...ctx, canonicalClaims }), []);
+
+  const passive = draft([{ sentences: ['Beta is caused by Alpha.', 'The frame remembers where to return.'] }]);
+  assert.deepEqual(validateSceneNarration(passive, { ...ctx, canonicalClaims }), []);
+
+  const subjectSwap = draft([{ sentences: ['Beta causes Alpha.', 'The frame remembers where to return.'] }]);
+  assert.ok(validateSceneNarration(subjectSwap, { ...ctx, canonicalClaims }).some((problem) => /identity mismatch: Alpha causes Beta has reversed direction/.test((problem as { message: string }).message)));
+
+  const predicateSwap = draft([{ sentences: ['Alpha supports Beta.', 'The frame remembers where to return.'] }]);
+  assert.ok(validateSceneNarration(predicateSwap, { ...ctx, canonicalClaims }).some((problem) => /identity mismatch: Alpha–Beta predicate changed from causes to supports/.test((problem as { message: string }).message)));
+
+  const conceptOnly = deriveClaimIdentity({ statement: 'Alpha and Beta are linked.', conceptIds: ['alpha', 'beta'], relations: [] }, graphConcepts);
+  assert.deepEqual(validateSceneNarration(draft([{ sentences: ['Alpha and Beta remain linked.', 'The frame remembers where to return.'] }]), { ...ctx, canonicalClaims: { c1: { statement: 'Alpha and Beta are linked.', identity: conceptOnly } } }), []);
+  assert.ok(validateSceneNarration(draft([{ sentences: ['Alpha remains linked.', 'The frame remembers where to return.'] }]), { ...ctx, canonicalClaims: { c1: { statement: 'Alpha and Beta are linked.', identity: conceptOnly } } }).some((problem) => /explicit concept Beta \(beta\) is missing/.test((problem as { message: string }).message)));
 });
 
 test('problems carry pointers: wrong or missing beat ids, uncovered claims, bad anchors, screen references, stage directions, repeats, unsupported numbers', () => {
@@ -192,4 +234,23 @@ test('a shortening window sits at or below the target and a lengthening window a
   const n = (d: SceneNarrationDraft) => d.beats.reduce((a, b) => a + b.sentences.reduce((m, s) => m + tokenizeWords(s).length, 0), 0);
   assert.ok(n(lean) < 18 - 3 && n(lean) >= 13, `${n(lean)} words`);
   assert.ok(validateSceneNarration(lean, { ...ctx, revision: { ...base, targetWords: 20, direction: 'lengthen' } }).length > 0, 'a lengthening cannot end short of its target');
+});
+
+test('ASCII maths operators are rejected so the aligner transcript matches what the voice says', () => {
+  for (const sentence of ['Multiply by 1 + r each year.', 'So A = P times the factor.', 'Growth is r^n over time.']) {
+    const problems = validateSceneNarration(draft([{ sentences: [sentence] }]), ctx) as Array<{ path: string; message: string }>;
+    assert.ok(problems.some((p) => p.path === '/beats/0/sentences/0' && /cannot be spoken or aligned/.test(p.message)), sentence);
+  }
+  assert.equal((validateSceneNarration(draft([{ sentences: ['Add one to the rate, then multiply.'] }]), ctx) as Array<{ message: string }>).some((p) => /cannot be spoken or aligned/.test(p.message)), false);
+});
+
+test('a claim anchored past the last sentence is moved to the last sentence, ledgered, and only when the rest is valid', async () => {
+  const { clampClaimAnchors } = await import('../narration/beat-narration/validate.js');
+  const off = draft([{ claimSentences: [{ claimId: 'c1', sentenceIndex: 3 }] }]);
+  assert.ok((validateSceneNarration(off, ctx) as Array<{ message: string }>).some((p) => /outside this beat/.test(p.message)));
+  const fixed = clampClaimAnchors(off, ctx);
+  assert.ok(fixed);
+  assert.equal(fixed.value.beats[0]!.claimSentences[0]!.sentenceIndex, 1);
+  assert.equal(fixed.entries[0]!.path, '/beats/0/claimSentences/0/sentenceIndex');
+  assert.equal(clampClaimAnchors(draft(), ctx), undefined, 'a valid draft is left alone');
 });

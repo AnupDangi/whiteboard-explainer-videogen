@@ -1,11 +1,12 @@
 import type { ConceptGraph, SceneContract } from '../../plan/schemas.js';
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { BeatPlanDraft, RelationSpec } from './types.js';
+import type { ClaimSemantics } from '../../evidence/claims.js';
 
 export interface BeatContext {
   sceneId: string;
   conceptIds: string[];
-  claims: Array<{ id: string; statement: string; conceptIds: string[]; relations: RelationSpec[]; evidenceSpanIds: string[] }>;
+  claims: Array<{ id: string; statement: string; conceptIds: string[]; relations: RelationSpec[]; evidenceSpanIds: string[]; semantics?: ClaimSemantics }>;
   /** Graph-backed relations among this scene's concepts. */
   relations: RelationSpec[];
   /** m1, m2 ... one per scene misconceptionRisk entry. */
@@ -31,7 +32,7 @@ export function beatContextFor(section: { id: string; conceptIds: string[]; budg
   return {
     sceneId: section.id,
     conceptIds,
-    claims: contract.essentialClaims.map((claim) => ({ id: claim.id, statement: claim.statement, conceptIds: claim.conceptIds, relations: claim.relations, evidenceSpanIds: claim.evidenceSpanIds })),
+    claims: contract.essentialClaims.map((claim) => ({ id: claim.id, statement: claim.statement, conceptIds: claim.conceptIds, relations: claim.relations, evidenceSpanIds: claim.evidenceSpanIds, ...(claim.semantics ? { semantics: claim.semantics } : {}) })),
     relations: graph.relations.filter((r) => inScene.has(r.from) && inScene.has(r.to)).map(({ from, to, type }) => ({ from, to, type })),
     misconceptionIds: (contract.misconceptionRisk ?? []).map((_, index) => `m${index + 1}`),
     durationSec: contract.targetDurationSec || section.budgetSec,
@@ -41,16 +42,33 @@ export function beatContextFor(section: { id: string; conceptIds: string[]; budg
 /** Deterministic checks of a beat plan. Every problem names its JSON pointer so the repair can patch just that location. */
 export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): ValidatorProblem[] {
   const problems: ValidatorProblem[] = [];
-  const claimIds = new Set(ctx.claims.map((claim) => claim.id));
+  const claimsById = new Map(ctx.claims.map((claim) => [claim.id, claim]));
+  const claimIds = new Set(claimsById.keys());
   const concepts = new Set(ctx.conceptIds);
-  const relations = new Set(ctx.relations.map(relationKey));
   const misconceptions = new Set(ctx.misconceptionIds);
   const covered = new Set<string>();
   plan.beats.forEach((beat, i) => {
     const at = `/beats/${i}`;
     beat.claimIds.forEach((claimId, j) => { if (!claimIds.has(claimId)) problems.push({ path: `${at}/claimIds/${j}`, message: `unknown claim ${claimId}; use one of: ${[...claimIds].join(', ')}` }); else covered.add(claimId); });
-    beat.entities.forEach((entity, j) => { if (!concepts.has(entity.conceptId)) problems.push({ path: `${at}/entities/${j}/conceptId`, message: `${entity.conceptId} is not a concept of this scene; use one of: ${ctx.conceptIds.join(', ')}` }); });
-    beat.relationships.forEach((relation, j) => { if (!relations.has(relationKey(relation))) problems.push({ path: `${at}/relationships/${j}`, message: `${relation.from} -[${relation.type}]-> ${relation.to} is not backed by the concept graph; use a listed relation or remove it` }); });
+    const citedClaims = beat.claimIds.flatMap((claimId) => {
+      const claim = claimsById.get(claimId);
+      return claim ? [claim] : [];
+    });
+    beat.entities.forEach((entity, j) => {
+      const path = `${at}/entities/${j}/conceptId`;
+      if (!concepts.has(entity.conceptId)) {
+        problems.push({ path, message: `${entity.conceptId} is not a concept of this scene; use one of: ${ctx.conceptIds.join(', ')}` });
+        return;
+      }
+      if (!citedClaims.some((claim) => claim.conceptIds.includes(entity.conceptId))) {
+        problems.push({ path, message: `${entity.conceptId} is not linked to any cited claim (${beat.claimIds.join(', ')}); cite a claim containing this concept or remove the entity` });
+      }
+    });
+    beat.relationships.forEach((relation, j) => {
+      if (!citedClaims.some((claim) => claim.relations.some((claimedRelation) => relationKey(claimedRelation) === relationKey(relation)))) {
+        problems.push({ path: `${at}/relationships/${j}`, message: `${relation.from} -[${relation.type}]-> ${relation.to} is not asserted by any cited claim (${beat.claimIds.join(', ')}); cite a claim that lists this directed relation or remove/revise it` });
+      }
+    });
     beat.misconceptionIds.forEach((misconceptionId, j) => { if (!misconceptions.has(misconceptionId)) problems.push({ path: `${at}/misconceptionIds/${j}`, message: `unknown misconception ${misconceptionId}; use one of: ${ctx.misconceptionIds.join(', ') || '(none: leave the list empty)'}` }); });
     if (!beat.visualInvariant.trim()) problems.push({ path: `${at}/visualInvariant`, message: 'visualInvariant must say what is visible when the beat ends' });
     if (!beat.narrationOnly && !beat.mutedMeaning.trim()) problems.push({ path: `${at}/mutedMeaning`, message: 'a visual beat needs a muted meaning: what a viewer with the sound off should conclude from the board' });

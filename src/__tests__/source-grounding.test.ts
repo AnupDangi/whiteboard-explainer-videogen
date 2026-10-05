@@ -118,9 +118,61 @@ test('source text is checked for the words it claims, with inflection tolerated 
   assert.match(sourceTextProblem(['membrane'], undefined, source, 'kit') ?? '', /needs evidence/);
 });
 
+test('source text rejects semantic operator reversals and dropped qualifiers', () => {
+  const cases = [
+    ['Not safe during pregnancy', 'Safe during pregnancy'],
+    ['No net movement', 'Net movement'],
+    ['Does not increase resistance', 'Does increase resistance'],
+    ['Less than 5 V', 'Greater than 5 V'],
+    ['< 5 V', '> 5 V'],
+    ['At least 5 V', 'At most 5 V'],
+    ['Negative feedback', 'Positive feedback'],
+    ['Without oxygen', 'With oxygen'],
+    ['Before mitosis', 'After mitosis'],
+    ['After replication', 'Before replication'],
+    ['Cannot pass through membrane', 'Can pass through membrane'],
+    ['All cells divide', 'Some cells divide'],
+    ['Inside the membrane', 'Outside the membrane'],
+  ] as const;
+  for (const [quote, assertion] of cases) {
+    const source: Grounding = { verify: (_id, text) => text === quote ? quote : undefined };
+    const problem = sourceTextProblem([assertion], { spanId: 's', quote }, source, 'label');
+    assert.ok(problem, `expected ${JSON.stringify(assertion)} to be rejected against ${JSON.stringify(quote)}`);
+  }
+  const exact = 'Not safe during pregnancy';
+  assert.equal(sourceTextProblem([exact], { spanId: 's', quote: exact }, { verify: (_id, text) => text === exact ? exact : undefined }, 'label'), undefined);
+  const nearbyNegation = 'The reaction does not start. The reagent is blue.';
+  assert.equal(sourceTextProblem(['reagent blue'], { spanId: 's', quote: nearbyNegation }, { verify: (_id, text) => text === nearbyNegation ? nearbyNegation : undefined }, 'label'), undefined, 'a qualifier in a separate clause does not contaminate this assertion');
+  const shortConcept = 'Before mitosis begins, the cell copies its DNA.';
+  assert.equal(sourceTextProblem(['mitosis'], { spanId: 's', quote: shortConcept }, { verify: (_id, text) => text === shortConcept ? shortConcept : undefined }, 'label'), undefined, 'a short concept label does not assert the surrounding temporal clause');
+});
+
+test('BoardOps validation blocks a source token that drops claim polarity', () => {
+  const quote = 'Not safe during pregnancy';
+  const verifier: Grounding = { verify: (_id, text) => text === quote ? quote : undefined };
+  const op = BoardOpSchema.parse({ op: 'add', opId: 'qualifier', beatId: 'b1', id: 'safety', at: { region: 'center' }, element: { type: 'token', text: 'safe during pregnancy', provenance: 'source', evidence: { spanId: 's', quote } } });
+  const problems = validateBoardOps([op], emptyBoardState(), verifier) as Array<{ path: string; message: string }>;
+  assert.equal(problems[0]?.path, '/ops/0/element/evidence');
+  assert.match(problems[0]?.message ?? '', /polarity/);
+});
+
 test('numbers and units in source text must still match the quote exactly', () => {
   const quote = 'The membrane has 3 pores and holds 12 percent solute';
   const source: Grounding = { verify: (_id, text) => (quote.includes(text) ? text : undefined) };
   assert.equal(sourceTextProblem(['3 pores'], { spanId: 's', quote }, source, 'token'), undefined);
   assert.match(sourceTextProblem(['30 pores'], { spanId: 's', quote }, source, 'token') ?? '', /30 pores/, 'a different number is never an inflection');
+});
+
+test('subscript notation is not content: R_{total} = R_1 + R_2 matches a source written R_total = R1 + R2, but not a different sum', () => {
+  const quote = 'The total resistance is the sum of the individual resistances, R_total = R1 + R2 + R3';
+  assert.equal(formulaProblem('R_{\\text{total}}=R_1+R_2+R_3', quote), undefined);
+  assert.equal(formulaProblem('R_{total}=R_1+R_2+R_3', quote), undefined);
+  assert.match(formulaProblem('R_{total}=R_1+R_2', quote) ?? '', /do not match/);
+  assert.match(formulaProblem('R_{total}=R_1\\cdot R_2\\cdot R_3', quote) ?? '', /cannot be checked/);
+});
+
+test('a fraction matches the slash form in the source, a compound fraction needs its parentheses', () => {
+  const quote = "Ohm's law says the current equals the voltage divided by the resistance, I = V / R.";
+  assert.equal(formulaProblem('I=\\frac{V}{R}', quote), undefined);
+  assert.match(formulaProblem('I=\\frac{V}{R+1}', quote) ?? '', /number 1|do not match/);
 });

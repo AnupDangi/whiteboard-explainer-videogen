@@ -9,6 +9,7 @@ import { splitSpokenSentences } from '../narration/sentences.js';
 import { ConceptGraphSchema, ScopedConceptGraphSchema, TeachingPlanDraftSchema, RELATION_TYPES, SECTION_KINDS, VISUAL_CONCEPT_TYPES, VISUAL_INTENT_STRATEGIES, VISUAL_FORMS, SECTION_TITLE_MAX_WORDS, TEACHING_SKILLS, VISUAL_MECHANISMS, TeachingPlanSchema, type ConceptGraph, type Script, type TeachingPlan } from './schemas.js';
 import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan, sceneCountFor } from './analyze.js';
 import type { StageRunRecord } from '../shared/contracts.js';
+import type { GroundingMode } from '../evidence/ledger.js';
 import { sourceDocFromText, spanExcerptPrompt, type SourceDoc, type SourceBundle } from '../intake/sourceDoc.js';
 import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
 import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
@@ -43,6 +44,8 @@ export interface LessonRequest {
   audience?: string;
   sourceDoc?: SourceDoc;
   sourceBundle?: SourceBundle;
+  /** Evidence policy for this lesson. Only STRICT_SOURCE is currently implemented. */
+  groundingMode?: GroundingMode;
   sources?: LessonSourceInput[];
   sourceFormat?: SourceDoc['format'];
   /** Internal scope used by the hierarchical planner; IDs and labels come from its global syllabus. */
@@ -319,7 +322,7 @@ Rules:
 - ${PLAN_COMPONENT_GUIDANCE}
 - Order by prerequisites: a concept is never taught before what it needs.
 - Math: build intuition before notation. For a multi-step idea, give each step its own "step" section, then an "example" or "recap". A one-step idea fits in one "explain" section.
-- Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the budgets MUST sum to targetDurationSec exactly. Use about ${scenes} sections for ${req.targetDurationSec} s — fewer, richer scenes beat many tiny ones.
+- Budgets: every section ${SCENE_SEC.min}-${SCENE_SEC.max} seconds (about 18 s is ideal); the integer budgets MUST sum to targetDurationSec exactly. Plan the complete section list first, including every required step section, then allocate duration across that whole list. Use about ${Math.min(Math.floor(req.targetDurationSec / SCENE_SEC.min), scenes + (graph.concepts.some((concept) => concept.level === 'multi-step') ? 1 : 0))} sections for ${req.targetDurationSec} s${graph.concepts.some((concept) => concept.level === 'multi-step') ? ' when a multi-step concept needs its required second step scene' : ''}. Before returning, check that sectionCount × ${SCENE_SEC.min} ≤ targetDurationSec ≤ sectionCount × ${SCENE_SEC.max}; if the sum is wrong, rebalance existing sections instead of adding a short section. Never make a section shorter than ${SCENE_SEC.min} seconds to satisfy a step, recap, or scene-count requirement.
 - If any concept has level "multi-step", at least 2 sections must have kind "step".
 - Lessons of 45 s or more end with a short "recap" section. Very short lessons may skip the intro section.
 - domain (optional): a broad subject label of 1-50 characters.

@@ -48,18 +48,22 @@ export interface ElevenLabsEnv { [name: string]: string | undefined }
 export type FetchLike = (url: string, init: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> }>;
 
 /** process.env plus ELEVENLABS_* / TTS_* lines of the working directory's .env (the pipeline's own loader only knows OpenRouter settings). */
-let merged: ElevenLabsEnv | undefined;
+let cachedEnvPath: string | undefined;
+let cachedEnvFile: ElevenLabsEnv = {};
 export function elevenLabsEnv(): ElevenLabsEnv {
-  if (merged) return merged;
-  const fromFile: ElevenLabsEnv = {};
-  try {
-    for (const line of readFileSync(path.join(process.cwd(), '.env'), 'utf8').split('\n')) {
-      const m = /^\s*(ELEVENLABS_[A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
-      if (m) fromFile[m[1]!] = m[2]!.replace(/^["']|["']$/g, '');
-    }
-  } catch { /* no .env: only process.env counts */ }
-  merged = { ...fromFile, ...process.env };
-  return merged;
+  const filename = path.resolve(process.env.HYPOTHESIS_ENV_FILE || '.env');
+  if (cachedEnvPath !== filename) {
+    const fromFile: ElevenLabsEnv = {};
+    try {
+      for (const line of readFileSync(filename, 'utf8').split('\n')) {
+        const m = /^\s*(?:export\s+)?((?:ELEVENLABS|TTS)_[A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+        if (m) fromFile[m[1]!] = m[2]!.replace(/^["']|["']$/g, '');
+      }
+    } catch { /* no env file: only process.env counts */ }
+    cachedEnvPath = filename;
+    cachedEnvFile = fromFile;
+  }
+  return { ...cachedEnvFile, ...process.env };
 }
 
 export function elevenLabsKeys(env: ElevenLabsEnv = elevenLabsEnv()): string[] {
@@ -127,10 +131,10 @@ export class ElevenKeyPool {
   }
 
   /** Atomically reserves a key's remaining credits for one in-flight request. */
-  async reserve(credits: number): Promise<{ key: string; settle(actualCredits?: number): void; cancel(): void }> {
+  async reserve(credits: number, excludedKeys: ReadonlySet<string> = new Set()): Promise<{ key: string; settle(actualCredits?: number): void; cancel(): void; markUncertain(): void }> {
     await this.idle();
     for (const key of this.keys) {
-      if (this.dead.has(key)) continue;
+      if (this.dead.has(key) || excludedKeys.has(key)) continue;
       const unlock = await this.lock(key);
       try {
         const remaining = await this.balance(key);
@@ -147,7 +151,15 @@ export class ElevenKeyPool {
           const known = this.balances.get(key);
           if (known && actual !== undefined) known.remaining = Math.max(0, known.remaining - actual);
         };
-        return { key, settle: (actual = credits) => release(actual), cancel: () => release() };
+        return {
+          key,
+          settle: (actual = credits) => release(actual),
+          cancel: () => release(),
+          // A request may have been billed even when its response was lost or returned 5xx.
+          // Keep the hold until this process exits or its TTL expires, and avoid this key for
+          // later scenes in the same process. The event remains `uncertain`, not `succeeded`.
+          markUncertain: () => { if (done) return; done = true; this.dead.add(key); },
+        };
       } finally { unlock(); }
     }
     throw new Error(`no ElevenLabs key has ${Math.ceil(credits)} credits left (${this.keys.length} key${this.keys.length === 1 ? '' : 's'} configured)`);
@@ -174,7 +186,7 @@ export interface ElevenLabsOptions {
   onUsage?: (event: ElevenLabsUsageEvent) => void;
 }
 
-export interface ElevenLabsUsageEvent { status: 'succeeded' | 'failed' | 'uncertain'; language: string; model?: string; voice: string; credits?: number; keyIndex?: number; message?: string }
+export interface ElevenLabsUsageEvent { status: 'succeeded' | 'failed' | 'uncertain'; language: string; model?: string; voice: string; credits?: number; /** 1-based position in the configured deduplicated key pool; never a key or key fragment. */ keyIndex?: number; message?: string }
 
 const defaultFetch: FetchLike = (url, init) => fetch(url, init) as unknown as ReturnType<FetchLike>;
 const pools = new Map<string, ElevenKeyPool>();
@@ -302,10 +314,12 @@ export function normalizedCharacterClock(alignment: CharacterClock): CharacterCl
 /** One timestamped synthesis routed only through an operator-captured capability snapshot. */
 async function synthesize(text: string, opts: ElevenLabsOptions): Promise<Attempt> {
   const fetcher = opts.fetcher ?? defaultFetch;
-  const voice = resolveElevenLabsVoice(opts.voice, opts.env ?? elevenLabsEnv());
-  const forced = resolveElevenLabsModel(opts.model, opts.env ?? elevenLabsEnv());
+  const env = opts.env ?? elevenLabsEnv();
+  const configuredKeys = elevenLabsKeys(env);
+  const voice = resolveElevenLabsVoice(opts.voice, env);
+  const forced = resolveElevenLabsModel(opts.model, env);
   const known = workingModel.get(normalizeLanguageCode(opts.language));
-  const capabilities = opts.capabilities ?? loadElevenLabsCapabilitySnapshot(opts.env ?? elevenLabsEnv());
+  const capabilities = opts.capabilities ?? loadElevenLabsCapabilitySnapshot(env);
   if (!capabilities) throw new Error('ElevenLabs requires a captured capability snapshot; set ELEVENLABS_CAPABILITIES_FILE before synthesis');
   const snapshotModels = modelsForLanguage(capabilities, opts.language);
   assertVoiceSupportsLanguage(capabilities, voice, opts.language);
@@ -314,14 +328,20 @@ async function synthesize(text: string, opts: ElevenLabsOptions): Promise<Attemp
   if (models.length === 0 && !forced) throw new Error(`no ElevenLabs model in capability snapshot ${capabilities.snapshotId} supports ${opts.language}`);
   if (models.length === 0 && forced && !snapshotModels.some((model) => model.id === forced)) throw new Error(`ElevenLabs model ${forced} is not eligible for ${opts.language} in capability snapshot ${capabilities.snapshotId}`);
   if (models.length === 0) throw new Error(`unknown or unsupported ElevenLabs model ${forced}`);
-  const pool = poolFor(opts.env ?? elevenLabsEnv(), fetcher);
+  const pool = poolFor(env, fetcher);
   let lastError = '';
-  const maxAttempts = Math.max(1, pool.size + 1);
+  const maxAttempts = Math.max(1, pool.size);
   for (const model of models) {
     const credits = Math.ceil([...text].length * model.creditsPerChar);
-    let keyRetries = 0; let transientRetries = 0;
-    while (keyRetries < maxAttempts && transientRetries <= 2) {
-      const reservation = await pool.reserve(credits); const key = reservation.key;
+    let keyRetries = 0;
+    const excludedKeys = new Set<string>();
+    const throttleRetries = new Map<string, number>();
+    while (keyRetries < maxAttempts) {
+      let reservation: Awaited<ReturnType<ElevenKeyPool['reserve']>>;
+      try { reservation = await pool.reserve(credits, excludedKeys); }
+      catch (error) { lastError = error instanceof Error ? error.message : String(error); break; }
+      const key = reservation.key;
+      const keyIndex = configuredKeys.indexOf(key) + 1;
       let res: Awaited<ReturnType<FetchLike>>;
       try {
         res = await fetcher(`${API}/text-to-speech/${voice}/with-timestamps?output_format=pcm_24000`, {
@@ -329,31 +349,59 @@ async function synthesize(text: string, opts: ElevenLabsOptions): Promise<Attemp
           body: JSON.stringify({ text, model_id: model.id, language_code: opts.language, voice_settings: opts.voiceSettings ?? { stability: 0.5, similarity_boost: 0.75, speed: 1 } }),
         });
       } catch (error) {
-        reservation.cancel();
+        reservation.markUncertain();
+        excludedKeys.add(key); keyRetries++;
         const message = error instanceof Error ? error.message : String(error);
-        opts.onUsage?.({ status: 'uncertain', language: opts.language, model: model.id, voice, credits, message });
-        if (transientRetries++ < 2) continue;
-        throw new Error(`ElevenLabs call outcome is uncertain after bounded retries: ${message}`);
+        opts.onUsage?.({ status: 'uncertain', language: opts.language, model: model.id, voice, credits, keyIndex, message });
+        lastError = `key ${keyIndex} outcome is uncertain: ${message}`;
+        continue;
       }
       if (res.ok) {
+        let body: { audio_base64: string; alignment?: ProviderAlignment | null; normalized_alignment?: ProviderAlignment | null };
         try {
-          const body = await res.json() as { audio_base64: string; alignment?: ProviderAlignment | null; normalized_alignment?: ProviderAlignment | null };
+          body = await res.json() as { audio_base64: string; alignment?: ProviderAlignment | null; normalized_alignment?: ProviderAlignment | null };
           if (!body.alignment || typeof body.audio_base64 !== 'string') throw new Error('ElevenLabs response omitted audio or character alignment');
-          reservation.settle(credits);
-          workingModel.set(normalizeLanguageCode(opts.language), model.id);
-          opts.onUsage?.({ status: 'succeeded', language: opts.language, model: model.id, voice, credits });
-          return { wav: pcmToWav(Buffer.from(body.audio_base64, 'base64'), 24000), alignment: body.alignment, ...(body.normalized_alignment ? { normalizedAlignment: body.normalized_alignment } : {}), model: model.id, credits, voice, capabilitySnapshotId: capabilities.snapshotId };
-        } catch (error) { reservation.cancel(); throw error; }
+        } catch (error) {
+          reservation.markUncertain(); excludedKeys.add(key); keyRetries++;
+          const message = error instanceof Error ? error.message : String(error);
+          lastError = `key ${keyIndex} returned an unusable success response: ${message}`;
+          opts.onUsage?.({ status: 'uncertain', language: opts.language, model: model.id, voice, credits, keyIndex, message: lastError });
+          continue;
+        }
+        reservation.settle(credits);
+        workingModel.set(normalizeLanguageCode(opts.language), model.id);
+        opts.onUsage?.({ status: 'succeeded', language: opts.language, model: model.id, voice, credits, keyIndex });
+        return { wav: pcmToWav(Buffer.from(body.audio_base64, 'base64'), 24000), alignment: body.alignment, ...(body.normalized_alignment ? { normalizedAlignment: body.normalized_alignment } : {}), model: model.id, credits, voice, capabilitySnapshotId: capabilities.snapshotId };
       }
       const detail = await res.text();
       lastError = `${model.id} ${res.status}: ${detail.slice(0, 240)}`;
-      reservation.cancel();
       if (res.status === 400 && /unsupported_language|does not support language/.test(detail)) {
+        reservation.cancel();
         throw new Error(`ElevenLabs capability snapshot ${capabilities.snapshotId} was contradicted: ${lastError}`);
       }
-      if (res.status === 401 || res.status === 402 || /quota|credits/i.test(detail)) { pool.retire(key); keyRetries++; continue; }
-      if (res.status === 429 || res.status >= 500) { transientRetries++; if (transientRetries <= 2) continue; }
-      opts.onUsage?.({ status: 'failed', language: opts.language, model: model.id, voice, credits, message: lastError });
+      if (res.status === 401 || res.status === 402 || res.status === 403 || /quota|credits/i.test(detail)) {
+        reservation.cancel();
+        pool.retire(key); keyRetries++;
+        excludedKeys.add(key);
+        opts.onUsage?.({ status: 'failed', language: opts.language, model: model.id, voice, credits, keyIndex, message: lastError });
+        continue;
+      }
+      if (res.status === 429) {
+        // One short retry handles a transient throttle; a repeated 429 is treated as key-scoped
+        // and moves to the next key. Do not spend the remaining keys retrying one throttled slot.
+        const keyThrottleRetries = throttleRetries.get(key) ?? 0;
+        if (keyThrottleRetries < 1) { reservation.cancel(); throttleRetries.set(key, keyThrottleRetries + 1); continue; }
+        reservation.cancel(); pool.retire(key); keyRetries++; excludedKeys.add(key);
+        opts.onUsage?.({ status: 'failed', language: opts.language, model: model.id, voice, credits, keyIndex, message: lastError });
+        continue;
+      }
+      if (res.status >= 500) {
+        reservation.markUncertain(); excludedKeys.add(key); keyRetries++;
+        opts.onUsage?.({ status: 'uncertain', language: opts.language, model: model.id, voice, credits, keyIndex, message: lastError });
+        continue;
+      }
+      reservation.cancel();
+      opts.onUsage?.({ status: 'failed', language: opts.language, model: model.id, voice, credits, keyIndex, message: lastError });
       throw new Error(`ElevenLabs request failed: ${lastError}`);
     }
   }

@@ -135,6 +135,7 @@ export const SceneContractSchema = z.object({
       startOffset: z.number().int().nonnegative(),
       endOffset: z.number().int().positive(),
       quoteHash: z.string().regex(/^[a-f0-9]{64}$/u),
+      sourceRole: z.enum(['primary', 'background']).optional(),
     }).strict().refine((ref) => ref.endOffset > ref.startOffset, 'invalid claim source range')).max(96).optional(),
     /** Deterministically derived protected cues carried by this canonical claim, when present. */
     semantics: ClaimSemanticsSchema.optional(),

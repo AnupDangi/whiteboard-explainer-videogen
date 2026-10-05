@@ -52,14 +52,17 @@ export function lineBaselines(cy: number, fitted: FittedText): number[] {
 /** True when `text` fits on one line in `width` at the size `fitFont` picks. */
 export const fitsWidth = (text: string, width: number, base: number = STYLE.font.sizes.body): boolean => measureTextWidth(text, fitFont(text, width, base)) <= width + 0.5;
 
+/** Breathing room kept on both sides of a label so neighbouring labels never touch; text that only just fits a cell does not count as fitting. */
+const SLOT_PAD = 16;
+
 /** The text each element kind draws and the widest it may be before it spills out of its own cell. The renderer aims for a roomier padded width but a label that fits the cell is legal. */
 export function textSlot(el: BoardElement, rect: Rect): { text: string; width: number; height: number; base: number } | undefined {
   const spec = el.spec;
   switch (spec.type) {
-    case 'token': return { text: spec.text, width: rect.w - 4, height: rect.h - 8, base: STYLE.font.sizes.body };
-    case 'entity': return { text: spec.label, width: rect.w - 4, height: rect.h - 8, base: STYLE.font.sizes.body };
+    case 'token': return { text: spec.text, width: rect.w - SLOT_PAD, height: rect.h - 8, base: STYLE.font.sizes.body };
+    case 'entity': return { text: spec.label, width: rect.w - SLOT_PAD, height: rect.h - 8, base: STYLE.font.sizes.body };
     case 'value': return { text: `${spec.label}: ${String(el.value ?? spec.value)}${spec.unit ? ` ${spec.unit}` : ''}`, width: rect.w - 20, height: rect.h - 8, base: STYLE.font.sizes.body };
-    case 'text': return { text: spec.text, width: rect.w, height: rect.h, base: spec.role === 'title' ? STYLE.font.sizes.title : spec.role === 'label' ? STYLE.font.sizes.label : Math.max(MIN_FONT, 30) };
+    case 'text': return { text: spec.text, width: rect.w - SLOT_PAD, height: rect.h, base: spec.role === 'title' ? STYLE.font.sizes.title : spec.role === 'label' ? STYLE.font.sizes.label : Math.max(MIN_FONT, 30) };
     default: return undefined;
   }
 }

@@ -52,6 +52,20 @@ export function rebalanceSceneBudgets<T extends { id: string; budgetSec: number 
       deficit -= 1;
     }
   }
+  // Hard bounds win over ideal pacing: a scene outside [min, max] trades whole seconds with scenes that stay inside after the trade.
+  for (let guard = 0; guard < 600; guard++) {
+    const under = out.find((section) => section.budgetSec < SCENE_SEC.min);
+    const over = out.find((section) => section.budgetSec > SCENE_SEC.max);
+    if (under) {
+      const donor = out.filter((other) => other !== under && other.budgetSec > SCENE_SEC.min).sort((a, b) => b.budgetSec - a.budgetSec)[0];
+      if (!donor) break;
+      donor.budgetSec -= 1; under.budgetSec += 1;
+    } else if (over) {
+      const taker = out.filter((other) => other !== over && other.budgetSec < SCENE_SEC.max).sort((a, b) => a.budgetSec - b.budgetSec)[0];
+      if (!taker) break;
+      taker.budgetSec += 1; over.budgetSec -= 1;
+    } else break;
+  }
   return out;
 }
 /**

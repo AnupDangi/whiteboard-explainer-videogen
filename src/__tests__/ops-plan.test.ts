@@ -4,6 +4,7 @@ import { SceneBoardDraftSchema, type SceneBoardDraft } from '../visual-v2/ops-pl
 import { validateSceneBoard, type BoardContext } from '../visual-v2/ops-plan/validate.js';
 import { buildBoardPrompt } from '../visual-v2/ops-plan/prompt.js';
 import { planSceneBoard } from '../visual-v2/ops-plan/plan.js';
+import { salvageSceneBoard } from '../visual-v2/ops-plan/salvage.js';
 import { KIT_CATALOGUE } from '../visual-v2/kits/catalogue.js';
 import { KIT_NAMES } from '../visual-v2/board-ops/types.js';
 import { parseKitParams } from '../visual-v2/kits/registry.js';
@@ -264,20 +265,114 @@ test('the prompt lists each kit\'s exact parameter fields and enumerations from 
   assert.match(describeKitParams('graph'), /layout\?: one of ring\|grid\|compound/);
 });
 
-test('the repair the validator asks for is allowed: switching an unquoted source label to illustrative may touch its provenance and citation together', async () => {
+test('unsupported source text cannot be salvaged as illustrative or reverse a claim after an explicit downgrade', () => {
   const bad = good() as { ops: Array<{ element: Record<string, unknown> }> };
-  bad.ops[1]!.element = { ...bad.ops[1]!.element, provenance: 'source', evidence: { spanId: 's1', quote: 'a stack pushes' } };
-  const grounded = { ...ctx, grounding: { verify: (spanId: string, quote: string) => (spanId === 's1' && quote === 'a stack pushes' ? quote : undefined) } } as BoardContext;
-  assert.ok(validateSceneBoard(draft(bad), grounded).some((p) => /absent from its cited quote/.test((p as { message: string }).message) && /derived|illustrative/.test((p as { message: string }).message)));
-  // This is the patch a model returns when it follows the hint. It changes provenance and removes the citation of the SAME element.
-  const patch = { patches: [{ op: 'replace', path: '/ops/1/element/provenance', valueJson: '"illustrative"' }, { op: 'remove', path: '/ops/1/element/evidence' }] };
-  const { client, requests } = scripted([JSON.stringify(bad), JSON.stringify(patch)]);
-  const result = await planSceneBoard({ ctx: grounded }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
-  assert.equal(result.failures.length, 0, JSON.stringify(result.failures));
-  assert.equal(requests.length, 2, 'one repair was enough');
-  const element = (result.value?.ops[1] as { element: { provenance: string; evidence?: unknown } }).element;
-  assert.equal(element.provenance, 'illustrative');
-  assert.equal(element.evidence, undefined);
+  bad.ops[1]!.element = { ...bad.ops[1]!.element, label: 'Safe during pregnancy', provenance: 'source', evidence: { spanId: 's1', quote: 'a stack pushes' } };
+  const grounded: BoardContext = {
+    ...ctx,
+    claims: [{ id: 'c1', statement: 'Not safe during pregnancy.' }],
+    grounding: { verify: (spanId, quote) => (spanId === 's1' && quote === 'a stack pushes' ? quote : undefined) },
+  };
+  assert.ok(validateSceneBoard(draft(bad), grounded).length > 0, 'the unsupported source assertion remains a validation failure');
+  assert.equal(salvageSceneBoard(draft(bad), grounded), undefined, 'unsupported source text stays a repair/failure, never an illustrative salvage');
+
+  const downgraded = good() as { ops: Array<{ element: Record<string, unknown> }> };
+  downgraded.ops[1]!.element = { ...downgraded.ops[1]!.element, label: 'Safe during pregnancy', provenance: 'illustrative' };
+  assert.ok(validateSceneBoard(draft(downgraded), grounded).some((p) =>
+    /visual text bound to claim c1 contradicts its canonical wording/.test((p as { message: string }).message),
+  ), 'changing provenance does not bypass the canonical claim check');
+});
+
+test('claim-linked visuals preserve direction, scope, spatial, extreme, and condition cues', () => {
+  const cases = [
+    ['Resistance increases.', 'Resistance decreases.'],
+    ['All cells divide.', 'Some cells divide.'],
+    ['Molecules remain inside the membrane.', 'Molecules remain outside the membrane.'],
+    ['The minimum voltage is 5 V.', 'The maximum voltage is 5 V.'],
+    ['If heated, resistance rises.', 'Unless heated, resistance rises.'],
+  ] as const;
+  for (const [statement, label] of cases) {
+    const changed = good() as { ops: Array<{ element: Record<string, unknown> }> };
+    changed.ops[1]!.element = { ...changed.ops[1]!.element, label, provenance: 'illustrative' };
+    const claimContext: BoardContext = { ...ctx, claims: [{ id: 'c1', statement }] };
+    const failures = validateSceneBoard(draft(changed), claimContext) as Array<{ message: string }>;
+    assert.ok(failures.some((failure) => /visual text bound to claim c1 contradicts its canonical wording/.test(failure.message)), `${statement} -> ${label}`);
+  }
+
+  const paraphrased = good() as { ops: Array<{ element: Record<string, unknown> }> };
+  paraphrased.ops[1]!.element = { ...paraphrased.ops[1]!.element, label: 'Every cell divides.', provenance: 'illustrative' };
+  assert.deepEqual(validateSceneBoard(draft(paraphrased), { ...ctx, claims: [{ id: 'c1', statement: 'All cells divide.' }] }), []);
+});
+
+test('visual concept bindings must be covered by their linked canonical claims', () => {
+  const bound = good() as { ops: Array<Record<string, unknown>> };
+  const claimContext: BoardContext = {
+    ...ctx,
+    claims: [{ id: 'c1', statement: 'Each call pushes a frame.', conceptIds: ['frame'], relations: [] }],
+  };
+  const failures = validateSceneBoard(draft(bound), claimContext) as Array<{ path: string; message: string }>;
+  assert.ok(failures.some((failure) => failure.path === '/ops/0/element/bindings/conceptIds' && /concept stack is not linked to any canonical claim bound here/.test(failure.message)));
+  assert.ok(failures.some((failure) => failure.path === '/ops/1/element/bindings/conceptIds' && /concept stack is not linked to any canonical claim bound here/.test(failure.message)));
+});
+
+test('an entity cannot display another graph concept label while keeping its own concept ID', () => {
+  const swapped = good() as { ops: Array<{ element?: Record<string, unknown> }> };
+  swapped.ops[1]!.element = { ...swapped.ops[1]!.element!, label: 'Stack' };
+  const problems = validateSceneBoard(draft(swapped), ctx) as Array<{ path: string; message: string }>;
+  assert.ok(problems.some((problem) => problem.path === '/ops/1/element/label' && /names concept stack, but this entity is bound to frame/.test(problem.message)));
+});
+
+test('factual edges preserve claim relation direction and predicate when endpoint identities resolve', () => {
+  const claimContext: BoardContext = {
+    ...ctx,
+    claims: [{
+      id: 'c1', statement: 'A frame contains a stack.', conceptIds: ['frame', 'stack'],
+      relations: [{ from: 'frame', to: 'stack', type: 'contains' }],
+    }],
+    geometryCheck: () => [],
+  };
+  const withEdge = (from = 'f1', to = 's1', relation = 'contains'): SceneBoardDraft => {
+    const value = good() as { ops: Array<Record<string, unknown>> };
+    value.ops.splice(2, 0,
+      op({ op: 'add', opId: 'o-stack', beatId: 'sc.b1', id: 's1', element: { type: 'entity', conceptId: 'stack', label: 'stack', provenance: 'source', bindings: { conceptIds: ['stack'], claimIds: ['c1'] } }, at: { region: 'right' }, cue: 0 }),
+      op({ op: 'connect', opId: 'o-edge', beatId: 'sc.b1', id: 'edge', from, to, relation, bindings: { conceptIds: ['frame', 'stack'], claimIds: ['c1'] }, cue: 0 }),
+    );
+    return draft(value);
+  };
+
+  assert.deepEqual(validateSceneBoard(withEdge(), claimContext), [], 'the aligned source → predicate → destination edge remains valid');
+  const reversed = validateSceneBoard(withEdge('s1', 'f1'), claimContext) as Array<{ path: string; message: string }>;
+  assert.ok(reversed.some((failure) => failure.path === '/ops/3/from' && /reverses claim relation frame -contains-> stack/.test(failure.message)));
+  const wrongPredicate = validateSceneBoard(withEdge('f1', 's1', 'produces'), claimContext) as Array<{ path: string; message: string }>;
+  assert.ok(wrongPredicate.some((failure) => failure.path === '/ops/3/relation' && /does not match the claim relation for these endpoints; expected contains/.test(failure.message)));
+});
+
+test('claim relation checking skips ambiguous endpoints and legacy claims without relation data', () => {
+  const ambiguous = {
+    ...ctx,
+    claims: [{ id: 'c1', statement: 'A frame contains a stack.', conceptIds: ['frame', 'stack'], relations: [{ from: 'frame', to: 'stack', type: 'contains' }] }],
+    geometryCheck: () => [],
+  } as BoardContext;
+  const broad = good() as { ops: Array<Record<string, unknown>> };
+  broad.ops.splice(2, 0,
+    op({ op: 'add', opId: 'o-stack', beatId: 'sc.b1', id: 's1', element: { type: 'entity', conceptId: 'stack', label: 'stack', provenance: 'source', bindings: { conceptIds: ['stack'], claimIds: ['c1'] } }, at: { region: 'right' }, cue: 0 }),
+    op({ op: 'connect', opId: 'o-edge', beatId: 'sc.b1', id: 'edge', from: 'pile', to: 's1', relation: 'produces', bindings: { conceptIds: ['frame', 'stack'], claimIds: ['c1'] }, cue: 0 }),
+  );
+  assert.ok(!validateSceneBoard(draft(broad), ambiguous).some((failure) => typeof failure !== 'string' && /claim relation|reverses claim/.test(failure.message)), 'a multi-concept kit endpoint does not claim a resolvable identity');
+
+  const legacy = { ...ctx, claims: [{ id: 'c1', statement: 'A frame contains a stack.' }], geometryCheck: () => [] } as BoardContext;
+  assert.deepEqual(validateSceneBoard(draft(broad), legacy), [], 'legacy claim data without linked relation tuples is treated as unresolved');
+});
+
+test('a factual edge cannot be justified by a claim with no canonical relation tuples', () => {
+  const value = good() as { ops: Array<Record<string, unknown>> };
+  value.ops.splice(2, 0,
+    op({ op: 'add', opId: 'o-stack', beatId: 'sc.b1', id: 's1', element: { type: 'entity', conceptId: 'stack', label: 'stack', provenance: 'source', bindings: { conceptIds: ['stack'], claimIds: ['c1'] } }, at: { region: 'right' }, cue: 0 }),
+    op({ op: 'connect', opId: 'o-edge', beatId: 'sc.b1', id: 'edge', from: 'f1', to: 's1', relation: 'causes', bindings: { conceptIds: ['frame', 'stack'], claimIds: ['c1'] }, cue: 0 }),
+  );
+  const context: BoardContext = { ...ctx, claims: [{ id: 'c1', statement: 'A frame and stack are present.', conceptIds: ['frame', 'stack'], relations: [] }], geometryCheck: () => [] };
+  const problems = validateSceneBoard(draft(value), context) as Array<{ path: string; message: string }>;
+  assert.ok(problems.some((problem) => problem.path === '/ops/3/bindings/claimIds' && /must cite a claim with a canonical directed relation/.test(problem.message)));
 });
 
 test('citation problems on split parts and merge targets also put the whole element in repair scope', async () => {

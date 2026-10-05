@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { elevenLabsAligner, loadElevenLabsCapabilitySnapshot, modelsForLanguage, resolveElevenLabsModel, resolveElevenLabsVoice, type ElevenLabsCapabilitySnapshot, type ElevenLabsUsageEvent } from './elevenlabs.js';
+import { elevenLabsAligner, elevenLabsEnv, loadElevenLabsCapabilitySnapshot, modelsForLanguage, resolveElevenLabsModel, resolveElevenLabsVoice, type ElevenLabsCapabilitySnapshot, type ElevenLabsUsageEvent } from './elevenlabs.js';
 import { withHostResourcePermit } from '../shared/hostResourcePool.js';
 import { synthesizeAndAlign, type AlignedWord, type AlignerIdentity } from '../shared/alignment/align.js';
 import type { ContentAddressedArtifactStore } from '../run/artifactCache.js';
@@ -8,6 +8,13 @@ import { S5_MODEL_ID, S5_STAGE_VERSION } from '../run/versions.js';
 
 /** TTS + forced-alignment processes running at once on this host (all runs share it). */
 export const DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY = configuredConcurrency('HYPOTHESIS_TTS_ALIGNMENT_CONCURRENCY', 2);
+
+/** Load TTS routing from the same env file as OpenRouter for CLI runs; explicit process/CLI settings win. */
+export function applyTtsConfigFromEnvFile(): void {
+  const env = elevenLabsEnv();
+  if (process.env.TTS_PROVIDER === undefined && env.TTS_PROVIDER !== undefined) process.env.TTS_PROVIDER = env.TTS_PROVIDER;
+  if (process.env.TTS_FALLBACK_LOCAL === undefined && env.TTS_FALLBACK_LOCAL !== undefined) process.env.TTS_FALLBACK_LOCAL = env.TTS_FALLBACK_LOCAL;
+}
 
 export interface SceneAudioRequest {
   sceneId: string;

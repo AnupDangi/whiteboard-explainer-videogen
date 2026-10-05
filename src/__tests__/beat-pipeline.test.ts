@@ -12,7 +12,7 @@ const graph = { concepts: [
   { id: 'frame', label: 'Frame', kind: 'entity', definition: 'A record of one call.', evidence: ev, level: 'one-step' },
   { id: 'stack', label: 'Stack', kind: 'entity', definition: 'Holds frames.', evidence: ev, level: 'one-step' },
 ], relations: [{ from: 'frame', to: 'stack', type: 'contains', evidence: ev }], prerequisites: [] } as unknown as ConceptGraph;
-const claim = (id: string) => ({ id, statement: `Statement ${id} takes 3 steps.`, conceptIds: ['frame', 'stack'], relations: [{ from: 'frame', to: 'stack', type: 'contains' }], evidenceSpanIds: [span.id] });
+const claim = (id: string) => ({ id, statement: 'Every call pushes a frame onto the stack, up to 3 steps deep.', conceptIds: ['frame', 'stack'], relations: [{ from: 'frame', to: 'stack', type: 'contains' }], evidenceSpanIds: [span.id] });
 const section = (id: string) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 8, contract: {
   learningDelta: 'delta', targetDurationSec: 8, requiredConceptIds: ['frame', 'stack'], requiredRelations: [{ from: 'frame', to: 'stack', type: 'contains' }], evidenceSpanIds: [span.id],
   essentialClaims: [claim(`${id}_c`)], teachingSkill: 'mechanism', candidateMechanisms: ['chain'], mentalModel: 'm', misconceptionRisk: [],

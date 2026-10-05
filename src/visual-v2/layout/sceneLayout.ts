@@ -17,6 +17,7 @@ import { fitText, lineBaselines, textOverflow, textSlot } from './textFit.js';
 const SAFE = STYLE.canvas.safe;
 export const CONTENT_RECT: Rect = { x: SAFE, y: SAFE + STYLE.layout.titleBandPx, w: STYLE.canvas.w - 2 * SAFE, h: STYLE.canvas.h - 2 * SAFE - STYLE.layout.titleBandPx };
 const GAP = 28;
+const MAX_KIT_GROWTH = 2;
 const MAX_UPSCALE = 1.3;
 
 export interface PlacedRect { id: string; rect: Rect }
@@ -78,7 +79,10 @@ function preferredSize(spec: ElementSpec, capacity: number): { w: number; h: num
 
 const COLUMNS: Record<'middle' | 'top' | 'bottom', RegionId[]> = { middle: ['left', 'center', 'right'], top: ['top-left', 'top', 'top-right'], bottom: ['bottom-left', 'bottom', 'bottom-right'] };
 
-function solveRegionRects(used: Set<RegionId>, weight: (region: RegionId) => number): Partial<Record<RegionId, Rect>> {
+/** Share of the height a band keeps whatever it holds: a caption band stays readable without starving the mechanism band. */
+const MIN_BAND_SHARE = 0.16;
+
+function solveRegionRects(used: Set<RegionId>, weight: (region: RegionId) => number, bandNeed?: (band: 'top' | 'middle' | 'bottom') => number): Partial<Record<RegionId, Rect>> {
   const out: Partial<Record<RegionId, Rect>> = {};
   if (used.has('full')) out.full = CONTENT_RECT;
   const bandsUsed = (['top', 'middle', 'bottom'] as const).filter((band) => COLUMNS[band].some((region) => used.has(region)));
@@ -86,8 +90,26 @@ function solveRegionRects(used: Set<RegionId>, weight: (region: RegionId) => num
   const topBand = bandsUsed.includes('top');
   const bottomBand = bandsUsed.includes('bottom');
   const middleBand = bandsUsed.includes('middle');
+  // Height is shared by what each band must draw, not equally: the mechanism band keeps room to stay readable.
+  const needs = bandNeed ? new Map(bandsUsed.map((band) => [band, Math.max(1, bandNeed(band))])) : undefined;
+  const needShares = (): Map<'top' | 'middle' | 'bottom', number> => {
+    const total = [...needs!.values()].reduce((a, b) => a + b, 0);
+    let shares = new Map(bandsUsed.map((band) => [band, needs!.get(band)! / total]));
+    // Raise any band below the floor, taking the difference proportionally from the others.
+    for (let pass = 0; pass < 3; pass++) {
+      const low = bandsUsed.filter((band) => shares.get(band)! < MIN_BAND_SHARE);
+      if (low.length === 0) break;
+      const fixed = low.length * MIN_BAND_SHARE;
+      const rest = bandsUsed.filter((band) => !low.includes(band));
+      const restTotal = rest.reduce((sum, band) => sum + shares.get(band)!, 0);
+      shares = new Map(bandsUsed.map((band) => [band, low.includes(band) ? MIN_BAND_SHARE : shares.get(band)! * ((1 - fixed) / restTotal)]));
+    }
+    return shares;
+  };
+  const shareMap = needs && bandsUsed.length > 1 ? needShares() : undefined;
   const share = (band: 'top' | 'middle' | 'bottom'): number => {
     if (bandsUsed.length === 1) return 1;
+    if (shareMap) return shareMap.get(band)!;
     if (!middleBand) return 0.5;
     return band === 'middle' ? 1 - (topBand ? 0.34 : 0) - (bottomBand ? 0.34 : 0) : 0.34;
   };
@@ -180,12 +202,66 @@ function layoutCore(states: readonly BoardState[], pins: ReadonlyMap<string, Rec
     return { nodes: [...nodes.values()].sort((a, b) => a.seq - b.seq || compareId(a.id, b.id)), edges: [...edges.values()].sort((a, b) => compareId(a.id, b.id)) };
   };
 
+  // A child keeps its slot while siblings come and go: objects appear where they will stay, so nothing slides over another
+  // when a neighbour leaves. A newcomer takes its list position if that slot is free, otherwise the first free slot.
+  const stableSlots = new Map<BoardState, Map<string, number>>();
+  const held = new Map<string, { container: string; zone: string; slot: number }>();
+  for (const state of states) {
+    const out = new Map<string, number>();
+    for (const [container, list] of Object.entries(state.containers)) {
+      const byZone = new Map<string, string[]>();
+      for (const cid of list) { const child = state.elements[cid]; if (live(child)) byZone.set(child.placement.zone ?? '', [...(byZone.get(child.placement.zone ?? '') ?? []), cid]); }
+      for (const [zone, children] of byZone) {
+        const used = new Set<number>();
+        for (const cid of children) {
+          const explicit = state.elements[cid]!.placement.slot;
+          const prior = held.get(cid);
+          const slot = typeof explicit === 'number' ? explicit : prior && prior.container === container && prior.zone === zone && !used.has(prior.slot) ? prior.slot : undefined;
+          if (slot !== undefined) { out.set(cid, slot); used.add(slot); }
+        }
+        children.forEach((cid, position) => {
+          if (out.has(cid)) return;
+          let slot = used.has(position) ? 0 : position;
+          while (used.has(slot)) slot++;
+          out.set(cid, slot); used.add(slot);
+        });
+        for (const cid of children) held.set(cid, { container, zone, slot: out.get(cid)! });
+      }
+    }
+    stableSlots.set(state, out);
+  }
+  const indexIn = (state: BoardState, container: string, el: BoardElement): number => {
+    if (typeof el.placement.slot === 'number') return el.placement.slot;
+    const stable = stableSlots.get(state)?.get(el.id);
+    if (stable !== undefined) return stable;
+    return (state.containers[container] ?? []).filter((cid) => (state.elements[cid]?.placement.zone ?? '') === (el.placement.zone ?? '')).indexOf(el.id);
+  };
+  // A kit is drawn larger than its preferred size when its children's text cannot be read in the slots it would give them.
+  const growthOf = (k: Known): number => {
+    if (k.spec.type !== 'kit' || k.spec.kit === 'graph') return 1;
+    const parsed = parseKitParams(k.spec.kit, k.spec.paramsJson);
+    if (!parsed.ok) return 1;
+    const pref = preferredSize(k.spec, capacityOf(k.id));
+    const geo = KIT_REGISTRY[k.spec.kit as KitName].layout({ id: k.id, params: parsed.value, ...(k.spec.label ? { label: k.spec.label } : {}), rect: { x: 0, y: 0, ...pref }, capacity: capacityOf(k.id), zoneCapacity: zoneCapacityOf(k.id) });
+    let growth = 1;
+    for (const state of states) for (const el of Object.values(state.elements)) {
+      if (!live(el) || el.placement.container !== k.id) continue;
+      const slot = geo.slotRectForChild?.(el.id) ?? geo.slotRect(el.placement.zone, Math.max(0, indexIn(state, k.id, el)));
+      let g = 1;
+      for (; g < MAX_KIT_GROWTH; g = Math.round((g + 0.1) * 10) / 10) { const need = textSlot(el, { x: 0, y: 0, w: slot.w * g, h: slot.h * g }); if (!need || fitText(need.text, need.width, need.height, need.base).fits) break; }
+      growth = Math.max(growth, g);
+    }
+    return growth;
+  };
+  const grownSize = (k: Known): { w: number; h: number } => { const size = preferredSize(k.spec, capacityOf(k.id)); const g = growthOf(k); return g === 1 ? size : { w: size.w * g, h: size.h * g }; };
+
   // 2. Top-level items per region, in creation order, and the rectangle each region gets.
   const byRegion = new Map<RegionId, Known[]>();
   for (const entry of [...known.values()].filter((k) => k.topLevel).sort((a, b) => a.seq - b.seq)) for (const region of entry.regions) byRegion.set(region, [...(byRegion.get(region) ?? []), entry]);
   const used = new Set<RegionId>(byRegion.keys());
-  const regionWeight = (region: RegionId): number => (byRegion.get(region) ?? []).reduce((sum, k) => sum + preferredSize(k.spec, capacityOf(k.id)).w, 0) / 900;
-  const regionRects = solveRegionRects(used, regionWeight);
+  const regionWeight = (region: RegionId): number => (byRegion.get(region) ?? []).reduce((sum, k) => sum + grownSize(k).w, 0) / 900;
+  const bandNeed = (band: 'top' | 'middle' | 'bottom'): number => Math.max(120, ...COLUMNS[band].flatMap((region) => (byRegion.get(region) ?? []).map((k) => grownSize(k).h)));
+  const regionRects = solveRegionRects(used, regionWeight, bandNeed);
   const topRects = new Map<string, Map<RegionId, Rect>>();
   for (const [region, entries] of byRegion) {
     const rect = regionRects[region];
@@ -193,17 +269,13 @@ function layoutCore(states: readonly BoardState[], pins: ReadonlyMap<string, Rec
     const kept = entries.filter((k) => pins.has(k.id));
     const fresh = entries.filter((k) => !pins.has(k.id));
     for (const k of kept) topRects.set(k.id, new Map([...(topRects.get(k.id) ?? []), [region, pins.get(k.id)!]]));
-    const placed = flow(fresh.map((k) => ({ id: k.id, size: preferredSize(k.spec, capacityOf(k.id)) })), kept.length ? freeRect(rect, kept.map((k) => pins.get(k.id)!)) : rect);
+    const placed = flow(fresh.map((k) => ({ id: k.id, size: grownSize(k) })), kept.length ? freeRect(rect, kept.map((k) => pins.get(k.id)!)) : rect);
     for (const [id, r] of placed) topRects.set(id, new Map([...(topRects.get(id) ?? []), [region, r]]));
   }
 
   // 3. Kit geometry: top-level kits from their region rect, nested kits from their parent's slot.
   const kitGeometries = new Map<string, KitGeometry>();
   const kitRects = new Map<string, Rect>();
-  const indexIn = (state: BoardState, container: string, el: BoardElement): number => {
-    if (typeof el.placement.slot === 'number') return el.placement.slot;
-    return (state.containers[container] ?? []).filter((cid) => (state.elements[cid]?.placement.zone ?? '') === (el.placement.zone ?? '')).indexOf(el.id);
-  };
   const buildKit = (id: string, rect: Rect): void => {
     const entry = known.get(id);
     if (!entry || entry.spec.type !== 'kit' || kitGeometries.has(id)) return;
@@ -619,6 +691,10 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
       const ac0 = center(a0); const ac1 = center(a1); const bc0 = center(b0); const bc1 = center(b1);
       const relative0 = { x: ac0.x - bc0.x, y: ac0.y - bc0.y }; const relative1 = { x: ac1.x - bc1.x, y: ac1.y - bc1.y };
       const halfW = Math.max(a0.w, a1.w) / 2 + Math.max(b0.w, b1.w) / 2; const halfH = Math.max(a0.h, a1.h) / 2 + Math.max(b0.h, b1.h) / 2;
+      // Movers that each have a clear (possibly curved) route do not collide: the renderer draws exactly those routes.
+      const routes = moveRoutesFor(geometry, before, after);
+      const involved = [routes.get(aId), routes.get(bId)].filter((route): route is MoveRoute => route !== undefined);
+      if (involved.length > 0 && involved.every((route) => route.clear)) continue;
       if (segmentCrossesRect(relative0, relative1, { x: -halfW, y: -halfH, w: halfW * 2, h: halfH * 2 }, 0)) add({ code: 'movement_path_collision', stateIndex: index, message: `transition ${index}: ${aId} and ${bId} collide along a movement path; change placement or simplify the move`, elementIds: [aId, bId], fields: [pointer('elements', aId, 'placement'), pointer('elements', bId, 'placement')] });
     }
   }
@@ -628,4 +704,87 @@ export function diagnoseSceneGeometry(geometry: SceneGeometry, states: readonly 
 /** Compatibility message API retained for callers; planner repairs should use diagnoseSceneGeometry. */
 export function validateSceneGeometry(geometry: SceneGeometry, states: readonly BoardState[]): string[] {
   return diagnoseSceneGeometry(geometry, states).map((diagnostic) => diagnostic.message);
+}
+
+/**
+ * How a moved element travels. The renderer interpolates the element's centre and size between its two settled rectangles; when
+ * the straight path would sweep through another element, a deterministic quadratic detour is used instead. Validation and the
+ * renderer both call `moveRouteFor`, so a move that validation accepts is drawn on exactly the path it checked.
+ */
+export interface MoveRoute { from: Rect; to: Rect; /** Quadratic control point of the centre path; absent = straight. */ control?: Point; clear: boolean }
+
+const MOVE_SAMPLES = 32;
+const MOVE_DETOURS = [0.3, -0.3, 0.6, -0.6, 1, -1, 1.5, -1.5];
+const quad = (a: number, c: number, b: number, t: number): number => (1 - t) * (1 - t) * a + 2 * (1 - t) * t * c + t * t * b;
+
+/** The rectangle of a moving element at progress `t` (0..1) along its route. */
+export function moveRectAt(route: Pick<MoveRoute, 'from' | 'to' | 'control'>, t: number): Rect {
+  const a = center(route.from); const b = center(route.to);
+  const c = route.control ? { x: quad(a.x, route.control.x, b.x, t), y: quad(a.y, route.control.y, b.y, t) } : { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  const w = route.from.w + (route.to.w - route.from.w) * t; const h = route.from.h + (route.to.h - route.from.h) * t;
+  return { x: c.x - w / 2, y: c.y - h / 2, w, h };
+}
+
+const ancestorOf = (state: BoardState, child: string, parent: string): boolean => {
+  const seen = new Set<string>();
+  for (let up = state.elements[child]?.placement.container; up && !seen.has(up); up = state.elements[up]?.placement.container) { if (up === parent) return true; seen.add(up); }
+  return false;
+};
+
+const routeCache = new WeakMap<object, WeakMap<BoardState, WeakMap<BoardState, Map<string, MoveRoute>>>>();
+
+/**
+ * The route of every element that changes place or size across one transition. Elements moving in the same transition move at
+ * the same time, so each one is checked against the others' positions at every sample, not only their end rectangles. Movers are
+ * planned in id order: an earlier mover's chosen route is what later ones must avoid.
+ */
+export function moveRoutesFor(geometry: Pick<SceneGeometry, 'rectFor' | 'kitRect'>, before: BoardState, after: BoardState): Map<string, MoveRoute> {
+  const cached = routeCache.get(geometry)?.get(before)?.get(after);
+  if (cached) return cached;
+  const ids = Object.keys(before.elements).filter((id) => live(before.elements[id]) && live(after.elements[id])).sort();
+  const endpoints = new Map<string, { from: Rect; to: Rect }>();
+  for (const id of ids) {
+    const from = renderedRectFor(geometry, before, id); const to = renderedRectFor(geometry, after, id);
+    if (from && to) endpoints.set(id, { from, to });
+  }
+  const movers = ids.filter((id) => { const e = endpoints.get(id); return e !== undefined && !sameRect(e.from, e.to); });
+  const routes = new Map<string, MoveRoute>();
+  for (const id of movers) {
+    const { from, to } = endpoints.get(id)!;
+    const related = (other: string) => ancestorOf(before, other, id) || ancestorOf(after, other, id) || ancestorOf(before, id, other) || ancestorOf(after, id, other);
+    const stillObstacles: Rect[] = [];
+    const movingOthers: Array<Pick<MoveRoute, 'from' | 'to' | 'control'>> = [];
+    for (const other of ids) {
+      if (other === id || related(other)) continue;
+      const e = endpoints.get(other); if (!e) continue;
+      if (sameRect(e.from, e.to)) stillObstacles.push(e.from);
+      else movingOthers.push(routes.get(other) ?? { from: e.from, to: e.to });
+    }
+    const clearOf = (route: Pick<MoveRoute, 'from' | 'to' | 'control'>): boolean => {
+      for (let i = 0; i <= MOVE_SAMPLES; i++) {
+        const t = i / MOVE_SAMPLES; const rect = moveRectAt(route, t);
+        if (stillObstacles.some((obstacle) => overlaps(rect, obstacle, 0.5))) return false;
+        if (movingOthers.some((other) => overlaps(rect, moveRectAt(other, t), 0.5))) return false;
+      }
+      return true;
+    };
+    const straight: MoveRoute = { from, to, clear: true };
+    if (clearOf(straight)) { routes.set(id, straight); continue; }
+    const a = center(from); const b = center(to);
+    const distance = Math.hypot(b.x - a.x, b.y - a.y);
+    const length = Math.max(200, distance);
+    const normal = { x: -(b.y - a.y) / Math.max(1, distance), y: (b.x - a.x) / Math.max(1, distance) };
+    let chosen: MoveRoute | undefined;
+    for (const bend of MOVE_DETOURS) {
+      const control = { x: (a.x + b.x) / 2 + normal.x * length * bend, y: (a.y + b.y) / 2 + normal.y * length * bend };
+      const route: MoveRoute = { from, to, control, clear: true };
+      const inside = [0.25, 0.5, 0.75].every((t) => { const r = moveRectAt(route, t); return r.x >= CONTENT_RECT.x && r.y >= CONTENT_RECT.y && r.x + r.w <= CONTENT_RECT.x + CONTENT_RECT.w && r.y + r.h <= CONTENT_RECT.y + CONTENT_RECT.h; });
+      if (inside && clearOf(route)) { chosen = route; break; }
+    }
+    routes.set(id, chosen ?? { from, to, clear: false });
+  }
+  let byBefore = routeCache.get(geometry); if (!byBefore) routeCache.set(geometry, byBefore = new WeakMap());
+  let byAfter = byBefore.get(before); if (!byAfter) byBefore.set(before, byAfter = new WeakMap());
+  byAfter.set(after, routes);
+  return routes;
 }

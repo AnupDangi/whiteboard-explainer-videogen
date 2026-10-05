@@ -1,8 +1,11 @@
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { TeachingBeat } from '../../teaching/beat-plan/types.js';
 import { wordsPerSec } from '../../plan/analyze.js';
+import type { CoercionEntry } from '../../structured/coercionLedger.js';
 import type { SceneNarrationDraft } from './types.js';
 import { tokenizeWords } from '../align.js';
+import { claimSemanticsMismatch, type ClaimSemantics } from '../../evidence/claims.js';
+import { claimIdentityMismatch, formatClaimIdentityMismatch, type ClaimIdentity } from '../../evidence/claimIdentity.js';
 
 export interface NarrationContext {
   sceneId: string;
@@ -12,6 +15,8 @@ export interface NarrationContext {
   durationSec: number;
   /** Concept labels the speaker may stress. */
   emphasisCandidates: string[];
+  /** Canonical claim meanings keyed by claim id; used only to validate the anchored sentence. */
+  canonicalClaims?: Record<string, { statement: string; semantics?: ClaimSemantics; identity?: ClaimIdentity }>;
   /** ISO 639-1 language of the speech (default en). */
   language?: string;
   /** Native-language teaching with established English technical terms kept where natural. */
@@ -33,7 +38,7 @@ const STAGE_DIRECTION = /^(?:now[, ]+)?(?:show|display|draw|animate|render|highl
 /** Audio sets the clock, so a mild overrun is a warning; only a scene this much over its spoken budget is rejected. */
 /** What the speaker is told never to exceed; the validator only rejects beyond NARRATION_HARD_CEILING, because the audio, not the word count, sets the real length. */
 export const NARRATION_PROMPT_CEILING = 1.5;
-export const NARRATION_HARD_CEILING = 2.5;
+export const NARRATION_HARD_CEILING = 3;
 /** A length revision must land within this side-aware share of its word target (models cannot count exactly); the measure-and-rewrite rounds close the rest. */
 export const REVISION_WORD_TOLERANCE = 0.15;
 
@@ -44,7 +49,8 @@ const wordCount = (text: string, language?: string): number => tokenizeWords(tex
 // Greek is a supported writing system (and Greek letter names are speakable).
 // Keep rejecting pictographic arrows and mathematical operators that TTS may
 // silently omit, while allowing Greek prose and Greek-script names.
-const UNSPEAKABLE_SYMBOLS = /[\u2190-\u21FF\u2200-\u22FF\u00B1\u00D7\u00F7\u221A]/u;
+// ASCII operators (+ = ^ * < >) are spoken as words by TTS ("plus"), so the transcript the aligner sees no longer matches the audio.
+const UNSPEAKABLE_SYMBOLS = /[\u2190-\u21FF\u2200-\u22FF\u00B1\u00D7\u00F7\u221A+=^*<>]/u;
 
 const DECIMAL_ZEROES = [0x30,0x660,0x6f0,0x7c0,0x966,0x9e6,0xa66,0xae6,0xb66,0xbe6,0xc66,0xce6,0xd66,0xde6,0xe50,0xed0,0xf20,0x1040,0x1090,0x17e0,0x1810,0x1946,0x19d0,0x1a80,0x1a90,0x1b50,0x1bb0,0x1c40,0x1c50,0xa620,0xa8d0,0xa900,0xa9d0,0xa9f0,0xaa50,0xabf0,0xff10];
 const asciiDigits = (value: string): string => [...value].map((char) => {
@@ -73,7 +79,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
       const key = normalize(sentence);
       if (SCREEN_REFERENCE.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'refers to the screen; say what the idea is so the speech works with the sound only' });
       if (STAGE_DIRECTION.test(sentence.trim())) problems.push({ path: `${at}/sentences/${j}`, message: 'a visual stage direction is spoken; teach the idea instead of commanding the drawing' });
-      if (UNSPEAKABLE_SYMBOLS.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'contains a symbol that cannot be spoken or aligned (Greek letter, arrow or maths operator); write it as the word you say, for example tau, not the symbol' });
+      if (UNSPEAKABLE_SYMBOLS.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'contains a symbol that cannot be spoken or aligned (Greek letter, arrow or maths operator such as + or =); write it as the word you say, for example tau, plus or equals, not the symbol' });
       if (/\[\[|\]\]/.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'markers are not used; write plain speech' });
       for (const number of asciiDigits(sentence).match(/\d+(?:\.\d+)?/g) ?? []) if (!ctx.allowedNumbers.has(number)) problems.push({ path: `${at}/sentences/${j}`, message: `number ${number} is not in this scene's claims or evidence; state only numbers the source gives` });
       if (key && seen.has(key)) problems.push({ path: `${at}/sentences/${j}`, message: 'repeats a sentence already spoken in this scene; move the idea forward instead' });
@@ -84,13 +90,26 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
       if (!planClaims.has(anchor.claimId)) { problems.push({ path: `${at}/claimSentences/${j}/claimId`, message: `unknown claim ${anchor.claimId} for this beat; use one of: ${[...planClaims].join(', ')}` }); return; }
       anchored.add(anchor.claimId);
       if (anchor.sentenceIndex >= narration.sentences.length) problems.push({ path: `${at}/claimSentences/${j}/sentenceIndex`, message: `sentenceIndex ${anchor.sentenceIndex} is outside this beat's ${narration.sentences.length} sentences` });
+      else {
+        const claim = ctx.canonicalClaims?.[anchor.claimId];
+        if (claim) {
+          const sentence = narration.sentences[anchor.sentenceIndex]!;
+          for (const mismatch of claimSemanticsMismatch(claim.statement, sentence, claim.semantics)) {
+            problems.push({ path: `${at}/sentences/${anchor.sentenceIndex}`, message: `claim ${anchor.claimId} semantic mismatch: ${mismatch}` });
+          }
+          if (claim.identity) for (const mismatch of claimIdentityMismatch(claim.identity, sentence)) {
+            problems.push({ path: `${at}/sentences/${anchor.sentenceIndex}`, message: `claim ${anchor.claimId} identity mismatch: ${formatClaimIdentityMismatch(mismatch)}` });
+          }
+        }
+      }
     });
     for (const claim of planClaims) if (!anchored.has(claim)) problems.push({ path: `${at}/claimSentences`, message: `claim ${claim} must be anchored to the sentence of this beat that states it` });
   });
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
   if (ctx.revision) {
     const target = ctx.revision.targetWords;
-    const edge = Math.max(3, Math.round(target * 0.03));
+    // Overshoot on the wrong side is tolerated more than undershoot: each measured duration round re-aims, so a close miss must not end the lesson.
+    const edge = Math.max(6, Math.round(target * 0.2));
     const spread = Math.max(3, Math.round(target * REVISION_WORD_TOLERANCE));
     // Models miss a word budget in the direction they were told to move; the window therefore sits on the correct side of the target.
     const [low, high] = ctx.revision.direction === 'shorten' ? [target - spread, target + edge] : [target - edge, target + spread];
@@ -99,4 +118,21 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
   const ceiling = Math.round(ctx.durationSec * wordsPerSec(ctx.language) * NARRATION_HARD_CEILING);
   if (words > ceiling) problems.push({ path: '/beats', message: `too long: ${words} spoken words, at most ${ceiling} for a ${ctx.durationSec}s scene (about ${Math.max(6, Math.floor(ceiling / Math.max(1, draft.beats.length)))} words per beat for ${draft.beats.length} beats); cut or merge the longest sentences` });
   return problems;
+}
+
+/**
+ * A claim anchored to a sentence number the beat does not have is anchored to the beat's last sentence instead. Only this
+ * pointer is touched, every change is ledgered, and the result is accepted only if the whole draft then validates.
+ */
+export function clampClaimAnchors(draft: SceneNarrationDraft, ctx: NarrationContext): { value: SceneNarrationDraft; entries: CoercionEntry[] } | undefined {
+  const value: SceneNarrationDraft = structuredClone(draft);
+  const entries: CoercionEntry[] = [];
+  value.beats.forEach((beat, i) => beat.claimSentences.forEach((anchor, j) => {
+    const last = beat.sentences.length - 1;
+    if (anchor.sentenceIndex > last) {
+      entries.push({ path: `/beats/${i}/claimSentences/${j}/sentenceIndex`, oldValue: anchor.sentenceIndex, newValue: last, reason: 'claim anchored to a sentence the beat does not have; moved to its last sentence', semanticRisk: 'semantic' });
+      anchor.sentenceIndex = last;
+    }
+  }));
+  return entries.length > 0 && validateSceneNarration(value, ctx).length === 0 ? { value, entries } : undefined;
 }

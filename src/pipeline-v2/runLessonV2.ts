@@ -11,6 +11,7 @@ import type { PreparedLesson } from '../run/lesson.js';
 import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import type { ContentAddressedArtifactStore } from '../run/artifactCache.js';
 import type { StageFailure } from '../shared/types.js';
+import { certifyArtifact, type ArtifactCertification } from '../shared/artifactStatus.js';
 import { beatIntervals } from '../narration/beat-narration/intervals.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
@@ -21,6 +22,8 @@ import { DEFAULT_PACING, fitPacing, revisionTargets } from './durationFit.js';
 import { emptyBoardState, startScene } from '../visual-v2/board-state/reducer.js';
 import type { BoardState } from '../visual-v2/board-state/types.js';
 import { planSceneBoard } from '../visual-v2/ops-plan/plan.js';
+import { fallbackSceneBoard } from '../visual-v2/ops-plan/fallback.js';
+import { BOARD_OPS_PROMPT_VERSION } from '../visual-v2/ops-plan/prompt.js';
 import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
 import { anchorQuote } from '../plan/evidenceAnchor.js';
 import { validateSceneGeometry, type PriorLayout } from '../visual-v2/layout/sceneLayout.js';
@@ -37,17 +40,20 @@ import { loadBridge } from '../assets/bridge.js';
 import { bridgeRecordForCatalogEntry, buildAssetRightsEvidence, rightsEvidenceFailure } from '../assets/rightsEvidence.js';
 import { buildScorecard, type Scorecard } from '../harness/scorecard.js';
 import { TEACHING_COMPILER_VERSION } from '../run/featureFlags.js';
+import { createEvidenceLedgerFromClaims, validateEvidenceLedgerSources, type EvidenceLedger } from '../evidence/ledger.js';
 
 /**
  * Teaching Compiler V2 run: locked beats and beat narration -> real audio and alignment -> board operations -> persistent board
- * state -> deterministic layout -> semantic timeline -> frames -> MP4. Fails closed: a scene whose board cannot be planned and
- * validated stops the run; nothing is replaced by a generic fallback board.
+ * state -> deterministic layout -> semantic timeline -> frames -> MP4. Board fallback is diagnostic-only and keeps the output
+ * in DRAFT; it cannot promote a run to an automated or reviewed pass.
  */
 export interface RunLessonV2Input {
   lessonId: string;
   outputDir: string;
   prepared: PreparedLesson;
   plannerModel: string;
+  /** Optional S6-only BoardOps model; beat narration continues to use plannerModel. */
+  s6PlannerModel?: string;
   apiKey: string;
   budgetLedger?: PersistentBudgetLedger;
   artifactStore?: ContentAddressedArtifactStore;
@@ -59,6 +65,8 @@ export interface RunLessonV2Input {
   client?: ModelClient;
   aligner?: SceneAudioDeps['aligner'];
   skipEncode?: boolean;
+  /** Use the deterministic concept board for a scene whose model board cannot be validated (default on; the lesson is then a draft). Strict runs set false. */
+  boardFallback?: boolean;
   /** Per-scene clip cache shared across runs (default: `<outputDir>/clips`). */
   clipCacheDir?: string;
   /** Scenes synthesised and aligned at once (default 1 until shared provider reservations have measured concurrency safety). */
@@ -76,6 +84,7 @@ export interface RunLessonV2Input {
 
 export interface RunLessonV2Result {
   status: 'draft' | 'failed';
+  artifactCertification: ArtifactCertification;
   failures: StageFailure[];
   reports: StructuredCallReport[];
   usage: CallUsage;
@@ -92,7 +101,7 @@ export interface RunLessonV2Result {
 }
 
 /** Each round rewrites every scene once to a word budget measured from real audio; five rounds converge or the run stops honestly. */
-const MAX_DURATION_REVISIONS = 5;
+const MAX_DURATION_REVISIONS = 8;
 
 const STATE_CHANGING = new Set(['move', 'remove', 'updateValue', 'transform', 'equationStep', 'strike', 'split', 'merge', 'replace', 'deemphasize', 'highlight', 'clearRegion']);
 
@@ -118,10 +127,32 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const providerUsageEvents: ElevenLabsUsageEvent[] = [];
   const metrics: Record<string, number> = {};
   const finish = (status: 'draft' | 'failed', extra: Partial<RunLessonV2Result> = {}): RunLessonV2Result => {
-    const finalMetrics = { ...metrics, ...timing, 'v2.totalMs': performance.now() - startedMonotonicMs, 'v2.requestToCompleteMs': performance.now() - requestStartedMonotonicMs };
+    const finalMetrics: Record<string, number> = { ...metrics, ...timing, 'v2.totalMs': performance.now() - startedMonotonicMs, 'v2.requestToCompleteMs': performance.now() - requestStartedMonotonicMs };
+    const uncertainUsage = providerUsageEvents.filter((event) => event.status === 'uncertain');
+    if (uncertainUsage.length) {
+      finalMetrics['v2.ttsUncertainAttempts'] = uncertainUsage.length;
+      finalMetrics['v2.ttsCreditsAtRisk'] = uncertainUsage.reduce((sum, event) => sum + (event.credits ?? 0), 0);
+    }
     const scorecard = buildScorecard({ compilerVersion: TEACHING_COMPILER_VERSION, reports, coverageMetrics: finalMetrics, measured: [] });
     const elevenLabsCredits = providerUsageEvents.filter((event) => event.status === 'succeeded').reduce((sum, event) => sum + (event.credits ?? 0), 0);
-    return { status, failures, reports, usage, scenes: compiled.length, planned: prepared.plan?.sections.length ?? 0, durationMs: 0, metrics: finalMetrics, scorecard, compiled, speechUsage, providerUsageEvents, elevenLabsCredits, ...extra };
+    const videoPath = extra.videoPath;
+    const fallbackCount = Number(finalMetrics['v2.fallbackScenes'] ?? 0) + Number(finalMetrics['v2.ttsFallbackScenes'] ?? 0);
+    const scorecardGate = scorecard.releaseCandidate
+      ? { id: 'required-scorecard-gates', status: 'passed' as const }
+      : scorecard.blockers.length
+        ? { id: 'required-scorecard-gates', status: 'failed' as const, detail: scorecard.blockers.join(', ') }
+        : { id: 'required-scorecard-gates', status: 'unmeasured' as const, detail: scorecard.unmeasured.join(', ') || 'required scorecard did not pass' };
+    const artifactCertification = certifyArtifact({
+      artifactValid: status !== 'failed' && Boolean(videoPath),
+      gates: [
+        { id: 'verified-playable-video', status: videoPath ? 'passed' : 'failed', ...(videoPath ? {} : { detail: 'no encoded V2 video was produced' }) },
+        { id: 'no-hard-failures', status: [...(prepared.failures ?? []), ...failures].some((failure) => failure.hard) ? 'failed' : 'passed' },
+        { id: 'no-fallback', status: fallbackCount === 0 ? 'passed' : 'failed', ...(fallbackCount ? { detail: `${fallbackCount} fallback scene(s) or synthesis fallback(s)` } : {}) },
+        scorecardGate,
+        { id: 'complete-semantic-qa-suite', status: 'unmeasured', detail: 'the full independent G1–G12 semantic QA contract is not implemented yet' },
+      ],
+    });
+    return { status, artifactCertification, failures, reports, usage, scenes: compiled.length, planned: prepared.plan?.sections.length ?? 0, durationMs: 0, metrics: finalMetrics, scorecard, compiled, speechUsage, providerUsageEvents, elevenLabsCredits, ...extra };
   };
   const plan = prepared.plan;
   if (!plan || !prepared.beatPlans || !prepared.beatNarrations || !prepared.graph) {
@@ -132,6 +163,21 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const language = input.language ?? 'en';
   await mkdir(path.join(outputDir, 'v2'), { recursive: true });
   const dump = (name: string, value: unknown) => writeFile(path.join(outputDir, 'v2', name), `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+
+  let evidenceLedger: EvidenceLedger;
+  try {
+    const canonicalClaims = plan.sections.flatMap((section) => section.contract?.essentialClaims ?? []);
+    evidenceLedger = createEvidenceLedgerFromClaims(canonicalClaims, prepared.groundingMode ?? 'STRICT_SOURCE');
+    const graphEvidence = [
+      ...graph.concepts.flatMap((concept) => concept.evidence),
+      ...graph.relations.flatMap((relation) => relation.evidence),
+    ];
+    const sourceProblems = validateEvidenceLedgerSources(evidenceLedger, [prepared.sourceDoc], graphEvidence);
+    if (sourceProblems.length) throw new Error(sourceProblems.join('; '));
+  } catch (error) {
+    failures.push({ code: 'v2-evidence-ledger-invalid', stage: 'v2', message: error instanceof Error ? error.message : String(error), hard: true });
+    return finish('failed');
+  }
 
   // 1. Real audio and alignment for each scene's speech: the master clock. Before any paid board planning the speech is fitted to
   // the requested runtime: first by bounded pacing (gaps and final hold), then, if the speech itself is too long or too short,
@@ -232,7 +278,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   })) });
 
   timing['v2.audioMs'] = Date.now() - startedAt;
-  const conceptIndex = new Map(graph.concepts.map((c) => [c.id, { id: c.id, label: c.label, kind: c.kind } as ConceptInfo]));
+  const conceptIndex = new Map(graph.concepts.map((c) => [c.id, { id: c.id, label: c.label, kind: c.kind, ...(plan.lessonBible?.domain ? { domain: plan.lessonBible.domain } : {}) } as ConceptInfo]));
 
   // Scene audio and the placement of every scene on the master clock are known now, so each scene can be frozen
   // (immutable scene lock) the moment its board compiles instead of waiting for the whole lesson.
@@ -258,17 +304,31 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     const beats = prepared.beatPlans![section.id]!;
     const ctx: BoardContext = {
       sceneId: section.id, title: section.title, beats,
+      claims: (section.contract?.essentialClaims ?? []).map(({ id, statement, conceptIds, relations }) => ({ id, statement, conceptIds, relations })),
       narration: narration.beatSpans.map((span) => ({ beatId: span.beatId, sentences: span.sentenceSpans.map((s) => narration.text.slice(s.charStart, s.charEnd)) })),
       concepts: section.conceptIds.flatMap((id) => { const c = graph.concepts.find((x) => x.id === id); return c ? [{ id: c.id, label: c.label, evidence: c.evidence.map((e) => ({ spanId: e.spanId, quote: e.quote })) }] : []; }),
-      grounding: { verify: (spanId, quote) => anchorQuote(prepared.sourceDoc, spanId, quote)?.ref.quote },
+      grounding: { verify: (spanId, quote) => anchorQuote(prepared.sourceDoc, spanId, quote)?.ref.quote, spanText: (spanId) => prepared.sourceDoc.spans.find((span) => span.id === spanId)?.text },
       initial: carried,
       ...(prior ? { prior } : {}),
     };
-    const result = await planSceneBoard({ ctx }, { model: input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: input.remainingBudgetUsd ?? 0.2, ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}) });
-    addUsage(usage, result.usage); failures.push(...result.failures); reports.push(...result.reports);
-    if (!result.value) { failures.push({ code: 'v2-board-failed', stage: 'board-ops', message: `${section.id}: no valid board operations`, hard: true }); return finish('failed'); }
-    const initial = startScene(carried, result.value.transition, section.id);
-    const timeline = compileSceneTimeline({ ops: result.value.ops, initial, beats: beatTimings });
+    const result = await planSceneBoard({ ctx }, { model: input.s6PlannerModel ?? input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: input.remainingBudgetUsd ?? 0.2, ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}) });
+    addUsage(usage, result.usage); reports.push(...result.reports);
+    let boardDraft = result.value;
+    if (!boardDraft) {
+      // The model's board could not be validated. A deterministic board from the scene's own concepts keeps the lesson whole; it is
+      // recorded as a soft failure for this scene, so the lesson stays a draft and is never counted as a pass.
+      const fallback = input.boardFallback === false ? undefined : fallbackSceneBoard(ctx);
+      if (fallback) {
+        boardDraft = fallback;
+        failures.push(...result.failures.map((f) => (f.hard ? { ...f, code: `${f.code}-fallback`, hard: false } : f)));
+        failures.push({ code: 'v2-board-fallback', stage: 'board-ops', message: `${section.id}: the model's board did not validate, so a deterministic concept board from the scene's own data was used`, hard: false });
+        metrics['v2.fallbackScenes'] = (metrics['v2.fallbackScenes'] ?? 0) + 1;
+      }
+    }
+    if (!boardDraft) { failures.push(...result.failures); failures.push({ code: 'v2-board-failed', stage: 'board-ops', message: `${section.id}: no valid board operations`, hard: true }); return finish('failed'); }
+    if (boardDraft === result.value) failures.push(...result.failures);
+    const initial = startScene(carried, boardDraft.transition, section.id);
+    const timeline = compileSceneTimeline({ ops: boardDraft.ops, initial, beats: beatTimings });
     const scene = compileScene(section.id, section.title, timeline, input.lessonId, conceptIndex, prior);
     for (const message of validateSceneGeometry(scene.geometry, timeline.states)) failures.push({ code: 'v2-geometry', stage: 'layout', message: `${section.id}: ${message}`, hard: true });
     for (const opId of timeline.lateOps) failures.push({ code: 'v2-late-op', stage: 'timeline', message: `${section.id}: ${opId} could not finish inside its sentence`, hard: false });
@@ -276,7 +336,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     compiled.push(scene);
     carried = timeline.states[timeline.states.length - 1]!;
     prior = { geometry: scene.geometry, state: carried };
-    await dump(`scene.${section.id}.json`, { transition: result.value.transition, ops: result.value.ops, beats, narration, beatTimings, schedule: timeline.ops.map((s) => ({ opId: s.op.opId, t0: Math.round(s.t0), t1: Math.round(s.t1), late: s.late })), timelineHash: timeline.hash });
+    await dump(`scene.${section.id}.json`, { transition: boardDraft.transition, ops: boardDraft.ops, beats, narration, beatTimings, schedule: timeline.ops.map((s) => ({ opId: s.op.opId, t0: Math.round(s.t0), t1: Math.round(s.t1), late: s.late })), timelineHash: timeline.hash });
     if (!failures.some((f) => f.hard)) {
       const index = compiled.length - 1;
       await publishSceneLockV2({ outputDir, lessonId: input.lessonId, index, item: { scene, startMs: placements[index]!.startMs, endMs: placements[index]!.endMs }, fps: input.fps ?? 30, final: index === audioScenes.length - 1 });
@@ -325,7 +385,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations });
+  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v2', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });
@@ -346,6 +406,6 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   Object.assign(metrics, timing);
   const result = finish(failures.some((f) => f.hard) ? 'failed' : 'draft', { durationMs: totalMs, ...(videoPath ? { videoPath } : {}) });
   await dump('scorecard.json', result.scorecard);
-  await dump('v2-summary.json', { status: result.status, scenes: result.scenes, planned: result.planned, durationMs: totalMs, metrics, failures: failures.map(({ code, stage, message, hard }) => ({ code, stage, message, hard })), timelineHashes: compiled.map((s) => [s.sceneId, s.timeline.hash]) });
+  await dump('v2-summary.json', { status: result.status, artifactCertification: result.artifactCertification, scenes: result.scenes, planned: result.planned, durationMs: totalMs, metrics, failures: failures.map(({ code, stage, message, hard }) => ({ code, stage, message, hard })), timelineHashes: compiled.map((s) => [s.sceneId, s.timeline.hash]) });
   return result;
 }

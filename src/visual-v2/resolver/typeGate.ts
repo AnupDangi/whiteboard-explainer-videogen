@@ -10,11 +10,12 @@ import { shiftVisual, type Rect } from '../kits/geometry.js';
  * labelled box that does not count as meaningful depiction.
  */
 export type ConceptKind = 'entity' | 'process' | 'quantity' | 'formula' | 'event' | 'role' | 'rule';
-export interface ConceptInfo { id: string; label: string; kind: ConceptKind }
+/** `domain` is the lesson domain (S3 lessonBible.domain); matching-domain pictures rank first and a different specific domain excludes fuzzy picks. */
+export interface ConceptInfo { id: string; label: string; kind: ConceptKind; domain?: string }
 export type DepictionFamily = 'pictorial' | 'role-shape' | 'labelled';
 
 export interface EntityResolution { visual: PrimitiveVisual; resolution: ResolutionRecord }
-export type EntityResolver = (label: string, size: { w: number; h: number }, conceptId: string | undefined) => EntityResolution;
+export type EntityResolver = (label: string, size: { w: number; h: number }, conceptId: string | undefined, lessonDomain?: string) => EntityResolution;
 
 export interface EntityDepiction {
   family: DepictionFamily;
@@ -53,8 +54,8 @@ export function depictionFamily(kind: ConceptKind | undefined): DepictionFamily 
   return 'labelled';
 }
 
-const defaultResolver: EntityResolver = (label, size, conceptId) => {
-  const res = resolveObject(label, { label, size, ...(conceptId ? { conceptId } : {}), visualStrategy: 'literal' });
+const defaultResolver: EntityResolver = (label, size, conceptId, lessonDomain) => {
+  const res = resolveObject(label, { label, size, ...(conceptId ? { conceptId } : {}), ...(lessonDomain ? { lessonDomain } : {}), visualStrategy: 'literal' });
   return { visual: res.visual, resolution: res.resolution };
 };
 
@@ -63,7 +64,7 @@ const EMPTY: PrimitiveVisual = { paths: [], fills: [], texts: [] };
 export function depictEntity(concept: ConceptInfo | undefined, label: string, rect: Rect, resolver: EntityResolver = defaultResolver): EntityDepiction {
   const family = depictionFamily(concept?.kind);
   if (family === 'pictorial') {
-    const { visual, resolution } = resolver(label, { w: rect.w, h: rect.h }, concept?.id);
+    const { visual, resolution } = resolver(label, { w: rect.w, h: rect.h }, concept?.id, concept?.domain);
     if (resolution.rung === 4 || resolution.assetId === null) return { family: 'labelled', meaningful: false, reason: 'no approved picture for this concept', visual: EMPTY };
     if (resolution.selectionBasis !== 'exact' && resolution.selectionBasis !== 'curated') return { family: 'labelled', meaningful: false, reason: `the picture was chosen by similarity (${resolution.selectionBasis ?? 'unknown'}); a wrong picture is worse than a label`, visual: EMPTY };
     return { family: 'pictorial', meaningful: true, reason: 'exact approved picture', assetId: resolution.assetId, license: resolution.license, ...licensePolicy(resolution.license), visual: shiftVisual(visual, rect.x, rect.y) };

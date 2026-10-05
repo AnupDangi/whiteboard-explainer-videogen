@@ -5,14 +5,14 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
+import { emptyBoardState, startScene } from '../visual-v2/board-state/reducer.js';
 import { compileSceneTimeline } from '../visual-v2/timeline/compile.js';
 import { compileScene } from '../visual-v2/renderer/frame.js';
 import { compareReplayDigests, canonicalHash } from '../harness/replayDeterminism.js';
 import { writeLessonLockV2, verifyLessonLockV2, verifiedRasterInputs, replayLessonV2, encodeLockedLessonV2, type LessonLockV2 } from '../pipeline-v2/lockV2.js';
 
 // Synthetic contract data, never visual-quality or live-performance evidence.
-async function fixture(dir: string): Promise<LessonLockV2> {
+async function fixture(dir: string, withIdentity = false): Promise<LessonLockV2> {
   const { mkdir } = await import('node:fs/promises');
   await mkdir(path.join(dir, 'v2'), { recursive: true });
   await mkdir(path.join(dir, 'scene-audio'), { recursive: true });
@@ -23,11 +23,32 @@ async function fixture(dir: string): Promise<LessonLockV2> {
   wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
   await writeFile(path.join(dir, 'audio.wav'), wav);
   await writeFile(path.join(dir, 'scene-audio', 'one.wav'), wav);
-  await writeFile(path.join(dir, 'captions.vtt'), 'WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.800\nA test token appears.\n');
-  await writeFile(path.join(dir, 'v2', 'lesson-context.json'), JSON.stringify({ plan: { sections: ['one'] }, graph: { concepts: [] } }));
-  await writeFile(path.join(dir, 'v2', 'alignment.json'), JSON.stringify({ schemaVersion: 'v2-alignment/v1', scenes: [{ sceneId: 'one', durationMs: 2000, words: ['A', 'test', 'token', 'appears'].map((word, i) => ({ word, startMs: i * 400, endMs: i * 400 + 300 })), aligner: 'stable-ts', repairedWordIndexes: [], calibration: { status: 'unmeasured' } }] }));
-  const timeline = compileSceneTimeline({ initial: emptyBoardState(), ops: [{ op: 'add', opId: 'o1', beatId: 'one.b1', id: 'token', element: { type: 'token', text: 'sample', provenance: 'illustrative' }, at: { region: 'center' }, cue: 0 }], beats: [{ beatId: 'one.b1', startMs: 0, endMs: 1800, sentences: [{ startMs: 0, endMs: 1800 }] }] });
-  await writeFile(path.join(dir, 'v2', 'scene.one.json'), JSON.stringify({ ops: timeline.ops.map((s) => s.op), beats: [], narration: { text: 'A test token appears.' }, beatTimings: [], timelineHash: timeline.hash }));
+  const text = withIdentity ? 'Alpha causes Beta.' : 'A test token appears.';
+  const claim = { id: 'c1', statement: 'Alpha causes Beta.', conceptIds: ['alpha', 'beta'], relations: [{ from: 'alpha', to: 'beta', type: 'causes' }], evidenceSpanIds: ['span1'] };
+  const teachingBeats = [{
+    beatId: 'one.b1', sceneId: 'one', order: 0, claimIds: ['c1'], learnerDelta: 'Understand the direction from Alpha to Beta.', beatType: 'introduce',
+    cognitiveOperation: 'explain_cause', representationFamily: 'causal_chain', entities: [{ conceptId: 'alpha' }, { conceptId: 'beta' }], relationships: [{ from: 'alpha', to: 'beta', type: 'causes' }],
+    misconceptionIds: [], narrationGoal: 'Explain the cause.', visualInvariant: 'Alpha points to Beta.', mutedMeaning: 'Alpha causes Beta.', narrationOnly: false, persistence: 'scene', pauseIntent: 'none', evidenceSpanIds: ['span1'],
+  }];
+  const narration = {
+    sceneId: 'one', text, beats: [{ beatId: 'one.b1', sentenceIds: ['one.b1.s1'], text }],
+    beatSpans: [{ beatId: 'one.b1', pauseIntent: 'none', charStart: 0, charEnd: text.length, sentenceSpans: [{ sentenceId: 'one.b1.s1', charStart: 0, charEnd: text.length }] }],
+    claimSpans: [{ claimId: 'c1', exactText: text, plainStart: 0, plainEnd: text.length }],
+  };
+  const context = withIdentity
+    ? { plan: { sections: [{ id: 'one', contract: { essentialClaims: [claim] } }] }, graph: { concepts: [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }], relations: [{ from: 'alpha', to: 'beta', type: 'causes' }] }, beatPlans: { one: teachingBeats }, beatNarrations: { one: narration } }
+    : { plan: { sections: ['one'] }, graph: { concepts: [] } };
+  await writeFile(path.join(dir, 'captions.vtt'), `WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.800\n${text}\n`);
+  await writeFile(path.join(dir, 'v2', 'lesson-context.json'), JSON.stringify(context));
+  const words = text.match(/\S+/gu) ?? [];
+  await writeFile(path.join(dir, 'v2', 'alignment.json'), JSON.stringify({ schemaVersion: 'v2-alignment/v1', scenes: [{ sceneId: 'one', durationMs: 2000, words: words.map((word, i) => ({ word, startMs: i * 400, endMs: i * 400 + 300 })), aligner: 'stable-ts', repairedWordIndexes: [], calibration: { status: 'unmeasured' } }] }));
+  const ops = withIdentity ? [
+    { op: 'add' as const, opId: 'o1', beatId: 'one.b1', id: 'alpha', element: { type: 'entity' as const, conceptId: 'alpha', label: 'Alpha', provenance: 'illustrative' as const, bindings: { conceptIds: ['alpha'], claimIds: ['c1'] } }, at: { region: 'left' as const }, cue: 0 },
+    { op: 'add' as const, opId: 'o2', beatId: 'one.b1', id: 'beta', element: { type: 'entity' as const, conceptId: 'beta', label: 'Beta', provenance: 'illustrative' as const, bindings: { conceptIds: ['beta'], claimIds: ['c1'] } }, at: { region: 'right' as const }, cue: 0 },
+    { op: 'connect' as const, opId: 'o3', beatId: 'one.b1', id: 'edge', from: 'alpha', to: 'beta', relation: 'causes', bindings: { conceptIds: ['alpha', 'beta'], claimIds: ['c1'] }, cue: 0 },
+  ] : [{ op: 'add' as const, opId: 'o1', beatId: 'one.b1', id: 'token', element: { type: 'token' as const, text: 'sample', provenance: 'illustrative' as const }, at: { region: 'center' as const }, cue: 0 }];
+  const timeline = compileSceneTimeline({ initial: withIdentity ? startScene(emptyBoardState(), { mode: 'clean' }, 'one') : emptyBoardState(), ops, beats: [{ beatId: 'one.b1', startMs: 0, endMs: 1800, sentences: [{ startMs: 0, endMs: 1800 }] }] });
+  await writeFile(path.join(dir, 'v2', 'scene.one.json'), JSON.stringify({ transition: { mode: 'clean' }, ops: timeline.ops.map((s) => s.op), beats: withIdentity ? teachingBeats : [], narration: withIdentity ? narration : { text }, beatTimings: [], timelineHash: timeline.hash }));
   const scene = compileScene('one', 'A token', timeline, 'test');
   return writeLessonLockV2({ outputDir: dir, lessonId: 'test', scenes: [{ scene, startMs: 0, endMs: 2000 }], durationMs: 2000, audioPath: path.join(dir, 'audio.wav'), fps: 4 });
 }
@@ -55,6 +76,75 @@ test('V2 freezes a deduplicated frame-range plan, context, semantic scene data, 
     assert.equal(await readFile(path.join(dir, 'lesson.lock.json'), 'utf8'), await readFile(path.join(dir, 'lesson.lock.v2.json'), 'utf8'));
     assert.deepEqual(await verifyLessonLockV2(dir), []);
     await assert.rejects(fixture(dir), /exist|published|lock/i, 'a published lock cannot be silently regenerated');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('V2 rejects a fully rehashed narration whose claim reverses the canonical graph relation', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'v2-lock-identity-'));
+  try {
+    const lock = await fixture(dir, true);
+    assert.deepEqual(await verifyLessonLockV2(dir), [], 'the canonical claim, narration, beat and board identity should verify');
+
+    const contextFile = path.join(dir, lock.context.file);
+    const sceneFile = path.join(dir, lock.scenes[0]!.file);
+    const alignmentFile = path.join(dir, lock.alignment.file);
+    const context = JSON.parse(await readFile(contextFile, 'utf8'));
+    const scene = JSON.parse(await readFile(sceneFile, 'utf8'));
+    const alignment = JSON.parse(await readFile(alignmentFile, 'utf8'));
+    const reversed = 'Beta causes Alpha.';
+    context.beatNarrations.one.text = reversed;
+    context.beatNarrations.one.beats[0].text = reversed;
+    scene.narration.text = reversed;
+    scene.narration.beats[0].text = reversed;
+    scene.narration.claimSpans[0].exactText = reversed;
+    alignment.scenes[0].words = reversed.split(/\s+/u).map((word: string, index: number) => ({ word, startMs: index * 400, endMs: index * 400 + 300 }));
+    const contextBytes = JSON.stringify(context);
+    const sceneBytes = JSON.stringify(scene);
+    const alignmentBytes = JSON.stringify(alignment);
+    await writeFile(contextFile, contextBytes);
+    await writeFile(sceneFile, sceneBytes);
+    await writeFile(alignmentFile, alignmentBytes);
+    lock.context.hash = createHash('sha256').update(contextBytes).digest('hex');
+    lock.scenes[0]!.fileHash = createHash('sha256').update(sceneBytes).digest('hex');
+    lock.alignment.hash = createHash('sha256').update(alignmentBytes).digest('hex');
+    await resign(dir, lock);
+
+    const problems = await verifyLessonLockV2(dir);
+    assert.ok(problems.some((problem) => /reversed direction/.test(problem)), problems.join('\n'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('V2 rejects a fully rehashed entity whose display label names a different graph concept', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'v2-lock-visual-identity-'));
+  try {
+    const lock = await fixture(dir, true);
+    const sceneFile = path.join(dir, lock.scenes[0]!.file);
+    const capturedFile = path.join(dir, lock.scenes[0]!.captured.file);
+    const scene = JSON.parse(await readFile(sceneFile, 'utf8'));
+    const captured = JSON.parse(await readFile(capturedFile, 'utf8'));
+    scene.ops[0].element.label = 'Beta';
+    captured.timeline.ops[0].op.element.label = 'Beta';
+    for (const state of [...captured.timeline.states, ...(captured.timeline.lifecycleEvents ?? []).map((event: { state: unknown }) => event.state)]) {
+      const elements = (state as { elements?: Record<string, { spec?: Record<string, unknown> }> }).elements;
+      if (elements?.alpha?.spec) elements.alpha.spec.label = 'Beta';
+    }
+    const scheduledHashInput = captured.timeline.ops.map((scheduled: { op: { opId: string }; t0: number; t1: number }) => [scheduled.op.opId, Math.round(scheduled.t0), Math.round(scheduled.t1)]);
+    captured.timeline.hash = captured.timeline.lifecycleEvents
+      ? canonicalHash([scheduledHashInput, captured.timeline.lifecycleEvents.map((event: { kind: string; beatId?: string; atMs: number; state: unknown }) => [event.kind, event.beatId, Math.round(event.atMs), event.state])])
+      : canonicalHash(scheduledHashInput);
+    const sceneBytes = JSON.stringify(scene);
+    const capturedBytes = JSON.stringify(captured);
+    await writeFile(sceneFile, sceneBytes);
+    await writeFile(capturedFile, capturedBytes);
+    lock.scenes[0]!.fileHash = createHash('sha256').update(sceneBytes).digest('hex');
+    lock.scenes[0]!.captured.hash = createHash('sha256').update(capturedBytes).digest('hex');
+    lock.scenes[0]!.timelineHash = captured.timeline.hash;
+    lock.scenes[0]!.boardOpsHash = canonicalHash(captured.timeline.ops.map((scheduled: { op: unknown }) => scheduled.op));
+    lock.scenes[0]!.boardStatesHash = canonicalHash(captured.timeline.states);
+    await resign(dir, lock);
+
+    const problems = await verifyLessonLockV2(dir);
+    assert.ok(problems.some((problem) => /names graph concept beta, but is bound to alpha/.test(problem)), problems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
