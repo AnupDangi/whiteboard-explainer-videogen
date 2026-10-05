@@ -247,10 +247,7 @@ async function main(): Promise<void> {
   const benchmarkAttemptId = arg('benchmark-attempt');
   const benchmarkAttempt = benchmarkAttemptId ? resolveDevelopmentAttempt(process.cwd(), benchmarkAttemptId) : undefined;
   const groundingMode: GroundingMode = (arg('grounding-mode') ?? 'STRICT_SOURCE') as GroundingMode;
-  if (groundingMode === 'OPEN_EXPLANATION') {
-    throw new Error('grounding mode OPEN_EXPLANATION is not supported yet; uncited claims need an explicit unverified-claim status');
-  }
-  if (groundingMode !== 'STRICT_SOURCE' && groundingMode !== 'SOURCE_PLUS_BACKGROUND') {
+  if (groundingMode !== 'STRICT_SOURCE' && groundingMode !== 'SOURCE_PLUS_BACKGROUND' && groundingMode !== 'OPEN_EXPLANATION') {
     throw new Error(`unknown grounding mode: ${groundingMode}`);
   }
   if (benchmarkAttempt && groundingMode !== 'STRICT_SOURCE') throw new Error('frozen development trials require STRICT_SOURCE grounding');

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { KIT_REGISTRY } from '../kits/registry.js';
 import type { BoardContext } from './validate.js';
 
-export const BOARD_OPS_PROMPT_VERSION = 'board-ops-grounded-repair-v10';
+export const BOARD_OPS_PROMPT_VERSION = 'board-ops-grounded-repair-v11';
 
 interface ParamNode { type?: string; enum?: unknown[]; minimum?: number; maximum?: number; minItems?: number; maxItems?: number; maxLength?: number; items?: ParamNode; prefixItems?: ParamNode[]; properties?: Record<string, ParamNode>; required?: string[] }
 const describeNode = (node: ParamNode): string => {
@@ -57,6 +57,7 @@ Repair patches are restricted to the exact JSON pointers named by the validator,
 For a source element or kit, its visible label must be a phrase present in its cited quote. If the source teaches the idea but does not use your chosen label, mark the visual derived or illustrative and omit source evidence instead of presenting your label as source wording. When validator feedback names operations that depend on an invalid creator, repair those named dependents together with the creator, preserve every opId and element id, and change no unrelated accepted operation.
 Use provenance source for an equation only when the formula itself appears in the cited quote and the notation matches. If the source states a relationship in words, use derived only when the equation checker can verify it; otherwise show a clearly labeled illustrative example. Do not add numeric kit parameters or labels absent from the evidence. During pointer-scoped repairs, preserve the operation and element structure so every named repair pointer continues to resolve; change only the rejected field or fields.
 Repair safety: treat validator feedback as the smallest necessary correction, never as permission to invent a new fact. For a layout/geometry error, first change placement, slot, region, or kit layout while preserving the element's text, provenance, evidence, bindings, and identity. If the error explicitly requires shorter text, use only wording already supported by that element's cited quote; do not replace words with formulas, symbols, or abbreviations unless the exact form appears in that quote. If no supported short label fits, simplify or reposition the visual while keeping the claim covered. Change provenance to illustrative only when the element is truly an explanatory example rather than a source claim; never use that change to bypass a grounding error. Before returning, check every created element still has non-empty supported conceptIds and claimIds bindings, and that all source labels and displayed kit parameters remain grounded.
+An unverified_explanation claim is narration-only: do not create, alter, or bind any board operation or visual to it, even a text label. Do not attach its claim id to an operation that depicts another claim.
 Regions: ${REGION_IDS.join(', ')} (semantic areas; read left to right, top to bottom). Put a mechanism kit in a region, put its children inside it with at.container = the kit's id, plus zone or slot as the kit requires.
 Kits:
 ${kits}

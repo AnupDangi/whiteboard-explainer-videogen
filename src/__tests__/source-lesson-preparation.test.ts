@@ -86,13 +86,13 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
     assert.ok(coldSceneRun?.startedAt && coldSceneRun.completedAt, 'scene API call records its wall-clock interval');
     assert.equal(coldSceneRun?.apiCostUsd, 0.001, 'per-scene provider spend is retained');
 
-    await assert.rejects(
-      prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15, groundingMode: 'OPEN_EXPLANATION' }, {
-        model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,
-        fetcher: async () => { throw new Error('unsupported grounding mode must fail before provider calls'); },
-      }),
-      /OPEN_EXPLANATION is not supported yet/,
-    );
+    const open = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15, groundingMode: 'OPEN_EXPLANATION' }, {
+      model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03, fetcher: fakeProvider,
+    });
+    assert.deepEqual(open.failures, []);
+    assert.equal(open.groundingMode, 'OPEN_EXPLANATION');
+    assert.match(requestPrompts.get('teaching_plan')!.user, /GROUNDING POLICY \(OPEN_EXPLANATION\)/);
+    assert.match(requestPrompts.get('teaching_plan')!.user, /unverified_explanation/);
 
     const warm = await prepareLesson({ source: sourceDoc.text, sourceDoc, targetDurationSec: 15, groundingMode: 'SOURCE_PLUS_BACKGROUND' }, {
       model: 'test/structured-contract', apiKey: 'test-only', budgetUsd: 0.03,

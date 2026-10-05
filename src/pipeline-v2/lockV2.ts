@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { canonicalHash, type ReplayDigest } from '../harness/replayDeterminism.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
 import { claimIdentityMismatch, deriveClaimIdentity, formatClaimIdentityMismatch } from '../evidence/claimIdentity.js';
-import { EpistemicTypeSchema, epistemicClaimProblems, parseEvidenceLedger, validateEvidenceLedger, validateEvidenceLedgerClaims, validateEvidenceLedgerSources, type CanonicalTeachingClaimEvidence } from '../evidence/ledger.js';
+import { ClaimVerificationStatusSchema, EpistemicTypeSchema, epistemicClaimProblems, epistemicTextFramingProblem, parseEvidenceLedger, validateEvidenceLedger, validateEvidenceLedgerClaims, validateEvidenceLedgerSources, type CanonicalTeachingClaimEvidence } from '../evidence/ledger.js';
 import type { EvidenceReference } from '../shared/contracts.js';
 import type { SourceDoc } from '../intake/sourceDoc.js';
 import { probeToolVersions } from '../run/lessonLock.js';
@@ -121,10 +121,11 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
   const sections = arrayOf(plan?.sections)?.map(recordOf).filter((section): section is JsonRecord => Boolean(section));
   const contextV2 = context.schemaVersion === 'lesson-context/v2';
   const contextV3 = context.schemaVersion === 'lesson-context/v3';
-  if (context.schemaVersion !== undefined && !contextV2 && !contextV3) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
+  const contextV4 = context.schemaVersion === 'lesson-context/v4';
+  if (context.schemaVersion !== undefined && !contextV2 && !contextV3 && !contextV4) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
   // Older synthetic and cached V2 locks predate the claim graph / beat identity contract.
   if (!sections?.some((section) => recordOf(section.contract))) {
-    return contextV2 || contextV3 ? [`lesson context ${contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
+    return contextV2 || contextV3 || contextV4 ? [`lesson context ${contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
   }
 
   const problems: string[] = [];
@@ -141,7 +142,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
     if (parsed && (typeof parsed.from !== 'string' || typeof parsed.to !== 'string' || !conceptLabels.has(parsed.from) || !conceptLabels.has(parsed.to))) problems.push('pinned concept graph relation endpoint is missing');
   }
 
-  if (contextV2 || contextV3) {
+  if (contextV2 || contextV3 || contextV4) {
     const ledgerValidation = validateEvidenceLedger(context.evidenceLedger);
     if (!ledgerValidation.valid) problems.push(...ledgerValidation.errors.map((problem) => `pinned evidence ledger: ${problem}`));
     else {
@@ -157,7 +158,9 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
             continue;
           }
           const epistemicType = EpistemicTypeSchema.safeParse(claim.epistemicType);
-          if (contextV3 && !epistemicType.success) problems.push(`canonical plan claim ${claim.id} has no valid epistemicType`);
+          if ((contextV3 || contextV4) && !epistemicType.success) problems.push(`canonical plan claim ${claim.id} has no valid epistemicType`);
+          const verificationStatus = ClaimVerificationStatusSchema.safeParse(claim.verificationStatus);
+          if (contextV4 && !verificationStatus.success) problems.push(`canonical plan claim ${claim.id} has no valid verificationStatus`);
           if (epistemicType.success) {
             for (const issue of epistemicClaimProblems({ id: claim.id, statement: claim.statement, relations: arrayOf(claim.relations) ?? [], epistemicType: epistemicType.data })) {
               problems.push(`canonical plan ${issue}`);
@@ -175,6 +178,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
             statement: claim.statement,
             relations: arrayOf(claim.relations) ?? [],
             ...(epistemicType.success ? { epistemicType: epistemicType.data } : {}),
+            ...(verificationStatus.success ? { verificationStatus: verificationStatus.data } : {}),
             ...(Array.isArray(claim.sourceRefs) ? { sourceRefs: claim.sourceRefs as CanonicalTeachingClaimEvidence['sourceRefs'] } : {}),
             ...(typeof claim.confidence === 'number' ? { confidence: claim.confidence } : {}),
           });
@@ -183,7 +187,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
       problems.push(...validateEvidenceLedgerClaims(ledger, canonicalClaims));
       const sourceDoc = recordOf(context.sourceDoc);
       if (!sourceDoc || typeof sourceDoc.sourceId !== 'string' || typeof sourceDoc.text !== 'string' || !Array.isArray(sourceDoc.spans)) {
-        problems.push(`lesson context ${contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
+        problems.push(`lesson context ${contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
       } else {
         const graphEvidence = [
           ...concepts.flatMap((concept) => arrayOf(concept.evidence) ?? []),
@@ -204,6 +208,19 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
     if (!section || !contract || !claims.length) {
       problems.push(`scene ${locked.sceneId} has no canonical essential claims in the pinned lesson context`);
       return;
+    }
+    const unverifiedClaimIds = new Set(claims.flatMap((claim) =>
+      typeof claim.id === 'string' && (claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified') ? [claim.id] : [],
+    ));
+    for (const rawIntent of arrayOf(contract.semanticVisualIntents) ?? []) {
+      const intent = recordOf(rawIntent);
+      if (typeof intent?.claimId === 'string' && unverifiedClaimIds.has(intent.claimId)) {
+        problems.push(`scene ${locked.sceneId} unverified explanation claim ${intent.claimId} must not have a semanticVisualIntent`);
+      }
+    }
+    if (claims.every((claim) => claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified')
+      && contract.visualForm !== undefined) {
+      problems.push(`scene ${locked.sceneId} contains only unverified explanations and must omit visualForm`);
     }
     const claimsById = new Map<string, JsonRecord>();
     for (const claim of claims) {
@@ -239,6 +256,11 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
       const beatClaimIds = arrayOf(beat.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
       for (const claimId of beatClaimIds) if (!claimsById.has(claimId)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} cites unknown claim ${claimId}`);
       const cited = beatClaimIds.map((id) => claimsById.get(id)).filter((claim): claim is JsonRecord => Boolean(claim));
+      const unverifiedClaims = cited.filter((claim) => claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified');
+      if (unverifiedClaims.length && (beatClaimIds.length !== 1 || beatClaimIds[0] !== unverifiedClaims[0]?.id)) problems.push(`scene ${locked.sceneId} unverified explanation beat ${beat.beatId} must cite only its one unverified claim`);
+      if (unverifiedClaims.length && beat.narrationOnly !== true) problems.push(`scene ${locked.sceneId} unverified explanation beat ${beat.beatId} must be narration-only`);
+      if (unverifiedClaims.length && (arrayOf(beat.relationships)?.length ?? 0) > 0) problems.push(`scene ${locked.sceneId} unverified explanation beat ${beat.beatId} cannot assert graph relations`);
+      if (unverifiedClaims.length && (arrayOf(beat.entities)?.length ?? 0) > 0) problems.push(`scene ${locked.sceneId} unverified explanation beat ${beat.beatId} cannot depict entities`);
       for (const rawEntity of arrayOf(beat.entities) ?? []) {
         const entity = recordOf(rawEntity);
         if (typeof entity?.conceptId !== 'string' || !cited.some((claim) => (arrayOf(claim.conceptIds) ?? []).includes(entity.conceptId))) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has an entity outside its cited claim concepts`);
@@ -247,6 +269,13 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
         const key = relationKey(relation);
         if (!key || !cited.some((claim) => (arrayOf(claim.relations) ?? []).some((candidate) => relationKey(candidate) === key))) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has a directed relation outside its cited claims`);
       }
+    }
+    for (const claimId of unverifiedClaimIds) {
+      const beatCount = (planBeats ?? []).reduce<number>((count, rawBeat) => {
+        const beat = recordOf(rawBeat);
+        return count + ((arrayOf(beat?.claimIds) ?? []).filter((id) => id === claimId).length);
+      }, 0);
+      if (beatCount !== 1) problems.push(`scene ${locked.sceneId} unverified explanation claim ${claimId} must appear in exactly one isolated narration-only beat`);
     }
 
     const contextNarration = recordOf(beatNarrations[locked.sceneId]);
@@ -268,6 +297,10 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
         const exact = text.slice(start, end);
         if (exact !== span.exactText || end <= start) problems.push(`scene ${locked.sceneId} claim ${span.claimId} anchor does not match its narration text`);
         const claim = claimsById.get(span.claimId)!;
+        if (claim.epistemicType === 'unverified_explanation') {
+          const framingProblem = epistemicTextFramingProblem('unverified_explanation', span.exactText);
+          if (framingProblem) problems.push(`scene ${locked.sceneId} claim ${span.claimId} narration framing mismatch: ${framingProblem}`);
+        }
         if (typeof claim.statement === 'string') {
           const claimConceptIds = arrayOf(claim.conceptIds)?.filter((id): id is string => typeof id === 'string') ?? [];
           const claimRelations = arrayOf(claim.relations) ?? [];
@@ -330,9 +363,17 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
       const op = recordOf(rawOp);
       if (!op || typeof op.beatId !== 'string') { problems.push(`scene ${locked.sceneId} has an operation without a beat id`); return; }
       const parentClaimIds = opClaimIds(op, op.beatId);
+      const beatClaimIds = arrayOf(beatsById.get(op.beatId)?.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+      if (beatClaimIds.some((id) => claimsById.get(id)?.epistemicType === 'unverified_explanation' || claimsById.get(id)?.verificationStatus === 'unverified')) {
+        problems.push(`scene ${locked.sceneId} BoardOp ${String(op.opId ?? opIndex)} is attached to an unverified explanation beat`);
+      }
+      if (parentClaimIds.some((id) => claimsById.get(id)?.epistemicType === 'unverified_explanation' || claimsById.get(id)?.verificationStatus === 'unverified')) {
+        problems.push(`scene ${locked.sceneId} BoardOp ${String(op.opId ?? opIndex)} is bound to an unverified explanation claim`);
+      }
       for (const spec of specsOf(op)) {
         const bindings = recordOf(spec.bindings);
         const boundClaims = arrayOf(bindings?.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+        if (boundClaims.some((id) => claimsById.get(id)?.epistemicType === 'unverified_explanation' || claimsById.get(id)?.verificationStatus === 'unverified')) problems.push(`scene ${locked.sceneId} visual is bound to an unverified explanation claim`);
         const conceptIds = [ ...(typeof spec.conceptId === 'string' ? [spec.conceptId] : []), ...(arrayOf(bindings?.conceptIds)?.filter((id): id is string => typeof id === 'string') ?? []) ];
         if (!boundClaims.length || boundClaims.some((id) => !parentClaimIds.includes(id))) problems.push(`scene ${locked.sceneId} visual is not bound to claims on its beat`);
         const allowed = new Set(boundClaims.flatMap((id) => arrayOf(claimsById.get(id)?.conceptIds)?.filter((value): value is string => typeof value === 'string') ?? []));

@@ -65,6 +65,19 @@ test('anchored examples and analogies keep their explicit nonfactual framing in 
   assert.ok(validateSceneNarration(unframedAnalogy, analogyContext).some((problem) => /epistemic framing mismatch: needs explicit analogy framing/.test((problem as { message: string }).message)));
 });
 
+test('unverified explanations stay explicitly marked in their anchored narration sentence and prompt', () => {
+  const statement = 'This possible explanation is not verified by the supplied source: energy can make molecules move faster.';
+  const claims = { c1: { statement, epistemicType: 'unverified_explanation' as const } };
+  const marked = draft([{ sentences: [statement, 'The frame remembers where to return.'] }]);
+  assert.deepEqual(validateSceneNarration(marked, { ...ctx, canonicalClaims: claims }), []);
+  const unmarked = draft([{ sentences: ['Energy can make molecules move faster.', 'The frame remembers where to return.'] }]);
+  assert.ok(validateSceneNarration(unmarked, { ...ctx, canonicalClaims: claims }).some((problem) => /not verified by the supplied source/.test((problem as { message: string }).message)));
+  const prompt = buildNarrationPrompt({ ...ctx, canonicalClaims: claims }, { title: 'Energy', goal: 'Explain a possible mechanism.' }, 'SOURCE: energy');
+  assert.match(prompt.system, /unverified_explanation/);
+  assert.match(prompt.user, /unverified_explanation/);
+  assert.match(prompt.user, /not verified by the supplied source/);
+});
+
 test('claim identity preserves graph concepts and directed predicates with controlled active/passive aliases', () => {
   const graphConcepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
   const source = {

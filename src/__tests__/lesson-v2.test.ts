@@ -34,7 +34,7 @@ const claims = (id: string) => {
   const statement = sentences[id]![0]!;
   const evidence = sourceEvidenceFor(statement);
   return [{
-    id: `${id}_c`, statement, epistemicType: 'direct_source' as const, conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: [evidence.spanId],
+    id: `${id}_c`, statement, epistemicType: 'direct_source' as const, verificationStatus: 'source_cited' as const, conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: [evidence.spanId],
     sourceRefs: [{ documentId: evidence.sourceId, sourceHash: evidence.documentSha256!, spanId: evidence.spanId, startOffset: evidence.startChar, endOffset: evidence.endChar, quoteHash: evidence.quoteSha256!, sourceRole: evidence.sourceRole ?? 'primary' }],
   }];
 };
@@ -107,14 +107,16 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     const lessonContext = JSON.parse(await readFile(path.join(out, 'v2', 'lesson-context.json'), 'utf8')) as {
       schemaVersion: string;
       groundingMode: string;
-      plan: { sections: Array<{ contract: { essentialClaims: Array<{ epistemicType?: string }> } }> };
-      evidenceLedger: { groundingMode: string; claims: Array<{ epistemicType: string; sourceRefs: Array<Record<string, unknown>> }> };
+      plan: { sections: Array<{ contract: { essentialClaims: Array<{ epistemicType?: string; verificationStatus?: string }> } }> };
+      evidenceLedger: { groundingMode: string; claims: Array<{ epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v3');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v4');
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.ok(lessonContext.plan.sections.flatMap((section) => section.contract.essentialClaims).every((claim) => claim.epistemicType === 'direct_source'));
+    assert.ok(lessonContext.plan.sections.flatMap((section) => section.contract.essentialClaims).every((claim) => claim.verificationStatus === 'source_cited'));
     assert.ok(lessonContext.evidenceLedger.claims.every((claim) => claim.epistemicType === 'direct_source'));
+    assert.ok(lessonContext.evidenceLedger.claims.every((claim) => claim.verificationStatus === 'source_cited'));
     assert.ok(lessonContext.evidenceLedger.claims.flatMap((claim) => claim.sourceRefs).every((ref) => !('spanId' in ref)), 'the ledger stores hash-pinned document ranges; plan span identity remains in the canonical plan');
     const iconFamilies = JSON.parse(await readFile(path.join(out, 'v2', 'scene-icon-families.json'), 'utf8')) as { scenes: Array<{ sceneId: string; houseFamily: string | null }> };
     assert.ok(iconFamilies.scenes.every((scene) => scene.houseFamily === 'simi-house-v1/domain-outline'));
@@ -311,6 +313,139 @@ async function fixtureRun(dir: string): Promise<string> {
   return out;
 }
 
+test('OPEN_EXPLANATION survives the V2 runner and a rehashed lock still rejects visualized or uncaveated open claims', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-open-v2-'));
+  try {
+    const openStatement = 'One way to think of a return is that it removes a frame from the stack, but this explanation is not verified by the supplied source.';
+    const openClaim = { ...claims('two')[0]!, statement: openStatement, sourceRefs: [], evidenceSpanIds: [], epistemicType: 'unverified_explanation' as const, verificationStatus: 'unverified' as const };
+    const openPlan = structuredClone(plan) as unknown as { sections: Array<{ id: string; contract: { essentialClaims: unknown[]; evidenceSpanIds: string[] } }> };
+    const openSection = openPlan.sections.find((section) => section.id === 'two')!;
+    openSection.contract.essentialClaims = [openClaim];
+    openSection.contract.evidenceSpanIds = [];
+    const openBeatContext = { ...ctxFor('two'), claims: [openClaim] };
+    const openBeats = compileBeatPlan(BeatPlanDraftSchema.parse({ beats: [{
+      ...beatDraft('two').beats[0]!, narrationOnly: true, mutedMeaning: '', entities: [], relationships: [],
+    }] }), openBeatContext);
+    const openNarrations = {
+      ...narrations,
+      two: compileSceneNarration('two', SceneNarrationDraftSchema.parse({ beats: [{
+        beatId: 'two.b1', sentences: [openStatement], claimSentences: [{ claimId: 'two_c', sentenceIndex: 0 }], emphasisTerms: [],
+      }] }), openBeats),
+    };
+    const openPrepared = {
+      ...prepared, plan: openPlan, groundingMode: 'OPEN_EXPLANATION' as const,
+      beatPlans: { ...beatPlans, two: openBeats }, beatNarrations: openNarrations,
+    } as unknown as PreparedLesson;
+    const openBoard = { ...board, two: { transition: { mode: 'retain-all' }, ops: [] } };
+    const openClient: ModelClient = { provider: 'fake', chat: async (request) => {
+      const scene = /SCENE (\w+)/.exec(request.user)?.[1] ?? '';
+      return { content: JSON.stringify(openBoard[scene as keyof typeof openBoard]), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage };
+    } };
+    const aligner = async (text: string) => {
+      const tokens = tokenizeWords(text);
+      const durationMs = tokens.length * 300 + 100;
+      const audioPath = path.join(dir, `tmp-open-${tokens.length}-${Math.random().toString(36).slice(2)}.wav`);
+      await runFfmpeg(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', String(durationMs / 1000), audioPath]);
+      return { durationMs, words: tokens.map((word, index) => ({ word, startMs: index * 300, endMs: index * 300 + 260 })), aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
+    };
+    const requestedDurationSec = (Object.values(openNarrations).reduce((sum, narration) => sum + tokenizeWords(narration.text).length * 300 + 100, 0) + PIPELINE.sceneGapMs + 1200) / 1000;
+    let earlyAudioCalls = 0;
+    let earlyBoardCalls = 0;
+    const invalidOpenPrepared = { ...openPrepared, beatPlans: { ...openPrepared.beatPlans, two: openBeats.map((beat) => ({ ...beat, narrationOnly: false })) } };
+    const invalidAligner = async (text: string) => { earlyAudioCalls++; return aligner(text); };
+    const invalidOpen = await runLessonV2({ lessonId: 'open-explanation-invalid', outputDir: path.join(dir, 'invalid-run'), prepared: { ...invalidOpenPrepared, requestedDurationSec }, plannerModel: 'google/x', apiKey: 'k', client: { ...openClient, chat: async (request) => { earlyBoardCalls++; return openClient.chat(request); } }, aligner: invalidAligner as never });
+    assert.equal(invalidOpen.status, 'failed');
+    assert.equal(earlyAudioCalls, 0, 'an unverified visual beat fails before audio generation');
+    assert.equal(earlyBoardCalls, 0, 'an unverified visual beat fails before BoardOps planning');
+
+    const out = path.join(dir, 'run');
+    const result = await runLessonV2({ lessonId: 'open-explanation-test', outputDir: out, prepared: { ...openPrepared, requestedDurationSec }, plannerModel: 'google/x', apiKey: 'k', client: openClient, aligner: aligner as never });
+    assert.equal(result.status, 'draft', JSON.stringify(result.failures));
+    assert.deepEqual(await verifyLessonLockV2(out), [], 'a valid open explanation remains lock-verifiable');
+
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as {
+      context: { file: string; hash: string }; alignment: { file: string; hash: string };
+      scenes: Array<{ sceneId: string; file: string; fileHash: string }>; contentHash: string;
+    };
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8')) as {
+      beatPlans: Record<string, Array<Record<string, unknown>>>;
+      beatNarrations: Record<string, Record<string, unknown>>;
+      plan: { sections: Array<{ id: string; contract: { semanticVisualIntents?: Array<Record<string, unknown>>; visualForm?: string } }> };
+    };
+    context.beatPlans.two![0]!.narrationOnly = false;
+    const replaceCaveat = (narration: Record<string, unknown>) => {
+      narration.text = String(narration.text).replace('not verified', 'now verified');
+      const beats = narration.beats as Array<Record<string, unknown>>;
+      beats[0]!.text = String(beats[0]!.text).replace('not verified', 'now verified');
+      const spans = narration.claimSpans as Array<Record<string, unknown>>;
+      spans[0]!.exactText = String(spans[0]!.exactText).replace('not verified', 'now verified');
+    };
+    replaceCaveat(context.beatNarrations.two!);
+    const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    lock.context.hash = sha256(contextBytes);
+
+    const lockedScene = lock.scenes.find((scene) => scene.sceneId === 'two')!;
+    const scenePath = path.join(out, lockedScene.file);
+    const scene = JSON.parse(await readFile(scenePath, 'utf8')) as { beats: Array<Record<string, unknown>>; narration: Record<string, unknown> };
+    scene.beats[0]!.narrationOnly = false;
+    replaceCaveat(scene.narration);
+    const sceneBytes = `${JSON.stringify(scene, null, 2)}\n`;
+    await writeFile(scenePath, sceneBytes);
+    lockedScene.fileHash = sha256(sceneBytes);
+
+    const alignmentPath = path.join(out, lock.alignment.file);
+    const alignment = JSON.parse(await readFile(alignmentPath, 'utf8')) as { scenes: Array<{ sceneId: string; words: Array<{ word: string }> }> };
+    const alignedScene = alignment.scenes.find((candidate) => candidate.sceneId === 'two')!;
+    for (const word of alignedScene.words) if (word.word.toLocaleLowerCase('en-US') === 'not') word.word = 'now';
+    const alignmentBytes = `${JSON.stringify(alignment, null, 2)}\n`;
+    await writeFile(alignmentPath, alignmentBytes);
+    lock.alignment.hash = sha256(alignmentBytes);
+
+    const { contentHash: _oldHash, ...body } = lock;
+    lock.contentHash = canonicalHash(body);
+    const writeResignedLock = async () => {
+      const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+      await writeFile(lockPath, lockBytes);
+      await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+    };
+    await writeResignedLock();
+    const problems = await verifyLessonLockV2(out);
+    assert.ok(problems.some((problem) => /unverified explanation beat .* must be narration-only/.test(problem)), problems.join('\n'));
+    assert.ok(problems.some((problem) => /not verified by the supplied source/.test(problem)), problems.join('\n'));
+
+    const planOpenSection = context.plan.sections.find((section) => section.id === 'two')!;
+    planOpenSection.contract.semanticVisualIntents = [{ claimId: 'two_c' }];
+    planOpenSection.contract.visualForm = 'process';
+    const intentContextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, intentContextBytes);
+    lock.context.hash = sha256(intentContextBytes);
+    const { contentHash: _intentHash, ...intentBody } = lock;
+    lock.contentHash = canonicalHash(intentBody);
+    await writeResignedLock();
+    const intentProblems = await verifyLessonLockV2(out);
+    assert.ok(intentProblems.some((problem) => /unverified explanation claim two_c must not have a semanticVisualIntent/u.test(problem)), intentProblems.join('\n'));
+    assert.ok(intentProblems.some((problem) => /contains only unverified explanations and must omit visualForm/u.test(problem)), intentProblems.join('\n'));
+
+    const duplicateBeat = { ...context.beatPlans.two![0]!, beatId: 'two.b2' };
+    context.beatPlans.two!.push(duplicateBeat);
+    scene.beats.push({ ...scene.beats[0]!, beatId: 'two.b2' });
+    const duplicateContextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, duplicateContextBytes);
+    lock.context.hash = sha256(duplicateContextBytes);
+    const duplicateSceneBytes = `${JSON.stringify(scene, null, 2)}\n`;
+    await writeFile(scenePath, duplicateSceneBytes);
+    lockedScene.fileHash = sha256(duplicateSceneBytes);
+    const { contentHash: _duplicateHash, ...duplicateBody } = lock;
+    lock.contentHash = canonicalHash(duplicateBody);
+    await writeResignedLock();
+    const duplicateProblems = await verifyLessonLockV2(out);
+    assert.ok(duplicateProblems.some((problem) => /unverified explanation claim two_c must appear in exactly one isolated narration-only beat/u.test(problem)), duplicateProblems.join('\n'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('the V2 lock pins ops, narration, timings, audio and versions before rendering, verifies, and detects any edit', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v2-'));
   try {
@@ -330,7 +465,7 @@ test('the V2 lock pins ops, narration, timings, audio and versions before render
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects an untyped claim in a rehashed lesson-context/v3', async () => {
+test('the V2 lock rejects an untyped claim in a rehashed lesson-context/v4', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
@@ -341,7 +476,7 @@ test('the V2 lock rejects an untyped claim in a rehashed lesson-context/v3', asy
       schemaVersion: string;
       plan: { sections: Array<{ contract: { essentialClaims: Array<Record<string, unknown>> } }> };
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v3');
+    assert.equal(context.schemaVersion, 'lesson-context/v4');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -354,6 +489,20 @@ test('the V2 lock rejects an untyped claim in a rehashed lesson-context/v3', asy
 
     const problems = await verifyLessonLockV2(out);
     assert.ok(problems.some((problem) => /canonical plan claim one_c has no valid epistemicType/.test(problem)), problems.join('\n'));
+
+    const firstClaim = context.plan.sections[0]!.contract.essentialClaims[0]!;
+    firstClaim.epistemicType = 'direct_source';
+    firstClaim.verificationStatus = 'unverified';
+    const statusBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, statusBytes);
+    lock.context.hash = sha256(statusBytes);
+    const { contentHash: _oldStatusHash, ...statusBody } = lock;
+    lock.contentHash = canonicalHash(statusBody);
+    const statusLockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, statusLockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), statusLockBytes);
+    const statusProblems = await verifyLessonLockV2(out);
+    assert.ok(statusProblems.some((problem) => /verificationStatus must be source_cited/u.test(problem)), statusProblems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

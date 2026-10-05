@@ -1,6 +1,6 @@
 import { recordCoercion } from '../structured/coercionLedger.js';
 import { claimSemanticsFromText } from '../evidence/claims.js';
-import { epistemicClaimProblems } from '../evidence/ledger.js';
+import { claimVerificationStatusFor, epistemicClaimProblems } from '../evidence/ledger.js';
 import type { ConceptGraph, TeachingPlan, TeachingPlanDraft } from './schemas.js';
 import { fitBudgetsToTarget, rebalanceSceneBudgets } from './analyze.js';
 
@@ -32,12 +32,14 @@ export function canonicalizePlanClaims(plan: TeachingPlan, graph: ConceptGraph):
       contract: {
         ...section.contract,
         essentialClaims: section.contract.essentialClaims.map((claim) => {
-          const { semantics: _untrustedSemantics, sourceRefs: _untrustedSourceRefs, ...claimFields } = claim;
+          const { semantics: _untrustedSemantics, sourceRefs: _untrustedSourceRefs, verificationStatus: _untrustedStatus, ...claimFields } = claim;
           const semantics = claimSemanticsFromText(claim.statement);
           const sourceRefs = deriveClaimSourceRefs(claim, graph);
+          const verificationStatus = claim.epistemicType ? claimVerificationStatusFor(claim.epistemicType) : undefined;
           return {
             ...claimFields,
             ...(semantics ? { semantics } : {}),
+            ...(verificationStatus ? { verificationStatus } : {}),
             ...(sourceRefs.length ? { sourceRefs } : {}),
           };
         }),
@@ -157,7 +159,7 @@ export function teachingContractFindings(plan: TeachingPlan, graph: ConceptGraph
       }
       if (new Set(claim.evidenceSpanIds).size !== claim.evidenceSpanIds.length) push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} repeats evidence`);
       for (const spanId of claim.evidenceSpanIds) if (!linkedEvidence.has(spanId) || !contract.evidenceSpanIds.includes(spanId)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} cites unsupported evidence ${spanId}`);
-      if (!claim.evidenceSpanIds.length) push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} needs linked source evidence`);
+      if (!claim.evidenceSpanIds.length && claim.epistemicType !== 'unverified_explanation') push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} needs linked source evidence`);
     }
   }
   for (const relation of graph.relations) {
@@ -274,12 +276,14 @@ export function deriveTeachingPlan(rawDraft: TeachingPlanDraft, graph: ConceptGr
           requiredRelations: requiredRelations.map(({ from, to, type }) => ({ from, to, type })),
           evidenceSpanIds,
           essentialClaims: essentialClaims.map((claim) => {
-            const { semantics: _untrustedSemantics, sourceRefs: _untrustedSourceRefs, ...claimFields } = claim;
+            const { semantics: _untrustedSemantics, sourceRefs: _untrustedSourceRefs, verificationStatus: _untrustedStatus, ...claimFields } = claim;
             const semantics = claimSemanticsFromText(claim.statement);
             const sourceRefs = deriveClaimSourceRefs(claim, graph);
+            const verificationStatus = claim.epistemicType ? claimVerificationStatusFor(claim.epistemicType) : undefined;
             return {
               ...claimFields,
               ...(semantics ? { semantics } : {}),
+              ...(verificationStatus ? { verificationStatus } : {}),
               ...(sourceRefs.length ? { sourceRefs } : {}),
               // A visual target is independently checked against the claim's cited evidence.
               // Fill in every graph-backed span for the concepts/relations linked by the claim
@@ -292,6 +296,10 @@ export function deriveTeachingPlan(rawDraft: TeachingPlanDraft, graph: ConceptGr
                   ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence.map((ref) => ref.spanId) ?? []),
                 ])];
                 const given = claim.evidenceSpanIds;
+                if (claim.epistemicType === 'unverified_explanation') {
+                  for (const spanId of given) if (!backed.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: spanId, newValue: undefined, reason: 'claim-evidence-span-not-backed-by-graph', semanticRisk: 'semantic' });
+                  return given.filter((spanId) => backed.includes(spanId)).slice(0, 96);
+                }
                 for (const spanId of given) if (!backed.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: spanId, newValue: undefined, reason: 'claim-evidence-span-not-backed-by-graph', semanticRisk: 'semantic' });
                 for (const spanId of backed) if (!given.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: undefined, newValue: spanId, reason: 'claim-evidence-span-added-from-graph', semanticRisk: 'low' });
                 return [...new Set([...claim.evidenceSpanIds.filter((spanId) => backed.includes(spanId)), ...backed])].slice(0, 96);
@@ -314,8 +322,8 @@ export function deriveTeachingPlan(rawDraft: TeachingPlanDraft, graph: ConceptGr
 
 /**
  * Teaching Director completeness (final_plan/03 §10, 01 §4.3). The draft variant must state, per scene,
- * the mental model, at most two misconceptions, and one semantic visual intent per essential claim whose
- * concepts come from that claim. Each problem tells the model what to add.
+ * the mental model, at most two misconceptions, and one semantic visual intent per visualized claim whose
+ * concepts come from that claim. Unverified explanations have no visual intent. Each problem tells the model what to add.
  */
 export function teachingDirectorProblems(plan: TeachingPlan): string[] {
   const problems: string[] = [];
@@ -323,6 +331,9 @@ export function teachingDirectorProblems(plan: TeachingPlan): string[] {
     const contract = section.contract;
     if (!contract) continue;
     if (!contract.mentalModel) problems.push(`section ${section.id} needs a mentalModel: one sentence naming the model the learner builds`);
+    if (contract.essentialClaims.length > 0 && contract.essentialClaims.every((claim) => claim.epistemicType === 'unverified_explanation') && contract.visualForm) {
+      problems.push(`section ${section.id}: a scene containing only unverified explanations must omit visualForm`);
+    }
     const claimById = new Map(contract.essentialClaims.map((claim) => [claim.id, claim]));
     const intents = contract.semanticVisualIntents ?? [];
     for (const intent of intents) {
@@ -332,7 +343,10 @@ export function teachingDirectorProblems(plan: TeachingPlan): string[] {
       if (outside.length) problems.push(`section ${section.id}: intent for claim ${intent.claimId} cites concepts outside the claim (${outside.join(', ')})`);
     }
     for (const claim of contract.essentialClaims) {
-      if (!intents.some((intent) => intent.claimId === claim.id)) problems.push(`section ${section.id}: essential claim ${claim.id} needs a semanticVisualIntent (conceptType + strategy)`);
+      const claimIntent = intents.some((intent) => intent.claimId === claim.id);
+      if (claim.epistemicType === 'unverified_explanation') {
+        if (claimIntent) problems.push(`section ${section.id}: unverified explanation claim ${claim.id} must not have a semanticVisualIntent`);
+      } else if (!claimIntent) problems.push(`section ${section.id}: essential claim ${claim.id} needs a semanticVisualIntent (conceptType + strategy)`);
     }
   }
   return problems;

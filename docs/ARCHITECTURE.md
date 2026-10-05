@@ -121,7 +121,7 @@ live-run S6 verifies these digests along with source offsets. Legacy citations
 without digests remain readable but are checked against the in-memory source.
 Generated canonical claims now require an explicit `epistemicType`:
 `direct_source`, `derived_relation`, `pedagogical_bridge`,
-`illustrative_example`, or `analogy`. The S3 contract rejects a missing type,
+`illustrative_example`, `analogy`, or `unverified_explanation`. The S3 contract rejects a missing type,
 direct/derived relation mismatches, and examples or analogies without visible
 framing. The anchored narration sentence is checked for the same framing. These
 checks are structural and lexical; they do not prove that a statement is true or
@@ -129,22 +129,35 @@ entailed by its source. Claim `sourceRefs` are rebuilt only from explicitly
 cited spans backed by the linked graph concepts or relations; model-provided
 refs are discarded.
 
+`unverified_explanation` is a bounded exception for an otherwise source-backed
+lesson: it has no source refs, must say it is “not verified by the supplied
+source,” and may not introduce a graph relation. It must appear once, alone,
+in a narration-only beat. S3 omits its semantic visual intent; a scene made up
+only of open claims also omits `visualForm`. That beat cannot have BoardOps,
+and no visual or factual edge may bind to the claim. The V2 runner checks these rules before
+audio and BoardOps; lock verification repeats them against the pinned plan,
+narration, semantic scene and captures, so recomputing hashes alone cannot pass
+an inconsistent open claim. The source document and concept graph remain
+required; source-free lesson generation is not supported.
+
 Before audio generation, V2 projects canonical claims into
 `src/evidence/ledger.ts`, validating the plan reference and dropping its
 `spanId` only from the compact ledger representation. It validates the ledger
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v3`; lock verification
-requires each claim's explicit type and checks its source refs against the
-claim's cited spans. `lesson-context/v2` remains readable through the
-compatibility path. The CLI carries grounding mode through request and run
+concatenated bundle hash. New runs write `lesson-context/v4`; lock verification
+requires each claim's explicit type and derived verification status and checks
+its source refs against the claim's cited spans. `lesson-context/v2` and `/v3`
+remain readable through the compatibility path. The CLI carries grounding mode through request and run
 identity. `STRICT_SOURCE` and `SOURCE_PLUS_BACKGROUND` are accepted:
 direct-source and derived-relation claims require primary-only citations;
 pedagogical bridges may cite primary or explicitly role-marked background
 sources. A factual claim cannot mix in a background citation, even if a primary
-reference is also present. `OPEN_EXPLANATION` remains unsupported until
-uncited claims have an explicit unverified status in the ledger and lock.
+reference is also present. `OPEN_EXPLANATION` allows only the bounded,
+explicitly unverified explanation described above; direct and derived factual
+claims still require primary citations, and bridges still require source
+provenance. Frozen benchmark runs remain pinned to `STRICT_SOURCE`.
 During S3 validation, claim refs are reconstructed from the claim's cited spans
 and linked graph evidence; model-supplied refs are not used to satisfy policy.
 Confidence is optional informational metadata, is not calibrated, and does not

@@ -95,6 +95,25 @@ test('a narration-only beat may omit its muted meaning, a visual beat may not', 
   assert.ok(validateBeatPlan(draft(visual), ctx).some((p) => (p as { path: string }).path === '/beats/1/mutedMeaning'));
 });
 
+test('an unverified explanation is isolated in one narration-only beat', () => {
+  const openClaim = {
+    id: 'open', statement: 'One possible explanation is not verified by the supplied source.', conceptIds: ['frame'], relations: [], evidenceSpanIds: [],
+    epistemicType: 'unverified_explanation' as const, verificationStatus: 'unverified' as const,
+  };
+  const openCtx: BeatContext = { ...ctx, claims: [...ctx.claims, openClaim] };
+  const openBeat = beat({ claimIds: ['open'], entities: [], relationships: [], narrationOnly: true, mutedMeaning: '' });
+  assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [] }), openBeat]), openCtx), []);
+
+  const mixed = validateBeatPlan(draft([beat({ claimIds: ['c1', 'open'] }), beat({ claimIds: ['c2'], relationships: [] })]), openCtx);
+  assert.ok(mixed.some((problem) => /unverified explanation must be isolated/.test((problem as { message: string }).message)));
+  const visual = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [] }), { ...openBeat, narrationOnly: false }]), openCtx);
+  assert.ok(visual.some((problem) => /must be narration-only/.test((problem as { message: string }).message)));
+  const depicted = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [] }), { ...openBeat, entities: [{ conceptId: 'frame' }] }]), openCtx);
+  assert.ok(depicted.some((problem) => /cannot depict entities/.test((problem as { message: string }).message)));
+  const repeated = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [] }), openBeat, openBeat]), openCtx);
+  assert.ok(repeated.some((problem) => /exactly one isolated narration-only beat/.test((problem as { message: string }).message)));
+});
+
 test('beat count follows scene duration and stays bounded', () => {
   assert.deepEqual(beatCountRange(10), { min: 1, max: 2 });
   assert.deepEqual(beatCountRange(20), { min: 2, max: 5 });
@@ -129,6 +148,14 @@ test('the prompt states the scene contract, claim ids, misconception ids and the
   assert.match(user, /m1/);
   assert.match(user, /2-5 beats/);
   assert.match(user, /Calls push, returns pop\./);
+});
+
+test('the beat prompt makes unverified explanations visibly isolated and non-visual', () => {
+  const openClaim = { id: 'open', statement: 'One possible explanation is not verified by the supplied source.', conceptIds: ['frame'], relations: [], evidenceSpanIds: [], epistemicType: 'unverified_explanation' as const, verificationStatus: 'unverified' as const };
+  const prompt = buildBeatPrompt({ ...ctx, claims: [...ctx.claims, openClaim] }, { title: 'Stack scene', goal: 'Explain.', learningDelta: 'A possibility.', misconceptionRisk: [], priorKnowledge: [] }, []);
+  assert.match(prompt.system, /only claim on exactly one narrationOnly beat/i);
+  assert.match(prompt.system, /must not become .* visual/i);
+  assert.match(prompt.user, /unverified_explanation/);
 });
 
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };

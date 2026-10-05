@@ -67,10 +67,7 @@ const CONTENT_STAGE_FOR: Array<[prefix: string, stage: ContentStage]> = [['S1-sy
 
 export async function prepareLesson(req: LessonRequest, m: { model: string; stageModels?: Partial<Record<ContentStage, string>>; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; visionModel?: string; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number; /** Plan beats and write beat narration instead of the marker script (V2 plan Phases 2-3). */ beats?: boolean; beatClient?: ModelClient }): Promise<PreparedLesson> {
   const groundingMode = req.groundingMode ?? 'STRICT_SOURCE';
-  if (groundingMode === 'OPEN_EXPLANATION') {
-    throw new Error('grounding mode OPEN_EXPLANATION is not supported yet; uncited claims need an explicit unverified-claim status');
-  }
-  if (groundingMode !== 'STRICT_SOURCE' && groundingMode !== 'SOURCE_PLUS_BACKGROUND') {
+  if (groundingMode !== 'STRICT_SOURCE' && groundingMode !== 'SOURCE_PLUS_BACKGROUND' && groundingMode !== 'OPEN_EXPLANATION') {
     throw new Error(`unknown grounding mode: ${String(groundingMode)}`);
   }
   const sourceStartedAtMs = Date.now();
@@ -227,7 +224,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
         const syllabusConcept = allConcepts.get(concept.id);
         return syllabusConcept ? { ...concept, label: syllabusConcept.label, definition: syllabusConcept.definition, evidence: syllabusConcept.evidence } : concept;
       }) };
-      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v7', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v13-grounding-policy`, () => buildTeachingPlan(moduleRequest, graph, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v8', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v14-open-claim-status`, () => buildTeachingPlan(moduleRequest, graph, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, planRun.result.usage); failures.push(...planRun.result.failures); rawResponses[`plan:${moduleTag}`] = planRun.result.rawResponses;
       if (!planRun.result.value) return preparedResult({ syllabus, graph, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const modulePlan = uniquifyClaimIds(planRun.result.value, lessonClaimIds);
@@ -314,7 +311,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
   addUsage(usage, g.usage); failures.push(...g.failures); rawResponses.concepts = g.rawResponses;
   if (!g.value) return preparedResult({});
 
-  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v7', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v13-grounding-policy`, () => buildTeachingPlan(groundedRequest, g.value!, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v13-grounding-policy`);
+  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v8', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v14-open-claim-status`, () => buildTeachingPlan(groundedRequest, g.value!, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v14-open-claim-status`);
   const p = pRun.result;
   addUsage(usage, p.usage); failures.push(...p.failures); rawResponses.plan = p.rawResponses;
   if (!p.value) return preparedResult({ graph: g.value });

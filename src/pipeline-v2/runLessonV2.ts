@@ -39,7 +39,7 @@ import { loadBridge } from '../assets/bridge.js';
 import { bridgeRecordForCatalogEntry, buildAssetRightsEvidence, rightsEvidenceFailure } from '../assets/rightsEvidence.js';
 import { buildScorecard, type Scorecard } from '../harness/scorecard.js';
 import { TEACHING_COMPILER_VERSION } from '../run/featureFlags.js';
-import { createEvidenceLedgerFromClaims, epistemicClaimProblems, validateEvidenceLedgerSources, type EvidenceLedger } from '../evidence/ledger.js';
+import { claimVerificationStatusFor, createEvidenceLedgerFromClaims, epistemicClaimProblems, epistemicTextFramingProblem, validateEvidenceLedgerSources, type EvidenceLedger } from '../evidence/ledger.js';
 
 /**
  * Teaching Compiler V2 run: locked beats and beat narration -> real audio and alignment -> board operations -> persistent board
@@ -166,7 +166,26 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   let evidenceLedger: EvidenceLedger;
   try {
     const canonicalClaims = plan.sections.flatMap((section) => section.contract?.essentialClaims ?? []);
-    const epistemicProblems = canonicalClaims.flatMap((claim) => epistemicClaimProblems({ id: claim.id, statement: claim.statement, relations: claim.relations, epistemicType: claim.epistemicType }));
+    const epistemicProblems = canonicalClaims.flatMap((claim) => [
+      ...epistemicClaimProblems({ id: claim.id, statement: claim.statement, relations: claim.relations, epistemicType: claim.epistemicType }),
+      ...(claim.verificationStatus === claimVerificationStatusFor(claim.epistemicType ?? (claim.relations.length ? 'derived_relation' : 'direct_source')) ? [] : [`claim ${claim.id} needs a code-derived verificationStatus matching its epistemicType`]),
+    ]);
+    for (const section of plan.sections) {
+      const openClaims = (section.contract?.essentialClaims ?? []).filter((claim) => claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified');
+      const beats = prepared.beatPlans[section.id] ?? [];
+      for (const claim of openClaims) {
+        const containing = beats.filter((beat) => beat.claimIds.includes(claim.id));
+        if (containing.length !== 1 || containing[0]?.claimIds.length !== 1) epistemicProblems.push(`unverified explanation claim ${claim.id} must appear in exactly one isolated beat`);
+        if (containing[0] && !containing[0].narrationOnly) epistemicProblems.push(`unverified explanation claim ${claim.id} must be narration-only`);
+        if (containing[0]?.relationships.length) epistemicProblems.push(`unverified explanation claim ${claim.id} cannot introduce graph relations`);
+        const anchor = prepared.beatNarrations[section.id]?.claimSpans.find((span) => span.claimId === claim.id);
+        if (!anchor) epistemicProblems.push(`unverified explanation claim ${claim.id} needs an anchored narration sentence`);
+        else {
+          const framing = epistemicTextFramingProblem('unverified_explanation', anchor.exactText);
+          if (framing) epistemicProblems.push(`unverified explanation claim ${claim.id} narration framing mismatch: ${framing}`);
+        }
+      }
+    }
     if (epistemicProblems.length) throw new Error(epistemicProblems.join('; '));
     evidenceLedger = createEvidenceLedgerFromClaims(canonicalClaims, prepared.groundingMode ?? 'STRICT_SOURCE');
     const graphEvidence = [
@@ -306,7 +325,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     const beats = prepared.beatPlans![section.id]!;
     const ctx: BoardContext = {
       sceneId: section.id, title: section.title, beats,
-      claims: (section.contract?.essentialClaims ?? []).map(({ id, statement, conceptIds, relations }) => ({ id, statement, conceptIds, relations })),
+      claims: (section.contract?.essentialClaims ?? []).map(({ id, statement, conceptIds, relations, epistemicType, verificationStatus }) => ({ id, statement, conceptIds, relations, ...(epistemicType ? { epistemicType } : {}), ...(verificationStatus ? { verificationStatus } : {}) })),
       narration: narration.beatSpans.map((span) => ({ beatId: span.beatId, sentences: span.sentenceSpans.map((s) => narration.text.slice(s.charStart, s.charEnd)) })),
       concepts: section.conceptIds.flatMap((id) => { const c = graph.concepts.find((x) => x.id === id); return c ? [{ id: c.id, label: c.label, evidence: c.evidence.map((e) => ({ spanId: e.spanId, quote: e.quote })) }] : []; }),
       grounding: { verify: (spanId, quote) => anchorQuote(prepared.sourceDoc, spanId, quote)?.ref.quote, spanText: (spanId) => prepared.sourceDoc.spans.find((span) => span.id === spanId)?.text },
@@ -407,7 +426,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v3', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations });
+  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v4', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });

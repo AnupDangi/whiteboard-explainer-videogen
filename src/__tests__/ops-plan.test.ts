@@ -5,6 +5,7 @@ import { validateSceneBoard, type BoardContext } from '../visual-v2/ops-plan/val
 import { buildBoardPrompt } from '../visual-v2/ops-plan/prompt.js';
 import { planSceneBoard } from '../visual-v2/ops-plan/plan.js';
 import { salvageSceneBoard } from '../visual-v2/ops-plan/salvage.js';
+import { fallbackSceneBoard } from '../visual-v2/ops-plan/fallback.js';
 import { KIT_CATALOGUE } from '../visual-v2/kits/catalogue.js';
 import { KIT_NAMES } from '../visual-v2/board-ops/types.js';
 import { parseKitParams } from '../visual-v2/kits/registry.js';
@@ -52,7 +53,8 @@ test('every kit in the registry has a catalogue entry whose example parameters p
 
 test('the board draft is strict', () => {
   assert.ok(draft());
-  assert.equal(SceneBoardDraftSchema.safeParse({ transition: { mode: 'clean' }, ops: [] }).success, false);
+  assert.deepEqual(draft({ transition: { mode: 'clean' }, ops: [] }).ops, []);
+  assert.equal(SceneBoardDraftSchema.safeParse({ transition: { mode: 'clean' }, ops: [], extra: true }).success, false);
   assert.equal(SceneBoardDraftSchema.safeParse({ ops: good() }).success, false);
   assert.equal(SceneBoardDraftSchema.safeParse({ transition: { mode: 'wipe' }, ops: (good() as { ops: unknown[] }).ops }).success, false);
 });
@@ -93,6 +95,36 @@ test('a visual beat without any op is a problem, a narration-only beat is not', 
   assert.ok((validateSceneBoard(only1, ctx) as Array<{ message: string }>).some((p) => /beat sc\.b2 .* at least one op/.test(p.message)));
   const quiet = { ...ctx, beats: [ctx.beats[0]!, beat(2, { narrationOnly: true, mutedMeaning: '' })] };
   assert.deepEqual((validateSceneBoard(only1, quiet) as Array<{ message: string }>).filter((p) => /beat sc\.b2/.test(p.message)), []);
+});
+
+test('unverified explanations stay narration-only and cannot be visualized or bound to BoardOps', () => {
+  const openClaim = { id: 'open', statement: 'One possible explanation is not verified by the supplied source.', conceptIds: ['frame', 'stack'], relations: [], epistemicType: 'unverified_explanation' as const, verificationStatus: 'unverified' as const };
+  const openBeat = beat(2, { claimIds: ['open'], entities: [{ conceptId: 'stack' }], relationships: [], narrationOnly: true, mutedMeaning: '' });
+  const openCtx: BoardContext = { ...ctx, claims: [{ id: 'c1', statement: 'Each call pushes a frame onto the stack.', conceptIds: ['frame', 'stack'], relations: [] }, openClaim], beats: [ctx.beats[0]!, openBeat] };
+  const prompt = buildBoardPrompt(openCtx);
+  assert.match(prompt.system, /unverified_explanation claim is narration-only/i);
+  assert.match(prompt.user, /"verificationStatus":"unverified"/);
+  const safeBoard = draft({ transition: { mode: 'clean' }, ops: (good() as { ops: unknown[] }).ops.slice(0, 2) });
+  assert.deepEqual(validateSceneBoard(safeBoard, openCtx), []);
+
+  const openOperation = draft({ transition: { mode: 'clean' }, ops: [
+    ...(good() as { ops: unknown[] }).ops.slice(0, 2),
+    op({ op: 'remove', opId: 'o4', beatId: 'sc.b2', target: 'f1', cue: 0 }),
+  ] });
+  assert.ok((validateSceneBoard(openOperation, openCtx) as Array<{ message: string }>).some((problem) => /unverified explanation beat .* cannot contain BoardOps/.test(problem.message)));
+
+  const boundVisual = good() as { ops: Array<Record<string, unknown>> };
+  const first = boundVisual.ops[0]!;
+  first.element = { ...(first.element as Record<string, unknown>), bindings: { conceptIds: ['frame', 'stack'], claimIds: ['open'] } };
+  assert.ok((validateSceneBoard(draft(boundVisual), openCtx) as Array<{ message: string }>).some((problem) => /visuals cannot be bound to unverified explanation claim open/.test(problem.message)));
+
+  const equationVisual = draft({ transition: { mode: 'clean' }, ops: [
+    op({ op: 'add', opId: 'e1', beatId: 'sc.b1', id: 'eq', element: { type: 'equation', latex: 'x=y', provenance: 'derived', bindings: { conceptIds: ['frame', 'stack'], claimIds: ['open'] } }, at: { region: 'bottom' } }),
+  ] });
+  assert.ok((validateSceneBoard(equationVisual, openCtx) as Array<{ message: string }>).some((problem) => /visuals cannot be bound to unverified explanation claim open/.test(problem.message)), 'equation elements without label text must still reject unverified bindings');
+
+  const openOnly = { ...openCtx, beats: [openBeat] };
+  assert.deepEqual(fallbackSceneBoard(openOnly), { transition: { mode: 'clean' }, ops: [] }, 'a broken visual planner still has a deterministic no-drawing fallback');
 });
 
 test('a retained board lets the scene build on what is already drawn', () => {

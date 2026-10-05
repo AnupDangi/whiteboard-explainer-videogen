@@ -19,8 +19,19 @@ export const EpistemicTypeSchema = z.enum([
   'pedagogical_bridge',
   'illustrative_example',
   'analogy',
+  'unverified_explanation',
 ]);
 export type EpistemicType = z.infer<typeof EpistemicTypeSchema>;
+
+export const ClaimVerificationStatusSchema = z.enum(['source_cited', 'unverified', 'illustrative_only']);
+export type ClaimVerificationStatus = z.infer<typeof ClaimVerificationStatusSchema>;
+
+/** Derived status vocabulary: it is never accepted as a caller- or model-owned assertion. */
+export function claimVerificationStatusFor(type: EpistemicType): ClaimVerificationStatus {
+  if (type === 'unverified_explanation') return 'unverified';
+  if (type === 'illustrative_example' || type === 'analogy') return 'illustrative_only';
+  return 'source_cited';
+}
 
 /** Hash-pinned provenance for a source passage. Offsets are present as a pair. */
 export const EvidenceSourceRefSchema = z.object({
@@ -64,6 +75,8 @@ export type EvidenceClaimInput = z.infer<typeof EvidenceClaimInputSchema>;
 export const EvidenceClaimSchema = EvidenceClaimInputSchema.extend({
   /** Derived from canonicalText by code; callers cannot supply semantics to the builder. */
   semantics: ClaimSemanticsSchema,
+  /** Derived from epistemicType by code; optional only so pre-status evidence-ledger/v1 locks remain readable. */
+  verificationStatus: ClaimVerificationStatusSchema.optional(),
 }).strict().superRefine((claim, context) => {
   const seen = new Set<string>();
   claim.sourceRefs.forEach((ref, index) => {
@@ -102,6 +115,8 @@ export interface CanonicalTeachingClaimEvidence {
   relations: readonly unknown[];
   /** Absent only in pre-v3 lesson contexts; new V2 runs reject missing classifications. */
   epistemicType?: EpistemicType;
+  /** Derived canonical-plan status; when present it must agree with the epistemic type. */
+  verificationStatus?: ClaimVerificationStatus;
   sourceRefs?: readonly (EvidenceSourceRef | CanonicalClaimSourceRef)[];
   confidence?: number;
 }
@@ -115,6 +130,7 @@ export interface EvidenceLedgerValidation {
 export function epistemicTextFramingProblem(type: EpistemicType, text: string): string | undefined {
   if (type === 'illustrative_example' && !/\b(?:for example|as an example|for instance|suppose|imagine|hypothetical(?:ly)?)\b/iu.test(text)) return 'needs explicit example framing';
   if (type === 'analogy' && !/\b(?:analogy|analogous|as if|similar to|think of .{1,48} as|(?:is|are|works|functions|acts) like|imagine)\b/iu.test(text)) return 'needs explicit analogy framing';
+  if (type === 'unverified_explanation' && !/\bnot (?:verified|established|confirmed) by the (?:provided|supplied) source\b/iu.test(text)) return 'must say it is not verified by the supplied source';
   return undefined;
 }
 
@@ -122,6 +138,7 @@ export function epistemicClaimProblems(claim: Pick<CanonicalTeachingClaimEvidenc
   if (!claim.epistemicType) return [`claim ${claim.id} needs an explicit epistemicType`];
   if (claim.epistemicType === 'direct_source' && claim.relations.length) return [`claim ${claim.id} is direct_source but lists a graph relation; classify relation claims as derived_relation`];
   if (claim.epistemicType === 'derived_relation' && !claim.relations.length) return [`claim ${claim.id} is derived_relation but lists no graph relation`];
+  if (claim.epistemicType === 'unverified_explanation' && claim.relations.length) return [`claim ${claim.id} is unverified_explanation but lists a source-graph relation`];
   const framingProblem = epistemicTextFramingProblem(claim.epistemicType, claim.statement);
   if (framingProblem) return [`claim ${claim.id} ${framingProblem}`];
   return [];
@@ -180,6 +197,10 @@ export function createEvidenceLedgerFromClaims(
       epistemicType: claim.epistemicType ?? (claim.relations.length ? 'derived_relation' : 'direct_source'),
       ...(claim.confidence !== undefined ? { confidence: claim.confidence } : {}),
     };
+    const expectedVerificationStatus = claimVerificationStatusFor(candidate.epistemicType);
+    if (claim.verificationStatus !== undefined && claim.verificationStatus !== expectedVerificationStatus) {
+      throw new Error(`Canonical teaching claim ${claim.id} verificationStatus must be ${expectedVerificationStatus} for ${candidate.epistemicType}`);
+    }
     const existing = byId.get(candidate.id);
     if (existing && stableJson(existing) !== stableJson(candidate)) {
       throw new Error(`Conflicting canonical teaching claim id in evidence ledger: ${candidate.id}`);
@@ -196,7 +217,18 @@ export function validateEvidenceLedgerClaims(
 ): string[] {
   try {
     const expected = createEvidenceLedgerFromClaims(claims, ledger.groundingMode);
-    return expected.ledgerSha256 === ledger.ledgerSha256 ? [] : ['evidence ledger claims do not match canonical teaching claims'];
+    if (expected.ledgerSha256 === ledger.ledgerSha256) return [];
+    // Earlier evidence-ledger/v1 locks predate the derived status field. Preserve
+    // their strict/source-plus read path, but never permit status-free OPEN locks.
+    if (ledger.groundingMode !== 'OPEN_EXPLANATION' && ledger.claims.every((claim) => claim.verificationStatus === undefined)) {
+      const legacyBody = EvidenceLedgerBodySchema.parse({
+        schemaVersion: expected.schemaVersion,
+        groundingMode: expected.groundingMode,
+        claims: expected.claims.map(({ verificationStatus: _status, ...claim }) => claim),
+      });
+      if (ledgerDigest(legacyBody) === ledger.ledgerSha256) return [];
+    }
+    return ['evidence ledger claims do not match canonical teaching claims'];
   } catch (error) {
     return [`canonical teaching claims cannot form a valid evidence ledger: ${error instanceof Error ? error.message : String(error)}`];
   }
@@ -229,13 +261,26 @@ function freezeDeep<T>(value: T): T {
 }
 
 function policyErrors(groundingMode: GroundingMode, claims: readonly EvidenceClaim[]): string[] {
-  if (groundingMode === 'OPEN_EXPLANATION') return ['OPEN_EXPLANATION requires an explicit unverified-claim status, which the current ledger contract does not provide'];
   return claims.flatMap((claim) => {
+    const expectedStatus = claimVerificationStatusFor(claim.epistemicType);
+    const errors: string[] = [];
+    if (claim.verificationStatus !== undefined && claim.verificationStatus !== expectedStatus) {
+      errors.push(`${claim.id}: verificationStatus ${claim.verificationStatus} does not match ${expectedStatus}`);
+    }
+    if (groundingMode === 'OPEN_EXPLANATION' && claim.verificationStatus === undefined) {
+      errors.push(`${claim.id}: OPEN_EXPLANATION requires an explicit verificationStatus`);
+    }
+    if (claim.epistemicType === 'unverified_explanation') {
+      if (groundingMode !== 'OPEN_EXPLANATION') errors.push(`${claim.id}: unverified_explanation is allowed only in OPEN_EXPLANATION`);
+      if (claim.sourceRefs.length) errors.push(`${claim.id}: unverified_explanation must not cite source evidence`);
+      const framing = epistemicTextFramingProblem('unverified_explanation', claim.canonicalText);
+      if (framing) errors.push(`${claim.id}: ${framing}`);
+      return errors;
+    }
     const isFactual = claim.epistemicType === 'direct_source' || claim.epistemicType === 'derived_relation';
     const needsPrimary = isFactual || (groundingMode === 'STRICT_SOURCE' && claim.epistemicType === 'pedagogical_bridge');
     const hasPrimary = claim.sourceRefs.some((ref) => (ref.sourceRole ?? 'primary') === 'primary');
     const hasBackground = claim.sourceRefs.some((ref) => ref.sourceRole === 'background');
-    const errors: string[] = [];
     if (groundingMode === 'STRICT_SOURCE' && hasBackground) {
       errors.push(`${claim.id}: background provenance is not allowed in STRICT_SOURCE`);
     }
@@ -245,8 +290,8 @@ function policyErrors(groundingMode: GroundingMode, claims: readonly EvidenceCla
     if (needsPrimary && !hasPrimary) {
       errors.push(`${claim.id}: ${claim.epistemicType} requires at least one hash-pinned primary source reference in ${groundingMode}`);
     }
-    if (groundingMode === 'SOURCE_PLUS_BACKGROUND' && claim.epistemicType === 'pedagogical_bridge' && claim.sourceRefs.length === 0) {
-      errors.push(`${claim.id}: pedagogical_bridge requires primary or background provenance in SOURCE_PLUS_BACKGROUND`);
+    if (groundingMode !== 'STRICT_SOURCE' && claim.epistemicType === 'pedagogical_bridge' && claim.sourceRefs.length === 0) {
+      errors.push(`${claim.id}: pedagogical_bridge requires primary or background provenance; use unverified_explanation in OPEN_EXPLANATION for an uncited explanation`);
     }
     return errors;
   });
@@ -261,6 +306,7 @@ export function createEvidenceLedger(input: EvidenceLedgerInput): EvidenceLedger
       ...claim,
       sourceRefs: refs,
       semantics: claimSemanticsFromText(claim.canonicalText),
+      verificationStatus: claimVerificationStatusFor(claim.epistemicType),
     };
   }).sort((left, right) => left.id.localeCompare(right.id));
   const parsedBody = EvidenceLedgerBodySchema.parse({ schemaVersion: 'evidence-ledger/v1', groundingMode: input.groundingMode, claims });
@@ -276,6 +322,10 @@ export function validateEvidenceLedger(value: unknown): EvidenceLedgerValidation
   const ledger = parsed.data;
   const errors = policyErrors(ledger.groundingMode, ledger.claims);
   for (const claim of ledger.claims) {
+    const expectedStatus = claimVerificationStatusFor(claim.epistemicType);
+    if (claim.verificationStatus !== undefined && claim.verificationStatus !== expectedStatus) {
+      errors.push(`${claim.id}: verificationStatus does not match epistemicType`);
+    }
     if (stableJson(claim.semantics) !== stableJson(claimSemanticsFromText(claim.canonicalText))) {
       errors.push(`${claim.id}: semantics do not match canonicalText`);
     }

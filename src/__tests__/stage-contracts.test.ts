@@ -113,6 +113,43 @@ test('S3 refuses to ground a factual claim in a background-only span under SOURC
   assert.ok(result.failures.some((failure) => /requires at least one hash-pinned primary source reference/u.test(failure.message)));
 });
 
+test('S3 accepts only explicitly framed, uncited explanations in OPEN_EXPLANATION and derives their status', async () => {
+  const doc = sourceDocFromText('Water moves through the filter.', 'text');
+  const span = doc.spans[0]!;
+  const evidence = resolveSourceEvidence(doc, span.id, span.text.trim())!;
+  const graph: ConceptGraph = {
+    concepts: [{ id: 'water', label: 'Water', kind: 'entity', definition: 'Water moves through the filter.', evidence: [evidence], level: 'one-step' }],
+    relations: [], prerequisites: [],
+  };
+  let capturedSystem = '';
+  let capturedUser = '';
+  const plan = {
+    targetDurationSec: 18, intro: { sourceTitle: 'Water', sections: [] }, recap: { keyPoints: [] },
+    sections: [{
+      id: 'water_explanation', title: 'Water motion', goal: 'Explain a general mechanism for water motion.', kind: 'explain', conceptIds: ['water'], budgetSec: 18,
+      teachingSkill: 'mechanism', candidateMechanisms: ['chain'], mentalModel: 'Water motion can be explained as a general mechanism.', misconceptionRisk: [],
+      essentialClaims: [{ id: 'water_general', statement: 'This general explanation is not verified by the supplied source: water molecules move when energy is added.', epistemicType: 'unverified_explanation', verificationStatus: 'source_cited', conceptIds: ['water'], relations: [], evidenceSpanIds: [] }],
+    }],
+  };
+  const result = await buildTeachingPlan({ source: doc.text, sourceDoc: doc, targetDurationSec: 18, groundingMode: 'OPEN_EXPLANATION' }, graph, {
+    model: 'test/open-grounding', apiKey: 'test-only', remainingBudgetUsd: 0.05,
+    fetcher: async (_input, init) => {
+      const request = JSON.parse(String((init as RequestInit).body)) as { messages: Array<{ role: string; content: string }> };
+      capturedSystem = request.messages[0]!.content;
+      capturedUser = request.messages[1]!.content;
+      return response(plan);
+    },
+  });
+  assert.equal(result.usage.repairs, 0, JSON.stringify(result.failures));
+  const claim = result.value!.sections[0]!.contract!.essentialClaims[0]!;
+  assert.equal(claim.verificationStatus, 'unverified', 'the model cannot promote its own status assertion');
+  assert.deepEqual(claim.evidenceSpanIds, []);
+  assert.deepEqual(claim.sourceRefs, undefined);
+  assert.match(capturedUser, /OPEN_EXPLANATION/);
+  assert.match(capturedSystem, /Give no visual intent to an unverified_explanation/i);
+  assert.match(capturedUser, /not verified by the supplied source/);
+});
+
 test('S4 exact claim spans are code-offset into marker-stripped speech and reject missing, duplicate, and forged text', () => {
   const raw = 'A [[a|warm cup]] transfers heat to a [[b|cool cup]]. [[c|Heat]] moves. [[d|Both cups]] change.';
   const section: TeachingPlan['sections'][number] = { id: 's1', title: 'Heat', goal: 'Heat moves', kind: 'explain', conceptIds: ['heat'], budgetSec: 15, contract: { learningDelta: 'Heat moves', targetDurationSec: 15, requiredConceptIds: ['heat'], requiredRelations: [], evidenceSpanIds: ['span'], essentialClaims: [{ id: 'heat_transfer', statement: 'Heat moves', conceptIds: ['heat'], relations: [], evidenceSpanIds: ['span'] }], teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } };

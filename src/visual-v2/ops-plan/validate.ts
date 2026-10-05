@@ -7,6 +7,7 @@ import type { BoardState } from '../board-state/types.js';
 import { createdBy } from '../board-ops/deps.js';
 import type { Grounding } from '../provenance/ground.js';
 import { sourceClaimSemanticProblem } from '../provenance/ground.js';
+import type { ClaimVerificationStatus, EpistemicType } from '../../evidence/ledger.js';
 import { diagnoseSceneGeometry, layoutScene, type GeometryDiagnostic, type PriorLayout } from '../layout/sceneLayout.js';
 import type { SceneBoardDraft } from './types.js';
 
@@ -22,6 +23,8 @@ export interface BoardContext {
     conceptIds?: string[];
     /** Canonical directed relations linked to this claim. */
     relations?: Array<{ from: string; to: string; type: string }>;
+    epistemicType?: EpistemicType;
+    verificationStatus?: ClaimVerificationStatus;
   }>;
   /** The scene's narration, sentence by sentence, per beat. Sentence indexes are what `cue` refers to. */
   narration: Array<{ beatId: string; sentences: string[] }>;
@@ -150,15 +153,22 @@ function claimSemanticProblems(spec: ElementSpec, path: string, ctx: BoardContex
   if (!ctx.claims?.length) return [];
   const text = spec.type === 'entity' || spec.type === 'value' || spec.type === 'kit' ? spec.label
     : spec.type === 'text' || spec.type === 'token' ? spec.text : undefined;
-  if (!text) return [];
   const claims = new Map(ctx.claims.map((claim) => [claim.id, claim]));
   const field = spec.type === 'text' || spec.type === 'token' ? 'text' : 'label';
-  return (spec.bindings?.claimIds ?? []).flatMap((claimId) => {
+  const claimIds = spec.bindings?.claimIds ?? [];
+  const unverifiedBindings = claimIds.flatMap((claimId) => {
+    const claim = claims.get(claimId);
+    return claim && (claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified')
+      ? [{ path: `${path}/bindings/claimIds`, message: `visuals cannot be bound to unverified explanation claim ${claimId}` }]
+      : [];
+  });
+  if (!text) return unverifiedBindings;
+  return [...unverifiedBindings, ...claimIds.flatMap((claimId) => {
     const claim = claims.get(claimId);
     if (!claim) return [];
     const mismatch = sourceClaimSemanticProblem(claim.statement, text);
     return mismatch ? [{ path: `${path}/${field}`, message: `visual text bound to claim ${claimId} contradicts its canonical wording: ${mismatch}` }] : [];
-  });
+  })];
 }
 
 /** Inspect the actual post-op placement; replacements inherit it and moves may target kits created in this scene. */
@@ -201,6 +211,12 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
     if (position === undefined) problems.push({ path: `${at}/beatId`, message: `unknown beat ${op.beatId}; use one of: ${ctx.beats.map((b) => b.beatId).join(', ')}` });
     else if (position < furthest) problems.push({ path: `${at}/beatId`, message: `out of order: beat ${op.beatId} is earlier in the lesson than the beat of the op before; list ops beat by beat` });
     else { furthest = position; lastOpOfBeat.set(op.beatId, i); }
+    const beat = ctx.beats.find((candidate) => candidate.beatId === op.beatId);
+    const claimsById = new Map((ctx.claims ?? []).map((claim) => [claim.id, claim]));
+    if (beat?.claimIds.some((claimId) => {
+      const claim = claimsById.get(claimId);
+      return claim?.epistemicType === 'unverified_explanation' || claim?.verificationStatus === 'unverified';
+    })) problems.push({ path: `${at}/beatId`, message: `unverified explanation beat ${op.beatId} is narration-only and cannot contain BoardOps` });
     for (const { spec, path } of opSpecs(op, at)) {
       problems.push(...labelProblems(spec, path));
       problems.push(...entityLabelIdentityProblems(spec, path, ctx));
@@ -214,6 +230,11 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
       for (const id of binding?.conceptIds ?? []) if (!ctx.concepts.some((concept) => concept.id === id)) problems.push({ path: `${at}/bindings/conceptIds`, message: `unknown concept binding ${id}; use an exact concept id from this scene` });
       const claims = new Set(ctx.beats.flatMap((beat) => beat.claimIds));
       for (const id of binding?.claimIds ?? []) if (!claims.has(id)) problems.push({ path: `${at}/bindings/claimIds`, message: `unknown claim binding ${id}; use an exact claim id from this scene` });
+      const claimsById = new Map((ctx.claims ?? []).map((claim) => [claim.id, claim]));
+      for (const id of binding?.claimIds ?? []) {
+        const claim = claimsById.get(id);
+        if (claim?.epistemicType === 'unverified_explanation' || claim?.verificationStatus === 'unverified') problems.push({ path: `${at}/bindings/claimIds`, message: `factual edges cannot be bound to unverified explanation claim ${id}` });
+      }
       problems.push(...claimConceptBindingProblems(binding?.conceptIds ?? [], binding?.claimIds ?? [], `${at}/bindings/conceptIds`, ctx));
     }
   });

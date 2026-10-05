@@ -39,6 +39,23 @@ test('a complete Teaching Director scene passes and priorKnowledge is derived fr
   assert.equal(plan.sections[1]!.contract!.mentalModel, 'A drives B.');
 });
 
+test('an unverified explanation has no semantic visual intent', () => {
+  const unverified = section('s1', ['a', 'b'], 'One possible account is not verified by the supplied source.', {
+    essentialClaims: [{ id: 's1_c', statement: 'One possible account is not verified by the supplied source.', epistemicType: 'unverified_explanation', conceptIds: ['a', 'b'], relations: [], evidenceSpanIds: [] }],
+    mentalModel: 'A possible account.', semanticVisualIntents: [],
+  });
+  const plan = deriveTeachingPlan(draft([unverified]), graph, 'learner');
+  assert.deepEqual(teachingDirectorProblems(plan), []);
+
+  const withIntent = deriveTeachingPlan(draft([section('s1', ['a', 'b'], 'One possible account is not verified by the supplied source.', {
+    ...unverified,
+    visualForm: 'process',
+    semanticVisualIntents: [{ claimId: 's1_c', conceptType: 'process', strategy: 'diagram', conceptIds: ['a'], roles: [] }],
+  })]), graph, 'learner');
+  assert.ok(teachingDirectorProblems(withIntent).some((problem) => /unverified explanation claim s1_c must not have a semanticVisualIntent/.test(problem)));
+  assert.ok(teachingDirectorProblems(withIntent).some((problem) => /scene containing only unverified explanations must omit visualForm/.test(problem)));
+});
+
 test('an intent naming a concept outside its claim or an unknown claim is rejected', () => {
   const bad = director('s1', ['a', 'b']);
   (bad.semanticVisualIntents[0] as { conceptIds: string[] }).conceptIds = ['a', 'zzz'];

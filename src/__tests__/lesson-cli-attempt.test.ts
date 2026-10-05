@@ -76,13 +76,14 @@ test('lesson CLI derives a frozen trial request and records it when provider set
   }
 });
 
-test('lesson CLI rejects grounding modes whose evidence policy is not implemented', () => {
+test('lesson CLI accepts OPEN_EXPLANATION and continues to provider setup', () => {
   const result = spawnSync(process.execPath, [
     path.resolve('dist/src/run/lessonCli.js'),
     '--source=bench/sources/osmosis.md', '--grounding-mode=OPEN_EXPLANATION',
-  ], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
+  ], { cwd: process.cwd(), env: { ...process.env, HYPOTHESIS_ENV_FILE: path.join(os.tmpdir(), 'missing-open-explanation.env'), OPENROUTER_API_KEY: '' }, encoding: 'utf8' });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /grounding mode OPEN_EXPLANATION is not supported yet/);
+  assert.match(result.stderr, /Could not read OpenRouter configuration/);
+  assert.doesNotMatch(result.stderr, /grounding mode OPEN_EXPLANATION is not supported/);
 });
 
 test('lesson CLI accepts SOURCE_PLUS_BACKGROUND and continues to provider setup', () => {
@@ -116,10 +117,12 @@ test('lesson CLI prevents source-role overrides on frozen benchmark trials', () 
 });
 
 test('lesson CLI keeps frozen benchmark trials on STRICT_SOURCE', () => {
-  const result = spawnSync(process.execPath, [
-    path.resolve('dist/src/run/lessonCli.js'),
-    '--benchmark-attempt=osmosis-trial-1', '--grounding-mode=SOURCE_PLUS_BACKGROUND',
-  ], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /frozen development trials require STRICT_SOURCE grounding/u);
+  for (const mode of ['SOURCE_PLUS_BACKGROUND', 'OPEN_EXPLANATION']) {
+    const result = spawnSync(process.execPath, [
+      path.resolve('dist/src/run/lessonCli.js'),
+      '--benchmark-attempt=osmosis-trial-1', `--grounding-mode=${mode}`,
+    ], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /frozen development trials require STRICT_SOURCE grounding/u);
+  }
 });

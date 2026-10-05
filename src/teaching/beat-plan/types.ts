@@ -37,7 +37,7 @@ export const BeatDraftSchema = z.object({
   beatType: z.enum(BEAT_TYPES),
   cognitiveOperation: z.enum(COGNITIVE_OPERATIONS),
   representationFamily: z.enum(REPRESENTATION_FAMILIES),
-  entities: z.array(EntityRefSchema).min(1).max(8),
+  entities: z.array(EntityRefSchema).max(8),
   relationships: z.array(RelationSpecSchema).max(8),
   stateBefore: StateSpecSchema.optional(),
   stateAfter: StateSpecSchema.optional(),

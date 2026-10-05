@@ -79,7 +79,30 @@ test('source-grounded modes reject unreferenced factual claims, while explicit i
   assert.throws(() => createEvidenceLedger({
     groundingMode: 'OPEN_EXPLANATION',
     claims: [claim({ epistemicType: 'direct_source', sourceRefs: [] })],
-  }), /OPEN_EXPLANATION requires an explicit unverified-claim status/u);
+  }), /requires at least one hash-pinned primary source reference/u);
+});
+
+test('OPEN_EXPLANATION records only explicitly framed uncited explanations as unverified', () => {
+  const canonical = {
+    id: 'open_explanation',
+    statement: 'This general explanation is not verified by the supplied source: heat can change particle motion.',
+    relations: [],
+    epistemicType: 'unverified_explanation' as const,
+    sourceRefs: [],
+  };
+  const ledger = createEvidenceLedgerFromClaims([canonical], 'OPEN_EXPLANATION');
+  assert.equal(ledger.claims[0]!.verificationStatus, 'unverified');
+  assert.deepEqual(validateEvidenceLedger(ledger), { valid: true, errors: [] });
+  assert.deepEqual(validateEvidenceLedgerClaims(ledger, [{ ...canonical, verificationStatus: 'unverified' }]), []);
+  assert.match(validateEvidenceLedgerClaims(ledger, [{ ...canonical, verificationStatus: 'source_cited' }]).join(' '), /verificationStatus must be unverified/u);
+  assert.throws(() => createEvidenceLedgerFromClaims([canonical], 'STRICT_SOURCE'), /allowed only in OPEN_EXPLANATION/u);
+  assert.throws(() => createEvidenceLedgerFromClaims([{ ...canonical, sourceRefs: [sourceRef()] }], 'OPEN_EXPLANATION'), /must not cite source evidence/u);
+  assert.throws(() => createEvidenceLedgerFromClaims([{
+    ...canonical, id: 'untyped_fact', statement: 'Heat changes particle motion.', epistemicType: 'direct_source',
+  }], 'OPEN_EXPLANATION'), /requires at least one hash-pinned primary source reference/u);
+  assert.throws(() => createEvidenceLedgerFromClaims([{
+    ...canonical, id: 'unframed_open', statement: 'Heat can change particle motion.',
+  }], 'OPEN_EXPLANATION'), /must say it is not verified by the supplied source/u);
 });
 
 test('ledger validation detects edits and refuses caller-supplied semantics at construction', () => {

@@ -4,7 +4,7 @@ import type { SourceEvidenceRef } from '../intake/sourceDoc.js';
 import { MAX_TITLE_WORDS } from '../render/style.js';
 import { ledgerPreprocess } from '../structured/coercionLedger.js';
 import { ClaimSemanticsSchema } from '../evidence/claims.js';
-import { EpistemicTypeSchema } from '../evidence/ledger.js';
+import { ClaimVerificationStatusSchema, EpistemicTypeSchema } from '../evidence/ledger.js';
 
 /**
  * S2 ConceptGraph and S3 TeachingPlan (claude_pipeline.md §3 /
@@ -127,9 +127,11 @@ export const SceneContractSchema = z.object({
     statement: z.string().trim().min(1).max(240),
     /** Optional only for reading pre-v3 locks; generated plans must supply an explicit classification. */
     epistemicType: EpistemicTypeSchema.optional(),
+    /** Code-derived claim status; optional only for reading older lesson locks. */
+    verificationStatus: ClaimVerificationStatusSchema.optional(),
     conceptIds: z.array(id()).min(1).max(6),
     relations: z.array(z.object({ from: id(), to: id(), type: z.enum(RELATION_TYPES) }).strict()).max(24),
-    evidenceSpanIds: z.array(id()).min(1).max(96),
+    evidenceSpanIds: z.array(id()).max(96),
     /** Source citations are reconstructed from the canonical concept graph, never trusted from S3 output. */
     sourceRefs: z.array(z.object({
       documentId: id(),

@@ -13,6 +13,10 @@ import { validateSceneBoard, type BoardContext } from './validate.js';
  * Returns undefined when even this board does not lay out; the lesson then fails visibly as before.
  */
 export function fallbackSceneBoard(ctx: BoardContext): SceneBoardDraft | undefined {
+  if (ctx.beats.length > 0 && ctx.beats.every((beat) => beat.narrationOnly)) {
+    const narrationOnly: SceneBoardDraft = { transition: { mode: 'clean' }, ops: [] };
+    return validateSceneBoard(narrationOnly, ctx).length === 0 ? narrationOnly : undefined;
+  }
   const named: string[] = [];
   for (const beat of ctx.beats) for (const entity of beat.entities) if (ctx.concepts.some((c) => c.id === entity.conceptId) && !named.includes(entity.conceptId)) named.push(entity.conceptId);
   for (let keep = Math.min(named.length, 8); keep >= 1; keep--) {
