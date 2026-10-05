@@ -2788,3 +2788,9 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 
 - **Built:** depiction approval moved before board planning; `BoardContext.depictionOptions` renders approved referents as a data block (no instruction rewrite); `runLessonV2` skips network depiction under injected test clients (documented tests seam) and honors `--no-pictorial`.
 - **Verification:** suites green (ops-plan 20, visual-model 4, board-semantics 3, lock-v2 7, clips 4, lesson-v2 8, approved-pictures 6); typecheck clean, manifest verified.
+
+## Continuation — A3 entity-ops gate, refined (wt/stcc/charter)
+
+- **First version** (entity-kind concepts always need entity ops) broke 4 lesson-v2 fixtures: stack kits legitimately draw stack concepts without entity elements. Reverted the broad form.
+- **Refined gate:** fires only when approved depiction options exist for the scene but no op draws an entity that could use them. Kits/tokens stay legitimate when nothing is depictable.
+- **Verification:** board-semantics 4/4, lesson-v2 8/8, ops-plan 20/20; typecheck clean.

@@ -16,7 +16,7 @@ export interface BoardContext {
   beats: TeachingBeat[];
   /** The scene's narration, sentence by sentence, per beat. Sentence indexes are what `cue` refers to. */
   narration: Array<{ beatId: string; sentences: string[] }>;
-  concepts: Array<{ id: string; label: string; /** Source quotes available to cite for this concept. */ evidence?: Array<{ spanId: string; quote: string }> }>;
+  concepts: Array<{ id: string; label: string; /** Source quotes available to cite for this concept. */ evidence?: Array<{ spanId: string; quote: string }>; /** S2 concept kind; when known, drawable entities must be drawn as entities. */ kind?: string }>;
   /** The board the scene inherits (empty for the first scene). */
   initial: BoardState;
   /** The previous scene's geometry; retained objects keep their rectangles when possible. */
@@ -132,6 +132,15 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
   problems.push(...opProblems);
 
   for (const beat of ctx.beats) if (!beat.narrationOnly && !lastOpOfBeat.has(beat.beatId)) problems.push({ path: '/ops', message: `beat ${beat.beatId} shows a change (${beat.visualInvariant}), so it needs at least one op` });
+
+  // Drawable entities must be drawn as entities when pictures are approved for
+  // them (S7 needs entity ops to picture anything; tokens can never depict).
+  // Silent without approved options: with nothing depictable, kits and tokens
+  // are legitimate drawings.
+  const drawable = ctx.concepts.filter((concept) => concept.kind === 'entity');
+  if ((ctx.depictionOptions?.length ?? 0) > 0 && drawable.length > 0 && !draft.ops.some((op) => (op.op === 'add' || op.op === 'replace') && op.element.type === 'entity')) {
+    problems.push({ path: '/ops', message: `scene has approved pictures (${ctx.depictionOptions!.map((d) => d.referent).join(', ')}) but no op draws an entity element; draw at least one as type entity so it can render pictured` });
+  }
 
   // A mechanism treatment must change the board, not just add boxes and arrows (STCC §15).
   const CHANGING_MOVES = new Set(['TraceMechanism', 'WorkExample', 'ForkCorrectIncorrect', 'PredictNextStep', 'TestBoundary', 'FadeSupport', 'RepairMisconception', 'ExplainDivergence']);

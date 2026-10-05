@@ -75,3 +75,23 @@ describe('lesson vocabulary gate', () => {
     assert.ok(!goodProblems.some((p) => /not lesson vocabulary/.test(p.message)));
   });
 });
+
+describe('entity ops gate', () => {
+  it('approved pictures with no entity op fail; with one they pass the gate', async () => {
+    const { validateSceneBoard } = await import('../visual-v2/ops-plan/validate.js');
+    const kindCtx = {
+      sceneId: 'sc', title: 'T',
+      beats: [{ beatId: 'sc.b1', sceneId: 'sc', order: 1, claimIds: ['c1'], learnerDelta: 'd', beatType: 'introduce', cognitiveOperation: 'identify', representationFamily: 'process', entities: [{ conceptId: 'charge' }], relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'v', mutedMeaning: 'm', narrationOnly: false, persistence: 'scene', pauseIntent: 'none', evidenceSpanIds: ['S1'] }],
+      narration: [{ beatId: 'sc.b1', sentences: ['Charge builds.'] }],
+      concepts: [{ id: 'charge', label: 'Charge', kind: 'entity' }],
+      depictionOptions: [{ referent: 'charge', noun: 'battery', entryId: 'e1' }],
+      initial: (await import('../visual-v2/board-state/reducer.js')).emptyBoardState(),
+    };
+    const tokenBoard = { transition: { mode: 'clean' }, ops: [{ op: 'add', opId: 'o1', beatId: 'sc.b1', id: 'e1', element: { type: 'token', text: 'charge', provenance: 'illustrative', bindings: { conceptIds: ['charge'], claimIds: ['c1'] } }, at: { region: 'center' }, cue: 0 }] };
+    const tokenProblems = validateSceneBoard(tokenBoard as never, kindCtx as never) as Array<{ message: string }>;
+    assert.ok(tokenProblems.some((p) => /no op draws an entity/.test(p.message)));
+    const entityBoard = { transition: { mode: 'clean' }, ops: [{ op: 'add', opId: 'o1', beatId: 'sc.b1', id: 'e1', element: { type: 'entity', conceptId: 'charge', label: 'Charge', provenance: 'illustrative', bindings: { conceptIds: ['charge'], claimIds: ['c1'] } }, at: { region: 'center' }, cue: 0 }] };
+    const entityProblems = validateSceneBoard(entityBoard as never, { ...kindCtx, geometryCheck: () => [] } as never) as Array<{ message: string }>;
+    assert.ok(!entityProblems.some((p) => /no op draws an entity/.test(p.message)));
+  });
+});
