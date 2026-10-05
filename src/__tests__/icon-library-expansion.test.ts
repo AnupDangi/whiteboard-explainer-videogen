@@ -7,6 +7,7 @@ import { CATALOG_DATA_DIR, loadCatalogLibraries } from '../assets/streamline.js'
 import { ENABLED_LIBRARIES } from '../assets/registry.js';
 import { assetEligibilityProblems, resolveObject, similarityAdmissible, typeCompatible } from '../assets/ladder.js';
 import type { CatalogEntry } from '../assets/catalog.js';
+import { chooseEntitySceneFamily, depictEntity } from '../visual-v2/resolver/typeGate.js';
 
 const vendored = (): CatalogEntry[] => loadCatalogLibraries().entries.filter((entry) => entry.source.startsWith('iconify-'));
 const SIZE = { w: 300, h: 300 };
@@ -24,6 +25,37 @@ test('a vendored icon is type-compatible with an entity request and with nothing
   assert.equal(typeCompatible('entity', entry, false), true);
   assert.equal(typeCompatible('process', entry, false), false);
   assert.equal(typeCompatible('entity', entry, true), false, 'an inferred request type still fails closed');
+});
+
+test('labelled cross-subject icon cases resolve exact licensed assets inside their selected family', () => {
+  const cases = [
+    { label: 'leaf', domain: 'biology', assetId: 'assetlab-sketchy-downshift:svg-leaf-sketchy-downshift-leaf-svg', family: 'simi-house-v1/general-drawon' },
+    { label: 'magnet', domain: 'physics', assetId: 'assetlab-sketchy-downshift:svg-magnet-sketchy-downshift-magnet-svg', family: 'simi-house-v1/general-drawon' },
+    { label: 'coin', domain: 'economics', assetId: 'assetlab-sketchy-downshift:svg-coin-sketchy-downshift-coin-svg', family: 'simi-house-v1/general-drawon' },
+    { label: 'keyboard', domain: 'computer science', assetId: 'assetlab-sketchy-downshift:svg-keyboard-sketchy-downshift-keyboard-svg', family: 'simi-house-v1/general-drawon' },
+    { label: 'moon', domain: 'astronomy', assetId: 'bridge-iconify:moon-iconify-tabler-moon', family: 'simi-house-v1/domain-outline' },
+    { label: 'cell', domain: 'biology', assetId: 'iconify-tabler:cell', family: 'simi-house-v1/domain-outline' },
+    { label: 'beaker', domain: 'chemistry', assetId: 'assetlab-sketchy-downshift:svg-beaker-sketchy-downshift-beaker-svg', family: 'simi-house-v1/general-drawon' },
+  ] as const;
+
+  for (const item of cases) {
+    const concept = { id: `case-${item.label}`, label: item.label, kind: 'entity' as const, domain: item.domain };
+    const request = { concept, label: item.label };
+    const family = chooseEntitySceneFamily([request]);
+    assert.equal(family, item.family, `${item.label}: deterministic family choice`);
+
+    const result = resolveObject(item.label, { label: item.label, size: SIZE, lessonDomain: item.domain, sceneFamily: family, visualStrategy: 'literal' });
+    assert.equal(result.resolution.assetId, item.assetId, `${item.label}: curated expected referent`);
+    assert.equal(result.resolution.selectionBasis, 'exact', `${item.label}: do not accept a similarity-only pick`);
+    assert.equal(result.resolution.houseFamily, item.family, `${item.label}: resolver respects scene family`);
+    assert.equal(result.resolution.license, 'MIT', `${item.label}: approved library licence`);
+    assert.ok(result.visual.paths.length + result.visual.fills.length > 0, `${item.label}: resolved asset has drawable vector content`);
+
+    const depiction = depictEntity({ ...concept, houseFamily: family }, item.label, { x: 0, y: 0, ...SIZE });
+    assert.equal(depiction.family, 'pictorial', `${item.label}: type gate allows an entity picture`);
+    assert.equal(depiction.assetId, item.assetId, `${item.label}: renderer uses the same exact asset`);
+    assert.equal(depiction.releaseClean, true, `${item.label}: release licence policy is recorded`);
+  }
 });
 
 test('taxonomy domain is a preference: a general icon stays eligible in a domain lesson, a different specific domain is excluded from similarity', () => {
