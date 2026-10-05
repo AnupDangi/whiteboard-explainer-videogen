@@ -228,24 +228,16 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     timings.push(beatTimings);
     const beats = prepared.beatPlans![section.id]!;
     const speechContext = prepared.beatNarrationContexts?.[section.id];
-    const ctx: BoardContext = {
-      sceneId: section.id, title: section.title, beats,
-      narration: narration.beatSpans.map((span) => ({ beatId: span.beatId, sentences: span.sentenceSpans.map((s) => narration.text.slice(s.charStart, s.charEnd)) })),
-      concepts: section.conceptIds.flatMap((id) => { const c = graph.concepts.find((x) => x.id === id); return c ? [{ id: c.id, label: c.label, evidence: c.evidence.map((e) => ({ spanId: e.spanId, quote: e.quote })) }] : []; }),
-      grounding: { verify: (spanId, quote) => anchorQuote(prepared.sourceDoc, spanId, quote)?.ref.quote },
-      initial: carried,
-      ...(prior ? { prior } : {}),
-      ...(speechContext?.moves?.length ? { moves: speechContext.moves } : {}),
-    };
-    const result = await planSceneBoard({ ctx }, { model: input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: input.remainingBudgetUsd ?? 0.2, ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}) });
-    addUsage(usage, result.usage); failures.push(...result.failures); reports.push(...result.reports);
-    if (!result.value) { failures.push({ code: 'v2-board-failed', stage: 'board-ops', message: `${section.id}: no valid board operations`, hard: true }); return finish('failed'); }
-    // 2b. Pictorial depiction (S7): approve pictures for entity-kind concepts,
-    // then rewrite exactly-matching tokens into entity elements and re-validate.
-    // Dirty upgrades never reach the timeline; approved picks flow into the
-    // renderer resolver and the recorded provenance below.
-    let ops = result.value.ops;
-    if (!input.noPictorial) {
+    // 2a. Pictorial depiction first (S7): approved pictures become model input
+    // (depictionOptions) so the planner can draw entity elements directly; the
+    // deterministic token→entity upgrade below stays as backstop. Lesson memo
+    // keeps repeats free; only novel referents cost director/judge calls.
+    let scenePicks = new Map<string, ApprovedPick>();
+    // An injected model client marks a controlled/dry environment (the documented
+    // tests seam): depiction's query-embedding model download is a network side
+    // effect, so pictorial retrieval stays on the apiKey production path only.
+    const depictionLive = !input.noPictorial && !input.client;
+    if (depictionLive) {
       try {
         const depiction = await approveSceneDepictions({
           concepts: section.conceptIds.flatMap((id) => { const c = graph.concepts.find((x) => x.id === id); return c ? [{ id: c.id, label: c.label, kind: c.kind }] : []; }),
@@ -256,23 +248,38 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
           takenEntries, takenNouns, memo: depictionMemo,
         });
         addUsage(usage, depiction.usage); failures.push(...depiction.failures);
-        if (depiction.picks.size) {
-          const upgraded = upgradeTokensToEntities(ops, depiction.picks, conceptIndex);
-          if (upgraded.upgraded.length) {
-            const recheck = validateSceneBoard({ transition: result.value.transition, ops: upgraded.ops }, ctx);
-            if (!recheck.length) {
-              ops = upgraded.ops;
-              sceneDepictions[section.id] = Object.fromEntries([...depiction.picks].map(([referent, pick]) => [referent, { entryId: pick.entryId, noun: pick.noun }]));
-            } else {
-              failures.push({ code: 'v2-depiction-upgrade-rejected', stage: 'depiction', message: `${section.id}: token-to-entity upgrade failed re-validation, keeping planner ops`, hard: false });
-            }
-          } else if ([...depiction.picks.keys()].length) {
-            sceneDepictions[section.id] = Object.fromEntries([...depiction.picks].map(([referent, pick]) => [referent, { entryId: pick.entryId, noun: pick.noun }]));
-          }
-        }
+        scenePicks = depiction.picks;
       } catch (error) {
         failures.push({ code: 'v2-depiction-skipped', stage: 'depiction', message: `${section.id}: pictorial depiction skipped: ${error instanceof Error ? error.message : String(error)}`, hard: false });
       }
+    }
+    const ctx: BoardContext = {
+      sceneId: section.id, title: section.title, beats,
+      narration: narration.beatSpans.map((span) => ({ beatId: span.beatId, sentences: span.sentenceSpans.map((s) => narration.text.slice(s.charStart, s.charEnd)) })),
+      concepts: section.conceptIds.flatMap((id) => { const c = graph.concepts.find((x) => x.id === id); return c ? [{ id: c.id, label: c.label, evidence: c.evidence.map((e) => ({ spanId: e.spanId, quote: e.quote })) }] : []; }),
+      grounding: { verify: (spanId, quote) => anchorQuote(prepared.sourceDoc, spanId, quote)?.ref.quote },
+      initial: carried,
+      ...(prior ? { prior } : {}),
+      ...(speechContext?.moves?.length ? { moves: speechContext.moves } : {}),
+      ...(scenePicks.size ? { depictionOptions: [...scenePicks].map(([referent, pick]) => ({ referent, noun: pick.noun, entryId: pick.entryId })) } : {}),
+    };
+    const result = await planSceneBoard({ ctx }, { model: input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: input.remainingBudgetUsd ?? 0.2, ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}) });
+    addUsage(usage, result.usage); failures.push(...result.failures); reports.push(...result.reports);
+    if (!result.value) { failures.push({ code: 'v2-board-failed', stage: 'board-ops', message: `${section.id}: no valid board operations`, hard: true }); return finish('failed'); }
+    // 2b. Deterministic backstop: rewrite exactly-matching tokens into entity
+    // elements and re-validate. Dirty upgrades never reach the timeline.
+    let ops = result.value.ops;
+    if (scenePicks.size) {
+      const upgraded = upgradeTokensToEntities(ops, scenePicks, conceptIndex);
+      if (upgraded.upgraded.length) {
+        const recheck = validateSceneBoard({ transition: result.value.transition, ops: upgraded.ops }, ctx);
+        if (!recheck.length) {
+          ops = upgraded.ops;
+        } else {
+          failures.push({ code: 'v2-depiction-upgrade-rejected', stage: 'depiction', message: `${section.id}: token-to-entity upgrade failed re-validation, keeping planner ops`, hard: false });
+        }
+      }
+      sceneDepictions[section.id] = Object.fromEntries([...scenePicks].map(([referent, pick]) => [referent, { entryId: pick.entryId, noun: pick.noun }]));
     }
     const initial = startScene(carried, result.value.transition, section.id);
     const timeline = compileSceneTimeline({ ops, initial, beats: beatTimings });

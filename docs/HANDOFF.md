@@ -2783,3 +2783,8 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 
 - **Built:** `conceptKindProblems` in plan/contracts.ts — entity+literal intents on non-entity concepts fail with the kind fix; wired into S3 plan validation. No topic lists: the contract's own conceptType against the graph's kind.
 - **Verification:** concept-kind 3/3 new; contracts 5, plan 15, preparation 3, prompt-schema 2, hierarchical 16, lesson-v2 8, benchmark-resolver 1; typecheck clean.
+
+## Continuation — A2 depiction candidates as model input (wt/stcc/charter)
+
+- **Built:** depiction approval moved before board planning; `BoardContext.depictionOptions` renders approved referents as a data block (no instruction rewrite); `runLessonV2` skips network depiction under injected test clients (documented tests seam) and honors `--no-pictorial`.
+- **Verification:** suites green (ops-plan 20, visual-model 4, board-semantics 3, lock-v2 7, clips 4, lesson-v2 8, approved-pictures 6); typecheck clean, manifest verified.

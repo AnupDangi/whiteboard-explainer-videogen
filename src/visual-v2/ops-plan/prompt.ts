@@ -64,12 +64,15 @@ Leave out the optional expects field of every op; the board is checked by code. 
   speech:
 ${speech.map((sentence, i) => `    ${i}: ${sentence}`).join('\n')}`;
   }).join('\n');
+  const depictions = ctx.depictionOptions?.length
+    ? `Approved pictures for this scene (draw each listed referent as an entity element with its conceptId so it renders pictured):\n${ctx.depictionOptions.map((d) => `- ${d.referent} (depict as: ${d.noun})`).join('\n')}\n`
+    : '';
   const inherited = Object.values(ctx.initial.elements).filter((el) => el.lifecycle.removedAtBeat === undefined);
   const inheritedEdges = Object.values(ctx.initial.edges).filter((edge) => edge.lifecycle.removedAtBeat === undefined);
   const cites = ctx.concepts.flatMap((c) => (c.evidence ?? []).map((e) => `  [${e.spanId}] ${e.quote}`));
   const usedIds = [...Object.keys(ctx.initial.elements), ...Object.keys(ctx.initial.edges)];
   const user = `SCENE ${ctx.sceneId}: "${ctx.title}"
-${treatment}Concepts of this scene: ${JSON.stringify(ctx.concepts.map(({ id, label }) => ({ id, label })))}
+${treatment}${depictions}Concepts of this scene: ${JSON.stringify(ctx.concepts.map(({ id, label }) => ({ id, label })))}
 SOURCE EVIDENCE you may cite (spanId in brackets, quote verbatim):
 ${cites.length ? cites.join('\n') : '  (none: do not use provenance source for factual visuals or arrows)'}
 Ids already used in the lesson (never reuse one, including removed elements; give every new element and arrow a fresh id): ${usedIds.length ? usedIds.join(', ') : '(none)'}

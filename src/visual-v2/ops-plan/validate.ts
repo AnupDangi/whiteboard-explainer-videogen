@@ -25,6 +25,12 @@ export interface BoardContext {
   grounding?: Grounding;
   /** Scene teaching moves (T7): the board must honor the treatment, not just the entities. */
   moves?: TeachingMove[];
+  /**
+   * Approved pictures available for this scene (S7): referents the depiction
+   * director approved with catalog entries. Rendered as data (not instructions);
+   * draw these referents as entity elements so the renderer pictures them.
+   */
+  depictionOptions?: Array<{ referent: string; noun: string; entryId: string }>;
   /** Test seam: replaces the layout solver check. */
   geometryCheck?: (states: BoardState[]) => GeometryDiagnostic[];
 }
