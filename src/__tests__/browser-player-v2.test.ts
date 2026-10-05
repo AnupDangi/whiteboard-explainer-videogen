@@ -5,12 +5,14 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Readable } from 'node:stream';
 import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import { compileSceneTimeline } from '../visual-v2/timeline/compile.js';
 import { compileScene } from '../visual-v2/renderer/frame.js';
 import { writeLessonLockV2, type LessonLockV2 } from '../pipeline-v2/lockV2.js';
 import { createBrowserPreviewHandler, loadBrowserPreview, lockedFrameHashAt } from '../export/player/previewServer.js';
 import { clampSeekToReadyPrefix, readyFramePrefixLength, readyPrefixEndMs, shouldAdoptLockedUpdate } from '../export/player/readiness.js';
+import { FIRST_AUDIO_PLAYBACK_VERSION, qualifiesFirstAudioPlayback, type FirstAudioPlaybackEvent } from '../export/player/playbackTelemetry.js';
 
 // Synthetic contract data: playback and confinement evidence, never visual-quality evidence.
 async function lockedFixture(dir: string): Promise<LessonLockV2> {
@@ -32,10 +34,13 @@ async function lockedFixture(dir: string): Promise<LessonLockV2> {
   return writeLessonLockV2({ outputDir: dir, lessonId: 'test', scenes: [{ scene, startMs: 0, endMs: 2000 }], durationMs: 2000, audioPath: path.join(dir, 'audio.wav'), fps: 4 });
 }
 
-async function request(handler: ReturnType<typeof createBrowserPreviewHandler>, url: string) {
-  let status = 0; let body: Buffer | string = '';
-  await handler({ method: 'GET', url } as IncomingMessage, { writeHead(code: number) { status = code; }, end(bytes?: Buffer | string) { body = bytes ?? ''; } } as unknown as ServerResponse);
-  return { status, body: Buffer.isBuffer(body) ? body : Buffer.from(body) };
+async function request(handler: ReturnType<typeof createBrowserPreviewHandler>, url: string, requestBody?: unknown) {
+  let status = 0; let responseBody: Buffer | string = '';
+  const req = Readable.from(requestBody === undefined ? [] : [JSON.stringify(requestBody)]) as IncomingMessage;
+  req.method = requestBody === undefined ? 'GET' : 'POST'; req.url = url;
+  req.headers = requestBody === undefined ? {} : { 'content-type': 'application/json', host: '127.0.0.1' };
+  await handler(req, { writeHead(code: number) { status = code; }, end(bytes?: Buffer | string) { responseBody = bytes ?? ''; } } as unknown as ServerResponse);
+  return { status, body: Buffer.isBuffer(responseBody) ? responseBody : Buffer.from(responseBody) };
 }
 
 test('V2 browser playback serves the exact frozen frame sequence and verified master audio', async () => {
@@ -108,4 +113,57 @@ test('a running V2 session adopts only updates that extend playback, never a sho
   assert.equal(shouldAdoptLockedUpdate({ frames: 20, live: true }, { frames: 12 }), false, 'a finished view can never be shorter than what already plays');
   assert.equal(shouldAdoptLockedUpdate({ frames: 20 }, { frames: 20 }), false);
   assert.equal(shouldAdoptLockedUpdate({ frames: 20 }, undefined), false);
+});
+
+test('first audio playback requires a user action, verified first-scene frame, and an advancing unmuted media clock', () => {
+  const initial = { sceneId: 'one', frame: 0 as const, frameHash: 'a'.repeat(64), sceneAudioHash: 'b'.repeat(64) };
+  const valid = {
+    userInitiated: true, playing: true, audioPaused: false, audioMuted: false, audioVolume: 1,
+    previousAudioTimeSec: 0, audioTimeSec: 0.08, displayedFrameHash: 'c'.repeat(64), expectedFrameHash: 'c'.repeat(64),
+    displayedFrame: 1, currentSceneId: 'one', initial, currentAudioUrl: '/locked/audio.wav',
+  };
+  assert.equal(qualifiesFirstAudioPlayback(valid), true);
+  for (const invalid of [
+    { userInitiated: false }, { audioPaused: true }, { audioMuted: true }, { audioVolume: 0 },
+    { audioTimeSec: 0 }, { displayedFrameHash: 'd'.repeat(64) }, { currentSceneId: 'two' },
+    { currentAudioUrl: '/audio.wav' },
+  ]) assert.equal(qualifiesFirstAudioPlayback({ ...valid, ...invalid }), false, JSON.stringify(invalid));
+});
+
+test('V2 preview binds first-audio telemetry to one run/session and stores duplicate events once', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-browser-v2-telemetry-'));
+  try {
+    const lock = await lockedFixture(dir);
+    await writeFile(path.join(dir, 'run-start.json'), JSON.stringify({ schemaVersion: 'hypothesis-run-start/v1', runId: path.basename(dir), acceptedAtEpochMs: 1000 }));
+    const payload = await loadBrowserPreview(dir);
+    assert.equal(payload.requestAcceptedAtEpochMs, 1000);
+    const handler = createBrowserPreviewHandler(payload, dir, path.resolve('dist'), Buffer.from('<html/>'));
+    const served = JSON.parse((await request(handler, '/run.json')).body.toString('utf8')) as typeof payload;
+    const session = served.telemetry!;
+    assert.equal(session.schemaVersion, FIRST_AUDIO_PLAYBACK_VERSION);
+    assert.equal(session.runId, path.basename(dir));
+    assert.equal(session.initial.sceneId, 'one');
+    assert.equal(session.initial.frameHash, lockedFrameHashAt(lock, 0));
+    const refreshed = JSON.parse((await request(handler, `/run.json?session=${session.sessionId}`)).body.toString('utf8')) as typeof payload;
+    assert.equal(refreshed.telemetry?.sessionId, session.sessionId);
+    const event: FirstAudioPlaybackEvent = {
+      schemaVersion: FIRST_AUDIO_PLAYBACK_VERSION, type: 'player.first-audio-playback',
+      eventId: `${session.sessionId}:first-audio-playback/v2`, runId: session.runId, sessionId: session.sessionId,
+      measurementSource: 'browser-player', requestAcceptedAtEpochMs: session.requestAcceptedAtEpochMs!, browserTimeOriginMs: 1000, playerLoadedMonoMs: 10,
+      firstFrameReadyMonoMs: 20, userPlayMonoMs: 120, playerStartMonoMs: 135, firstAudioPlaybackMonoMs: 145,
+      readyToUserPlayMs: 100, userPlayToPlayerStartMs: 15, playerStartToFirstAudioMs: 10,
+      userPlayToFirstAudioMs: 25, playerLoadToFirstAudioMs: 135,
+      requestToFirstAudioMs: 145, audioCurrentTimeSec: 0.08, audioUrl: session.issuedAudioUrl,
+      observedFrame: 0, observedFrameHash: session.initial.frameHash, initial: session.initial,
+    };
+    assert.equal((await request(handler, session.eventUrl, { ...event, runId: 'wrong-run' })).status, 403);
+    assert.equal((await request(handler, session.eventUrl, { ...event, requestAcceptedAtEpochMs: 0 })).status, 422);
+    assert.equal((await request(handler, session.eventUrl, { ...event, audioCurrentTimeSec: 0.08, observedFrameHash: '0'.repeat(64) })).status, 422);
+    assert.equal((await request(handler, session.eventUrl, event)).status, 201);
+    assert.equal((await request(handler, session.eventUrl, event)).status, 200);
+    assert.equal((await request(handler, session.eventUrl, { ...event, audioCurrentTimeSec: 0.1 })).status, 409);
+    const lines = (await readFile(path.join(dir, 'player-telemetry.jsonl'), 'utf8')).trim().split('\n');
+    assert.equal(lines.length, 1);
+    assert.deepEqual(JSON.parse(lines[0]!), event);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

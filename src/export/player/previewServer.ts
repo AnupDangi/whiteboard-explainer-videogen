@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { createHash } from 'node:crypto';
-import { readFile, readdir, realpath, stat } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import { open, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { AlignedAudio, LaidOutScene, Timeline } from '../../shared/types.js';
 import type { VideoScene } from '../frame.js';
@@ -8,6 +9,7 @@ import type { EvaluationBundle } from '../../shared/contracts.js';
 import { LESSON_LOCK_V2_VERSION, readRef, readyPrefixV2, verifiedInputs, type LessonLockV2 } from '../../pipeline-v2/lockV2.js';
 import { joinPaddedScenes } from './wavPrefix.js';
 import { KALAM_BOLD_FILE } from '../../render/fonts.js';
+import { FIRST_AUDIO_PLAYBACK_VERSION, isFirstAudioPlaybackEvent, type InitialPlaybackIdentity, type PlaybackTelemetrySession } from './playbackTelemetry.js';
 
 export interface LockedV2Preview {
   fps: number;
@@ -19,7 +21,7 @@ export interface LockedV2Preview {
 }
 
 /** The verified, still-growing prefix of a V2 run that has no final lock yet. */
-async function loadLivePrefix(dir: string): Promise<BrowserPreviewPayload | undefined> {
+async function loadLivePrefix(dir: string, requestAcceptedAtEpochMs?: number): Promise<BrowserPreviewPayload | undefined> {
   const ready = await readyPrefixV2(dir);
   if (!ready.scenes.length) return undefined;
   const fps = ready.scenes[0]!.fps;
@@ -31,6 +33,7 @@ async function loadLivePrefix(dir: string): Promise<BrowserPreviewPayload | unde
   return {
     schemaVersion: 'hypothesis-browser-preview/v1', status: 'draft', runClass: 'generated-lesson', durationMs: ready.readyThroughMs,
     scenes: [], alignedWords, events: [], sceneAudio: [], streaming: true, eventUrl: '/scene-events.jsonl',
+    ...(requestAcceptedAtEpochMs !== undefined ? { requestAcceptedAtEpochMs } : {}),
     lockedV2: { fps, frames, renderPlan: ready.scenes.flatMap((scene) => scene.renderPlan), audioUrl: `/locked/prefix.wav?through=${ready.readyThroughMs}`, live: true },
   };
 }
@@ -57,6 +60,8 @@ export interface BrowserPreviewPayload {
   audioUrl?: string;
   captionsUrl?: string;
   lockedV2?: LockedV2Preview;
+  telemetry?: PlaybackTelemetrySession;
+  requestAcceptedAtEpochMs?: number;
 }
 
 export interface SceneAudioReference {
@@ -105,6 +110,10 @@ async function readSceneEvents(dir: string): Promise<ScenePlayableEvent[]> {
 /** Load renderer outputs only; do not accept source code, arbitrary SVG, or model-produced paths. */
 export async function loadBrowserPreview(runDir: string): Promise<BrowserPreviewPayload> {
   const dir = path.resolve(runDir);
+  const runStartRaw = await readFile(path.join(dir, 'run-start.json'), 'utf8').catch(() => undefined);
+  const runStart = runStartRaw ? JSON.parse(runStartRaw) as { schemaVersion?: string; runId?: string; acceptedAtEpochMs?: number } : undefined;
+  if (runStart && (runStart.schemaVersion !== 'hypothesis-run-start/v1' || runStart.runId !== path.basename(dir) || !Number.isFinite(runStart.acceptedAtEpochMs) || runStart.acceptedAtEpochMs! < 0)) throw new Error('Run acceptance record is invalid or belongs to another run');
+  const requestAcceptedAtEpochMs = runStart?.acceptedAtEpochMs;
   const primary = await readFile(path.join(dir, 'lesson.lock.json'), 'utf8').catch(() => undefined);
   if (primary) {
     let candidate: { schemaVersion?: string };
@@ -120,12 +129,13 @@ export async function loadBrowserPreview(runDir: string): Promise<BrowserPreview
       return {
         schemaVersion: 'hypothesis-browser-preview/v1', status: evaluation?.status ?? 'draft', runClass: evaluation?.runClass ?? 'generated-lesson',
         durationMs: lock.render.durationMs, scenes: [], alignedWords, events: [], sceneAudio: [], streaming: false, eventUrl: '/scene-events.jsonl',
+        ...(requestAcceptedAtEpochMs !== undefined ? { requestAcceptedAtEpochMs } : {}),
         lockedV2: { fps: lock.render.fps, frames: lock.render.frames, renderPlan: lock.renderPlan, audioUrl: '/locked/audio.wav' },
       };
     }
   }
   if (!primary) {
-    const live = await loadLivePrefix(dir);
+    const live = await loadLivePrefix(dir, requestAcceptedAtEpochMs);
     if (live) return live;
   }
   const [manifestRaw, evaluationRaw, audioRaw, names, events] = await Promise.all([
@@ -252,12 +262,92 @@ export function createBrowserPreviewHandler(payload: BrowserPreviewPayload, runP
     if (!cachedPrefix || Date.now() - cachedPrefix.at > 250) cachedPrefix = { at: Date.now(), value: readyPrefixV2(runPath) };
     return cachedPrefix.value;
   };
+  const sessions = new Map<string, PlaybackTelemetrySession>();
+  const acceptedEvents = new Map<string, { bytes: string; append: Promise<void> }>();
+  const runId = path.basename(runPath);
+  const currentInitial = async (view: BrowserPreviewPayload): Promise<InitialPlaybackIdentity | undefined> => {
+    if (!view.lockedV2 || !ID.test(runId)) return undefined;
+    if (view.lockedV2.live) {
+      const first = (await freshPrefix()).scenes[0];
+      if (!first) return undefined;
+      const segment = first.renderPlan.find((item) => item.firstFrame === 0);
+      const frameHash = segment?.kind === 'hold' ? segment.svgHash : segment?.svgHashes[0];
+      return frameHash ? { sceneId: first.sceneId, frame: 0, frameHash, sceneAudioHash: first.audio.hash } : undefined;
+    }
+    const { lock } = await verifiedInputs(runPath);
+    const first = lock.scenes[0];
+    return first ? { sceneId: first.sceneId, frame: 0, frameHash: lockedFrameHashAt(lock, 0), sceneAudioHash: first.audioHash } : undefined;
+  };
+  const telemetrySession = async (view: BrowserPreviewPayload, existingId: string | null): Promise<PlaybackTelemetrySession | undefined> => {
+    const existing = existingId ? sessions.get(existingId) : undefined;
+    if (existing) return existing;
+    const initial = await currentInitial(view);
+    if (!initial) return undefined;
+    const session: PlaybackTelemetrySession = {
+      schemaVersion: FIRST_AUDIO_PLAYBACK_VERSION,
+      runId,
+      sessionId: randomUUID(),
+      eventUrl: '/telemetry/first-audio-playback',
+      ...(view.requestAcceptedAtEpochMs !== undefined ? { requestAcceptedAtEpochMs: view.requestAcceptedAtEpochMs } : {}),
+      issuedAudioUrl: view.lockedV2!.audioUrl,
+      initial,
+    };
+    sessions.set(session.sessionId, session);
+    return session;
+  };
+  const appendTelemetry = async (bytes: string): Promise<void> => {
+    const handle = await open(path.join(runPath, 'player-telemetry.jsonl'), constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+    try { await handle.writeFile(`${bytes}\n`); }
+    finally { await handle.close(); }
+  };
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+      if (url.pathname === '/telemetry/first-audio-playback') {
+        if (req.method !== 'POST' || !payload.lockedV2) return send(res, 405, 'text/plain; charset=utf-8', 'Method not allowed');
+        if (!String(req.headers?.['content-type'] ?? '').startsWith('application/json')) return send(res, 415, 'text/plain; charset=utf-8', 'JSON required');
+        const origin = req.headers?.origin;
+        if (origin && origin !== `http://${req.headers.host}`) return send(res, 403, 'text/plain; charset=utf-8', 'Origin mismatch');
+        let raw = '';
+        for await (const chunk of req) {
+          raw += Buffer.from(chunk).toString('utf8');
+          if (raw.length > 8192) return send(res, 413, 'text/plain; charset=utf-8', 'Event too large');
+        }
+        let event: unknown;
+        try { event = JSON.parse(raw); } catch { return send(res, 400, 'text/plain; charset=utf-8', 'Invalid JSON'); }
+        if (!isFirstAudioPlaybackEvent(event)) return send(res, 422, 'text/plain; charset=utf-8', 'Invalid playback event');
+        const session = sessions.get(event.sessionId);
+        if (!session || event.runId !== runId || event.runId !== session.runId) return send(res, 403, 'text/plain; charset=utf-8', 'Unknown run or session');
+        if (event.requestAcceptedAtEpochMs !== (session.requestAcceptedAtEpochMs ?? null)) return send(res, 422, 'text/plain; charset=utf-8', 'Request acceptance epoch does not match the run');
+        if (JSON.stringify(event.initial) !== JSON.stringify(session.initial)) return send(res, 422, 'text/plain; charset=utf-8', 'Initial media identity mismatch');
+        const current = refresh ? await refresh() : payload;
+        const now = await currentInitial(current);
+        if (!now || now.sceneId !== session.initial.sceneId || now.frameHash !== session.initial.frameHash || now.sceneAudioHash !== session.initial.sceneAudioHash) return send(res, 409, 'text/plain; charset=utf-8', 'Initial media is no longer verified');
+        if (event.audioUrl !== current.lockedV2?.audioUrl && event.audioUrl !== session.issuedAudioUrl) return send(res, 422, 'text/plain; charset=utf-8', 'Audio URL does not match verified preview');
+        const segments = current.lockedV2?.live ? (await freshPrefix()).scenes[0]?.renderPlan : (await verifiedInputs(runPath)).lock.renderPlan;
+        const segment = segments?.find((item) => item.firstFrame <= event.observedFrame && event.observedFrame < item.firstFrame + item.frameCount);
+        const observedHash = segment?.kind === 'hold' ? segment.svgHash : segment?.svgHashes[event.observedFrame - (segment?.firstFrame ?? 0)];
+        if (segment?.sceneId !== session.initial.sceneId || observedHash !== event.observedFrameHash) return send(res, 422, 'text/plain; charset=utf-8', 'Observed frame is not in the verified first scene');
+        const bytes = JSON.stringify(event);
+        const prior = acceptedEvents.get(event.eventId);
+        if (prior) {
+          if (prior.bytes !== bytes) return send(res, 409, 'text/plain; charset=utf-8', 'Conflicting playback event');
+          await prior.append;
+          return send(res, 200, 'application/json; charset=utf-8', '{"accepted":true,"duplicate":true}');
+        }
+        const append = appendTelemetry(bytes);
+        acceptedEvents.set(event.eventId, { bytes, append });
+        try { await append; }
+        catch (error) { acceptedEvents.delete(event.eventId); throw error; }
+        return send(res, 201, 'application/json; charset=utf-8', '{"accepted":true,"duplicate":false}');
+      }
       if (req.method !== 'GET') return send(res, 405, 'text/plain; charset=utf-8', 'Method not allowed');
       if (url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', html);
-      if (url.pathname === '/run.json') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(refresh ? await refresh() : payload));
+      if (url.pathname === '/run.json') {
+        const view = refresh ? await refresh() : payload;
+        const telemetry = await telemetrySession(view, url.searchParams.get('session'));
+        return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ ...view, ...(telemetry ? { telemetry } : {}) }));
+      }
       if (url.pathname.startsWith('/locked/') && payload.lockedV2?.live) {
         // Live session: every request re-verifies the ready prefix; nothing outside it is ever served.
         const ready = await freshPrefix();

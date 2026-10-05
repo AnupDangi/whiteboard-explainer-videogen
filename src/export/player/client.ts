@@ -1,5 +1,6 @@
 import type { VideoScene } from '../frame.js';
 import { clampSeekToReadyPrefix, readyFramePrefixLength, readyPrefixEndMs, shouldAdoptLockedUpdate } from './readiness.js';
+import { FIRST_AUDIO_PLAYBACK_VERSION, qualifiesFirstAudioPlayback, type FirstAudioPlaybackEvent, type PlaybackTelemetrySession } from './playbackTelemetry.js';
 
 interface PreviewRun {
   schemaVersion: 'hypothesis-browser-preview/v1';
@@ -14,7 +15,8 @@ interface PreviewRun {
   eventUrl: string;
   audioUrl?: string;
   captionsUrl?: string;
-  lockedV2?: { fps: number; frames: number; renderPlan: Array<{ kind: 'hold' | 'transition'; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }>; audioUrl: string; live?: true };
+  lockedV2?: { fps: number; frames: number; renderPlan: Array<{ kind: 'hold' | 'transition'; sceneId: string; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }>; audioUrl: string; live?: true };
+  telemetry?: PlaybackTelemetrySession;
 }
 
 interface SceneAudioReference { sceneId: string; path: string; contentHash: string; startMs: number; endMs: number }
@@ -58,6 +60,65 @@ const lockedFrameHashes: string[] = [];
 const lockedFrameLoads = new Map<number, Promise<void>>();
 let lockedFailure: string | undefined;
 let requestedHash: string | undefined;
+const playerLoadedMonoMs = performance.now();
+let firstFrameReadyMonoMs: number | undefined;
+let userPlayMonoMs: number | undefined;
+let playerStartMonoMs: number | undefined;
+let previousAudioTimeSec = 0;
+let firstAudioEvent: FirstAudioPlaybackEvent | undefined;
+
+function playerAudioUrl(): string {
+  const source = audio.currentSrc || audio.src;
+  if (!source) return '';
+  const url = new URL(source, window.location.href);
+  return `${url.pathname}${url.search}`;
+}
+
+function submitFirstAudioEvent(event: FirstAudioPlaybackEvent, attempts = 0): void {
+  const endpoint = run?.telemetry?.eventUrl;
+  if (!endpoint) return;
+  void fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(event), keepalive: true })
+    .then((response) => { if (!response.ok && response.status >= 500 && attempts < 2) window.setTimeout(() => submitFirstAudioEvent(event, attempts + 1), 500 * (attempts + 1)); })
+    .catch(() => { if (attempts < 2) window.setTimeout(() => submitFirstAudioEvent(event, attempts + 1), 500 * (attempts + 1)); });
+}
+
+function observeFirstAudioPlayback(previousTimeSec: number): void {
+  const session = run?.telemetry;
+  const locked = run?.lockedV2;
+  if (!session || !locked || firstAudioEvent || firstFrameReadyMonoMs === undefined || userPlayMonoMs === undefined || playerStartMonoMs === undefined) return;
+  const currentTimeSec = audio.currentTime;
+  const audioUrl = playerAudioUrl();
+  const observedFrame = lockedFrameAt(timeMs);
+  const segment = locked.renderPlan.find((item) => item.firstFrame <= observedFrame && observedFrame < item.firstFrame + item.frameCount);
+  const observedFrameHash = lockedHashAt(timeMs);
+  if (!qualifiesFirstAudioPlayback({
+    userInitiated: true, playing, audioPaused: audio.paused, audioMuted: audio.muted, audioVolume: audio.volume,
+    previousAudioTimeSec: previousTimeSec, audioTimeSec: currentTimeSec,
+    displayedFrameHash: requestedHash && lockedSvgCache.has(requestedHash) ? requestedHash : undefined,
+    expectedFrameHash: observedFrameHash, displayedFrame: observedFrame,
+    currentSceneId: segment?.sceneId ?? '',
+    initial: session.initial, currentAudioUrl: audioUrl,
+  })) return;
+  const now = performance.now();
+  if (now <= playerStartMonoMs) return;
+  const browserFirstAudioEpochMs = performance.timeOrigin + now;
+  const requestAcceptedAtEpochMs = session.requestAcceptedAtEpochMs ?? null;
+  const requestToFirstAudioMs = requestAcceptedAtEpochMs === null || browserFirstAudioEpochMs < requestAcceptedAtEpochMs
+    ? null
+    : browserFirstAudioEpochMs - requestAcceptedAtEpochMs;
+  firstAudioEvent = {
+    schemaVersion: FIRST_AUDIO_PLAYBACK_VERSION, type: 'player.first-audio-playback',
+    eventId: `${session.sessionId}:first-audio-playback/v2`, runId: session.runId, sessionId: session.sessionId,
+    measurementSource: 'browser-player', requestAcceptedAtEpochMs, browserTimeOriginMs: performance.timeOrigin,
+    playerLoadedMonoMs, firstFrameReadyMonoMs, userPlayMonoMs, playerStartMonoMs, firstAudioPlaybackMonoMs: now,
+    readyToUserPlayMs: userPlayMonoMs - firstFrameReadyMonoMs,
+    userPlayToPlayerStartMs: playerStartMonoMs - userPlayMonoMs,
+    playerStartToFirstAudioMs: now - playerStartMonoMs,
+    userPlayToFirstAudioMs: now - userPlayMonoMs, playerLoadToFirstAudioMs: now - playerLoadedMonoMs,
+    requestToFirstAudioMs, audioCurrentTimeSec: currentTimeSec, audioUrl, observedFrame, observedFrameHash, initial: session.initial,
+  };
+  submitFirstAudioEvent(firstAudioEvent);
+}
 
 function lockedHashAt(t: number): string {
   const locked = run?.lockedV2;
@@ -112,6 +173,7 @@ function requestLockedFrame(frame: number): Promise<void> {
     const actualHash = [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
     if (actualHash !== hash) throw new Error(`Verified frame ${frame} hash does not match its lock`);
     lockedSvgCache.set(hash, svg);
+    if (frame === 0) firstFrameReadyMonoMs ??= performance.now();
     updateLockedSeekRange();
     if (playing && lockedFrameAt(timeMs) === frame) {
       board.innerHTML = svg;
@@ -215,6 +277,8 @@ function tick(now: number): void {
   }
   lastTick = now;
   draw(timeMs);
+  observeFirstAudioPlayback(previousAudioTimeSec);
+  previousAudioTimeSec = audio.currentTime;
   if (timeMs >= durationMs) {
     if (run.streaming) {
       cancelAnimationFrame(raf);
@@ -236,6 +300,7 @@ async function start(): Promise<void> {
     throw new Error('Run data does not match the browser-player schema');
   }
   run = payload;
+  if (run.telemetry && run.telemetry.schemaVersion !== FIRST_AUDIO_PLAYBACK_VERSION) run.telemetry = undefined;
   if (!payload.lockedV2) await loadSceneComposer();
   if (payload.lockedV2) {
     if (!Number.isSafeInteger(payload.lockedV2.frames) || payload.lockedV2.frames < 1 || !Number.isSafeInteger(payload.lockedV2.fps) || payload.lockedV2.fps < 1 || !Array.isArray(payload.lockedV2.renderPlan)) throw new Error('Locked V2 preview has an invalid frame plan');
@@ -351,7 +416,7 @@ function adoptLockedUpdate(latest: PreviewRun): void {
 async function refreshRunState(): Promise<boolean> {
   if (!run) return false;
   await consumeSceneEvents();
-  const response = await fetch('/run.json', { cache: 'no-store' });
+  const response = await fetch(`/run.json${run.telemetry ? `?session=${encodeURIComponent(run.telemetry.sessionId)}` : ''}`, { cache: 'no-store' });
   if (!response.ok) return true;
   const latest = await response.json() as PreviewRun;
   if (latest.schemaVersion !== 'hypothesis-browser-preview/v1') return true;
@@ -394,7 +459,14 @@ function scheduleRefresh(): void {
   }, 750);
 }
 
-playButton.addEventListener('click', () => setPlaying(!playing));
+playButton.addEventListener('click', () => {
+  if (!playing && run?.lockedV2 && firstFrameReadyMonoMs !== undefined && timeMs === 0 && audio.currentTime === 0) {
+    userPlayMonoMs = performance.now();
+    playerStartMonoMs = undefined;
+    previousAudioTimeSec = audio.currentTime;
+  }
+  setPlaying(!playing);
+});
 seek.addEventListener('input', () => {
   const requested = Number(seek.value);
   const t = run?.lockedV2 ? clampSeekToReadyPrefix(requested, readyLockedFrames(), run.lockedV2.fps, durationMs) : requested;
@@ -415,7 +487,12 @@ audio.addEventListener('ended', () => {
   } else setPlaying(false);
 });
 audio.addEventListener('waiting', () => { if (run?.lockedV2 && !lockedFailure) message.textContent = 'BUFFERING · waiting for verified audio'; });
-audio.addEventListener('playing', () => { if (run?.lockedV2 && !lockedFailure) message.textContent = `${run.status.toUpperCase()} · ${run.runClass} · verified locked playback`; });
+audio.addEventListener('playing', () => {
+  if (run?.lockedV2 && !lockedFailure) {
+    if (playing && userPlayMonoMs !== undefined && !firstAudioEvent) playerStartMonoMs ??= performance.now();
+    message.textContent = `${run.status.toUpperCase()} · ${run.runClass} · verified locked playback`;
+  }
+});
 audio.addEventListener('error', () => {
   if (run?.lockedV2) failLockedPlayback('verified audio failed to load');
   else message.textContent = 'Audio failed to load; visual preview remains available.';

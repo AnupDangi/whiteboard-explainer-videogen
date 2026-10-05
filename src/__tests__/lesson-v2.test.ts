@@ -18,6 +18,7 @@ import { canonicalHash } from '../harness/replayDeterminism.js';
 import { sha256 } from '../shared/artifacts.js';
 import { PIPELINE } from '../run/config.js';
 import { DEFAULT_PACING } from '../pipeline-v2/durationFit.js';
+import { pathToFileURL } from 'node:url';
 
 // A contract test for the V2 runner with injected model and aligner. The lesson content is synthetic test data, not a generated lesson.
 const claims = (id: string) => [{ id: `${id}_c`, statement: 'x', conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: ['s1'] }];
@@ -39,6 +40,15 @@ const fixtureDurationSec = (perWordMs: number, sceneOverheadMs: number): number 
   Object.values(narrations).reduce((sum, narration) => sum + tokenizeWords(narration.text).length * perWordMs + sceneOverheadMs, 0)
   + PIPELINE.sceneGapMs + 1200
 ) / 1000;
+async function listFiles(root: string, relative = ''): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await (await import('node:fs/promises')).readdir(path.join(root, relative), { withFileTypes: true })) {
+    const child = relative ? `${relative}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...await listFiles(root, child));
+    else if (entry.isFile()) files.push(child);
+  }
+  return files.sort();
+}
 
 const board: Record<string, unknown> = {
   one: { transition: { mode: 'clean' }, ops: [
@@ -69,6 +79,8 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     const out = path.join(dir, 'run');
     const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...prepared, requestedDurationSec: fixtureDurationSec(300, 100) }, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, fps: 8 });
     assert.equal(result.status, 'draft', JSON.stringify(result.failures));
+    assert.equal(result.artifactCertification.artifactStatus, 'DRAFT', 'an encoded video is still a draft while required QA gates are unmeasured');
+    assert.ok(result.artifactCertification.artifactGates.some((gate) => gate.id === 'complete-semantic-qa-suite' && gate.status === 'unmeasured'));
     assert.equal(result.scenes, 2);
     assert.equal(result.metrics['v2.ops'], 6);
     assert.equal(result.metrics['v2.stateChangingOps'], 2, 'remove and highlight change the board');
@@ -94,11 +106,78 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.deepEqual(progress.events.map((event) => event.sceneId), ['one', 'two']);
     assert.ok(progress.events[0]!.sinceRequestMs <= progress.events[1]!.sinceRequestMs);
     assert.ok(Number.isFinite(result.metrics['v2.requestToFirstReadySceneMs']) && result.metrics['v2.requestToFirstReadySceneMs']! <= result.metrics['v2.requestToCompleteMs']!);
+
+    // A portable review bundle must verify from its own files and reject any later byte change.
+    const evaluation = {
+      schemaVersion: 'evaluation-bundle/v2', runId: 'bundle-fixture', caseId: 'synthetic-stack', status: result.status,
+      artifactCertification: result.artifactCertification, metrics: result.metrics, failures: result.failures,
+    };
+    await writeFile(path.join(out, 'evaluation-bundle.json'), `${JSON.stringify(evaluation, null, 2)}\n`);
+    const lock = JSON.parse(await readFile(path.join(out, 'lesson.lock.v2.json'), 'utf8')) as { scenes: Array<{ sceneId: string; audioHash: string }>; renderPlan: Array<{ kind: 'hold' | 'transition'; sceneId: string; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }> };
+    const firstScene = lock.scenes[0]!;
+    const firstSegment = lock.renderPlan.find((segment) => segment.firstFrame === 0)!;
+    const firstFrameHash = firstSegment.kind === 'hold' ? firstSegment.svgHash! : firstSegment.svgHashes![0]!;
+    const acceptedAtEpochMs = 1000;
+    await writeFile(path.join(out, 'run-start.json'), `${JSON.stringify({ schemaVersion: 'hypothesis-run-start/v1', runId: 'bundle-fixture', acceptedAtEpochMs })}\n`);
+    const artifactSha256 = Object.fromEntries(await Promise.all((await listFiles(out)).map(async (relative) => [relative, sha256(await readFile(path.join(out, relative)))] as const)));
+    const manifest = {
+      schemaVersion: 'run-manifest/v1', runId: 'bundle-fixture', caseId: 'synthetic-stack', status: result.status,
+      artifactSha256, configHash: 'fixture-config', executionTiming: { requestToCompleteMs: result.metrics['v2.requestToCompleteMs'] },
+      stages: { sourceDoc: { sha256: 'fixture-source' }, preparationStages: [] },
+    };
+    await writeFile(path.join(out, 'run-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    const playerEvent = {
+      schemaVersion: 'hypothesis-first-audio-playback/v2', type: 'player.first-audio-playback',
+      eventId: 'session-bundle:first-audio-playback/v2', runId: 'bundle-fixture', sessionId: 'session-bundle',
+      measurementSource: 'browser-player', requestAcceptedAtEpochMs: acceptedAtEpochMs, browserTimeOriginMs: 1000,
+      playerLoadedMonoMs: 10, firstFrameReadyMonoMs: 20, userPlayMonoMs: 100, playerStartMonoMs: 110,
+      firstAudioPlaybackMonoMs: 250, readyToUserPlayMs: 80, userPlayToPlayerStartMs: 10,
+      playerStartToFirstAudioMs: 140, userPlayToFirstAudioMs: 150, playerLoadToFirstAudioMs: 240,
+      requestToFirstAudioMs: 250, audioCurrentTimeSec: 0.08, audioUrl: '/locked/audio.wav', observedFrame: 0,
+      observedFrameHash: firstFrameHash, initial: { sceneId: firstScene.sceneId, frame: 0, frameHash: firstFrameHash, sceneAudioHash: firstScene.audioHash },
+    };
+    await writeFile(path.join(out, 'player-telemetry.jsonl'), `${JSON.stringify(playerEvent)}\n`);
+    const bundleModule = await import(pathToFileURL(path.resolve('scripts/v2-review-bundle.mjs')).href) as {
+      createReviewBundle: (source: string, destination: string) => Promise<{ verified: boolean }>;
+      verifyReviewBundle: (bundle: string) => Promise<{ verified: boolean }>;
+    };
+    const bundleDir = path.join(dir, 'review-bundle');
+    assert.equal((await bundleModule.createReviewBundle(out, bundleDir)).verified, true);
+    const timing = JSON.parse(await readFile(path.join(bundleDir, 'timings.json'), 'utf8')) as { firstAudiblePlayableMs: number; playerTelemetry: unknown[] };
+    assert.equal(timing.firstAudiblePlayableMs, 250);
+    assert.equal(timing.playerTelemetry.length, 1);
+    assert.equal((await readFile(path.join(bundleDir, 'player-telemetry.jsonl'), 'utf8')).trim(), JSON.stringify(playerEvent));
+    const bundledVideo = path.join(bundleDir, 'video.mp4');
+    const videoBytes = await readFile(bundledVideo);
+    await writeFile(bundledVideo, Buffer.concat([videoBytes, Buffer.from('tamper')]));
+    await assert.rejects(bundleModule.verifyReviewBundle(bundleDir), /bundle hash mismatch: video\.mp4/);
+    await writeFile(bundledVideo, videoBytes);
+    assert.equal((await bundleModule.verifyReviewBundle(bundleDir)).verified, true);
     await writeFile(path.join(dir, 'done'), 'ok');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('a scene whose board cannot be planned fails the run and nothing is rendered', async () => {
+test('with the fallback off, a scene whose board cannot be planned fails the run and nothing is rendered', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lesson-v2-fail-'));
+  try {
+    const bad: ModelClient = { provider: 'fake', chat: async () => ({ content: JSON.stringify({ transition: { mode: 'clean' }, ops: [{ op: 'remove', opId: 'x', beatId: 'one.b1', target: 'ghost' }] }), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage }) };
+    const aligner = async (text: string) => {
+      const t = tokenizeWords(text);
+      const durationMs = t.length * 200 + 100;
+      const audioPath = path.join(dir, `a-${t.length}.wav`);
+      await runFfmpeg(['-y', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', String(durationMs / 1000), audioPath]);
+      return { durationMs, words: t.map((word, i) => ({ word, startMs: i * 200, endMs: i * 200 + 150 })), aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
+    };
+    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: path.join(dir, 'run'), boardFallback: false, prepared: { ...prepared, failures: [{ code: 's1-hard', stage: 'S1', message: 'synthetic preparation hard failure', hard: true }], requestedDurationSec: fixtureDurationSec(200, 100) }, plannerModel: 'google/x', apiKey: 'k', client: bad, aligner: aligner as never, fps: 8 });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.artifactCertification.artifactStatus, 'FAILED', 'a run without a valid video artifact is failed');
+    assert.equal(result.videoPath, undefined);
+    assert.ok(result.failures.some((f) => f.code === 'v2-board-failed' && f.hard));
+    assert.equal(result.artifactCertification.artifactGates.find((gate) => gate.id === 'no-hard-failures')?.status, 'failed', 'preparation failures are included in certification evidence');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('a scene whose model board cannot be validated uses the deterministic fallback: a draft with a soft failure per scene, never a pass', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lesson-v2-fail-'));
   try {
     const bad: ModelClient = { provider: 'fake', chat: async () => ({ content: JSON.stringify({ transition: { mode: 'clean' }, ops: [{ op: 'remove', opId: 'x', beatId: 'one.b1', target: 'ghost' }] }), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage }) };
@@ -110,9 +189,13 @@ test('a scene whose board cannot be planned fails the run and nothing is rendere
       return { durationMs, words: t.map((word, i) => ({ word, startMs: i * 200, endMs: i * 200 + 150 })), aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
     };
     const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: path.join(dir, 'run'), prepared: { ...prepared, requestedDurationSec: fixtureDurationSec(200, 100) }, plannerModel: 'google/x', apiKey: 'k', client: bad, aligner: aligner as never, fps: 8 });
-    assert.equal(result.status, 'failed');
-    assert.equal(result.videoPath, undefined);
-    assert.ok(result.failures.some((f) => f.code === 'v2-board-failed' && f.hard));
+    assert.equal(result.failures.some((f) => f.hard), false, JSON.stringify(result.failures.filter((f) => f.hard)));
+    assert.equal(result.status, 'draft');
+    assert.equal(result.artifactCertification.artifactStatus, 'DRAFT');
+    assert.equal(result.scenes, 2);
+    assert.equal(result.metrics['v2.fallbackScenes'], 2);
+    assert.equal(result.failures.filter((f) => f.code === 'v2-board-fallback' && !f.hard).length, 2);
+    assert.ok(result.failures.some((f) => f.code === 'board-ops-repair-failed-fallback' && !f.hard), 'the model failure stays on record, as a soft failure');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

@@ -81,8 +81,10 @@ to each claim for those cue reversals. This remains a finite lexical safeguard;
 typed source quote hashes, claim epistemic modes, comprehensive visual
 realization checks, and broad entailment validation are still open Phase 0
 work. Player telemetry records first browser playback after verified-frame
-readiness and a user gesture, but request-to-first-audio remains unmeasured
-until run acceptance has a trustworthy timestamp. Resolved source evidence now
+readiness and a user gesture. The CLI persists a trustworthy request-acceptance
+epoch in `run-start.json`; review bundles include and validate later browser
+telemetry against it. A live request-to-first-audio sample is still unmeasured,
+and browser telemetry does not prove physical speaker output. Resolved source evidence now
 carries SHA-256 digests for the exact quote and, when present, its document;
 live-run S6 verifies these digests along with source offsets. Legacy citations
 without digests remain readable but are checked against the in-memory source.
