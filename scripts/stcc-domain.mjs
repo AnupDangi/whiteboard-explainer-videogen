@@ -12,6 +12,14 @@ import path from 'node:path';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const CATALOG = {
   'biology-osmosis': { source: 'bench/sources/osmosis.md', id: 'osmosis-en', domain: 'Biology', title: 'Osmosis across a membrane', description: 'Water spreads from the crowded side to the open side until both sides match — no energy spent.', duration: 60 },
+  'simi-math': { source: 'bench/simi-smoke/MATH-01.md', id: 'math-en', domain: 'Mathematics', title: 'Equivalent fractions, same quantity', description: 'Changing numerator and denominator together preserves the amount: re-cut pieces cover the same area.', duration: 75 },
+  'simi-phys': { source: 'bench/simi-smoke/PHYS-01.md', id: 'phys-en', domain: 'Physics', title: 'Newton second law', description: 'Force and mass decide acceleration: predict motion from what pushes and what resists.', duration: 90 },
+  'simi-bio': { source: 'bench/simi-smoke/BIO-01.md', id: 'bio-en', domain: 'Biology', title: 'Osmosis across a membrane', description: 'Water moves across a semipermeable membrane from dilute to concentrated sides.', duration: 110 },
+  'simi-chem': { source: 'bench/simi-smoke/CHEM-01.md', id: 'chem-en', domain: 'Chemistry', title: 'Ionic versus covalent bonding', description: 'Electron transfer versus electron sharing: what holds atoms together and why it matters.', duration: 105 },
+  'simi-cs': { source: 'bench/simi-smoke/CS-01.md', id: 'cs-en', domain: 'Computer science', title: 'Binary search', description: 'Sorted order lets every comparison throw away half the search space.', duration: 100 },
+  'simi-sys': { source: 'bench/simi-smoke/SYS-01.md', id: 'sys-en', domain: 'Systems', title: 'DNS lookup, name to address', description: 'Follow a domain name across resolvers until it becomes an IP address.', duration: 120 },
+  'simi-aiml': { source: 'bench/simi-smoke/AIML-01.md', id: 'aiml-en', domain: 'AI and ML', title: 'Gradient descent', description: 'Step opposite the gradient and the loss falls: learning as downhill walking.', duration: 120 },
+  'simi-stat': { source: 'bench/simi-smoke/STAT-01.md', id: 'stat-en', domain: 'Statistics', title: 'Mean versus median under an outlier', description: 'One extreme value drags the mean but barely moves the median.', duration: 85 },
   'math-squares': { source: 'bench/benchmark-v2/sources/completing-the-square.md', id: 'squares-en', domain: 'Mathematics', title: 'Completing the square', description: 'Reshaping an equation into a perfect square to reveal its turning point.', duration: 75 },
   'physics-rc': { source: 'bench/benchmark-v2/sources/rc-circuit-charging.md', id: 'rc-en', domain: 'Physics', title: 'RC circuit charging', description: 'Charge builds on the capacitor while the current fades — cause, quantity, and plot together.', duration: 90 },
   'cs-lru': { source: 'bench/benchmark-v2/sources/lru-cache.md', id: 'lru-en', domain: 'Computer science', title: 'LRU cache eviction', description: 'The least recently used entry leaves first: order, capacity, and eviction traced live.', duration: 90 },
@@ -30,7 +38,9 @@ const workdir = path.join(ROOT, '.data', 'stcc-proof', `${name}-a${attempt}`);
 const env = { ...process.env, TEACHING_COMPILER_VERSION: 'v2', TEACHING_BEATS_V2: '1', BOARD_OPS_V2: '1', PERSISTENT_BOARD_V2: '1', TYPE_RESOLVER_V2: '1', LAYOUT_V2: '1', RENDER_PLAN_V2: '1' };
 
 console.log(`== ${name} attempt ${attempt}: ${item.source} (${item.duration}s)`);
+const genStartedAt = Date.now();
 const run = spawnSync('node', ['dist/src/run/lessonCli.js', `--source=${item.source}`, '--instruction=Teach the main idea of this source to a beginner.', `--duration=${item.duration}`, `--id=${item.id}`, '--cache=cold', '--tts=local', `--language=${lang}`, '--diagnostic-video', '--audio-concurrency=2', `--out=${workdir}`], { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+const genWallS = Math.round((Date.now() - genStartedAt) / 1000);
 writeFileSync(path.join(workdir + '.log'), (run.stdout ?? '') + '\n' + (run.stderr ?? ''));
 console.log((run.stdout ?? '').split('\n').filter((l) => /status=|\[HARD\]/.test(l)).map((l) => l.slice(0, 300)).join('\n'));
 
@@ -99,6 +109,6 @@ const durMatch = /encodedDuration=([0-9.]+)/.exec(statusLine);
 if (costMatch) costUsd = '$' + costMatch[1];
 if (durMatch) durationS = Math.round(Number(durMatch[1]) / 1000);
 const hardCount = (run.stdout ?? '').split('\n').filter((l) => l.includes('[HARD]')).length;
-writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify({ domain: item.domain, title: item.title, description: item.description, durationS, costUsd: String(costUsd), scenes: scenes_, status: hardCount === 0 ? 'complete' : 'diagnostic', hardFailures: hardCount, attempt, source: item.source }, null, 2) + '\n');
+writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify({ domain: item.domain, title: item.title, description: item.description, durationS, costUsd: String(costUsd), scenes: scenes_, status: hardCount === 0 ? 'complete' : 'diagnostic', hardFailures: hardCount, attempt, source: item.source, genStartedAt: new Date(genStartedAt).toISOString(), genWallS }, null, 2) + '\n');
 spawnSync('node', ['scripts/stcc-gallery.mjs'], { cwd: ROOT, encoding: 'utf8' });
 console.log(`done: ${outDir}/video.mp4`);

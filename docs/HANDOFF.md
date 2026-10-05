@@ -2772,3 +2772,9 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Root-caused from a8 data:** (1) closed-vocabulary edge verbs (causes/feeds/produces) demanded word-for-word quote presence though prose states causation structurally; (2) verifier rejected chained numeric equalities outright.
 - **Fixed (compiler-side):** process-verb edges ground on endpoint order + negation guard (contrast relations keep strict wording); numeric A=B=C chains verify pairwise (letters still route to single-unknown algebra).
 - **Verification:** grounding-wording 6/6 new; grounding 9, illustrative-verify 21, board 45, ops-plan 20; typecheck clean.
+
+## Continuation — benchmark video list (wt/stcc/charter)
+
+- **Ingested:** all 24 simi_benchmark_v1_1 fixtures to `bench/simi-smoke/*.md` (candidate-visible source + objective + duration only; truth/comprehension never read). Smoke-8 video list: math, phys, bio, chem, cs, sys, aiml, stat (+ existing physics-rc).
+- **Driver:** 8 catalog entries + per-video generation timing (genStartedAt/genWallS in meta.json, shown on gallery cards).
+- **Reference:** lamina-labs-video holds 4 videos (Attention, simi.mp4, 2 photosynthesis); style reference only, per OBSERVATIONS.md.

@@ -21,7 +21,7 @@ const card = (c) => `
       <video src="${c.dir}/video.mp4" poster="${c.dir}/scenes.png" preload="metadata" controls></video>
       <h2>${c.title}</h2>
       <p class="desc">${c.description}</p>
-      <p class="meta">${c.durationS}s · ${c.costUsd} · ${c.scenes} scenes · ${c.status}</p>
+      <p class="meta">${c.durationS}s video · ${c.scenes} scenes · ${c.costUsd} · generated in ${c.genWallS ? Math.round(c.genWallS / 60) + ' min' : '?'} · ${c.status}</p>
       <img class="strip" src="${c.dir}/scenes.png" alt="Complete scene boards for ${c.title}" loading="lazy">
     </article>`;
 const html = `<!doctype html>
