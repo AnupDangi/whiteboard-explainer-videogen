@@ -15,7 +15,7 @@ import type { TeachingBeat } from '../teaching/beat-plan/types.js';
 import type { GeometryDiagnostic } from '../visual-v2/layout/sceneLayout.js';
 
 const beat = (n: number, over: Partial<TeachingBeat> = {}): TeachingBeat => ({
-  beatId: `sc.b${n}`, sceneId: 'sc', order: n, claimIds: ['c1'], learnerDelta: 'delta', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
+  beatId: `sc.b${n}`, sceneId: 'sc', order: n, claimIds: ['c1'], learnerDelta: 'delta', learningQuestion: 'What changes?', learnerBefore: 'The learner has not traced this step.', learnerAfter: 'The learner can trace this step.', dependsOnOrders: [], dependsOnBeatIds: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
   entities: [{ conceptId: 'frame' }], relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'a frame is on the pile', mutedMeaning: 'a pile grows',
   narrationOnly: false, persistence: 'scene', pauseIntent: 'micro', evidenceSpanIds: ['s1'], ...over,
 });

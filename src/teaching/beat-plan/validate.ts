@@ -51,6 +51,14 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
   const beatCountByClaim = new Map<string, number>();
   plan.beats.forEach((beat, i) => {
     const at = `/beats/${i}`;
+    if (!/[?？]$/u.test(beat.learningQuestion.trim())) problems.push({ path: `${at}/learningQuestion`, message: 'learningQuestion must be phrased as a question' });
+    if (beat.learnerBefore.trim().toLowerCase() === beat.learnerAfter.trim().toLowerCase()) problems.push({ path: `${at}/learnerAfter`, message: 'learnerAfter must describe a state different from learnerBefore' });
+    const seenDependencies = new Set<number>();
+    beat.dependsOnOrders.forEach((order, dependencyIndex) => {
+      if (seenDependencies.has(order)) problems.push({ path: `${at}/dependsOnOrders/${dependencyIndex}`, message: `beat order ${order} is listed more than once` });
+      seenDependencies.add(order);
+      if (order >= i + 1) problems.push({ path: `${at}/dependsOnOrders/${dependencyIndex}`, message: `dependency ${order} must reference an earlier beat order` });
+    });
     beat.claimIds.forEach((claimId, j) => {
       if (!claimIds.has(claimId)) problems.push({ path: `${at}/claimIds/${j}`, message: `unknown claim ${claimId}; use one of: ${[...claimIds].join(', ')}` });
       else { covered.add(claimId); beatCountByClaim.set(claimId, (beatCountByClaim.get(claimId) ?? 0) + 1); }

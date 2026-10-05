@@ -6,7 +6,7 @@ import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import type { TeachingBeat } from '../teaching/beat-plan/types.js';
 
 const beat = (n: number, concepts: string[], over: Partial<TeachingBeat> = {}): TeachingBeat => ({
-  beatId: `sc.b${n}`, sceneId: 'sc', order: n, claimIds: [`c${n}`], learnerDelta: 'd', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'process',
+  beatId: `sc.b${n}`, sceneId: 'sc', order: n, claimIds: [`c${n}`], learnerDelta: 'd', learningQuestion: 'What changes?', learnerBefore: 'The learner sees the earlier state.', learnerAfter: 'The learner sees the next state.', dependsOnOrders: [], dependsOnBeatIds: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'process',
   entities: concepts.map((conceptId) => ({ conceptId })), relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'v', mutedMeaning: 'm',
   narrationOnly: false, persistence: 'scene', pauseIntent: 'micro', evidenceSpanIds: ['s1'], ...over,
 });

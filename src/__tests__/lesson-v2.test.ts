@@ -39,7 +39,7 @@ const claims = (id: string) => {
   }];
 };
 const beatDraft = (sceneId: string) => BeatPlanDraftSchema.parse({ beats: [{
-  claimIds: [`${sceneId}_c`], learnerDelta: 'd', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model', entities: [{ conceptId: 'frame' }, { conceptId: 'stack' }],
+  claimIds: [`${sceneId}_c`], learnerDelta: 'd', learningQuestion: 'What changes in the stack?', learnerBefore: 'The learner knows the stack can hold frames.', learnerAfter: 'The learner can trace how the top frame changes.', dependsOnOrders: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model', entities: [{ conceptId: 'frame' }, { conceptId: 'stack' }],
   relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'v', mutedMeaning: 'm', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
 }] });
 const ctxFor = (sceneId: string) => ({ sceneId, conceptIds: ['frame', 'stack'], claims: claims(sceneId), relations: [], misconceptionIds: [], durationSec: 6 });
@@ -112,7 +112,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       beatNarrations: Record<string, { claimSpans: Array<{ claimId: string }> }>;
       evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v4');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v5');
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.ok(lessonContext.plan.sections.flatMap((section) => section.contract.essentialClaims).every((claim) => claim.epistemicType === 'direct_source'));
@@ -481,7 +481,7 @@ test('the V2 lock pins ops, narration, timings, audio and versions before render
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects an untyped claim in a rehashed lesson-context/v4', async () => {
+test('the V2 lock rejects untyped claims and invalid learner dependencies in rehashed lesson-context/v5', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
@@ -491,8 +491,9 @@ test('the V2 lock rejects an untyped claim in a rehashed lesson-context/v4', asy
     const context = JSON.parse(await readFile(contextPath, 'utf8')) as {
       schemaVersion: string;
       plan: { sections: Array<{ contract: { essentialClaims: Array<Record<string, unknown>> } }> };
+      beatPlans: Record<string, Array<Record<string, unknown>>>;
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v4');
+    assert.equal(context.schemaVersion, 'lesson-context/v5');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -519,6 +520,19 @@ test('the V2 lock rejects an untyped claim in a rehashed lesson-context/v4', asy
     await writeFile(path.join(out, 'lesson.lock.json'), statusLockBytes);
     const statusProblems = await verifyLessonLockV2(out);
     assert.ok(statusProblems.some((problem) => /verificationStatus must be source_cited/u.test(problem)), statusProblems.join('\n'));
+
+    context.beatPlans.one![0]!.dependsOnOrders = [1];
+    context.beatPlans.one![0]!.dependsOnBeatIds = ['one.b1'];
+    const dependencyBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, dependencyBytes);
+    lock.context.hash = sha256(dependencyBytes);
+    const { contentHash: _oldDependencyHash, ...dependencyBody } = lock;
+    lock.contentHash = canonicalHash(dependencyBody);
+    const dependencyLockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, dependencyLockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), dependencyLockBytes);
+    const dependencyProblems = await verifyLessonLockV2(out);
+    assert.ok(dependencyProblems.some((problem) => /dependency that does not reference an earlier beat order/u.test(problem)), dependencyProblems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

@@ -12,7 +12,7 @@ import type { ModelClient } from '../llm/modelClient.js';
 import { deriveClaimIdentity } from '../evidence/claimIdentity.js';
 
 const planBeat = (n: number, claimIds: string[]): TeachingBeat => ({
-  beatId: `scene.b${n}`, sceneId: 'scene', order: n, claimIds, learnerDelta: 'delta', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
+  beatId: `scene.b${n}`, sceneId: 'scene', order: n, claimIds, learnerDelta: 'delta', learningQuestion: 'What changes?', learnerBefore: 'The learner has not traced this step.', learnerAfter: 'The learner can trace this step.', dependsOnOrders: [], dependsOnBeatIds: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
   entities: [{ conceptId: 'frame' }], relationships: [], misconceptionIds: [], narrationGoal: 'Make clear that a call pushes a frame.', visualInvariant: 'a frame is visible', mutedMeaning: 'a pile grows',
   narrationOnly: false, persistence: 'scene', pauseIntent: 'micro', evidenceSpanIds: ['s1'],
 });

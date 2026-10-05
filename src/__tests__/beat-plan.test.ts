@@ -21,7 +21,7 @@ const ctx: BeatContext = {
 };
 
 const beat = (over: Record<string, unknown> = {}) => ({
-  claimIds: ['c1'], learnerDelta: 'The learner sees that a call creates a new frame.', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
+  claimIds: ['c1'], learnerDelta: 'The learner sees that a call creates a new frame.', learningQuestion: 'What does a call add to the stack?', learnerBefore: 'The learner knows the stack can hold frames.', learnerAfter: 'The learner knows a call adds one frame.', dependsOnOrders: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
   entities: [{ conceptId: 'frame', role: 'new item', count: 1 }], relationships: [{ from: 'call', to: 'frame', type: 'produces' }],
   stateBefore: { description: 'The stack is empty.' }, stateAfter: { description: 'One frame sits on the stack.', quantities: [{ label: 'frames', value: 1 }] },
   misconceptionIds: [], narrationGoal: 'Say that each call pushes a frame.', visualInvariant: 'A frame is visible on the stack.', mutedMeaning: 'Calling something puts a box on a pile.',
@@ -40,6 +40,25 @@ test('the beat schema is strict: unknown enum values and extra keys are rejected
 
 test('a complete plan that covers every claim is valid', () => {
   assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], beatType: 'transform', cognitiveOperation: 'transform', learnerDelta: 'The learner sees returning remove the top frame.' })]), ctx), []);
+});
+
+test('learner state transitions are distinct and dependencies resolve only to earlier stable beat ids', () => {
+  const planned = draft([beat(), beat({ claimIds: ['c2'], relationships: [], dependsOnOrders: [1] })]);
+  assert.deepEqual(validateBeatPlan(planned, ctx), []);
+  const compiled = compileBeatPlan(planned, ctx);
+  assert.deepEqual(compiled[1]!.dependsOnBeatIds, ['stack_scene.b1']);
+  assert.deepEqual(compiled[0]!.dependsOnBeatIds, []);
+  assert.equal(beatPlanMetrics([{ ctx, beats: compiled }]).dependencyLinks, 1);
+  assert.equal(beatPlanMetrics([{ ctx, beats: compiled }]).danglingDependencyIds, 0);
+
+  const selfDependency = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], dependsOnOrders: [2] })]), ctx);
+  assert.ok(selfDependency.some((problem) => /must reference an earlier beat order/.test((problem as { message: string }).message)));
+  const repeatedDependency = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], dependsOnOrders: [1, 1] })]), ctx);
+  assert.ok(repeatedDependency.some((problem) => /listed more than once/.test((problem as { message: string }).message)));
+  const unchangedState = validateBeatPlan(draft([beat({ learnerAfter: 'The learner knows the stack can hold frames.' }), beat({ claimIds: ['c2'], relationships: [] })]), ctx);
+  assert.ok(unchangedState.some((problem) => /different from learnerBefore/.test((problem as { message: string }).message)));
+  const nonQuestion = validateBeatPlan(draft([beat({ learningQuestion: 'A call adds a frame.' }), beat({ claimIds: ['c2'], relationships: [] })]), ctx);
+  assert.ok(nonQuestion.some((problem) => /phrased as a question/.test((problem as { message: string }).message)));
 });
 
 test('problems carry JSON pointers so a repair patches only the failing location', () => {
@@ -133,9 +152,9 @@ test('compile assigns stable beat ids in order and derives evidence spans from t
   assert.ok(beats.every((b) => b.sceneId === 'stack_scene'));
 });
 
-test('exit metrics: every claim covered, every beat has delta, family, invariant, muted meaning on visual beats, no dangling ids', () => {
+test('exit metrics: every claim covered, learner transitions and visual meaning complete, no dangling ids', () => {
   const beats = compileBeatPlan(draft([beat(), beat({ claimIds: ['c2'] })]), ctx);
-  assert.deepEqual(beatPlanMetrics([{ ctx, beats }]), { majorClaims: 2, claimsCovered: 2, beats: 2, beatsWithLearnerDelta: 2, beatsWithFamily: 2, beatsWithInvariant: 2, visualBeats: 2, visualBeatsWithMutedMeaning: 2, danglingClaimIds: 0, unsupportedEvidenceIds: 0 });
+  assert.deepEqual(beatPlanMetrics([{ ctx, beats }]), { majorClaims: 2, claimsCovered: 2, beats: 2, beatsWithLearningQuestion: 2, beatsWithLearnerStateTransition: 2, dependencyLinks: 0, danglingDependencyIds: 0, beatsWithLearnerDelta: 2, beatsWithFamily: 2, beatsWithInvariant: 2, visualBeats: 2, visualBeatsWithMutedMeaning: 2, danglingClaimIds: 0, unsupportedEvidenceIds: 0 });
   const dangling = beatPlanMetrics([{ ctx, beats: [{ ...beats[0]!, claimIds: ['ghost'] }] }]);
   assert.equal(dangling.danglingClaimIds, 1);
   assert.equal(dangling.claimsCovered, 0);
@@ -148,6 +167,9 @@ test('the prompt states the scene contract, claim ids, misconception ids and the
   assert.match(user, /m1/);
   assert.match(user, /2-5 beats/);
   assert.match(user, /Calls push, returns pop\./);
+  assert.match(system, /learningQuestion/);
+  assert.match(system, /learnerBefore and learnerAfter/);
+  assert.match(system, /dependsOnOrders/);
 });
 
 test('the beat prompt makes unverified explanations visibly isolated and non-visual', () => {

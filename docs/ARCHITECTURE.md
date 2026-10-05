@@ -146,10 +146,12 @@ Before audio generation, V2 projects canonical claims into
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v4`; lock verification
-requires each claim's explicit type and derived verification status and checks
-its source refs against the claim's cited spans. `lesson-context/v2` and `/v3`
-remain readable through the compatibility path. The CLI carries grounding mode through request and run
+concatenated bundle hash. New runs write `lesson-context/v5`; lock verification
+requires each claim's explicit type and derived verification status, checks
+its source refs against the claim's cited spans, and verifies the beat learner
+question, before/after state, stable order, and compiled dependency IDs.
+`lesson-context/v2` through `/v4` remain readable through compatibility paths.
+The CLI carries grounding mode through request and run
 identity. `STRICT_SOURCE` and `SOURCE_PLUS_BACKGROUND` are accepted:
 direct-source and derived-relation claims require primary-only citations;
 pedagogical bridges may cite primary or explicitly role-marked background

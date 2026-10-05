@@ -20,7 +20,7 @@ const section = (id: string) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'e
 const plan = { targetDurationSec: 24, intro: { sourceTitle: 't', sections: [] }, sections: [section('one'), section('two')], recap: { keyPoints: [] } } as unknown as TeachingPlan;
 
 const beatJson = (sceneClaim: string) => JSON.stringify({ beats: [{
-  claimIds: [sceneClaim], learnerDelta: 'sees a push', beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
+  claimIds: [sceneClaim], learnerDelta: 'sees a push', learningQuestion: 'What does a call add to the stack?', learnerBefore: 'The learner knows the stack can hold frames.', learnerAfter: 'The learner knows a call adds one frame.', dependsOnOrders: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
   entities: [{ conceptId: 'frame' }], relationships: [], misconceptionIds: [], narrationGoal: 'say it', visualInvariant: 'a frame', mutedMeaning: 'a pile', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
 }] });
 const narrationJson = (beatId: string, claimId: string) => JSON.stringify({ beats: [{ beatId, sentences: ['Every call pushes a frame onto the stack, up to 3 steps deep.'], claimSentences: [{ claimId, sentenceIndex: 0 }], emphasisTerms: ['frame'] }] });

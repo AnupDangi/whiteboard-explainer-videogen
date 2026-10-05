@@ -34,6 +34,11 @@ export const StateSpecSchema = z.object({
 export const BeatDraftSchema = z.object({
   claimIds: z.array(id()).min(1).max(3),
   learnerDelta: z.string().min(1).max(200),
+  learningQuestion: z.string().trim().min(1).max(180),
+  learnerBefore: z.string().trim().min(1).max(200),
+  learnerAfter: z.string().trim().min(1).max(200),
+  /** 1-based order indexes for earlier beats this learner transition depends on. */
+  dependsOnOrders: z.array(z.number().int().min(1).max(MAX_BEATS_PER_SCENE)).max(MAX_BEATS_PER_SCENE - 1),
   beatType: z.enum(BEAT_TYPES),
   cognitiveOperation: z.enum(COGNITIVE_OPERATIONS),
   representationFamily: z.enum(REPRESENTATION_FAMILIES),
@@ -67,6 +72,8 @@ export interface TeachingBeat extends BeatDraft {
   beatId: string;
   sceneId: string;
   order: number;
+  /** Stable references compiled from model-declared earlier beat order indexes. */
+  dependsOnBeatIds: string[];
   /** Union of the cited claims' evidence spans; never written by the model. */
   evidenceSpanIds: string[];
 }

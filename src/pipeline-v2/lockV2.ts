@@ -122,10 +122,11 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
   const contextV2 = context.schemaVersion === 'lesson-context/v2';
   const contextV3 = context.schemaVersion === 'lesson-context/v3';
   const contextV4 = context.schemaVersion === 'lesson-context/v4';
-  if (context.schemaVersion !== undefined && !contextV2 && !contextV3 && !contextV4) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
+  const contextV5 = context.schemaVersion === 'lesson-context/v5';
+  if (context.schemaVersion !== undefined && !contextV2 && !contextV3 && !contextV4 && !contextV5) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
   // Older synthetic and cached V2 locks predate the claim graph / beat identity contract.
   if (!sections?.some((section) => recordOf(section.contract))) {
-    return contextV2 || contextV3 || contextV4 ? [`lesson context ${contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
+    return contextV2 || contextV3 || contextV4 || contextV5 ? [`lesson context ${contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
   }
 
   const problems: string[] = [];
@@ -142,7 +143,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
     if (parsed && (typeof parsed.from !== 'string' || typeof parsed.to !== 'string' || !conceptLabels.has(parsed.from) || !conceptLabels.has(parsed.to))) problems.push('pinned concept graph relation endpoint is missing');
   }
 
-  if (contextV2 || contextV3 || contextV4) {
+  if (contextV2 || contextV3 || contextV4 || contextV5) {
     const ledgerValidation = validateEvidenceLedger(context.evidenceLedger);
     if (!ledgerValidation.valid) problems.push(...ledgerValidation.errors.map((problem) => `pinned evidence ledger: ${problem}`));
     else {
@@ -158,9 +159,9 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
             continue;
           }
           const epistemicType = EpistemicTypeSchema.safeParse(claim.epistemicType);
-          if ((contextV3 || contextV4) && !epistemicType.success) problems.push(`canonical plan claim ${claim.id} has no valid epistemicType`);
+          if ((contextV3 || contextV4 || contextV5) && !epistemicType.success) problems.push(`canonical plan claim ${claim.id} has no valid epistemicType`);
           const verificationStatus = ClaimVerificationStatusSchema.safeParse(claim.verificationStatus);
-          if (contextV4 && !verificationStatus.success) problems.push(`canonical plan claim ${claim.id} has no valid verificationStatus`);
+          if ((contextV4 || contextV5) && !verificationStatus.success) problems.push(`canonical plan claim ${claim.id} has no valid verificationStatus`);
           if (epistemicType.success) {
             for (const issue of epistemicClaimProblems({ id: claim.id, statement: claim.statement, relations: arrayOf(claim.relations) ?? [], epistemicType: epistemicType.data })) {
               problems.push(`canonical plan ${issue}`);
@@ -187,7 +188,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
       problems.push(...validateEvidenceLedgerClaims(ledger, canonicalClaims));
       const sourceDoc = recordOf(context.sourceDoc);
       if (!sourceDoc || typeof sourceDoc.sourceId !== 'string' || typeof sourceDoc.text !== 'string' || !Array.isArray(sourceDoc.spans)) {
-        problems.push(`lesson context ${contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
+        problems.push(`lesson context ${contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
       } else {
         const graphEvidence = [
           ...concepts.flatMap((concept) => arrayOf(concept.evidence) ?? []),
@@ -249,9 +250,31 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
       problems.push(`scene ${locked.sceneId} semantic beats do not match the pinned beat plan`);
     }
     const beatsById = new Map<string, JsonRecord>();
-    for (const rawBeat of planBeats ?? []) {
+    for (const [beatIndex, rawBeat] of (planBeats ?? []).entries()) {
       const beat = recordOf(rawBeat);
       if (!beat || typeof beat.beatId !== 'string') { problems.push(`scene ${locked.sceneId} has a beat without a stable id`); continue; }
+      if (contextV5) {
+        if (beat.beatId !== `${locked.sceneId}.b${beatIndex + 1}` || beat.order !== beatIndex + 1) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has an unstable order or id`);
+        if (typeof beat.learningQuestion !== 'string' || !/[?？]$/u.test(beat.learningQuestion.trim())) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has no question-form learningQuestion`);
+        const learnerBefore = typeof beat.learnerBefore === 'string' ? beat.learnerBefore.trim().toLowerCase() : '';
+        const learnerAfter = typeof beat.learnerAfter === 'string' ? beat.learnerAfter.trim().toLowerCase() : '';
+        if (!learnerBefore || !learnerAfter || learnerBefore === learnerAfter) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has no distinct learner-before/after state`);
+        if (!Array.isArray(beat.dependsOnOrders) || !Array.isArray(beat.dependsOnBeatIds)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has no dependency arrays`);
+        const dependencyOrders = arrayOf(beat.dependsOnOrders) ?? [];
+        const dependencyIds = arrayOf(beat.dependsOnBeatIds) ?? [];
+        const expectedDependencyIds: string[] = [];
+        const seenDependencyOrders = new Set<number>();
+        dependencyOrders.forEach((rawOrder) => {
+          if (typeof rawOrder !== 'number' || !Number.isInteger(rawOrder) || rawOrder < 1 || rawOrder > beatIndex) {
+            problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has a dependency that does not reference an earlier beat order`);
+          } else {
+            if (seenDependencyOrders.has(rawOrder)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} repeats dependency order ${rawOrder}`);
+            seenDependencyOrders.add(rawOrder);
+            expectedDependencyIds.push(`${locked.sceneId}.b${rawOrder}`);
+          }
+        });
+        if (canonicalHash(expectedDependencyIds) !== canonicalHash(dependencyIds)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} compiled dependency ids do not match its declared earlier orders`);
+      }
       beatsById.set(beat.beatId, beat);
       const beatClaimIds = arrayOf(beat.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
       for (const claimId of beatClaimIds) if (!claimsById.has(claimId)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} cites unknown claim ${claimId}`);
