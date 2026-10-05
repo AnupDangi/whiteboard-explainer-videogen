@@ -2766,3 +2766,9 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Built:** `--audio-concurrency=N` flag → runLessonV2 (default still 1; host lease already caps at 2); clip raster workers 2→4 (10-core host, bounded).
 - **Skipped with reason:** compile/validate parallelization (sync CPU-bound functions — Promise.all interleaves nothing); board-chain parallelization (STCC §29 forbids; needs constitution review, excluded by plan).
 - **Verification:** clips 4, encode 2, cli-attempt 3, lesson-v2 8; typecheck clean.
+
+## Continuation — relation wording + chained equality (wt/stcc/charter)
+
+- **Root-caused from a8 data:** (1) closed-vocabulary edge verbs (causes/feeds/produces) demanded word-for-word quote presence though prose states causation structurally; (2) verifier rejected chained numeric equalities outright.
+- **Fixed (compiler-side):** process-verb edges ground on endpoint order + negation guard (contrast relations keep strict wording); numeric A=B=C chains verify pairwise (letters still route to single-unknown algebra).
+- **Verification:** grounding-wording 6/6 new; grounding 9, illustrative-verify 21, board 45, ops-plan 20; typecheck clean.

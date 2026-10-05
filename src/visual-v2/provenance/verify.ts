@@ -76,16 +76,27 @@ const sides = (tex: string): [string, string] | undefined => { const parts = tex
 const letters = (tex: string): string[] => [...new Set(normalizeTex(tex).match(/[a-zA-Z]/g) ?? [])];
 
 export function verifyEquation(tex: string): Verification {
-  const parts = sides(tex);
-  if (!parts) return { status: 'unverifiable', method: 'none', detail: 'not a single equation' };
   if (letters(tex).length > 0) {
+    const parts = sides(tex);
+    if (!parts) return { status: 'unverifiable', method: 'none', detail: 'not a single equation' };
     const solution = linearSolution(tex);
     return solution ? { status: 'verified', method: 'algebra', detail: `single-unknown affine equation; ${solution.variable} = ${rationalText(solution.value)}` } : { status: 'unverifiable', method: 'none', detail: 'not a supported single-unknown affine equation' };
   }
-  const left = affineExpression(parts[0], '')?.constant;
-  const right = affineExpression(parts[1], '')?.constant;
-  if (!left || !right) return { status: 'unverifiable', method: 'none', detail: 'could not evaluate both sides with bounded exact arithmetic' };
-  return rationalEqual(left, right) ? { status: 'verified', method: 'computation', detail: `${rationalText(left)} = ${rationalText(right)}` } : { status: 'refuted', method: 'computation', detail: `left side is ${rationalText(left)} but right side is ${rationalText(right)}` };
+  // Chained numeric equalities (A=B=C) verify iff every adjacent pair computes.
+  const segments = tex.split('=').map((s) => s.trim()).filter((s) => s.length > 0);
+  if (segments.length < 2) return { status: 'unverifiable', method: 'none', detail: 'not a single equation' };
+  const values: Rational[] = [];
+  for (const segment of segments) {
+    const value = affineExpression(segment, '')?.constant;
+    if (!value) return { status: 'unverifiable', method: 'none', detail: 'could not evaluate both sides with bounded exact arithmetic' };
+    values.push(value);
+  }
+  for (let i = 1; i < values.length; i++) {
+    if (!rationalEqual(values[i - 1]!, values[i]!)) {
+      return { status: 'refuted', method: 'computation', detail: `segment ${i} is ${rationalText(values[i - 1]!)} but segment ${i + 1} is ${rationalText(values[i]!)}` };
+    }
+  }
+  return { status: 'verified', method: 'computation', detail: values.map(rationalText).join(' = ') };
 }
 
 type Rational = { numerator: bigint; denominator: bigint };

@@ -89,10 +89,24 @@ export function factualKitScalars(value: unknown, kit?: KitName): string[] {
 /** An edge requires an anchored quote containing the directed subject, relation, and object in that order. */
 export function sourceEdgeProblem(from: string | undefined, relation: string, to: string | undefined, citation: SourceCitation | undefined, grounding: Grounding | undefined): string | undefined {
   if (!from || !to) return 'the factual edge endpoints need displayed names before the relationship can be grounded';
-  const mismatch = sourceTextProblem([from, relation, to], citation, grounding, 'edge');
+  // Process-flow verbs (causes/feeds/produces) rarely appear literally in prose
+  // ("current flows and the capacitor charges" states causation without the word
+  // "causes"). For these, endpoint order plus the negation guard below is the
+  // check; the relation word itself is compiler vocabulary. Contrast relations
+  // (opposes/excepts/compares/...) keep the strict word requirement because
+  // their wording is the claim.
+  const ProcessRelations = new Set(['causes', 'feeds', 'produces']);
+  const mismatch = sourceTextProblem(ProcessRelations.has(relation) ? [from, to] : [from, relation, to], citation, grounding, 'edge');
   if (mismatch) return mismatch;
   const quote = normalized(grounding!.verify(citation!.spanId, citation!.quote)!);
   const start = quote.indexOf(normalized(from));
+  if (ProcessRelations.has(relation)) {
+    const end = quote.indexOf(normalized(to), start + normalized(from).length);
+    if (start < 0 || end <= start) return 'the cited quote does not state this directed subject–object sequence; use a matching quote or change the edge';
+    const clause = quote.slice(0, end + normalized(to).length);
+    if (unsupportedQualifier(clause)) return 'the cited relationship is negated or qualified; use an explicit supported claim or remove the factual edge';
+    return undefined;
+  }
   const middle = quote.indexOf(normalized(relation), start + normalized(from).length);
   const end = quote.indexOf(normalized(to), middle + normalized(relation).length);
   if (start < 0 || middle <= start || end <= middle) return 'the cited quote does not state this directed subject–relation–object sequence; use a matching quote or change the edge';

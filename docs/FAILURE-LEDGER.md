@@ -23,3 +23,5 @@ Prompt recording lands with the recorder change (prompt.json per call); rows bef
 | physics-video | all beats | S9 timeline | spread rule | early reveals (45/46 cue=0) | S9 compiler | degenerate-cue spread in compileSceneTimeline |
 | pictorial-gap | all scenes | S7 resolver | zero pictorial (V2 bypass) | S7 wiring | approved resolver + upgrade + revalidate |
 | choreography | all beats | S9 timeline | arrows waited for targets | S9 compiler | connect needs source only |
+| edge wording | switch scene | S7 provenance | relation verb demanded literally | S7 ground.ts | endpoint-order + negation guard for process verbs |
+| chained equality | time-constant scene | S7 provenance | A=B=C rejected outright | S7 verify.ts | pairwise numeric chain verification |
