@@ -32,8 +32,7 @@ import { compileScene, type CompiledScene } from '../visual-v2/renderer/frame.js
 import { mapLimit } from './mapLimit.js';
 import { publishSceneLockV2, recordSceneProgressV2, writeLessonLockV2 } from './lockV2.js';
 import { encodeLockedLessonV2Clips } from './clipsV2.js';
-import type { ConceptInfo } from '../visual-v2/resolver/typeGate.js';
-import { depictEntity } from '../visual-v2/resolver/typeGate.js';
+import { chooseEntitySceneFamily, depictEntity, type ConceptInfo, type SceneEntityRequest } from '../visual-v2/resolver/typeGate.js';
 import { CATALOG } from '../assets/catalog.js';
 import { loadCatalogLibraries } from '../assets/streamline.js';
 import { loadBridge } from '../assets/bridge.js';
@@ -293,6 +292,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   let carried: BoardState = emptyBoardState();
   let prior: PriorLayout | undefined;
   const timings: BeatTiming[][] = [];
+  const depictionRequests = new Map<string, SceneEntityRequest>();
   for (const { section, narration, audio } of audioScenes) {
     let intervals;
     try { intervals = beatIntervals(narration, audio.words.map((w) => ({ w: w.word, startMs: w.startMs, endMs: w.endMs }))); } catch (error) {
@@ -329,7 +329,22 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     if (boardDraft === result.value) failures.push(...result.failures);
     const initial = startScene(carried, boardDraft.transition, section.id);
     const timeline = compileSceneTimeline({ ops: boardDraft.ops, initial, beats: beatTimings });
-    const scene = compileScene(section.id, section.title, timeline, input.lessonId, conceptIndex, prior);
+    const sceneEntities = new Map<string, SceneEntityRequest>();
+    for (const state of timeline.states) for (const element of Object.values(state.elements)) {
+      if (element.lifecycle.removedAtBeat !== undefined || element.spec.type !== 'entity') continue;
+      const request = { concept: conceptIndex.get(element.spec.conceptId), label: element.spec.label };
+      sceneEntities.set(`${element.spec.conceptId}\0${element.spec.label}`, request);
+    }
+    const houseFamily = chooseEntitySceneFamily([...sceneEntities.values()]);
+    const sceneConceptIndex = new Map<string, ConceptInfo>([...conceptIndex].map(([id, concept]) => [
+      id,
+      { ...concept, ...(houseFamily ? { houseFamily } : {}) },
+    ]));
+    for (const [key, request] of sceneEntities) {
+      const concept = request.concept ? sceneConceptIndex.get(request.concept.id) : undefined;
+      depictionRequests.set(`${key}\0${houseFamily ?? ''}`, { ...request, ...(concept ? { concept } : {}) });
+    }
+    const scene = compileScene(section.id, section.title, timeline, input.lessonId, sceneConceptIndex, prior);
     for (const message of validateSceneGeometry(scene.geometry, timeline.states)) failures.push({ code: 'v2-geometry', stage: 'layout', message: `${section.id}: ${message}`, hard: true });
     for (const opId of timeline.lateOps) failures.push({ code: 'v2-late-op', stage: 'timeline', message: `${section.id}: ${opId} could not finish inside its sentence`, hard: false });
     for (const id of scene.geometry.moved) failures.push({ code: 'v2-retained-moved', stage: 'layout', message: `${section.id}: ${id} had to move or resize at the scene cut`, hard: false });
@@ -350,8 +365,12 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const allOps = compiled.flatMap((s) => s.timeline.ops.map((o) => o.op));
   const visualBeats = plan.sections.flatMap((s) => prepared.beatPlans![s.id]!).filter((b) => !b.narrationOnly);
   const beatsWithOps = new Set(allOps.map((o) => o.beatId));
-  const entityKeys = new Map(allOps.flatMap((o) => (o.op === 'add' || o.op === 'replace') && o.element.type === 'entity' ? [[`${o.element.conceptId}|${o.element.label}`, o.element] as const] : []));
-  const entityDepictions = [...entityKeys.values()].map((spec) => depictEntity(conceptIndex.get(spec.conceptId), spec.label, { x: 0, y: 0, w: 240, h: 210 }));
+  const entityDepictions = [...depictionRequests.values()].map(({ concept, label }) => depictEntity(concept, label, { x: 0, y: 0, w: 240, h: 210 }));
+  const sceneIconFamilies = compiled.map((scene) => ({
+    sceneId: scene.sceneId,
+    houseFamily: [...(scene.concepts?.values() ?? [])].find((concept) => concept.houseFamily)?.houseFamily ?? null,
+  }));
+  await dump('scene-icon-families.json', { schemaVersion: 'v2-scene-icon-families/v1', scenes: sceneIconFamilies });
   const catalogueAssets = new Map([...CATALOG, ...loadCatalogLibraries().entries].map((entry) => [entry.id, entry]));
   const bridge = loadBridge();
   const pictures = entityDepictions.flatMap((d) => {
@@ -368,6 +387,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     'v2.assetsNeedingReview': pictures.filter((p) => !p.releaseEligible).length,
     'v2.assetsNeedingAttribution': pictures.filter((p) => p.attribution.required).length,
     'v2.scenes': compiled.length,
+    'v2.scenesWithIconFamily': sceneIconFamilies.filter((scene) => scene.houseFamily !== null).length,
     'v2.ops': allOps.length,
     'v2.stateChangingOps': allOps.filter((o) => STATE_CHANGING.has(o.op)).length,
     'v2.stateChangingOpShare': allOps.length ? allOps.filter((o) => STATE_CHANGING.has(o.op)).length / allOps.length : 0,

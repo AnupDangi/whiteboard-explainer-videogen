@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { depictEntity, depictionFamily, type EntityResolver } from '../visual-v2/resolver/typeGate.js';
+import { chooseEntitySceneFamily, depictEntity, depictionFamily, type EntityResolver, type SceneEntityRequest } from '../visual-v2/resolver/typeGate.js';
 import type { PrimitiveVisual } from '../shared/types.js';
+import { FAMILY_ORDER } from '../assets/sceneFamily.js';
 
 const rect = { x: 100, y: 200, w: 240, h: 210 };
 const visual: PrimitiveVisual = { paths: [{ d: 'M 0 0 L 10 10', length: 14 }], fills: [], texts: [] };
@@ -44,6 +45,43 @@ test('a concrete entity with no asset falls back to a labelled box that does not
   const result = depictEntity({ id: 'k', label: 'quokka', kind: 'entity' }, 'quokka', rect, nothing);
   assert.equal(result.family, 'labelled');
   assert.equal(result.meaningful, false);
+});
+
+test('scene icon family follows the majority of exact approved entity pictures and ignores similarity picks', () => {
+  const selected: string[] = [];
+  const families: Record<string, string> = { leaf: FAMILY_ORDER[0], sun: FAMILY_ORDER[0], cloud: FAMILY_ORDER[1], unknown: FAMILY_ORDER[1] };
+  const resolver: EntityResolver = (label, _size, _conceptId, _domain, sceneFamily) => {
+    selected.push(label);
+    const basis = label === 'unknown' ? 'similarity' : 'exact';
+    return {
+      visual,
+      resolution: {
+        rung: 3, assetId: `asset:${label}`, score: 1, license: 'MIT', lane: 'simple-symbol', source: 'asset',
+        strategy: 'R3-house-literal', selectionBasis: basis, houseFamily: families[label],
+      },
+    };
+  };
+  const requests: SceneEntityRequest[] = [
+    { concept: { id: 'leaf', label: 'leaf', kind: 'entity' }, label: 'leaf' },
+    { concept: { id: 'sun', label: 'sun', kind: 'entity' }, label: 'sun' },
+    { concept: { id: 'cloud', label: 'cloud', kind: 'entity' }, label: 'cloud' },
+    { concept: { id: 'unknown', label: 'unknown', kind: 'entity' }, label: 'unknown' },
+    { concept: { id: 'flow', label: 'flow', kind: 'process' }, label: 'flow' },
+  ];
+  assert.equal(chooseEntitySceneFamily(requests, resolver), FAMILY_ORDER[0]);
+  assert.deepEqual(selected.sort(), ['cloud', 'leaf', 'sun', 'unknown']);
+});
+
+test('the V2 default resolver draws an exact icon from the vendored library inside the selected scene family', () => {
+  const concept = { id: 'sun', label: 'sun', kind: 'entity' as const };
+  const request = { concept, label: 'sun' };
+  const houseFamily = chooseEntitySceneFamily([request]);
+  assert.ok(houseFamily, 'the vendored catalog resolves an approved icon family for sun');
+  const result = depictEntity({ ...concept, houseFamily }, 'sun', rect);
+  assert.equal(result.family, 'pictorial');
+  assert.equal(result.meaningful, true);
+  assert.ok(result.assetId);
+  assert.ok(result.visual.paths.length > 0, 'the icon library produced visible vector paths');
 });
 
 test('a role concept whose name is a semantic-core role is drawn as that role shape', () => {

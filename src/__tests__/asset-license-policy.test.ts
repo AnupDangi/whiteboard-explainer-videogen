@@ -23,10 +23,17 @@ test('a picture carries its licence verdict so the run can record provenance and
 });
 
 test('V2 entity resolution receives the lesson domain from the concept, whatever the topic', () => {
-  const seen: Array<string | undefined> = [];
-  const spy: EntityResolver = (label, size, conceptId, lessonDomain) => { seen.push(lessonDomain); return resolver('MIT')(label, size, conceptId, lessonDomain); };
-  depictEntity({ id: 'c1', label: 'cat', kind: 'entity', domain: 'Wave physics' }, 'cat', rect, spy);
-  depictEntity({ id: 'c2', label: 'cat', kind: 'entity', domain: 'Personal finance' }, 'cat', rect, spy);
+  const seen: Array<[string | undefined, string | undefined]> = [];
+  const spy: EntityResolver = (label, size, conceptId, lessonDomain, sceneFamily) => {
+    seen.push([lessonDomain, sceneFamily]);
+    return resolver('MIT')(label, size, conceptId, lessonDomain, sceneFamily);
+  };
+  depictEntity({ id: 'c1', label: 'cat', kind: 'entity', domain: 'Wave physics', houseFamily: 'simi-house-v1/general-drawon' }, 'cat', rect, spy);
+  depictEntity({ id: 'c2', label: 'cat', kind: 'entity', domain: 'Personal finance', houseFamily: 'simi-house-v1/domain-outline' }, 'cat', rect, spy);
   depictEntity({ id: 'c3', label: 'cat', kind: 'entity' }, 'cat', rect, spy);
-  assert.deepEqual(seen, ['Wave physics', 'Personal finance', undefined]);
+  assert.deepEqual(seen, [
+    ['Wave physics', 'simi-house-v1/general-drawon'],
+    ['Personal finance', 'simi-house-v1/domain-outline'],
+    [undefined, undefined],
+  ]);
 });

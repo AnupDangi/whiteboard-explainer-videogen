@@ -102,6 +102,10 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.equal(result.metrics['v2.stateChangingOps'], 2, 'remove and highlight change the board');
     assert.equal(result.metrics['v2.visualBeatCoverage'], 1);
     assert.equal(result.metrics['v2.hardGeometryProblems'], 0);
+    assert.equal(result.metrics['v2.pictorialEntities'], 1, 'the exact vendored frame icon is counted after scene-family filtering');
+    assert.equal(result.metrics['v2.scenesWithIconFamily'], 2);
+    const iconFamilies = JSON.parse(await readFile(path.join(out, 'v2', 'scene-icon-families.json'), 'utf8')) as { scenes: Array<{ sceneId: string; houseFamily: string | null }> };
+    assert.ok(iconFamilies.scenes.every((scene) => scene.houseFamily === 'simi-house-v1/domain-outline'));
     assert.ok(Number.isFinite(result.metrics['v2.requestToCompleteMs']));
     assert.equal(result.metrics['v2.timeToFirstPlayableMs'], undefined, 'a silent encoded clip is not audible-playable readiness');
     assert.ok(result.compiled[1]!.timeline.states[0]!.elements.pile, 'scene two starts from the board scene one left');
@@ -129,8 +133,10 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       artifactCertification: result.artifactCertification, metrics: result.metrics, failures: result.failures,
     };
     await writeFile(path.join(out, 'evaluation-bundle.json'), `${JSON.stringify(evaluation, null, 2)}\n`);
-    const lock = JSON.parse(await readFile(path.join(out, 'lesson.lock.v2.json'), 'utf8')) as { scenes: Array<{ sceneId: string; audioHash: string }>; renderPlan: Array<{ kind: 'hold' | 'transition'; sceneId: string; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }> };
+    const lock = JSON.parse(await readFile(path.join(out, 'lesson.lock.v2.json'), 'utf8')) as { scenes: Array<{ sceneId: string; audioHash: string; captured: { file: string } }>; renderPlan: Array<{ kind: 'hold' | 'transition'; sceneId: string; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }> };
     const firstScene = lock.scenes[0]!;
+    const capturedScene = JSON.parse(await readFile(path.join(out, firstScene.captured.file), 'utf8')) as { concepts: Array<[string, { houseFamily?: string }]> };
+    assert.ok(capturedScene.concepts.every(([, concept]) => concept.houseFamily === 'simi-house-v1/domain-outline'), 'the lock pins the chosen icon family for deterministic replay');
     const firstSegment = lock.renderPlan.find((segment) => segment.firstFrame === 0)!;
     const firstFrameHash = firstSegment.kind === 'hold' ? firstSegment.svgHash! : firstSegment.svgHashes![0]!;
     const acceptedAtEpochMs = 1000;

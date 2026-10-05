@@ -231,13 +231,21 @@ library inputs are vendored for offline rendering; retrieval and SVG
 normalization are deterministic. Usage context filters libraries whose
 rights are still under review. An icon being present in a local catalog is not
 evidence that it is cleared for release. Rights review is an independent
-human gate. Current integration limitation: V2 passes the lesson domain through
-`ConceptInfo.domain`, but does not yet choose and lock one `houseFamily` per
-scene. `representationFamily` describes the teaching picture (such as a
-process or comparison); `houseFamily` is the illustration style shared by the
-scene's icons. The production catalog has 19,058 entries across 11 enabled
-libraries; the larger ~24k local-dev catalog includes review-only libraries and
-is not release evidence.
+human gate. V2 probes the scene's concrete entities against the vendored
+catalog, considers only exact or curated approved pictures, and chooses the
+most common non-exempt `houseFamily` with a stable tie-break. It then resolves
+each type-eligible pictorial entity using that family and the lesson domain. A
+picture selected only by similarity is still refused; missing or mismatched
+pictures remain labelled fallbacks. `houseFamily` is written to the captured
+scene concepts, so the lock hashes it and replay uses the same style family. A diagnostic
+`v2/scene-icon-families.json` records the per-scene choice. This is asset
+selection and replay evidence, not a golden visual-quality verdict:
+wrong-icon review, muted comprehension and human rights review remain open.
+`representationFamily` describes the teaching picture (such as a process or
+comparison); `houseFamily` is the illustration style shared by the scene's
+icons. The production catalog has 19,058 entries across 11 enabled libraries;
+the larger ~24k local-dev catalog includes review-only libraries and is not
+release evidence.
 
 ## Locks and publication
 
