@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildSourceBundle } from '../intake/sourceBundle.js';
+import { buildSourceBundle, sourceRolesForInputs } from '../intake/sourceBundle.js';
 import { extractHtmlSource } from '../intake/sourceIntake.js';
 import { resolveSourceEvidence, sourceDocFromText, sourceEvidenceRefMatches } from '../intake/sourceDoc.js';
 import { chunkQuote, ragSkipReason, contentListForRag, indexSourceBundleWithRag, isReusableRagIndexManifest, mapRagChunksToEvidence, ragIndexCompletionProblems, ragQueryCompletionProblems, ragRetrievalStatus, ragWorkingDirectoryNeedsReset } from '../plan/ragSidecar.js';
@@ -55,6 +55,25 @@ test('source roles remain attached to per-document citations through bundle offs
   assert.throws(() => buildSourceBundle([primary], 'water', { documentRoles: new Map([[background.sourceId, 'background']]) }), /unknown document/u);
 });
 
+test('source role selectors require exact supplied inputs and reject conflicting aliases', () => {
+  const primary = sourceDocFromText('Primary notes: water contains hydrogen.');
+  const background = sourceDocFromText('Background notes: molecules contain atoms.');
+  const roles = sourceRolesForInputs([
+    { sourceId: primary.sourceId, input: 'primary.md' },
+    { sourceId: background.sourceId, input: 'background.md' },
+  ], ['background.md']);
+  assert.equal(roles.get(primary.sourceId), 'primary');
+  assert.equal(roles.get(background.sourceId), 'background');
+  const built = buildSourceBundle([primary, background], 'water molecules', { documentRoles: roles });
+  assert.deepEqual(new Set(built.sourceBundle.evidenceHits.map((hit) => hit.citation.sourceRole)), new Set(['primary', 'background']));
+
+  assert.throws(() => sourceRolesForInputs([{ sourceId: primary.sourceId, input: 'primary.md' }], ['other.md']), /exactly match/u);
+  assert.throws(() => sourceRolesForInputs([
+    { sourceId: primary.sourceId, input: 'primary.md' },
+    { sourceId: primary.sourceId, input: './primary.md' },
+  ], ['primary.md']), /Conflicting source roles/u);
+});
+
 test('multimodal content-list carries page, equation, table, and query-relevant embedded figure provenance', async () => {
   const doc = sourceDocFromText('## Page 3\n\nThe graph compares the two methods.\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\n$$\ny = x^2\n$$', 'pdf', [{ startChar: 0, endChar: 100, sourceLocation: { kind: 'pdf-page', page: 3 } }]);
   const dir = await mkdtemp(join(tmpdir(), 'hyp-rag-figure-'));
@@ -75,11 +94,12 @@ test('multimodal content-list carries page, equation, table, and query-relevant 
 test('deep RAG chunks map back only to exact source spans and retain original citations', () => {
   const first = sourceDocFromText('# Chemistry\n\nWater contains two hydrogen atoms.', 'markdown');
   const second = sourceDocFromText('# Biology\n\nCells use energy to build proteins.', 'markdown');
-  const { sourceDoc, sourceBundle } = buildSourceBundle([first, second], 'water hydrogen atoms proteins');
+  const { sourceDoc, sourceBundle } = buildSourceBundle([first, second], 'water hydrogen atoms proteins', { documentRoles: new Map([[second.sourceId, 'background']]) });
   const mapped = mapRagChunksToEvidence({ data: { chunks: [{ content: 'Retrieved: Cells use energy to build proteins.' }] } }, sourceDoc, sourceBundle);
   assert.equal(mapped.length, 1);
   assert.match(mapped[0]!.text, /Cells use energy/);
   assert.equal(mapped[0]!.citation.sourceId, second.sourceId);
+  assert.equal(mapped[0]!.citation.sourceRole, 'background', 'RAG exact-span matches keep the source role');
   assert.equal(resolveSourceEvidence(sourceDoc, mapped[0]!.citation.spanId, mapped[0]!.citation.quote)?.sourceId, second.sourceId);
   assert.deepEqual(mapRagChunksToEvidence({ data: { chunks: [{ content: 'generated image caption with no exact source text' }] } }, sourceDoc, sourceBundle), []);
 });

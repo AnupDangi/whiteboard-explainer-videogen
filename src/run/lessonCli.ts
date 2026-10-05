@@ -21,7 +21,7 @@ import { encodeLockedLessonV2Clips } from '../pipeline-v2/clipsV2.js';
 import { loadAlignmentCalibration } from '../shared/alignment/calibration.js';
 import { closeSpeechWorkers } from '../shared/alignment/align.js';
 import { intakeWarningFailures, loadSourceDocFromBytes, loadSourceDocFromUrl, planSourceIntake } from '../intake/sourceIntake.js';
-import { buildSourceBundle, evidenceHitBudget } from '../intake/sourceBundle.js';
+import { buildSourceBundle, evidenceHitBudget, sourceRolesForInputs } from '../intake/sourceBundle.js';
 import { indexSourceBundleWithRag } from '../plan/ragSidecar.js';
 import { PersistentBudgetLedger } from './budgetLedger.js';
 import { ContentAddressedArtifactStore } from './artifactCache.js';
@@ -219,6 +219,7 @@ async function writeV2RunArtifacts(input: {
  *   [--planner=<model>] [--s6-planner=<model>] [--content=<model>] [--prompt-arm=zero|text|mechanism|diverse]
  *   --s6-planner overrides only the S6 BoardOps model; --planner still selects beat narration.
  *   [--example-order=ranked|reverse] [--stage-cache=<shared-cache-dir>]
+ *   [--background-source=<exact --source path or --url value>] # repeatable; other inputs default to primary
  *   [--plan-despite-alignment-failure] # diagnostic S6 opt-in; run remains failed
  *   [--diagnostic-video-with-invalid-captions] # retain failed MP4 without captions when word timing is invalid
  *   [--allow-partial-video] # best-effort delivery: encode rendered scenes even when coverage blocks others (failures still recorded, status stays failed)
@@ -261,6 +262,13 @@ async function main(): Promise<void> {
     ? [path.resolve(process.cwd(), benchmarkAttempt.sourcePath)]
     : explicitSourcePaths;
   const sourceUrls = argValues(args, 'url');
+  const backgroundSources = argValues(args, 'background-source');
+  if (backgroundSources.some((source) => !source.trim())) throw new Error('--background-source requires a non-empty source value');
+  if (new Set(backgroundSources).size !== backgroundSources.length) throw new Error('--background-source values must not be repeated');
+  const explicitSources = new Set([...explicitSourcePaths, ...sourceUrls]);
+  const unknownBackgroundSources = backgroundSources.filter((source) => !explicitSources.has(source));
+  if (unknownBackgroundSources.length) throw new Error(`--background-source must exactly match a supplied --source or --url value: ${unknownBackgroundSources.join(', ')}`);
+  if (benchmarkAttempt && backgroundSources.length) throw new Error('frozen development trials do not allow source-role overrides');
   const firstLabel = sourcePaths[0] ? path.basename(sourcePaths[0]) : 'url-source';
   const sourceId = arg('id') ?? benchmarkAttempt?.topicId ?? firstLabel.replace(/\W+/g, '-').replace(/^-|-$/g, '').toLowerCase();
   if (sourcePaths.length || sourceUrls.length) {
@@ -275,7 +283,7 @@ async function main(): Promise<void> {
       runId, caseId: sourceId, outputDir, startedAtMs, stage: 'cli-setup',
       sourceFiles: ['source-doc.json', 'source-bundle.json'],
       cacheMode, inputSourcePaths: sourcePaths,
-      requestHash: sha256(JSON.stringify({ sourcePaths, sourceUrls, instruction: arg('instruction') ?? benchmarkAttempt?.instruction, duration: arg('duration') ?? benchmarkAttempt?.targetDurationSec, groundingMode })),
+      requestHash: sha256(JSON.stringify({ sourcePaths, sourceUrls, backgroundSources: [...backgroundSources].sort(), instruction: arg('instruction') ?? benchmarkAttempt?.instruction, duration: arg('duration') ?? benchmarkAttempt?.targetDurationSec, groundingMode })),
       ...(benchmarkAttemptId ? { benchmarkAttemptId } : {}), modelIds: [],
     };
   }
@@ -324,7 +332,7 @@ async function main(): Promise<void> {
     lessonExecutionStartedMonotonic.set(id, allocatedSourceRun.startedMonotonicMs);
     if (activeRunFailureContext) {
       activeRunFailureContext.stage = 'S1-source-intake';
-      activeRunFailureContext.requestHash = sha256(JSON.stringify({ sourcePaths, sourceUrls, instruction: arg('instruction') ?? benchmarkAttempt?.instruction, requestedDurationSec, groundingMode }));
+      activeRunFailureContext.requestHash = sha256(JSON.stringify({ sourcePaths, sourceUrls, backgroundSources: [...backgroundSources].sort(), instruction: arg('instruction') ?? benchmarkAttempt?.instruction, requestedDurationSec, groundingMode }));
     }
       const pathEntries = await Promise.all(sourcePaths.map(async (sourcePath) => {
         const bytes = await readFile(sourcePath);
@@ -355,7 +363,12 @@ async function main(): Promise<void> {
     sourceStageRuns.set(id, sourceEntries.map(({ doc, startedAtMs, completedAtMs, cacheHit }) => ({ stage: `S1-source-intake:${doc.sourceId}`, kind: 'local', status: 'completed', durationMs: completedAtMs - startedAtMs, startedAt: new Date(startedAtMs).toISOString(), completedAt: new Date(completedAtMs).toISOString(), apiCostUsd: 0, cacheHit, fallbackCount: 0, failures: intakeWarningFailures(doc) })));
     const docs = sourceEntries.map((entry) => entry.doc);
     const instruction = arg('instruction') ?? benchmarkAttempt?.instruction;
-    const { sourceDoc, sourceBundle } = buildSourceBundle(docs, instruction ?? docs.map((doc) => doc.title ?? '').join(' '), { topK: evidenceHitBudget(requestedDurationSec) });
+    const roleInputs = [
+      ...pathEntries.map((entry, index) => ({ sourceId: entry.doc.sourceId, input: sourcePaths[index]! })),
+      ...urlEntries.map((entry, index) => ({ sourceId: entry.doc.sourceId, input: sourceUrls[index]! })),
+    ];
+    const documentRoles = sourceRolesForInputs(roleInputs, backgroundSources);
+    const { sourceDoc, sourceBundle } = buildSourceBundle(docs, instruction ?? docs.map((doc) => doc.title ?? '').join(' '), { documentRoles, topK: evidenceHitBudget(requestedDurationSec) });
     lessons.push({ id, title: sourceDoc.title ?? 'lesson', source: sourceDoc.text, sourceDoc, sourceBundle, sources: [...sourcePaths.map((sourcePath) => ({ kind: 'document' as const, path: sourcePath })), ...sourceUrls.map((url) => ({ kind: 'url' as const, url }))], sourceFormat: sourceDoc.format, targetDurationSec: requestedDurationSec, instruction, groundingMode, expect: { level: 'one-step', minStepScenes: 0 } });
     if (activeRunFailureContext) activeRunFailureContext.requestHash = sha256(JSON.stringify(lessons[lessons.length - 1]));
   }

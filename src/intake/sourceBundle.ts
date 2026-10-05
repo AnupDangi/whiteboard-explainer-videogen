@@ -22,6 +22,26 @@ export interface BundledSources {
   sourceBundle: SourceBundle;
 }
 
+/** Resolve CLI source-role flags against the exact inputs that produced the loaded documents. */
+export function sourceRolesForInputs(
+  inputs: readonly { sourceId: string; input: string }[],
+  backgroundInputs: readonly string[],
+): Map<string, SourceRole> {
+  const knownInputs = new Set(inputs.map(({ input }) => input));
+  const unknown = [...new Set(backgroundInputs)].filter((input) => !knownInputs.has(input));
+  if (unknown.length) throw new Error(`--background-source must exactly match a supplied --source or --url value: ${unknown.join(', ')}`);
+
+  const background = new Set(backgroundInputs);
+  const roles = new Map<string, SourceRole>();
+  for (const { sourceId, input } of inputs) {
+    const role: SourceRole = background.has(input) ? 'background' : 'primary';
+    const previous = roles.get(sourceId);
+    if (previous && previous !== role) throw new Error(`Conflicting source roles resolve to document ${sourceId}`);
+    roles.set(sourceId, role);
+  }
+  return roles;
+}
+
 /** Combine exact extracted text while keeping each evidence span attached to its original document. */
 export function buildSourceBundle(docs: SourceDoc[], query: string, options: { sourceUrls?: Map<string, string>; documentRoles?: ReadonlyMap<string, SourceRole>; topK?: number; retrievalMode?: SourceBundle['retrievalMode']; retrievalElapsedMs?: number } = {}): BundledSources {
   const retrievalStartedAtMs = Date.now();

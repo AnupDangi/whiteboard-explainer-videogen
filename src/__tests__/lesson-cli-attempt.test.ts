@@ -84,3 +84,22 @@ test('lesson CLI rejects grounding modes whose evidence policy is not implemente
   assert.equal(result.status, 1);
   assert.match(result.stderr, /grounding mode OPEN_EXPLANATION is not supported yet/);
 });
+
+test('lesson CLI requires each background role to identify an exact supplied source input', () => {
+  const result = spawnSync(process.execPath, [
+    path.resolve('dist/src/run/lessonCli.js'),
+    '--source=bench/sources/osmosis.md', '--background-source=bench/sources/other.md',
+  ], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--background-source must exactly match a supplied --source or --url value/u);
+});
+
+test('lesson CLI prevents source-role overrides on frozen benchmark trials', () => {
+  const source = 'bench/sources/osmosis.md';
+  const result = spawnSync(process.execPath, [
+    path.resolve('dist/src/run/lessonCli.js'),
+    `--source=${source}`, `--background-source=${source}`, '--id=osmosis', '--duration=60', '--cache=cold', '--benchmark-attempt=osmosis-trial-1',
+  ], { cwd: process.cwd(), env: process.env, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /frozen development trials do not allow source-role overrides/u);
+});
