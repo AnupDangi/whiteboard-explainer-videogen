@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { SourceEvidenceRef } from '../intake/sourceDoc.js';
 import { MAX_TITLE_WORDS } from '../render/style.js';
 import { ledgerPreprocess } from '../structured/coercionLedger.js';
+import { ClaimSemanticsSchema } from '../evidence/claims.js';
 
 /**
  * S2 ConceptGraph and S3 TeachingPlan (claude_pipeline.md §3 /
@@ -126,6 +127,17 @@ export const SceneContractSchema = z.object({
     conceptIds: z.array(id()).min(1).max(6),
     relations: z.array(z.object({ from: id(), to: id(), type: z.enum(RELATION_TYPES) }).strict()).max(24),
     evidenceSpanIds: z.array(id()).min(1).max(96),
+    /** Source citations are reconstructed from the canonical concept graph, never trusted from S3 output. */
+    sourceRefs: z.array(z.object({
+      documentId: id(),
+      sourceHash: z.string().regex(/^[a-f0-9]{64}$/u),
+      spanId: id(),
+      startOffset: z.number().int().nonnegative(),
+      endOffset: z.number().int().positive(),
+      quoteHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    }).strict().refine((ref) => ref.endOffset > ref.startOffset, 'invalid claim source range')).max(96).optional(),
+    /** Deterministically derived protected cues carried by this canonical claim, when present. */
+    semantics: ClaimSemanticsSchema.optional(),
   }).strict()).min(1).max(8),
   teachingSkill: z.enum(TEACHING_SKILLS),
   candidateMechanisms: z.array(z.enum(VISUAL_MECHANISMS)).min(1).max(3),

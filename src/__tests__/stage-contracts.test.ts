@@ -40,9 +40,27 @@ for (const words of [{ a: 'heat', b: 'pressure', c: 'volume' }, { a: 'tariff', b
 
   test(`essential claim evidence includes every linked concept and relation span (${words.a})`, () => {
     const claimSection: TeachingPlanDraft['sections'][number] = section('claim_evidence', [words.a, words.b]);
-    claimSection.essentialClaims = [{ id: 'linked_claim', statement: `${words.a} raises ${words.b}.`, conceptIds: [words.a, words.b], relations: [{ from: words.a, to: words.b, type: 'causes' }], evidenceSpanIds: [first.id] }];
+    claimSection.essentialClaims = [{
+      id: 'linked_claim', statement: `${words.a} raises ${words.b}.`, conceptIds: [words.a, words.b], relations: [{ from: words.a, to: words.b, type: 'causes' }], evidenceSpanIds: [first.id],
+      sourceRefs: [{ documentId: 'forged_doc', sourceHash: '0'.repeat(64), spanId: 'forged_span', startOffset: 0, endOffset: 1, quoteHash: '0'.repeat(64) }],
+    }];
     const plan = deriveTeachingPlan(draft([claimSection]), graph, 'general learner');
     assert.deepEqual(plan.sections[0]!.contract!.essentialClaims[0]!.evidenceSpanIds.sort(), [...new Set([first.id, second.id])].sort());
+    const claimRefs = plan.sections[0]!.contract!.essentialClaims[0]!.sourceRefs!;
+    const expectedRefs = [...graph.concepts[0]!.evidence, ...graph.concepts[1]!.evidence, ...graph.relations[0]!.evidence]
+      .map((ref) => `${ref.spanId}:${ref.startChar}:${ref.endChar}`).sort();
+    assert.deepEqual(claimRefs.map((ref) => `${ref.spanId}:${ref.startOffset}:${ref.endOffset}`).sort(), [...new Set(expectedRefs)].sort());
+    assert.ok(claimRefs.every((ref) => /^[a-f0-9]{64}$/u.test(ref.sourceHash) && /^[a-f0-9]{64}$/u.test(ref.quoteHash)));
+  });
+
+  test(`canonical claim semantics are derived from the statement, not supplied by the model (${words.a})`, () => {
+    const claimSection: TeachingPlanDraft['sections'][number] = section('claim_semantics', [words.a, words.b]);
+    claimSection.essentialClaims = [{
+      id: 'semantic_claim', statement: `${words.a} raises ${words.b}.`, conceptIds: [words.a], relations: [], evidenceSpanIds: [first.id],
+      semantics: { polarity: 'negative', comparison: { operator: 'lt', value: 99 } },
+    }];
+    const plan = deriveTeachingPlan(draft([claimSection]), graph, 'general learner');
+    assert.deepEqual(plan.sections[0]!.contract!.essentialClaims[0]!.semantics, { polarity: 'positive' });
   });
 
   test(`splitting related concepts into separate sections still fails as a lost relation (${words.a})`, () => {

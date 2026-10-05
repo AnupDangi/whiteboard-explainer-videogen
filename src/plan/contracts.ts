@@ -1,4 +1,5 @@
 import { recordCoercion } from '../structured/coercionLedger.js';
+import { claimSemanticsFromText } from '../evidence/claims.js';
 import type { ConceptGraph, TeachingPlan, TeachingPlanDraft } from './schemas.js';
 import { fitBudgetsToTarget, rebalanceSceneBudgets } from './analyze.js';
 
@@ -227,24 +228,38 @@ export function deriveTeachingPlan(rawDraft: TeachingPlanDraft, graph: ConceptGr
           requiredConceptIds: conceptIds,
           requiredRelations: requiredRelations.map(({ from, to, type }) => ({ from, to, type })),
           evidenceSpanIds,
-          essentialClaims: essentialClaims.map((claim) => ({
-            ...claim,
-            // A visual target is independently checked against the claim's cited evidence.
-            // Fill in every graph-backed span for the concepts/relations linked by the claim
-            // so S6 can cite the specific node/edge evidence it actually depicts.
-            // Only spans the graph backs for the claim's concepts and relations can support it; a span the model added
-            // that the graph does not back is dropped here instead of failing the contract.
-            evidenceSpanIds: (() => {
-              const backed = [...new Set([
-                ...claim.conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence.map((ref) => ref.spanId) ?? []),
-                ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence.map((ref) => ref.spanId) ?? []),
-              ])];
-              const given = claim.evidenceSpanIds;
-              for (const spanId of given) if (!backed.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: spanId, newValue: undefined, reason: 'claim-evidence-span-not-backed-by-graph', semanticRisk: 'semantic' });
-              for (const spanId of backed) if (!given.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: undefined, newValue: spanId, reason: 'claim-evidence-span-added-from-graph', semanticRisk: 'low' });
-              return [...new Set([...claim.evidenceSpanIds.filter((spanId) => backed.includes(spanId)), ...backed])].slice(0, 96);
-            })(),
-          })),
+          essentialClaims: essentialClaims.map((claim) => {
+            const { semantics: _untrustedSemantics, sourceRefs: _untrustedSourceRefs, ...claimFields } = claim;
+            const semantics = claimSemanticsFromText(claim.statement);
+            const sourceEvidence = [
+              ...claim.conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence ?? []),
+              ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence ?? []),
+            ];
+            const sourceRefs = [...new Map(sourceEvidence.filter((ref) => ref.documentSha256 && ref.quoteSha256).map((ref) => [
+              `${ref.sourceId}:${ref.spanId}:${ref.startChar}:${ref.endChar}:${ref.quoteSha256}`,
+              { documentId: ref.sourceId, sourceHash: ref.documentSha256!, spanId: ref.spanId, startOffset: ref.startChar, endOffset: ref.endChar, quoteHash: ref.quoteSha256! },
+            ])).values()];
+            return {
+              ...claimFields,
+              ...(semantics ? { semantics } : {}),
+              ...(sourceRefs.length ? { sourceRefs } : {}),
+              // A visual target is independently checked against the claim's cited evidence.
+              // Fill in every graph-backed span for the concepts/relations linked by the claim
+              // so S6 can cite the specific node/edge evidence it actually depicts.
+              // Only spans the graph backs for the claim's concepts and relations can support it; a span the model added
+              // that the graph does not back is dropped here instead of failing the contract.
+              evidenceSpanIds: (() => {
+                const backed = [...new Set([
+                  ...claim.conceptIds.flatMap((conceptId) => concepts.get(conceptId)?.evidence.map((ref) => ref.spanId) ?? []),
+                  ...claim.relations.flatMap((relation) => graph.relations.find((source) => relationKey(source) === relationKey(relation))?.evidence.map((ref) => ref.spanId) ?? []),
+                ])];
+                const given = claim.evidenceSpanIds;
+                for (const spanId of given) if (!backed.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: spanId, newValue: undefined, reason: 'claim-evidence-span-not-backed-by-graph', semanticRisk: 'semantic' });
+                for (const spanId of backed) if (!given.includes(spanId)) recordCoercion({ path: `/essentialClaims/${claim.id}/evidenceSpanIds/${spanId}`, oldValue: undefined, newValue: spanId, reason: 'claim-evidence-span-added-from-graph', semanticRisk: 'low' });
+                return [...new Set([...claim.evidenceSpanIds.filter((spanId) => backed.includes(spanId)), ...backed])].slice(0, 96);
+              })(),
+            };
+          }),
           teachingSkill,
           candidateMechanisms,
           priorKnowledge: [...new Set(conceptIds.filter((conceptId) => earlierConceptIds.has(conceptId)).map((conceptId) => concepts.get(conceptId)?.label).filter((label): label is string => Boolean(label)))].slice(0, 8),

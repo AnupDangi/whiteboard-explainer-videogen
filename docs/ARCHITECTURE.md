@@ -86,6 +86,10 @@ until run acceptance has a trustworthy timestamp. Resolved source evidence now
 carries SHA-256 digests for the exact quote and, when present, its document;
 live-run S6 verifies these digests along with source offsets. Legacy citations
 without digests remain readable but are checked against the in-memory source.
+Canonical essential claims carry `sourceRefs` reconstructed from their linked
+concept and relation evidence; model-provided refs are discarded. The typed
+epistemic classifications and grounding-mode policy from the V3 proposal have
+not been implemented yet.
 
 Software owns evidence resolution, icon retrieval, board reduction, layout,
 edge routing, exact audio-derived timing, SVG generation, rasterization, and
