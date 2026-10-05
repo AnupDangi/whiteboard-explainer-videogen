@@ -162,8 +162,7 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
   const vocab = new Set<string>();
   const harvest = (text: string): void => {
     for (const word of text.toLowerCase().match(/[\p{L}\p{M}]+/gu) ?? []) if (word.length >= 2) vocab.add(word);
-  };
-  for (const concept of ctx.concepts) harvest(concept.label);
+  };  for (const concept of ctx.concepts) harvest(concept.label);
   for (const narration of ctx.narration) for (const sentence of narration.sentences) harvest(sentence);
   const wordingOf = (spec: ElementSpec): string[] => {
     switch (spec.type) {
@@ -174,13 +173,16 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
       default: return [];
     }
   };
+  // Closed-class function words (while, and, with, from) carry grammar, not
+  // meaning; only content words must be lesson vocabulary.
+  const STOPWORDS = new Set('a,an,the,is,are,was,were,be,been,of,to,in,on,for,with,as,by,at,from,or,and,but,so,it,its,this,that,these,those,you,we,they,them,what,why,how,when,not,no,do,does,did,can,will,just,very,more,most,one,into,over,than,then,there,here,such,only,also,which,who,whom,whose,because,means,now,let,while,until,against,between,through,during,before,after,above,below,under,again,once'.split(','));
   draft.ops.forEach((op, i) => {
     for (const { spec, path } of opSpecs(op, `/ops/${i}`)) {
       for (const text of wordingOf(spec)) {
         // Over-long labels already fail the length gate above; this gate targets
         // short invented shorthand (BATT, SHIFT) that fits anywhere but means nothing.
         if (text.trim().split(/\s+/).filter(Boolean).length > 4) continue;
-        const invented = (text.toLowerCase().match(/[\p{L}\p{M}]+/gu) ?? []).filter((word) => word.length >= 2 && !vocab.has(word));
+        const invented = (text.toLowerCase().match(/[\p{L}\p{M}]+/gu) ?? []).filter((word) => word.length >= 2 && !STOPWORDS.has(word) && !vocab.has(word));
         if (invented.length > 0) problems.push({ path: `${path}/${spec.type === 'token' || spec.type === 'text' ? 'text' : spec.type === 'value' ? 'label' : 'label'}`, message: `${[...new Set(invented)].map((w) => `"${w}"`).join(', ')} ${invented.length === 1 ? 'is' : 'are'} not lesson vocabulary (no concept label or spoken word matches); use the source's own terms` });
       }
     }
