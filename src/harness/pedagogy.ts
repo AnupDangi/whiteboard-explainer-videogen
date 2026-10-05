@@ -1,5 +1,7 @@
 import type { TeachingBeat } from '../teaching/beat-plan/types.js';
 import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
+import type { TeachingMove } from '../teaching/moves/types.js';
+import { SECOND_PERSON, ngrams } from '../narration/beat-narration/validate.js';
 
 /**
  * T1 S12 pedagogy evals (STCC §22 PEDAGOGY + §48 muted comprehension).
@@ -16,7 +18,12 @@ export type PedagogyDimension =
   | 'divergence-clarity'
   | 'lesson-shape'
   | 'muted-comprehension'
-  | 'narration-continuity';
+  | 'narration-continuity'
+  | 'lesson-hook'
+  | 'learner-address'
+  | 'scene-bridge'
+  | 'ask-and-answer'
+  | 'recap-capability';
 
 export interface PedagogyFinding {
   dimension: PedagogyDimension;
@@ -28,6 +35,10 @@ export interface PedagogyFinding {
 export interface PedagogyInput {
   beats: readonly TeachingBeat[];
   narration: CompiledSceneNarration;
+  /** Lesson position; absent in unit fixtures, in which case lesson-scoped dimensions are skipped. */
+  lesson?: { sceneIndex: number; sceneCount: number };
+  moves?: readonly TeachingMove[];
+  previousTakeaway?: string;
 }
 
 const STOP = new Set('a,an,the,is,are,was,were,be,been,of,to,in,on,for,with,as,by,at,from,or,and,but,so,it,its,this,that,these,those,you,we,they,them,what,why,how,when,not,no,do,does,did,can,will,just,very,more,most,one,into,over,than,then,there,here,such,only,also,which,who,whom,whose,because,means,now,let'.split(','));
@@ -131,6 +142,53 @@ function predictionBeats(beats: readonly TeachingBeat[], narration: CompiledScen
   }
   return out;
 }
+
+/**
+ * Simi-level speech dimensions. Each requires lesson context (position, moves,
+ * neighbor speech) and is skipped without it, so unit fixtures without a
+ * lesson never trip them. In production they are hard: a lesson that opens
+ * cold, never addresses the learner, repeats bridges verbatim, asks without
+ * answering, or recaps without capability is not Simi-level teaching.
+ */
+function lessonSpeech(input: PedagogyInput): PedagogyFinding[] {
+  const out: PedagogyFinding[] = [];
+  const lesson = input.lesson;
+  if (!lesson || lesson.sceneCount < 2) return out;
+  const texts = input.narration.beats.map((b) => b.text);
+  const isFirst = lesson.sceneIndex === 0;
+  const isLast = lesson.sceneIndex === lesson.sceneCount - 1;
+  if (isFirst) {
+    const opening = texts[0] ?? '';
+    if (!opening.includes('?') && !SECOND_PERSON.test(opening)) {
+      out.push({ dimension: 'lesson-hook', severity: 'hard', message: 'the lesson opens without a hook: open with a plain-words puzzle or question that addresses the learner (you/we)' });
+    }
+  }
+  if (!isLast && !texts.some((text) => SECOND_PERSON.test(text))) {
+    out.push({ dimension: 'learner-address', severity: 'hard', message: 'no sentence addresses the learner; speak to them (you/we) at least once per scene' });
+  }
+  if (input.previousTakeaway) {
+    const prior = ngrams(input.previousTakeaway, 4);
+    const echoed = [...ngrams(texts[0] ?? '', 4)].filter((g) => prior.has(g));
+    if (echoed.length > 0) {
+      out.push({ dimension: 'scene-bridge', severity: 'hard', beatId: input.beats[0]?.beatId, message: `opens by repeating the previous scene verbatim ("${echoed[0]}"); pick up the thread in fresh words instead` });
+    }
+  }
+  if ((input.moves ?? []).some((m) => m.move === 'PredictNextStep')) {
+    const asked = texts.filter((text) => text.includes('?'));
+    if (!asked.length) {
+      out.push({ dimension: 'ask-and-answer', severity: 'hard', message: 'this scene predicts but never asks: pose the question, pause, then answer it yourself' });
+    } else if (!isLast && texts[texts.length - 1]!.includes('?')) {
+      out.push({ dimension: 'ask-and-answer', severity: 'hard', message: 'the scene ends on an unanswered question; the takeaway must be declarative' });
+    }
+  }
+  if (isLast) {
+    const closing = texts[texts.length - 1] ?? '';
+    if (!/you can now|you now|lets you|enables you|you can\b/i.test(closing)) {
+      out.push({ dimension: 'recap-capability', severity: 'hard', message: 'the final scene closes without a capability: end on what the learner can now do' });
+    }
+  }
+  return out;
+}
 export function evaluatePedagogy(input: PedagogyInput): PedagogyFinding[] {
   return [
     ...workedExample(input.beats),
@@ -140,6 +198,7 @@ export function evaluatePedagogy(input: PedagogyInput): PedagogyFinding[] {
     ...mutedComprehension(input.beats),
     ...narrationContinuity(input.beats, input.narration),
     ...predictionBeats(input.beats, input.narration),
+    ...lessonSpeech(input),
   ];
 }
 

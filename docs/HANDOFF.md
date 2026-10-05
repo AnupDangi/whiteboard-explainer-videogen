@@ -2794,3 +2794,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **First version** (entity-kind concepts always need entity ops) broke 4 lesson-v2 fixtures: stack kits legitimately draw stack concepts without entity elements. Reverted the broad form.
 - **Refined gate:** fires only when approved depiction options exist for the scene but no op draws an entity that could use them. Kits/tokens stay legitimate when nothing is depictable.
 - **Verification:** board-semantics 4/4, lesson-v2 8/8, ops-plan 20/20; typecheck clean.
+
+## Continuation — B narration teeth, measured not blocking (wt/stcc/charter)
+
+- **Validator (sentence-level, hard):** 16-word caps + list-glue ban. Fixture-safe, all old suites green.
+- **Pedagogy lesson dimensions (hard findings, reported soft):** hook, address, bridge, ask-answer, recap — each skipped without lesson context. Wired into runLessonV2 per scene with `v2.pedagogyHard` metric. Promotion to blocking awaits baselines (STCC evaluation-first, not fiat).
+- **Resolved conflict:** hard gates in the S4 validator broke canned fixtures; measurement-first resolves it without touching tests.
+- **Verification:** narration-teeth 5/5, pedagogy 7/7, beat-narration 16/16, beat-pipeline 2/2, lesson-v2 8/8; typecheck clean, manifest verified.

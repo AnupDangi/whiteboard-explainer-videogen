@@ -59,6 +59,16 @@ export function statedWords(ctx: Pick<NarrationContext, 'durationSec' | 'languag
   return Math.max(1, Math.round((ctx.durationSec - gapSec) * rate));
 }
 const wordCount = (text: string, language?: string): number => tokenizeWords(text, language ?? 'und').length;
+/** Simi-level teaching gates: short sentences, addressed learner, original bridges. Shared with the pedagogy evaluator. */
+export const MAX_SENTENCE_WORDS = 16;
+export const SECOND_PERSON = /\b(you|your|yours|we|us|our|ours|let's|lets)\b/i;
+export const LIST_GLUE = /;|:\s*\S/;
+export const ngrams = (text: string, n: number): Set<string> => {
+  const words = normalize(text).split(' ').filter(Boolean);
+  const out = new Set<string>();
+  for (let i = 0; i + n <= words.length; i++) out.add(words.slice(i, i + n).join(' '));
+  return out;
+};
 
 /** Greek letters, arrows and maths operators: the speech engine and the aligner cannot read them. */
 // Greek is a supported writing system (and Greek letter names are speakable).
@@ -106,6 +116,8 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
       for (const number of asciiDigits(sentence).match(/\d+(?:\.\d+)?/g) ?? []) if (!ctx.allowedNumbers.has(number)) problems.push({ path: `${at}/sentences/${j}`, message: `number ${number} is not in this scene's claims or evidence; state only numbers the source gives` });
       if (key && seen.has(key)) problems.push({ path: `${at}/sentences/${j}`, message: 'repeats a sentence already spoken in this scene; move the idea forward instead' });
       seen.add(key);
+      if (wordCount(sentence, ctx.language) > MAX_SENTENCE_WORDS) problems.push({ path: `${at}/sentences/${j}`, message: `packs ${wordCount(sentence, ctx.language)} words into one sentence (at most ${MAX_SENTENCE_WORDS}); split it so one sentence carries one idea` });
+      if (LIST_GLUE.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'joins ideas with a semicolon or colon list; write short sentences instead, one idea each' });
     });
     const anchored = new Set<string>();
     narration.claimSentences.forEach((anchor, j) => {
@@ -118,5 +130,10 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
   const ceiling = Math.round(statedWords(ctx) * NARRATION_HARD_CEILING);
   if (words > ceiling) problems.push({ path: '/beats', message: `too long: ${words} spoken words, at most ${ceiling} for a ${ctx.durationSec}s scene (about ${Math.max(6, Math.floor(ceiling / Math.max(1, draft.beats.length)))} words per beat for ${draft.beats.length} beats); cut or merge the longest sentences` });
+  // Scene-level teaching gates (hook, address, bridges, ask-answer, recap) live
+  // in the pedagogy evaluator (harness/pedagogy.ts), not here: they need lesson
+  // position and neighbor speech, and they must stay measurable-but-advisory
+  // until baselined (STCC evaluation-first). This validator owns sentence-level
+  // speakability only.
   return problems;
 }

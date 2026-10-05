@@ -35,6 +35,7 @@ import { loadCatalogLibraries } from '../assets/streamline.js';
 import { loadBridge } from '../assets/bridge.js';
 import { bridgeRecordForCatalogEntry, buildAssetRightsEvidence, rightsEvidenceFailure } from '../assets/rightsEvidence.js';
 import { buildScorecard, type Scorecard } from '../harness/scorecard.js';
+import { evaluatePedagogy } from '../harness/pedagogy.js';
 import { TEACHING_COMPILER_VERSION } from '../run/featureFlags.js';
 
 /**
@@ -219,6 +220,8 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const sceneDepictions: Record<string, Record<string, { entryId: string; noun: string }>> = {};
   const queryEmbeddingCache = new QueryEmbeddingCache(path.join(outputDir, 'query-embeddings.json'), EMBEDDING_MODEL);
   for (const { section, narration, audio } of audioScenes) {
+    const sectionIndex = plan.sections.findIndex((s) => s.id === section.id);
+    const previousNarration = sectionIndex > 0 ? prepared.beatNarrations![plan.sections[sectionIndex - 1]!.id] : undefined;
     let intervals;
     try { intervals = beatIntervals(narration, audio.words.map((w) => ({ w: w.word, startMs: w.startMs, endMs: w.endMs }))); } catch (error) {
       failures.push({ code: 'v2-alignment-mismatch', stage: 'align', message: `${section.id}: ${error instanceof Error ? error.message : String(error)}`, hard: true });
@@ -228,6 +231,19 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     timings.push(beatTimings);
     const beats = prepared.beatPlans![section.id]!;
     const speechContext = prepared.beatNarrationContexts?.[section.id];
+    // Pedagogy measurement (STCC evaluation-first): Simi-level speech dimensions
+    // are recorded as findings on every run, advisory until baselined — promotion
+    // to blocking gates happens with evidence, never by fiat.
+    const pedagogy = evaluatePedagogy({
+      beats, narration,
+      lesson: { sceneIndex: Math.max(0, sectionIndex), sceneCount: plan.sections.length },
+      ...(speechContext?.moves?.length ? { moves: speechContext.moves } : {}),
+      ...(previousNarration ? { previousTakeaway: previousNarration.beats.at(-1)?.text } : {}),
+    });
+    for (const finding of pedagogy) {
+      failures.push({ code: 'v2-pedagogy', stage: 'pedagogy', message: `${section.id} [${finding.dimension}/${finding.severity}]: ${finding.message}`, hard: false });
+    }
+    metrics['v2.pedagogyHard'] = (metrics['v2.pedagogyHard'] ?? 0) + pedagogy.filter((f) => f.severity === 'hard').length;
     // 2a. Pictorial depiction first (S7): approved pictures become model input
     // (depictionOptions) so the planner can draw entity elements directly; the
     // deterministic token→entity upgrade below stays as backstop. Lesson memo
