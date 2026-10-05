@@ -2801,3 +2801,8 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Pedagogy lesson dimensions (hard findings, reported soft):** hook, address, bridge, ask-answer, recap — each skipped without lesson context. Wired into runLessonV2 per scene with `v2.pedagogyHard` metric. Promotion to blocking awaits baselines (STCC evaluation-first, not fiat).
 - **Resolved conflict:** hard gates in the S4 validator broke canned fixtures; measurement-first resolves it without touching tests.
 - **Verification:** narration-teeth 5/5, pedagogy 7/7, beat-narration 16/16, beat-pipeline 2/2, lesson-v2 8/8; typecheck clean, manifest verified.
+
+## Continuation — C transition consistency gate (wt/stcc/charter)
+
+- **Built:** retain-all/retain-regions with zero references to inherited live elements fails (`use transition clean, or reuse what the last scene drew`). Touching (move/restyle/connect/remove/build-inside) passes; clean always passes; empty initial skips.
+- **Verification:** board-semantics 5/5 (incl. new retain test); ops-plan 20, lesson-v2 8, board-state 21, visual-model 4; typecheck clean, manifest verified. No prompt rewrites; no existing tests edited.

@@ -25,3 +25,4 @@ Prompt recording lands with the recorder change (prompt.json per call); rows bef
 | choreography | all beats | S9 timeline | arrows waited for targets | S9 compiler | connect needs source only |
 | edge wording | switch scene | S7 provenance | relation verb demanded literally | S7 ground.ts | endpoint-order + negation guard for process verbs |
 | chained equality | time-constant scene | S7 provenance | A=B=C rejected outright | S7 verify.ts | pairwise numeric chain verification |
+| cut inconsistency | all scenes | S6 transition | retain nobody uses | S6 validator | retain must touch inherited elements or be clean |

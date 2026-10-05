@@ -133,6 +133,28 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
 
   for (const beat of ctx.beats) if (!beat.narrationOnly && !lastOpOfBeat.has(beat.beatId)) problems.push({ path: '/ops', message: `beat ${beat.beatId} shows a change (${beat.visualInvariant}), so it needs at least one op` });
 
+  // A retain nobody uses is a clean in disguise (cuts feel arbitrary when some
+  // scenes wipe and others silently keep). Retain-all/retain-regions must touch
+  // at least one inherited live element — move, restyle, connect, remove, or
+  // build inside it — otherwise use transition clean.
+  const retained = new Set(
+    Object.values(ctx.initial.elements)
+      .filter((el) => el.lifecycle.removedAtBeat === undefined)
+      .map((el) => el.id),
+  );
+  if (draft.transition.mode !== 'clean' && retained.size > 0) {
+    const touched = new Set<string>();
+    for (const op of draft.ops) {
+      if (op.op === 'add') { if (op.at.container) touched.add(op.at.container); continue; }
+      if (op.op === 'connect') { touched.add(op.from); touched.add(op.to); continue; }
+      if (op.op === 'merge') { for (const t of op.targets) touched.add(t); continue; }
+      if ('target' in op && typeof op.target === 'string') touched.add(op.target);
+    }
+    if (![...touched].some((id) => retained.has(id))) {
+      problems.push({ path: '/transition/mode', message: 'retain keeps the previous board but no op touches any retained element; use transition clean, or reuse what the last scene drew' });
+    }
+  }
+
   // Drawable entities must be drawn as entities when pictures are approved for
   // them (S7 needs entity ops to picture anything; tokens can never depict).
   // Silent without approved options: with nothing depictable, kits and tokens

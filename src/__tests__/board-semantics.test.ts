@@ -95,3 +95,40 @@ describe('entity ops gate', () => {
     assert.ok(!entityProblems.some((p) => /no op draws an entity/.test(p.message)));
   });
 });
+
+describe('retain consistency gate', () => {
+  it('retain-all that touches nothing inherited must be clean; touching passes; clean always passes', async () => {
+    const { validateSceneBoard } = await import('../visual-v2/ops-plan/validate.js');
+    const { SceneBoardDraftSchema } = await import('../visual-v2/ops-plan/types.js');
+    const { applyOpAfter, emptyBoardState } = await import('../visual-v2/board-state/reducer.js');
+    const beat = {
+      beatId: 'sc.b1', sceneId: 'sc', order: 1, claimIds: ['c1'], learnerDelta: 'd', beatType: 'introduce',
+      cognitiveOperation: 'identify', representationFamily: 'process', entities: [{ conceptId: 'charge' }],
+      relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'v', mutedMeaning: 'm',
+      narrationOnly: false, persistence: 'scene', pauseIntent: 'none', evidenceSpanIds: ['S1'],
+    } as const;
+    const bindings = { conceptIds: ['charge'], claimIds: ['c1'] };
+    const seedOp = { op: 'add', opId: 'o0', beatId: 'sc.b1', id: 'kept', element: { type: 'token', text: 'kept', provenance: 'illustrative', bindings }, at: { region: 'center' }, cue: 0 } as const;
+    const inherited = applyOpAfter(emptyBoardState(), SceneBoardDraftSchema.parse({ transition: { mode: 'clean' }, ops: [seedOp] }).ops[0]!, undefined, ['sc.b1']).state;
+    const baseCtx = {
+      sceneId: 'sc', title: 'T', beats: [{ ...beat }],
+      narration: [{ beatId: 'sc.b1', sentences: ['Charge builds.'] }],
+      concepts: [{ id: 'charge', label: 'Charge' }],
+      initial: inherited,
+    };
+    const fresh = {
+      transition: { mode: 'retain-all' },
+      ops: [{ op: 'add', opId: 'o1', beatId: 'sc.b1', id: 'fresh', element: { type: 'token', text: 'fresh', provenance: 'illustrative', bindings }, at: { region: 'left' }, cue: 0 }],
+    } as const;
+    const untouched = validateSceneBoard(SceneBoardDraftSchema.parse(fresh), baseCtx as never) as Array<{ message: string }>;
+    assert.ok(untouched.some((p) => /use transition clean/.test(p.message)));
+    const touching = {
+      transition: { mode: 'retain-all' },
+      ops: [{ op: 'highlight', opId: 'o2', beatId: 'sc.b1', target: 'kept', cue: 0 }],
+    } as const;
+    const touched = validateSceneBoard(SceneBoardDraftSchema.parse(touching), baseCtx as never) as Array<{ message: string }>;
+    assert.ok(!touched.some((p) => /use transition clean/.test(p.message)));
+    const cleaned = validateSceneBoard(SceneBoardDraftSchema.parse({ ...fresh, transition: { mode: 'clean' } }), baseCtx as never) as Array<{ message: string }>;
+    assert.ok(!cleaned.some((p) => /use transition clean/.test(p.message)));
+  });
+});
