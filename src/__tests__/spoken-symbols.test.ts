@@ -32,3 +32,14 @@ describe('spoken symbols', () => {
     assert.deepEqual(check('Η αντίσταση μεγαλώνει με τον χρόνο.'), []);
   });
 });
+
+describe('math notation', () => {
+  it('formulas in speech are rejected; spoken words pass', async () => {
+    const { validateSceneNarration } = await import('../narration/beat-narration/validate.js');
+    const bad = validateSceneNarration(
+      { beats: [{ beatId: 's.b1', sentences: ['Initial current I(0)=V/R flows at closure.'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }], emphasisTerms: [] }] },
+      { sceneId: 's', beats: [{ beatId: 's.b1', sceneId: 's', order: 1, claimIds: ['c1'], evidenceSpanIds: ['S1'], learnerDelta: 'd', beatType: 'introduce', cognitiveOperation: 'identify', representationFamily: 'process', entities: [{ conceptId: 't' }], relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'v', mutedMeaning: 'm', narrationOnly: false, persistence: 'scene', pauseIntent: 'none' }], allowedNumbers: new Set(['0']), durationSec: 60, emphasisCandidates: [] },
+    ).filter((p) => typeof p !== 'string' && /math notation/.test(p.message));
+    assert.ok(bad.length > 0);
+  });
+});

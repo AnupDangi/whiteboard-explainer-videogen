@@ -65,6 +65,8 @@ const wordCount = (text: string, language?: string): number => tokenizeWords(tex
 // Keep rejecting pictographic arrows and mathematical operators that TTS may
 // silently omit, while allowing Greek prose and Greek-script names.
 const UNSPEAKABLE_SYMBOLS = /[\u2190-\u21FF\u2200-\u22FF\u00B1\u00D7\u00F7\u221A]/u;
+/** Math notation in speech (I(0)=V/R): TTS mangles it and aligners collapse. Write the words you say. */
+const MATH_NOTATION = /=|\^|_|\{|\}|\w[()]|[()]\w/u;
 /** Isolated Greek letters used as math symbols in non-Greek speech (So τ = RC). TTS cannot speak them and aligners collapse on them; write the spoken name. Greek prose passes because real Greek words (Η, ο) are single letters too — so only a sentence with exactly one Greek character is rejected. */
 const greekRuns = (text: string): string[] => text.match(/\p{Script=Greek}+/gu) ?? [];
 const hasIsolatedGreek = (text: string): boolean => greekRuns(text).join('').length === 1;
@@ -98,6 +100,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
       if (STAGE_DIRECTION.test(sentence.trim())) problems.push({ path: `${at}/sentences/${j}`, message: 'a visual stage direction is spoken; teach the idea instead of commanding the drawing' });
       if (VIDEO_REFERENCE.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'names "this video"; the speech must work as an audio lesson on its own' });
       if (UNSPEAKABLE_SYMBOLS.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'contains a symbol that cannot be spoken or aligned (Greek letter, arrow or maths operator); write it as the word you say, for example tau, not the symbol' });
+      if (MATH_NOTATION.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'contains math notation that cannot be spoken or aligned; write the words you say (initial current equals battery voltage over resistance), never the formula' });
       if (hasIsolatedGreek(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'uses an isolated Greek letter as a math symbol; TTS cannot speak it and alignment collapses: write the spoken name (tau), never the symbol' });
       if (/\[\[|\]\]/.test(sentence)) problems.push({ path: `${at}/sentences/${j}`, message: 'markers are not used; write plain speech' });
       for (const number of asciiDigits(sentence).match(/\d+(?:\.\d+)?/g) ?? []) if (!ctx.allowedNumbers.has(number)) problems.push({ path: `${at}/sentences/${j}`, message: `number ${number} is not in this scene's claims or evidence; state only numbers the source gives` });
