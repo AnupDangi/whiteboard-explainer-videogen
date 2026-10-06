@@ -113,7 +113,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       validatedByConcept: Record<string, string>;
       evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v7');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v8');
     assert.deepEqual(lessonContext.validatedByConcept, { frame: 'iconify-lucide:frame' });
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
@@ -320,7 +320,7 @@ test('a measured audio duration outside the request stops before paid board plan
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-async function fixtureRun(dir: string): Promise<string> {
+async function fixtureRun(dir: string, hierarchical = false): Promise<string> {
   const aligner = async (text: string) => {
     const tokens = tokenizeWords(text);
     const durationMs = tokens.length * 300 + 100;
@@ -329,7 +329,18 @@ async function fixtureRun(dir: string): Promise<string> {
     return { durationMs, words: tokens.map((word, i) => ({ word, startMs: i * 300, endMs: i * 300 + 260 })), aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
   };
   const out = path.join(dir, 'run');
-  const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...prepared, requestedDurationSec: fixtureDurationSec(300, 100) }, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, skipEncode: true });
+  const hierarchicalPrepared = hierarchical ? {
+    ...prepared,
+    syllabus: { modules: [
+      { id: 'chapter-one', title: 'Foundations', goal: 'Introduce the stack', budgetSec: 150, conceptIds: ['frame', 'stack'], evidenceSpanIds: claims('one')[0]!.evidenceSpanIds, recallOfModuleIds: [] },
+      { id: 'chapter-two', title: 'Stack changes', goal: 'Trace a change', budgetSec: 150, conceptIds: ['frame', 'stack'], evidenceSpanIds: claims('two')[0]!.evidenceSpanIds, recallOfModuleIds: ['chapter-one'] },
+    ] },
+    modules: [
+      { moduleId: 'chapter-one', title: 'Foundations', goal: 'Introduce the stack', budgetSec: 150, requestedBudgetSec: 150, conceptIds: ['frame', 'stack'], graph, plan: { ...plan, sections: [plan.sections[0]!] }, script: { scenes: [] } },
+      { moduleId: 'chapter-two', title: 'Stack changes', goal: 'Trace a change', budgetSec: 150, requestedBudgetSec: 150, conceptIds: ['frame', 'stack'], graph, plan: { ...plan, sections: [plan.sections[1]!] }, script: { scenes: [] } },
+    ],
+  } : prepared;
+  const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...hierarchicalPrepared, requestedDurationSec: fixtureDurationSec(300, 100) } as PreparedLesson, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, skipEncode: true });
   assert.equal(result.status, 'draft', JSON.stringify(result.failures));
   return out;
 }
@@ -486,7 +497,61 @@ test('the V2 lock pins ops, narration, timings, audio and versions before render
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v7', async () => {
+test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject rehashed checkpoint tampering', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-hierarchy-'));
+  try {
+    const out = await fixtureRun(dir, true);
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { context: { file: string; hash: string }; contentHash: string };
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8')) as {
+      schemaVersion: string;
+      lessonHierarchy: { mode: string; chapters: Array<{ chapterId: string; sceneIds: string[]; scenes: Array<{ sceneId: string }>; plannedBudgetMs: number; evidenceSpanIds: string[]; recallOfChapterIds: string[]; checkpoint: { cumulativeClaimIds: string[] } }> };
+    };
+    assert.equal(context.schemaVersion, 'lesson-context/v8');
+    assert.equal(context.lessonHierarchy.mode, 'syllabus');
+    assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.sceneIds), [['one'], ['two']]);
+    assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.scenes.map((scene) => scene.sceneId)), [['one'], ['two']]);
+    assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.recallOfChapterIds), [[], ['chapter-one']]);
+    assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.checkpoint.cumulativeClaimIds), [['one_c'], ['one_c', 'two_c']]);
+    assert.deepEqual(await verifyLessonLockV2(out), []);
+
+    const originalHierarchy = structuredClone(context.lessonHierarchy);
+    const repinContext = async () => {
+      const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+      await writeFile(contextPath, contextBytes);
+      lock.context.hash = sha256(contextBytes);
+      const { contentHash: _oldHash, ...body } = lock;
+      lock.contentHash = canonicalHash(body);
+      const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+      await writeFile(lockPath, lockBytes);
+      await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+    };
+    context.lessonHierarchy.chapters[1]!.checkpoint.cumulativeClaimIds = ['two_c'];
+    await repinContext();
+    const problems = await verifyLessonLockV2(out);
+    assert.ok(problems.some((problem) => /cumulative claim checkpoint is inconsistent/u.test(problem)), problems.join('\n'));
+
+    context.lessonHierarchy = structuredClone(originalHierarchy);
+    context.lessonHierarchy.chapters[0]!.plannedBudgetMs += 1;
+    await repinContext();
+    const budgetProblems = await verifyLessonLockV2(out);
+    assert.ok(budgetProblems.some((problem) => /metadata differs from its pinned syllabus\/module inputs/u.test(problem)), budgetProblems.join('\n'));
+
+    context.lessonHierarchy = structuredClone(originalHierarchy);
+    context.lessonHierarchy.mode = 'flat-compatibility';
+    await repinContext();
+    const modeProblems = await verifyLessonLockV2(out);
+    assert.ok(modeProblems.some((problem) => /mode does not match its separately locked input artifact/u.test(problem)), modeProblems.join('\n'));
+
+    delete (context as unknown as Record<string, unknown>).lessonHierarchy;
+    await repinContext();
+    const missingHierarchyProblems = await verifyLessonLockV2(out);
+    assert.ok(missingHierarchyProblems.some((problem) => /no lessonHierarchy field/u.test(problem)), missingHierarchyProblems.join('\n'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v8', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
@@ -499,7 +564,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
       beatPlans: Record<string, Array<Record<string, unknown>>>;
       validatedByConcept: Record<string, string>;
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v7');
+    assert.equal(context.schemaVersion, 'lesson-context/v8');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -550,7 +615,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
     await writeFile(lockPath, visualLockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), visualLockBytes);
     const visualProblems = await verifyLessonLockV2(out);
-    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v7 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
+    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v8 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
 
     context.plan.sections[0]!.contract.essentialClaims[0]!.verificationStatus = 'source_cited';
     context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType = 'direct_source';

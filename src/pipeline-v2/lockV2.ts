@@ -21,6 +21,7 @@ import { BoardOpSchema, SceneTransitionSchema, type BoardOp } from '../visual-v2
 import { applyOpAfter, emptyBoardState, startScene } from '../visual-v2/board-state/reducer.js';
 import type { BoardState } from '../visual-v2/board-state/types.js';
 import { CompiledEntityRefSchema, CompiledSemanticChangeSchema, semanticEntityId } from '../teaching/beat-plan/types.js';
+import { lessonHierarchyProblems } from './lessonHierarchy.js';
 
 export const LESSON_LOCK_V2_VERSION = 'lesson.lock/v5-teaching-compiler-v2';
 const Hash = z.string().regex(/^[0-9a-f]{64}$/);
@@ -33,7 +34,7 @@ const Segment = z.discriminatedUnion('kind', [
 const SampleSchema = z.object({ sceneId: z.string().min(1), kind: z.enum(['final', 'transition']), svgHash: Hash, pngHash: Hash, sampleTimeMs: z.number().nonnegative(), frame: z.number().int().nonnegative().optional() }).strict();
 const LockSchema = z.object({
   schemaVersion: z.literal(LESSON_LOCK_V2_VERSION), lessonId: z.string().min(1),
-  context: Ref, alignment: Ref,
+  context: Ref, alignment: Ref, hierarchyInput: Ref.optional(),
   scenes: z.array(z.object({
     sceneId: z.string().regex(/^[a-zA-Z0-9_-]+$/), startMs: z.number().nonnegative(), endMs: z.number().positive(),
     file: z.string().min(1), fileHash: Hash, audioFile: z.string().min(1), audioHash: Hash,
@@ -125,11 +126,12 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
   const contextV4 = context.schemaVersion === 'lesson-context/v4';
   const contextV5 = context.schemaVersion === 'lesson-context/v5';
   const contextV6 = context.schemaVersion === 'lesson-context/v6';
-  const contextV7 = context.schemaVersion === 'lesson-context/v7';
+  const contextV8 = context.schemaVersion === 'lesson-context/v8';
+  const contextV7 = context.schemaVersion === 'lesson-context/v7' || contextV8;
   if (context.schemaVersion !== undefined && !contextV2 && !contextV3 && !contextV4 && !contextV5 && !contextV6 && !contextV7) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
   // Older synthetic and cached V2 locks predate the claim graph / beat identity contract.
   if (!sections?.some((section) => recordOf(section.contract))) {
-    return contextV2 || contextV3 || contextV4 || contextV5 || contextV6 || contextV7 ? [`lesson context ${contextV7 ? 'v7' : contextV6 ? 'v6' : contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
+    return contextV2 || contextV3 || contextV4 || contextV5 || contextV6 || contextV7 ? [`lesson context ${contextV8 ? 'v8' : contextV7 ? 'v7' : contextV6 ? 'v6' : contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
   }
 
   const problems: string[] = [];
@@ -148,12 +150,12 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
 
   const validatedByConcept = recordOf(context.validatedByConcept);
   if (contextV6 || contextV7) {
-    if (!validatedByConcept) problems.push(`lesson context ${contextV7 ? 'v7' : 'v6'} has no validatedByConcept map`);
+    if (!validatedByConcept) problems.push(`lesson context ${contextV8 ? 'v8' : contextV7 ? 'v7' : 'v6'} has no validatedByConcept map`);
     else for (const [conceptId, assetId] of Object.entries(validatedByConcept)) {
-      if (!conceptLabels.has(conceptId)) problems.push(`lesson context ${contextV7 ? 'v7' : 'v6'} visual selection refers to unknown concept ${conceptId}`);
-      if (typeof assetId !== 'string' || !assetId.trim()) problems.push(`lesson context ${contextV7 ? 'v7' : 'v6'} visual selection for ${conceptId} has no asset id`);
+      if (!conceptLabels.has(conceptId)) problems.push(`lesson context ${contextV8 ? 'v8' : contextV7 ? 'v7' : 'v6'} visual selection refers to unknown concept ${conceptId}`);
+      if (typeof assetId !== 'string' || !assetId.trim()) problems.push(`lesson context ${contextV8 ? 'v8' : contextV7 ? 'v7' : 'v6'} visual selection for ${conceptId} has no asset id`);
     }
-    if (!recordOf(context.visualVocabularies)) problems.push(`lesson context ${contextV7 ? 'v7' : 'v6'} has no visualVocabularies map`);
+    if (!recordOf(context.visualVocabularies)) problems.push(`lesson context ${contextV8 ? 'v8' : contextV7 ? 'v7' : 'v6'} has no visualVocabularies map`);
   }
 
   if (contextV2 || contextV3 || contextV4 || contextV5 || contextV6 || contextV7) {
@@ -201,7 +203,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
       problems.push(...validateEvidenceLedgerClaims(ledger, canonicalClaims));
       const sourceDoc = recordOf(context.sourceDoc);
       if (!sourceDoc || typeof sourceDoc.sourceId !== 'string' || typeof sourceDoc.text !== 'string' || !Array.isArray(sourceDoc.spans)) {
-        problems.push(`lesson context ${contextV7 ? 'v7' : contextV6 ? 'v6' : contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
+        problems.push(`lesson context ${contextV8 ? 'v8' : contextV7 ? 'v7' : contextV6 ? 'v6' : contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
       } else {
         const graphEvidence = [
           ...concepts.flatMap((concept) => arrayOf(concept.evidence) ?? []),
@@ -224,7 +226,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
         const info = recordOf(rawInfo);
         const expectedAssetId = validatedByConcept?.[conceptId];
         if (expectedAssetId !== undefined && info?.validatedAssetId !== expectedAssetId) {
-          problems.push(`scene ${locked.sceneId} concept ${conceptId} visual asset does not match lesson-context/${contextV7 ? 'v7' : 'v6'} Visual Discovery`);
+          problems.push(`scene ${locked.sceneId} concept ${conceptId} visual asset does not match lesson-context/${contextV8 ? 'v8' : contextV7 ? 'v7' : 'v6'} Visual Discovery`);
         }
         if (expectedAssetId === undefined && typeof info?.validatedAssetId === 'string') {
           problems.push(`scene ${locked.sceneId} concept ${conceptId} has an unrecorded Visual Discovery asset`);
@@ -828,6 +830,7 @@ export async function writeLessonLockV2(input: { outputDir: string; lessonId: st
   const audio = await persist('v2/locked/audio/master.wav', await readFile(await confinedPath(outputDir, sourceAudio)));
   const context = await ref('v2/lesson-context.json');
   const alignment = await ref('v2/alignment.json');
+  const hierarchyInput = await ref('v2/lesson-hierarchy-input.json').catch(() => undefined);
   const alignmentBytes = await readRef(outputDir, alignment);
   const semantic: unknown[] = [];
   const captions = await ref('captions.vtt');
@@ -868,7 +871,7 @@ export async function writeLessonLockV2(input: { outputDir: string; lessonId: st
   const invalidAlignment = alignmentProblems(alignmentBytes, records, semantic);
   if (invalidAlignment.length) throw new Error(`V2 lock alignment validation failed: ${invalidAlignment.join('; ')}`);
   const render = { fps, durationMs, width: STYLE.canvas.w, height: STYLE.canvas.h, frames };
-  const lock = LockSchema.parse({ schemaVersion: LESSON_LOCK_V2_VERSION, lessonId, context, alignment, scenes: records, media: { audio, captions }, font, render, renderPlan, svgAssets, samples, versions, contentHash: '0'.repeat(64) });
+  const lock = LockSchema.parse({ schemaVersion: LESSON_LOCK_V2_VERSION, lessonId, context, alignment, ...(hierarchyInput ? { hierarchyInput } : {}), scenes: records, media: { audio, captions }, font, render, renderPlan, svgAssets, samples, versions, contentHash: '0'.repeat(64) });
   lock.contentHash = lockHash(lock);
   // Publish only after all inputs and representative PNG pins exist. Exclusive writes preserve previously published locks.
   const bytes = jsonBytes(lock);
@@ -914,6 +917,7 @@ async function inspectLock(outputDir: string, options: { allowRasterOnlyToolDrif
   };
   const context = await load(lock.context, 'lesson context');
   const alignment = await load(lock.alignment, 'alignment');
+  const hierarchyInput = lock.hierarchyInput ? await load(lock.hierarchyInput, 'lesson hierarchy input') : undefined;
   try { if (context) JSON.parse(context.toString('utf8')); } catch { problems.push('lesson context JSON invalid'); }
   const captions = await load(lock.media.captions, 'captions');
   if (captions && !captions.toString('utf8').startsWith('WEBVTT')) problems.push('captions must be WEBVTT');
@@ -949,7 +953,10 @@ async function inspectLock(outputDir: string, options: { allowRasterOnlyToolDrif
     }
   }
   if (alignment) problems.push(...alignmentProblems(alignment, lock.scenes, semantic));
-  if (context) problems.push(...teachingIdentityProblems(context, lock.scenes, semantic, captured));
+  if (context) {
+    problems.push(...teachingIdentityProblems(context, lock.scenes, semantic, captured));
+    problems.push(...lessonHierarchyProblems(context, lock.scenes, alignment, hierarchyInput));
+  }
   if (endMs !== lock.render.durationMs || lock.render.frames !== Math.max(1, Math.round(lock.render.durationMs * lock.render.fps / 1000))) problems.push('render duration or frame count invalid');
   if (lock.render.width !== STYLE.canvas.w || lock.render.height !== STYLE.canvas.h) problems.push('render canvas version drift');
   const svgs = new Map<string, string>();

@@ -146,7 +146,7 @@ Before audio generation, V2 projects canonical claims into
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v7`; lock verification
+concatenated bundle hash. New runs write `lesson-context/v8`; lock verification
 requires each claim's explicit type and derived verification status, checks
 its source refs against the claim's cited spans, verifies the beat learner
 question, before/after state, stable order, and compiled dependency IDs, and
@@ -154,11 +154,22 @@ joins S3b-selected asset ids back to the concept metadata captured in each
 scene. It also validates compiled entities and semantic changes against strict
 schemas, recomputes scene-scoped ids from stable identity keys, and checks
 within-scene concept continuity, first-reveal order, declared persistence ids,
-and each beat's exact evidence-span union from its cited canonical claims. These change records
-are not yet checked against rendered BoardOps, and scene-local identity does
-not establish cross-scene lesson continuity; those checks require the later
-semantic compiler and hierarchy phases. `lesson-context/v2` through `/v6`
-remain readable through compatibility paths.
+and each beat's exact evidence-span union from its cited canonical claims.
+For hierarchical lessons, v8 also locks Lesson → Chapter → Scene → Beat
+membership, chapter budgets, measured scene speech/window timings, and
+end-of-chapter cumulative concept/claim/terminology checkpoints. Lock
+verification recomputes the chapter partition and those projections from the
+canonical plan, beat plans, graph, alignment, and scene locks; the lesson lock
+also pins `v2/lesson-hierarchy-input.json` separately and checks hierarchy mode
+and chapter metadata against that projection of the syllabus and prepared
+modules. Flat synthetic or compatibility runs carry one explicit
+compatibility chapter. These checkpoints record structural coverage, not
+learner mastery. Semantic changes are not yet
+checked against rendered BoardOps, and scene-local identity does not establish
+cross-scene continuity; those remain later semantic compiler work.
+The separate input artifact provides cross-file consistency, not a signature
+authenticating original model output if every artifact and hash is rewritten.
+`lesson-context/v2` through `/v7` remain readable through compatibility paths.
 The CLI carries grounding mode through request and run
 identity. `STRICT_SOURCE` and `SOURCE_PLUS_BACKGROUND` are accepted:
 direct-source and derived-relation claims require primary-only citations;
@@ -269,7 +280,7 @@ offers library vocabulary; the depiction director proposes drawable nouns,
 code resolves each noun to an exact catalog entry, and a separate judge must
 approve the referent-picture pair. Asset ids stay internal. The selected
 `validatedByConcept` map and per-scene visual vocabulary are pinned in
-`lesson-context/v7`; V2 copies the selected id into captured concept metadata.
+`lesson-context/v8`; V2 copies the selected id into captured concept metadata.
 V2 then probes the concrete entities actually used on each board and chooses
 the most common non-exempt `houseFamily` with a stable tie-break. It resolves
 only type-eligible pictorial entities inside that family and the lesson domain.
