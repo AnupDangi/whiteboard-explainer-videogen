@@ -2825,3 +2825,9 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **a2:** bindings completion built from investigator census; audio 59.8s vs 90s.
 - **a3:** audio 60.2s vs 90s (30s under — syllabus planned short, S1b scope) + symbolic equation unverifiable. MISSING stands.
 - **Next:** simi-bio.
+
+## Continuation — fixed-clock targets planned duration (wt/stcc/charter)
+
+- **Root cause (bio-a1 + phys-a3 data):** syllabus deliberately plans 60 s (partial support) while the fixed gate demanded requested 110/90 s — unwinnable by design. `prepared.plannedDurationSec` existed but the gate ignored it.
+- **Fix:** gate + trailing target `min(requested, planned)` when the syllabus shortened, openly metered (`v2.plannedDurationSec`). Requested-length speech for planned-length teaching is no longer demanded.
+- **Verification:** lesson-v2 8/8 (fixture has no plannedDurationSec → behavior unchanged); typecheck clean.

@@ -29,3 +29,4 @@ Prompt recording lands with the recorder change (prompt.json per call); rows bef
 | aligner flake | half_to_quarters | S5 align | stable-ts zero intervals + CTC digit fail | S5 aligner | open: aligner robustness task |
 | missing bindings | all scenes | S6 planner | optional schema, required validator | S6 complete.ts | deterministic unambiguous completion pre-validation |
 | short syllabus | phys scenes | S1b syllabus | planned 60s for 90s request, gate compares requested | S1b scope | open: requested vs planned duration reconciliation |
+| short syllabus | phys+bio scenes | S1b syllabus | gate compared requested, syllabus planned short | S1b/runLessonV2 | gate targets min(requested, planned) |

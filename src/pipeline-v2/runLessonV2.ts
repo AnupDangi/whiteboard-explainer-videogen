@@ -186,12 +186,22 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   // speech residuals land exactly instead of failing. Speech plus gaps beyond
   // the clock still fail at S4's owner, never trimmed.
   const gap = PIPELINE.sceneGapMs;
-  const requestedDurationMs = (prepared.requestedDurationSec ?? plan.targetDurationSec) * 1000;
+  // The syllabus may deliberately plan shorter than requested (partial source
+  // support): then the fixed clock is the planned duration, openly recorded,
+  // not the request. Demanding requested-length speech for planned-length
+  // teaching was unwinnable by design (observed: 60 s planned, 110 s demanded).
+  const requestedSec = prepared.requestedDurationSec ?? plan.targetDurationSec;
+  const plannedSec = prepared.plannedDurationSec;
+  const targetSec = plannedSec === undefined ? requestedSec : Math.min(requestedSec, plannedSec);
+  const requestedDurationMs = targetSec * 1000;
   const speechAndGapsMs = audioScenes.reduce((sum, { audio }, i) => sum + audio.durationMs + (i < audioScenes.length - 1 ? gap : 0), 0);
   const trailing = Math.min(3000, Math.max(0, requestedDurationMs - speechAndGapsMs));
   const totalMs = speechAndGapsMs + trailing;
   metrics['v2.requestedDurationMs'] = requestedDurationMs;
   metrics['v2.actualDurationDeltaMs'] = totalMs - requestedDurationMs;
+  if (plannedSec !== undefined && plannedSec !== requestedSec) {
+    metrics['v2.plannedDurationSec'] = plannedSec;
+  }
   // Lesson-clock tolerance, calibrated 2026-10-03 over 7 measured 60 s runs
   // (speech deltas +41 s, +74 s, -0.7 s, +0.2 s, +1.9 s, +5.6 s, -5.6 s across
   // successive S4 fixes): per-scene Piper wps varies 1.9–2.5 unpredictably, so
