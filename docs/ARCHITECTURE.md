@@ -31,7 +31,9 @@ S4 beat plan + locked narration
 S5 speech + word alignment + duration fit
        │
        ▼
-S6 semantic board planning (sequential, retained board)
+scene representation dispatch
+       ├── all visual beats use supported state_transition → typed SemanticOps → deterministic BoardOps
+       └── unsupported or mixed families → S6 legacy BoardOps preview (draft only)
        │
        ▼
           BoardOps + persistent board state
@@ -50,7 +52,9 @@ The source-to-plan stages live under `src/plan/` and `src/pipeline/`.
 alignment, and audio timing. `src/planner/board.ts` builds the board-planning
 contract and validates model output. `src/pipeline-v2/` runs V2, compiles
 BoardOps against the retained board, writes the V2 lock, and verifies replay
-inputs. Board state and operations are defined in `src/visual-v2/board-*`;
+inputs. `src/pipeline-v2/semanticExecution.ts` dispatches the implemented typed
+provider and labels unsupported families before they reach the legacy S6
+preview. Board state and operations are defined in `src/visual-v2/board-*`;
 geometry and deterministic rendering are in `src/visual-v2/layout/`,
 `src/visual-v2/kits/`, and `src/visual-v2/renderer/`. Export code is under
 `src/export/`.
@@ -115,11 +119,15 @@ instead of generating a generic BoardOps substitute.
 
 The registry currently activates only `state_transition` v1, for `introduce`
 and `transform` changes; its other change kinds and the other 18 families stay
-unavailable. The current V2 S6 execution path does not call this registry: S6
-still writes BoardOps directly using family-specific kit hints. The registry
-is a tested fail-closed boundary for callers that use it, not evidence that
-current generated videos use semantic providers. Family coverage, V2
-integration, and live visual verification remain open.
+unavailable. V2 routes a scene through that provider only when every visual
+beat in the scene selects `state_transition` and all required changes are
+supported. It derives the family model from pinned beat changes, compiles and
+replays `SemanticOp`s, then lowers them to BoardOps. A provider or lowering
+failure is hard and does not fall through to generic BoardOps. Mixed or
+unsupported families are explicitly recorded as `legacy-boardops-preview`,
+run through S6 for diagnostics, and carry a draft failure. They are not
+reported as typed-provider output. Broad family coverage and live visual
+verification remain open.
 
 ## Semantic representation IR
 
@@ -135,9 +143,9 @@ the schemas have no screen coordinates, renderer objects, or BoardOps ids.
 scene state. It checks identity and claim references, earlier-event
 dependencies, lifecycle, exact before-state/value/unit, semantic movement,
 and operation-specific preconditions. It returns a pointer-scoped failure
-without mutating the input state when a transition is invalid. This is a
-scene-level contract only: V2 does not yet call it and the lesson lock does
-not yet pin it.
+without mutating the input state when a transition is invalid. The supported
+state-transition route uses this replay before lowering, and V2 locks pin the
+provider record with the beat plan and captured operations.
 
 The initial state-transition provider in
 `src/teaching/representation/stateTransition.ts` maps beat-bound introduction
@@ -150,16 +158,20 @@ transformation, focus/selection, and finalization to deterministic BoardOps.
 For introductions it requires canonical concept labels and emits an entity
 element bound to the beat's claims. If S3b selected a library icon, the lowerer
 preserves its exact entry id and validates the entity type; the existing V2
-renderer and rights path can then resolve and lock that same asset. Unknown
-mechanisms, missing visible state, mismatched values, or overlong state text
-fail closed. This lowerer and provider are not wired into V2 yet, so current
-generated videos still use the existing direct BoardOps planner.
+renderer and rights path resolve and lock that same asset. Unknown mechanisms,
+missing visible state, mismatched values, or overlong state text fail closed.
+The scene record and pinned lesson context store provider version, semantic
+operations, phrase-derived sentence cues, exact selected asset ids, and a hash
+of the emitted BoardOps. Lock verification re-derives the state-transition
+operations and lowering and compares them with the captured timeline.
 
 ## Ownership and trust boundaries
 
-Models decide teaching order, claims, narration, representation intent, and
-semantic board operations. They do not provide final coordinates, paths,
-timing milliseconds, worker commands, or export instructions. Every model
+Models decide teaching order, claims, narration, and representation intent.
+The state-transition provider turns its pinned beat changes into typed
+semantic operations; only the explicitly marked legacy preview asks S6 for
+BoardOps directly. Models do not provide final coordinates, paths, timing
+milliseconds, worker commands, or export instructions. Every model
 response is parsed against a bounded schema and checked against source
 evidence, the board state, and the spoken beat. Bounded repairs may adjust
 invalid responses; repair or deterministic fallback remains recorded and
@@ -365,9 +377,10 @@ separately from end-to-end lesson timing.
 ## Assets and rights
 
 The legacy V1 route separates S6 representation intents from S7 resolution.
-The beat-mode V2 route runs S3b Visual Discovery before narration and passes
-its per-scene vocabulary into S6 BoardOps. The S6 prompt receives concept kind
-and depiction guidance without catalog IDs. When S3b selected an icon for a
+The beat-mode V2 route runs S3b Visual Discovery before narration and carries
+its per-scene vocabulary into either the typed lowerer or the S6 preview. The
+S6 prompt receives concept kind and depiction guidance without catalog IDs.
+When S3b selected an icon for a
 canonical `entity`, BoardOps validation requires a live bound `entity` element
 by the end of each beat that names it; tokens, labels and kit bindings cannot
 stand in for that picture. Non-entity kinds keep their selected structure or

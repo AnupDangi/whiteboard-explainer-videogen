@@ -21,6 +21,9 @@ import { PIPELINE } from '../run/config.js';
 import { DEFAULT_PACING } from '../pipeline-v2/durationFit.js';
 import { pathToFileURL } from 'node:url';
 import { resolveSourceEvidence, sourceDocFromText } from '../intake/sourceDoc.js';
+import { executeSemanticScene } from '../pipeline-v2/semanticExecution.js';
+import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
+import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
 
 // A contract test for the V2 runner with injected model and aligner. The lesson content is synthetic test data, not a generated lesson.
 const sentences: Record<string, string[]> = { one: ['Each call pushes a frame onto the stack.', 'The newest frame sits on top.'], two: ['A return pops the top frame.', 'The stack shrinks again.'] };
@@ -95,6 +98,50 @@ const board: Record<string, unknown> = {
 };
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };
 const client: ModelClient = { provider: 'fake', chat: async (r) => { const scene = /SCENE (\w+)/.exec(r.user)?.[1] ?? ''; return { content: JSON.stringify(board[scene]), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage }; } };
+
+test('V2 semantic execution compiles supported state changes and carries the exact selected icon', () => {
+  const sceneNarration = narrations.one!;
+  const beat = { ...beatPlans.one![0]!, representationFamily: 'state_transition' as const };
+  const sourceContext: BoardContext = {
+    sceneId: 'one', title: 'Scene one', beats: [beat], claims: claims('one').map(({ id, statement, conceptIds, relations, epistemicType, verificationStatus }) => ({ id, statement, conceptIds, relations, epistemicType, verificationStatus })),
+    narration: [{ beatId: beat.beatId, sentences: sentences.one! }],
+    concepts: [{ id: 'frame', label: 'Frame', kind: 'entity' }, { id: 'stack', label: 'Stack', kind: 'entity' }],
+    visualVocabulary: visualVocabularies.one, initial: emptyBoardState(),
+  };
+  const sentenceSpans = sceneNarration.beatSpans[0]!.sentenceSpans;
+  const beatTiming = {
+    beatId: beat.beatId, startMs: 0, endMs: 1200,
+    sentences: sentenceSpans.map((span, index) => ({ startMs: index * 600, endMs: (index + 1) * 600 })),
+    semanticAnchors: sceneNarration.semanticAnchors.map((anchor) => {
+      const sentenceIndex = sentenceSpans.findIndex((span) => anchor.charStart >= span.charStart && anchor.charStart < span.charEnd);
+      return { semanticEventId: anchor.semanticEventId, phrase: anchor.phrase, startMs: sentenceIndex * 600 + 10, endMs: sentenceIndex * 600 + 200 };
+    }),
+  };
+  const result = executeSemanticScene({ context: sourceContext, narration: sceneNarration, beatTimings: [beatTiming] });
+  assert.equal(result.status, 'compiled');
+  if (result.status !== 'compiled') return;
+  assert.equal(result.record.providerVersion, 'state-transition/v1');
+  assert.equal(result.record.semanticOperations.length, 2);
+  assert.equal(result.operations.length, 4, 'each introduced entity has a live entity plus a visible state value');
+  assert.deepEqual(result.record.selectedAssetIds, { frame: 'iconify-lucide:frame' });
+  assert.ok(result.operations.some((op) => op.op === 'add' && op.element.type === 'entity' && op.element.conceptId === 'frame'));
+  assert.deepEqual(result.record.cueByEventId, { 'one.b1.e1': 0, 'one.b1.e2': 0 });
+});
+
+test('V2 semantic execution labels unsupported families as legacy previews', () => {
+  const sceneNarration = narrations.one!;
+  const sourceContext: BoardContext = {
+    sceneId: 'one', title: 'Scene one', beats: beatPlans.one!, claims: claims('one').map(({ id, statement, conceptIds, relations, epistemicType, verificationStatus }) => ({ id, statement, conceptIds, relations, epistemicType, verificationStatus })),
+    narration: [{ beatId: beatPlans.one![0]!.beatId, sentences: sentences.one! }],
+    concepts: [{ id: 'frame', label: 'Frame', kind: 'entity' }, { id: 'stack', label: 'Stack', kind: 'entity' }],
+    visualVocabulary: visualVocabularies.one, initial: emptyBoardState(),
+  };
+  const result = executeSemanticScene({ context: sourceContext, narration: sceneNarration, beatTimings: [] });
+  assert.equal(result.status, 'legacy-preview');
+  assert.equal(result.record.mode, 'legacy-boardops-preview');
+  assert.equal(result.record.beats[0]?.status, 'provider-unavailable');
+  assert.deepEqual(result.record.selectedAssetIds, { frame: 'iconify-lucide:frame' });
+});
 
 test('the V2 runner turns beats and narration into a retained-board video with real audio timing, captions, metrics and a scorecard', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lesson-v2-'));
@@ -380,7 +427,7 @@ test('a measured audio duration outside the request stops before paid board plan
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-async function fixtureRun(dir: string, hierarchical = false): Promise<string> {
+async function fixtureRun(dir: string, hierarchical = false, semanticProvider = false): Promise<string> {
   const aligner = async (text: string) => {
     const tokens = tokenizeWords(text);
     const durationMs = tokens.length * 300 + 100;
@@ -400,10 +447,55 @@ async function fixtureRun(dir: string, hierarchical = false): Promise<string> {
       { moduleId: 'chapter-two', title: 'Stack changes', goal: 'Trace a change', budgetSec: 150, requestedBudgetSec: 150, conceptIds: ['frame', 'stack'], graph, plan: { ...plan, sections: [plan.sections[1]!] }, script: { scenes: [] } },
     ],
   } : prepared;
-  const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...hierarchicalPrepared, requestedDurationSec: fixtureDurationSec(300, 100) } as PreparedLesson, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, skipEncode: true });
+  const runPrepared = semanticProvider ? {
+    ...hierarchicalPrepared,
+    beatPlans: Object.fromEntries(Object.entries(hierarchicalPrepared.beatPlans ?? {}).map(([sceneId, beats]) => [sceneId, beats.map((beat) => ({ ...beat, representationFamily: 'state_transition' as const }))])),
+    requestedDurationSec: fixtureDurationSec(300, 100),
+  } as PreparedLesson : { ...hierarchicalPrepared, requestedDurationSec: fixtureDurationSec(300, 100) } as PreparedLesson;
+  const executionClient: ModelClient = semanticProvider ? { provider: 'forbidden-s6', chat: async () => { throw new Error('typed semantic scene must not call the legacy S6 planner'); } } : client;
+  const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: runPrepared, plannerModel: 'google/x', apiKey: 'k', client: executionClient, aligner: aligner as never, skipEncode: true });
   assert.equal(result.status, 'draft', JSON.stringify(result.failures));
   return out;
 }
+
+test('V2 routes supported state-transition scenes through typed semantics and locks the operations and icon choice', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-semantic-v2-'));
+  try {
+    const out = await fixtureRun(dir, false, true);
+    assert.deepEqual(await verifyLessonLockV2(out), []);
+    const context = JSON.parse(await readFile(path.join(out, 'v2', 'lesson-context.json'), 'utf8')) as {
+      representationExecution: { scenes: Array<{ sceneId: string; mode: string; providerVersion?: string; semanticOperations: unknown[]; selectedAssetIds: Record<string, string> }> };
+    };
+    const scenes = context.representationExecution.scenes;
+    assert.equal(scenes.length, 2);
+    assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v1'));
+    assert.ok(scenes.every((scene) => scene.semanticOperations.length === 2));
+    assert.ok(scenes.every((scene) => scene.selectedAssetIds.frame === 'iconify-lucide:frame'));
+
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { contentHash: string; context: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string }> };
+    const contextPath = path.join(out, lock.context.file);
+    const sceneLock = lock.scenes.find((scene) => scene.sceneId === 'one')!;
+    const scenePath = path.join(out, sceneLock.file);
+    const contextValue = JSON.parse(await readFile(contextPath, 'utf8')) as { representationExecution: { scenes: Array<{ sceneId: string; semanticOperations: Array<{ type: string; entity?: { state?: string } }> }> } };
+    const sceneValue = JSON.parse(await readFile(scenePath, 'utf8')) as { representationExecution: { semanticOperations: Array<{ type: string; entity?: { state?: string } }> } };
+    contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.semanticOperations[0]!.entity!.state = 'forged state';
+    sceneValue.representationExecution.semanticOperations[0]!.entity!.state = 'forged state';
+    const contextBytes = `${JSON.stringify(contextValue, null, 2)}\n`;
+    const sceneBytes = `${JSON.stringify(sceneValue, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    await writeFile(scenePath, sceneBytes);
+    lock.context.hash = sha256(contextBytes);
+    sceneLock.fileHash = sha256(sceneBytes);
+    const { contentHash: _oldHash, ...lockBody } = lock;
+    lock.contentHash = canonicalHash(lockBody);
+    const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, lockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+    const tampered = await verifyLessonLockV2(out);
+    assert.ok(tampered.some((problem) => /typed semantic operations do not derive from the pinned beat changes/.test(problem)), tampered.join('\n'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 
 test('OPEN_EXPLANATION survives the V2 runner and a rehashed lock still rejects visualized or uncaveated open claims', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-open-v2-'));

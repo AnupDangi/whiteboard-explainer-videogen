@@ -26,6 +26,12 @@ import { applyOpAfter, emptyBoardState, startScene } from '../visual-v2/board-st
 import type { BoardState } from '../visual-v2/board-state/types.js';
 import { CompiledEntityRefSchema, CompiledSemanticChangeSchema, semanticEntityId } from '../teaching/beat-plan/types.js';
 import { lessonHierarchyProblems } from './lessonHierarchy.js';
+import { SemanticOpSchema, type SemanticOp, type SemanticSceneState } from '../teaching/semantic-ir/types.js';
+import { applySemanticProgram } from '../teaching/semantic-ir/program.js';
+import { compileSemanticOpsToBoardOps } from '../teaching/semantic-ir/toBoardOps.js';
+import { stateTransitionProvider } from '../teaching/representation/stateTransition.js';
+import type { TeachingBeat } from '../teaching/beat-plan/types.js';
+import type { VisualVocabulary } from '../planner/visualDiscovery.js';
 
 export const LESSON_LOCK_V2_VERSION = 'lesson.lock/v5-teaching-compiler-v2';
 const Hash = z.string().regex(/^[0-9a-f]{64}$/);
@@ -70,6 +76,118 @@ const CapturedSchema = z.object({
   }).strict(),
 }).strict();
 type CapturedScene = z.infer<typeof CapturedSchema>;
+
+const RepresentationExecutionSchema = z.object({
+  schemaVersion: z.literal('v2-representation-execution/v1'),
+  sceneId: z.string().min(1),
+  mode: z.enum(['typed-semantic', 'legacy-boardops-preview']),
+  providerVersion: z.string().min(1).optional(),
+  providerSource: z.literal('family-fallback').optional(),
+  beats: z.array(z.object({
+    beatId: z.string().min(1), family: z.string().min(1),
+    status: z.enum(['compiled', 'provider-unavailable']),
+    providerVersion: z.string().min(1).optional(), problem: z.string().min(1).optional(),
+  }).strict()),
+  semanticOperations: z.array(SemanticOpSchema),
+  cueByEventId: z.record(z.string(), z.number().int().min(0).max(3)),
+  selectedAssetIds: z.record(z.string(), z.string()),
+  boardOpsHash: Hash.optional(),
+}).strict();
+
+function emptySemanticSceneState(sceneId: string): SemanticSceneState {
+  return { sceneId, entities: [], relations: [], selectedEntityIds: [], plots: [], feedbackLoops: [], annotations: [] };
+}
+
+function expectedIconSelection(context: JsonRecord, sceneId: string): Record<string, string> {
+  const vocabularies = recordOf(context.visualVocabularies);
+  const vocabulary = recordOf(vocabularies?.[sceneId]);
+  return Object.fromEntries((arrayOf(vocabulary?.concepts) ?? []).flatMap((raw) => {
+    const item = recordOf(raw);
+    const depiction = recordOf(item?.depiction);
+    return item?.conceptKind === 'entity' && depiction?.kind === 'icon' && typeof item.conceptId === 'string' && typeof depiction.entryId === 'string'
+      ? [[item.conceptId, depiction.entryId] as const] : [];
+  }));
+}
+
+/** Cross-checks the new provider record against the pinned beat plan, phrase clocks and captured BoardOps. */
+function representationExecutionProblems(sceneRecord: JsonRecord | undefined, context: JsonRecord, planBeats: unknown[], capturedOps: unknown[], sceneId: string): string[] {
+  const problems: string[] = [];
+  const topLevel = recordOf(context.representationExecution);
+  if (!topLevel) return [];
+  const topScenes = arrayOf(topLevel.scenes) ?? [];
+  const topScene = topScenes.map(recordOf).find((item) => item?.sceneId === sceneId);
+  const sceneRepresentation = recordOf(sceneRecord?.representationExecution);
+  if (!topScene || !sceneRepresentation) {
+    problems.push(`scene ${sceneId} representation execution differs from the lesson-context copy`);
+    return problems;
+  }
+  if (canonicalHash(topScene) !== canonicalHash(sceneRepresentation)) problems.push(`scene ${sceneId} representation execution differs from the lesson-context copy`);
+  const parsed = RepresentationExecutionSchema.safeParse(sceneRepresentation);
+  if (!parsed.success) return [`scene ${sceneId} representation execution record is missing or malformed`];
+  const execution = parsed.data;
+  const visualBeats = planBeats.map((raw) => recordOf(raw)).filter((beat): beat is JsonRecord => Boolean(beat && beat.narrationOnly !== true));
+  const expectedBeats = visualBeats.map((beat) => ({ beatId: String(beat.beatId), family: String(beat.representationFamily) }));
+  const executionBeats = execution.beats.map(({ beatId, family }) => ({ beatId, family }));
+  if (execution.sceneId !== sceneId || canonicalHash(executionBeats) !== canonicalHash(expectedBeats)) problems.push(`scene ${sceneId} representation execution beat inventory differs from the pinned beat plan`);
+  if (canonicalHash(execution.selectedAssetIds) !== canonicalHash(expectedIconSelection(context, sceneId))) problems.push(`scene ${sceneId} representation execution icon selection differs from pinned Visual Discovery`);
+  if (execution.boardOpsHash !== canonicalHash(capturedOps)) problems.push(`scene ${sceneId} representation execution BoardOps hash differs from captured timeline`);
+
+  if (execution.mode === 'legacy-boardops-preview') {
+    if (execution.semanticOperations.length || execution.providerVersion || execution.providerSource) problems.push(`scene ${sceneId} legacy preview falsely claims typed semantic provider output`);
+    if (execution.beats.some((beat) => beat.status !== 'provider-unavailable' || !beat.problem)) problems.push(`scene ${sceneId} legacy preview must identify every visual beat's unavailable provider`);
+    if (expectedBeats.length && !execution.beats.length) problems.push(`scene ${sceneId} legacy preview omits provider status for visual beats`);
+    return problems;
+  }
+
+  if (execution.providerVersion !== stateTransitionProvider.version || execution.providerSource !== 'family-fallback') problems.push(`scene ${sceneId} typed semantic provider identity is not recognized`);
+  if (!visualBeats.length || visualBeats.some((beat) => beat.representationFamily !== 'state_transition')) problems.push(`scene ${sceneId} typed semantic provider is incompatible with its pinned representation families`);
+  if (execution.beats.some((beat) => beat.status !== 'compiled' || beat.providerVersion !== stateTransitionProvider.version)) problems.push(`scene ${sceneId} typed semantic beat provider statuses are incomplete`);
+
+  const beats = visualBeats as unknown as TeachingBeat[];
+  let state = emptySemanticSceneState(sceneId);
+  const expectedOperations: SemanticOp[] = [];
+  for (const beat of beats) {
+    const result = stateTransitionProvider.compileFallback(state, beat);
+    if (!result.ok) {
+      problems.push(`scene ${sceneId} state-transition fallback cannot replay ${beat.beatId}: ${result.problems.map((item) => item.message).join('; ')}`);
+      break;
+    }
+    expectedOperations.push(...result.operations);
+    const replay = applySemanticProgram(state, result.operations, { knownBeatIds: new Set(visualBeats.map((item) => String(item.beatId))), knownClaimIds: new Set(visualBeats.flatMap((item) => arrayOf(item.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [])) });
+    if (!replay.ok) { problems.push(`scene ${sceneId} semantic provider output does not replay: ${replay.problems.map((item) => item.message).join('; ')}`); break; }
+    state = replay.state;
+  }
+  if (canonicalHash(expectedOperations) !== canonicalHash(execution.semanticOperations)) problems.push(`scene ${sceneId} typed semantic operations do not derive from the pinned beat changes`);
+
+  const timings = arrayOf(sceneRecord?.beatTimings) ?? [];
+  const expectedCues: Record<string, number> = {};
+  for (const rawTiming of timings) {
+    const timing = recordOf(rawTiming);
+    if (!timing || typeof timing.beatId !== 'string') continue;
+    const sentences = arrayOf(timing.sentences)?.map(recordOf).filter((item): item is JsonRecord => Boolean(item)) ?? [];
+    for (const rawAnchor of arrayOf(timing.semanticAnchors) ?? []) {
+      const anchor = recordOf(rawAnchor);
+      if (typeof anchor?.semanticEventId !== 'string' || typeof anchor.startMs !== 'number') continue;
+      const anchorStartMs = anchor.startMs;
+      const cue = sentences.findIndex((sentence) => typeof sentence.startMs === 'number' && typeof sentence.endMs === 'number' && anchorStartMs >= sentence.startMs && anchorStartMs < sentence.endMs);
+      if (cue >= 0) expectedCues[anchor.semanticEventId] = Math.min(3, cue);
+    }
+  }
+  if (canonicalHash(expectedCues) !== canonicalHash(execution.cueByEventId)) problems.push(`scene ${sceneId} typed semantic cues do not match final aligned phrase clocks`);
+
+  const graph = recordOf(context.graph);
+  const concepts = (arrayOf(graph?.concepts) ?? []).map(recordOf).filter((item): item is JsonRecord => Boolean(item && typeof item.id === 'string' && typeof item.label === 'string'))
+    .map((item) => ({ id: String(item.id), label: String(item.label), ...(typeof item.kind === 'string' ? { kind: item.kind } : {}) }));
+  const vocabulary = recordOf(recordOf(context.visualVocabularies)?.[sceneId]) as unknown as VisualVocabulary | undefined;
+  const knownBeatIds = new Set(visualBeats.flatMap((beat) => typeof beat.beatId === 'string' ? [beat.beatId] : []));
+  const knownClaimIds = new Set(visualBeats.flatMap((beat) => arrayOf(beat.claimIds)?.filter((id): id is string => typeof id === 'string') ?? []));
+  const lowered = compileSemanticOpsToBoardOps(emptySemanticSceneState(sceneId), execution.semanticOperations, {
+    concepts, ...(vocabulary ? { visualVocabulary: vocabulary } : {}), knownBeatIds, knownClaimIds, cueByEventId: execution.cueByEventId,
+  });
+  if (!lowered.ok) problems.push(`scene ${sceneId} typed semantic operations cannot be lowered: ${lowered.problems.map((item) => item.message).join('; ')}`);
+  else if (canonicalHash(lowered.operations) !== canonicalHash(sceneRecord?.ops as unknown[])) problems.push(`scene ${sceneId} typed semantic BoardOps do not reproduce the recorded BoardOps`);
+  return problems;
+}
 const bytesHash = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
 const jsonBytes = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 const lockHash = (lock: LessonLockV2): string => { const { contentHash: _ignored, ...body } = lock; return canonicalHash(body); };
@@ -493,6 +611,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
     const capturedScene = captured[sceneIndex];
     const capturedOps = capturedScene?.timeline.ops.map((scheduled) => scheduled.op) ?? [];
     if (canonicalHash(ops) !== canonicalHash(capturedOps)) problems.push(`scene ${locked.sceneId} semantic BoardOps do not match the captured timeline`);
+    problems.push(...representationExecutionProblems(sceneRecord, context, planBeats ?? [], capturedOps, locked.sceneId));
     const transition = SceneTransitionSchema.safeParse(sceneRecord?.transition);
     const parsedOps = ops.map((op) => BoardOpSchema.safeParse(op));
     if (!transition.success || parsedOps.some((parsed) => !parsed.success)) {

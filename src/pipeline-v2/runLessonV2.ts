@@ -25,7 +25,7 @@ import type { BoardState } from '../visual-v2/board-state/types.js';
 import { planSceneBoard } from '../visual-v2/ops-plan/plan.js';
 import { fallbackSceneBoard } from '../visual-v2/ops-plan/fallback.js';
 import { BOARD_OPS_PROMPT_VERSION } from '../visual-v2/ops-plan/prompt.js';
-import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
+import { validateSceneBoard, type BoardContext } from '../visual-v2/ops-plan/validate.js';
 import { anchorQuote } from '../plan/evidenceAnchor.js';
 import { validateSceneGeometry, type PriorLayout } from '../visual-v2/layout/sceneLayout.js';
 import { compileSceneTimeline, type BeatTiming } from '../visual-v2/timeline/compile.js';
@@ -42,6 +42,9 @@ import { buildScorecard, type Scorecard } from '../harness/scorecard.js';
 import { TEACHING_COMPILER_VERSION } from '../run/featureFlags.js';
 import { claimVerificationStatusFor, createEvidenceLedgerFromClaims, epistemicClaimProblems, epistemicTextFramingProblem, validateEvidenceLedgerSources, type EvidenceLedger } from '../evidence/ledger.js';
 import { buildLessonHierarchy, lessonHierarchyInputArtifact } from './lessonHierarchy.js';
+import { executeSemanticScene, type RepresentationExecutionRecord } from './semanticExecution.js';
+import { canonicalHash } from '../harness/replayDeterminism.js';
+import type { SceneBoardDraft } from '../visual-v2/ops-plan/types.js';
 
 /**
  * Teaching Compiler V2 run: locked beats and beat narration -> real audio and alignment -> board operations -> persistent board
@@ -124,6 +127,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const reports: StructuredCallReport[] = [];
   const usage = emptyUsage();
   const compiled: CompiledScene[] = [];
+  const representationExecutions: RepresentationExecutionRecord[] = [];
   const speechUsage: RunLessonV2Result['speechUsage'] = [];
   const providerUsageEvents: ElevenLabsUsageEvent[] = [];
   const metrics: Record<string, number> = {};
@@ -384,22 +388,44 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       initial: carried,
       ...(prior ? { prior } : {}),
     };
-    const result = await planSceneBoard({ ctx }, { model: input.s6PlannerModel ?? input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: input.remainingBudgetUsd ?? 0.2, ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}) });
-    addUsage(usage, result.usage); reports.push(...result.reports);
-    let boardDraft = result.value;
-    if (!boardDraft) {
-      // The model's board could not be validated. A deterministic board from the scene's own concepts keeps the lesson whole; it is
-      // recorded as a soft failure for this scene, so the lesson stays a draft and is never counted as a pass.
-      const fallback = input.boardFallback === false ? undefined : fallbackSceneBoard(ctx);
-      if (fallback) {
-        boardDraft = fallback;
-        failures.push(...result.failures.map((f) => (f.hard ? { ...f, code: `${f.code}-fallback`, hard: false } : f)));
-        failures.push({ code: 'v2-board-fallback', stage: 'board-ops', message: `${section.id}: the model's board did not validate, so a deterministic concept board from the scene's own data was used`, hard: false });
-        metrics['v2.fallbackScenes'] = (metrics['v2.fallbackScenes'] ?? 0) + 1;
+    const semanticExecution = executeSemanticScene({ context: ctx, narration, beatTimings });
+    let boardDraft: SceneBoardDraft | undefined;
+    if (semanticExecution.status === 'compiled') {
+      boardDraft = { transition: semanticExecution.transition, ops: semanticExecution.operations };
+      const semanticBoardProblems = validateSceneBoard(boardDraft, ctx);
+      if (semanticBoardProblems.length) {
+        representationExecutions.push(semanticExecution.record);
+        failures.push({ code: 'v2-semantic-board-invalid', stage: 'representation', message: `${section.id}: typed state-transition output failed existing BoardOps validation: ${semanticBoardProblems.map((problem) => typeof problem === 'string' ? problem : problem.message).join('; ')}`, hard: true });
+        return finish('failed');
       }
+    } else if (semanticExecution.status === 'failed') {
+      representationExecutions.push(semanticExecution.record);
+      failures.push({ code: 'v2-semantic-provider-failed', stage: 'representation', message: `${section.id}: ${semanticExecution.problems.join('; ')}`, hard: true });
+      return finish('failed');
+    } else {
+      if (semanticExecution.record.beats.length) {
+        failures.push({
+          code: 'v2-semantic-provider-unavailable', stage: 'representation',
+          message: `${section.id}: ${semanticExecution.record.beats.map((beat) => `${beat.family} (${beat.beatId})`).join(', ')} has no typed semantic execution; any S6 board here is a legacy draft preview`,
+          hard: false,
+        });
+      }
+      const result = await planSceneBoard({ ctx }, { model: input.s6PlannerModel ?? input.plannerModel, apiKey: input.apiKey, remainingBudgetUsd: input.remainingBudgetUsd ?? 0.2, ...(input.budgetLedger ? { budgetLedger: input.budgetLedger } : {}), ...(input.client ? { client: input.client } : {}) });
+      addUsage(usage, result.usage); reports.push(...result.reports);
+      boardDraft = result.value;
+      if (!boardDraft) {
+        // The existing concept board is retained as a labeled draft preview only; it is never a typed family-provider result.
+        const fallback = input.boardFallback === false ? undefined : fallbackSceneBoard(ctx);
+        if (fallback) {
+          boardDraft = fallback;
+          failures.push(...result.failures.map((f) => (f.hard ? { ...f, code: `${f.code}-fallback`, hard: false } : f)));
+          failures.push({ code: 'v2-board-fallback', stage: 'board-ops', message: `${section.id}: the model's board did not validate, so a deterministic concept board from the scene's own data was used`, hard: false });
+          metrics['v2.fallbackScenes'] = (metrics['v2.fallbackScenes'] ?? 0) + 1;
+        }
+      }
+      if (!boardDraft) { failures.push(...result.failures); failures.push({ code: 'v2-board-failed', stage: 'board-ops', message: `${section.id}: no valid board operations`, hard: true }); return finish('failed'); }
+      if (boardDraft === result.value) failures.push(...result.failures);
     }
-    if (!boardDraft) { failures.push(...result.failures); failures.push({ code: 'v2-board-failed', stage: 'board-ops', message: `${section.id}: no valid board operations`, hard: true }); return finish('failed'); }
-    if (boardDraft === result.value) failures.push(...result.failures);
     const initial = startScene(carried, boardDraft.transition, section.id);
     const timeline = compileSceneTimeline({ ops: boardDraft.ops, initial, beats: beatTimings });
     const selectedIcons = new Map<string, string>();
@@ -432,7 +458,13 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     compiled.push(scene);
     carried = timeline.states[timeline.states.length - 1]!;
     prior = { geometry: scene.geometry, state: carried };
-    await dump(`scene.${section.id}.json`, { transition: boardDraft.transition, ops: boardDraft.ops, beats, narration, beatTimings, schedule: timeline.ops.map((s) => ({ opId: s.op.opId, t0: Math.round(s.t0), t1: Math.round(s.t1), late: s.late })), timelineHash: timeline.hash });
+    const representationExecution: RepresentationExecutionRecord = {
+      ...semanticExecution.record,
+      selectedAssetIds: Object.fromEntries([...selectedIcons]),
+      boardOpsHash: canonicalHash(timeline.ops.map((scheduled) => scheduled.op)),
+    };
+    representationExecutions.push(representationExecution);
+    await dump(`scene.${section.id}.json`, { transition: boardDraft.transition, ops: boardDraft.ops, beats, narration, beatTimings, representationExecution, schedule: timeline.ops.map((s) => ({ opId: s.op.opId, t0: Math.round(s.t0), t1: Math.round(s.t1), late: s.late })), timelineHash: timeline.hash });
     if (!failures.some((f) => f.hard)) {
       const index = compiled.length - 1;
       await publishSceneLockV2({ outputDir, lessonId: input.lessonId, index, item: { scene, startMs: placements[index]!.startMs, endMs: placements[index]!.endMs }, fps: input.fps ?? 30, final: index === audioScenes.length - 1 });
@@ -479,6 +511,8 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     'v2.retainedMoved': compiled.reduce((n, s) => n + s.geometry.moved.length, 0),
     'v2.lateOps': compiled.reduce((n, s) => n + s.timeline.lateOps.length, 0),
     'v2.hardGeometryProblems': failures.filter((f) => f.code === 'v2-geometry').length,
+    'v2.semanticProviderScenes': representationExecutions.filter((execution) => execution.mode === 'typed-semantic').length,
+    'v2.semanticProviderUnavailableScenes': representationExecutions.filter((execution) => execution.beats.some((beat) => beat.status === 'provider-unavailable')).length,
   });
 
   // 4. Master audio, video and captions.
@@ -486,7 +520,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v9', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'beat-narration/v2-weighted-duration-anchor-clocks' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
+  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v9', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'beat-narration/v2-weighted-duration-anchor-clocks' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, representationExecution: { schemaVersion: 'v2-representation-execution/v1', scenes: representationExecutions }, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });
