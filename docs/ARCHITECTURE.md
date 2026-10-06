@@ -120,6 +120,24 @@ not evidence that current generated videos use semantic providers. Shared
 SemanticEntity/SemanticState/SemanticOp types, benchmark-led family providers,
 V2 integration, and family-specific fallback verification remain open.
 
+## Semantic representation IR
+
+`src/teaching/semantic-ir/types.ts` defines stable claim-bound entities,
+scene state, relations, plot values, feedback loops, annotations, and a strict
+meaning-level operation union. The operation contract covers introduction,
+focus, comparison, flow, transformation, movement, separation/merge, quantity
+and relation-weight updates, selection/finalization, plotting/thresholds,
+causality, feedback, and annotation. Plot fields are semantic data values;
+the schemas have no screen coordinates, renderer objects, or BoardOps ids.
+
+`applySemanticProgram` replays a proposed operation sequence against a fresh
+scene state. It checks identity and claim references, earlier-event
+dependencies, lifecycle, exact before-state/value/unit, semantic movement,
+and operation-specific preconditions. It returns a pointer-scoped failure
+without mutating the input state when a transition is invalid. This is a
+scene-level contract only: V2 does not yet call it, the lesson lock does not
+yet pin it, and the compiler does not yet lower its operations to BoardOps.
+
 ## Ownership and trust boundaries
 
 Models decide teaching order, claims, narration, representation intent, and
