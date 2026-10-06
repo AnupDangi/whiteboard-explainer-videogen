@@ -3,8 +3,9 @@ import { KIT_NAMES, REGION_IDS } from '../board-ops/types.js';
 import { z } from 'zod';
 import { KIT_REGISTRY } from '../kits/registry.js';
 import type { BoardContext } from './validate.js';
+import { vocabularyPromptBlock } from '../../planner/visualDiscovery.js';
 
-export const BOARD_OPS_PROMPT_VERSION = 'board-ops-grounded-repair-v11';
+export const BOARD_OPS_PROMPT_VERSION = 'board-ops-grounded-repair-v12';
 
 interface ParamNode { type?: string; enum?: unknown[]; minimum?: number; maximum?: number; minItems?: number; maxItems?: number; maxLength?: number; items?: ParamNode; prefixItems?: ParamNode[]; properties?: Record<string, ParamNode>; required?: string[] }
 const describeNode = (node: ParamNode): string => {
@@ -64,6 +65,10 @@ ${kits}
 Scene start: transition.mode = clean (empty board), retain-all (keep everything already drawn, for a scene that continues the same picture), or retain-regions (keep only the listed regions; give regions). Prefer retain-all when the scene builds on the same mechanism.
 Rules: use at most 3 regions in a scene and put the main mechanism kit in the 'center' region (or 'full' when it is the only thing), because every extra region shrinks every kit and its labels; a kit goes in a region, except a graph kit with layout compound may contain another graph kit with layout compound for a nested group (other kit slots only hold tokens, entities, values and short text); a scene draws at most 10 elements in total and a kit holds at most 6 children (at most 4 in any one zone), so reuse, move and restyle what is already on the board (the board is a few big clear things, not a crowd); cover every beat that shows a change; every concept a beat names must be on the board by the end of that beat; labels are short memory anchors, the speech does the explaining; use the beat's representationFamily, stateBefore/stateAfter and visualInvariant to choose what to draw; paramsJson must be valid JSON for the kit.
 Richness: a scene that shows a change should draw one mechanism kit that fits its beats (each beat below names a suggested kit for its family) and use the rest of the board for a few concrete entities, so the learner sees a picture, not a list of words. Prefer concrete everyday nouns for entity labels (the thing itself, one or two words) over abstract phrases, and show relations with connect arrows or containment rather than loose text.\nLeave out the optional expects field of every op; the board is checked by code. Return ONE JSON object { "transition": {...}, "ops": [...] }.`;
+  const vocabulary = vocabularyPromptBlock(ctx.visualVocabulary);
+  const iconRule = `
+When the visual vocabulary marks an entity concept as “a real picture exists”, add a bound entity element for that exact concept on the first beat that names it, and keep the picture live through later beats that use it. Concepts with other kinds must use the vocabulary's named structure or label.`;
+  const systemWithVocabulary = `${system}${iconRule}`;
   const beatBlocks = ctx.beats.map((beat) => {
     const speech = ctx.narration.find((n) => n.beatId === beat.beatId)?.sentences ?? [];
   return `BEAT ${beat.beatId} [${beat.beatType}; ${beat.cognitiveOperation}; family ${beat.representationFamily}; suggested kit: ${FAMILY_KIT_HINTS[beat.representationFamily] ?? 'any that fits'}]${beat.narrationOnly ? ' (narration only: no board change needed)' : ''}
@@ -81,7 +86,8 @@ ${speech.map((sentence, i) => `    ${i}: ${sentence}`).join('\n')}`;
   const cites = ctx.concepts.flatMap((c) => (c.evidence ?? []).map((e) => `  [${e.spanId}] ${e.quote}`));
   const usedIds = [...Object.keys(ctx.initial.elements), ...Object.keys(ctx.initial.edges)];
   const user = `SCENE ${ctx.sceneId}: "${ctx.title}"
-Concepts of this scene: ${JSON.stringify(ctx.concepts.map(({ id, label }) => ({ id, label })))}
+Concepts of this scene: ${JSON.stringify(ctx.concepts.map(({ id, label, kind }) => ({ id, label, ...(kind ? { kind } : {}) })))}
+${vocabulary}
 Canonical claims bound to this scene: ${JSON.stringify(ctx.claims ?? [])}
 SOURCE EVIDENCE you may cite (spanId in brackets, quote verbatim):
 ${cites.length ? cites.join('\n') : '  (none: do not use provenance source for factual visuals or arrows)'}
@@ -93,5 +99,5 @@ Current regions and visibility: ${JSON.stringify(ctx.initial.regions)}
 Previously used IDs, including edges: ${usedIds.length ? usedIds.join(', ') : '(none)'}
 Retained geometry to respect: ${ctx.prior ? JSON.stringify(ctx.prior) : '(no retained geometry)'}
 ${beatBlocks}`;
-  return { system, user };
+  return { system: systemWithVocabulary, user };
 }

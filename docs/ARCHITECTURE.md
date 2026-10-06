@@ -23,6 +23,8 @@ S1b syllabus and duration budget
        │
 S2 concept graph → S3 teaching contracts
        │
+S3b Visual Discovery → per-scene depiction vocabulary
+       │
 S4 beat plan + locked narration
        │
        ▼
@@ -278,31 +280,35 @@ separately from end-to-end lesson timing.
 
 ## Assets and rights
 
-S6 emits representation intents, not catalog IDs. S7 resolves those intents
-against the enabled asset registry, validates semantic fit and style family,
-and retains a labelled fallback when no safe picture is available. Icon
-library inputs are vendored for offline rendering; retrieval and SVG
-normalization are deterministic. Usage context filters libraries whose
-rights are still under review. An icon being present in a local catalog is not
-evidence that it is cleared for release. Rights review is an independent
-human gate. Beat-mode preparation runs S3b Visual Discovery before beat and
-narration generation. For a concept without an exact catalog match, retrieval
-offers library vocabulary; the depiction director proposes drawable nouns,
-code resolves each noun to an exact catalog entry, and a separate judge must
-approve the referent-picture pair. Asset ids stay internal. The selected
-`validatedByConcept` map and per-scene visual vocabulary are pinned in the
-lesson context; new runs use v9, while historical contexts remain readable. V2
-copies the selected id into captured concept metadata.
-V2 then probes the concrete entities actually used on each board and chooses
-the most common non-exempt `houseFamily` with a stable tie-break. It resolves
-only type-eligible pictorial entities inside that family and the lesson domain.
-Similarity alone still cannot authorize a picture; missing, mismatched, or
-unapproved pictures remain labelled fallbacks. `houseFamily` and the S3b
-asset id are covered by the scene lock, so replay uses the same library entry
-and style. A diagnostic
-`v2/scene-icon-families.json` records the per-scene choice. This is asset
-selection and replay evidence, not a golden visual-quality verdict:
-wrong-icon review, muted comprehension and human rights review remain open.
+The legacy V1 route separates S6 representation intents from S7 resolution.
+The beat-mode V2 route runs S3b Visual Discovery before narration and passes
+its per-scene vocabulary into S6 BoardOps. The S6 prompt receives concept kind
+and depiction guidance without catalog IDs. When S3b selected an icon for a
+canonical `entity`, BoardOps validation requires a live bound `entity` element
+by the end of each beat that names it; tokens, labels and kit bindings cannot
+stand in for that picture. Non-entity kinds keep their selected structure or
+label lane.
+
+Icon library inputs are vendored for offline rendering; retrieval and SVG
+normalization are deterministic. For a concept without an exact catalog match,
+retrieval offers library vocabulary; the depiction director proposes drawable
+nouns, code resolves each noun to an exact catalog entry, and a separate judge
+must approve the referent-picture pair. Asset IDs stay out of S6 prompts. V2
+uses the exact scene-vocabulary entry for eligible entity rendering, subject to
+the existing semantic-type, exact/curated selection, domain and licensing
+gates. The locked concept metadata captures the selected asset and scene style,
+and replay uses the pinned selection. New runs write
+`lesson-context/v9`; historical contexts remain readable. The diagnostic
+`v2/scene-icon-families.json` records each scene's family.
+
+An icon being present in a local catalog is not evidence that it is cleared for
+release. Rights review is an independent human gate. Missing, mismatched or
+unapproved pictures remain labelled fallbacks. This path proves asset selection
+and replay consistency; it does not prove that an icon is semantically correct
+or visually clear. Wrong-icon review, muted comprehension and human rights
+review remain open. The production catalog has 19,058 entries across 11 enabled
+libraries; the larger ~24k local-dev catalog includes review-only libraries and
+is not release evidence.
 `representationFamily` describes the teaching picture (such as a process or
 comparison); `houseFamily` is the illustration style shared by the scene's
 icons. The production catalog has 19,058 entries across 11 enabled libraries;

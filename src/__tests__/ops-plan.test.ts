@@ -28,7 +28,7 @@ const ctx: BoardContext = {
     { beatId: 'sc.b1', sentences: ['Each call pushes a frame.', 'The frame holds the call.'] },
     { beatId: 'sc.b2', sentences: ['A return pops the top frame.'] },
   ],
-  concepts: [{ id: 'frame', label: 'Frame' }, { id: 'stack', label: 'Stack' }],
+  concepts: [{ id: 'frame', label: 'Frame', kind: 'entity' }, { id: 'stack', label: 'Stack', kind: 'entity' }],
   initial: emptyBoardState(),
 };
 const bindings = { conceptIds: ['frame', 'stack'], claimIds: ['c1'] };
@@ -143,6 +143,31 @@ test('the prompt names every beat with its sentences, the op vocabulary, the kit
   assert.match(user, /0: Each call pushes a frame\./);
   assert.match(user, /1: The frame holds the call\./);
   assert.match(user, /frame/);
+});
+
+test('S3b icon choices reach S6 and require a live picture for the selected entity', () => {
+  const visualVocabulary = { sceneId: 'sc', concepts: [
+    { conceptId: 'frame', label: 'Frame', conceptKind: 'entity', depiction: { kind: 'icon' as const, entryId: 'private-icon-entry', rung: 'R3' } },
+  ] };
+  const iconContext: BoardContext = { ...ctx, visualVocabulary };
+  const prompt = buildBoardPrompt(iconContext);
+  assert.match(prompt.user, /Frame \(entity\): a real picture exists/);
+  assert.match(prompt.system, /add a bound entity element for that exact concept/i);
+  assert.doesNotMatch(`${prompt.system}\n${prompt.user}`, /private-icon-entry/);
+  assert.deepEqual(validateSceneBoard(draft(), iconContext), []);
+
+  const withoutFrameEntity = draft({
+    ...(good() as object),
+    ops: (good() as { ops: Array<Record<string, unknown>> }).ops.map((candidate) => candidate.opId === 'o2'
+      ? { ...candidate, element: { type: 'token', text: 'frame', provenance: 'illustrative', bindings } }
+      : candidate),
+  });
+  assert.ok(validateSceneBoard(withoutFrameEntity, iconContext).some((problem) =>
+    typeof problem !== 'string' && /S3b selected a library icon for frame .* live entity element/.test(problem.message)));
+
+  const mislabeled = { ...iconContext, concepts: iconContext.concepts.map((concept) => concept.id === 'frame' ? { ...concept, kind: 'process' } : concept) };
+  assert.ok(validateSceneBoard(draft(), mislabeled).some((problem) =>
+    typeof problem !== 'string' && /only a canonical entity concept can use a noun icon/.test(problem.message)));
 });
 
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };

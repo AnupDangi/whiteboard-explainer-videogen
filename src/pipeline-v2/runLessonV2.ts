@@ -312,7 +312,6 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     label: c.label,
     kind: c.kind,
     ...(plan.lessonBible?.domain ? { domain: plan.lessonBible.domain } : {}),
-    ...(prepared.validatedByConcept?.[c.id] ? { validatedAssetId: prepared.validatedByConcept[c.id] } : {}),
   } as ConceptInfo]));
 
   // Scene audio and the placement of every scene on the master clock are known now, so each scene can be frozen
@@ -353,11 +352,13 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     const beatTimings: BeatTiming[] = intervals.map((interval) => ({ beatId: interval.beatId, startMs: interval.startMs, endMs: interval.endMs, sentences: interval.sentences.map((s) => ({ startMs: s.startMs, endMs: s.endMs })), pauseIntent: narration.beatSpans.find((span) => span.beatId === interval.beatId)?.pauseIntent ?? 'none' }));
     timings.push(beatTimings);
     const beats = prepared.beatPlans![section.id]!;
+    const visualVocabulary = prepared.visualVocabularies?.[section.id];
     const ctx: BoardContext = {
       sceneId: section.id, title: section.title, beats,
       claims: (section.contract?.essentialClaims ?? []).map(({ id, statement, conceptIds, relations, epistemicType, verificationStatus }) => ({ id, statement, conceptIds, relations, ...(epistemicType ? { epistemicType } : {}), ...(verificationStatus ? { verificationStatus } : {}) })),
       narration: narration.beatSpans.map((span) => ({ beatId: span.beatId, sentences: span.sentenceSpans.map((s) => narration.text.slice(s.charStart, s.charEnd)) })),
-      concepts: section.conceptIds.flatMap((id) => { const c = graph.concepts.find((x) => x.id === id); return c ? [{ id: c.id, label: c.label, evidence: c.evidence.map((e) => ({ spanId: e.spanId, quote: e.quote })) }] : []; }),
+      concepts: section.conceptIds.flatMap((id) => { const c = graph.concepts.find((x) => x.id === id); return c ? [{ id: c.id, label: c.label, kind: c.kind, evidence: c.evidence.map((e) => ({ spanId: e.spanId, quote: e.quote })) }] : []; }),
+      ...(visualVocabulary ? { visualVocabulary } : {}),
       grounding: { verify: (spanId, quote) => anchorQuote(prepared.sourceDoc, spanId, quote)?.ref.quote, spanText: (spanId) => prepared.sourceDoc.spans.find((span) => span.id === spanId)?.text },
       initial: carried,
       ...(prior ? { prior } : {}),
@@ -380,14 +381,22 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     if (boardDraft === result.value) failures.push(...result.failures);
     const initial = startScene(carried, boardDraft.transition, section.id);
     const timeline = compileSceneTimeline({ ops: boardDraft.ops, initial, beats: beatTimings });
+    const selectedIcons = new Map<string, string>();
+    for (const item of visualVocabulary?.concepts ?? []) {
+      if (item.conceptKind === 'entity' && item.depiction.kind === 'icon') selectedIcons.set(item.conceptId, item.depiction.entryId);
+    }
+    const sceneConceptBase = new Map<string, ConceptInfo>([...conceptIndex].map(([id, concept]) => {
+      const selected = visualVocabulary ? selectedIcons.get(id) : prepared.validatedByConcept?.[id];
+      return [id, { ...concept, ...(selected ? { validatedAssetId: selected } : {}) }];
+    }));
     const sceneEntities = new Map<string, SceneEntityRequest>();
     for (const state of timeline.states) for (const element of Object.values(state.elements)) {
       if (element.lifecycle.removedAtBeat !== undefined || element.spec.type !== 'entity') continue;
-      const request = { concept: conceptIndex.get(element.spec.conceptId), label: element.spec.label };
+      const request = { concept: sceneConceptBase.get(element.spec.conceptId), label: element.spec.label };
       sceneEntities.set(`${element.spec.conceptId}\0${element.spec.label}`, request);
     }
     const houseFamily = chooseEntitySceneFamily([...sceneEntities.values()]);
-    const sceneConceptIndex = new Map<string, ConceptInfo>([...conceptIndex].map(([id, concept]) => [
+    const sceneConceptIndex = new Map<string, ConceptInfo>([...sceneConceptBase].map(([id, concept]) => [
       id,
       { ...concept, ...(houseFamily ? { houseFamily } : {}) },
     ]));

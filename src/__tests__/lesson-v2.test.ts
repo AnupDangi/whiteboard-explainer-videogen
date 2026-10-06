@@ -7,6 +7,7 @@ import { runLessonV2 } from '../pipeline-v2/runLessonV2.js';
 import { compileBeatPlan } from '../teaching/beat-plan/compile.js';
 import { BeatPlanDraftSchema } from '../teaching/beat-plan/types.js';
 import { compileSceneNarration } from '../narration/beat-narration/compile.js';
+import { renderSceneSvg } from '../visual-v2/renderer/frame.js';
 import { SceneNarrationDraftSchema } from '../narration/beat-narration/types.js';
 import type { PreparedLesson } from '../run/lesson.js';
 import type { ModelClient } from '../llm/modelClient.js';
@@ -55,7 +56,15 @@ const narrations = Object.fromEntries(sceneIds.map((id) => [id, compileSceneNarr
 const plan = { targetDurationSec: 10, intro: { sourceTitle: 't', sections: [] }, recap: { keyPoints: [] }, sections: sceneIds.map((id) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 6, contract: { learningDelta: 'd', targetDurationSec: 6, requiredConceptIds: ['frame', 'stack'], requiredRelations: [], evidenceSpanIds: claims(id)[0]!.evidenceSpanIds, essentialClaims: claims(id), teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } })) };
 const graphEvidence = Object.values(sentences).flatMap((items) => [sourceEvidenceFor(items[0]!)]);
 const graph = { concepts: [{ id: 'frame', label: 'Frame', kind: 'entity', definition: 'd', evidence: graphEvidence, level: 'one-step' }, { id: 'stack', label: 'Stack', kind: 'entity', definition: 'd', evidence: graphEvidence, level: 'one-step' }], relations: [], prerequisites: [] };
-const prepared = { plan, graph, sourceDoc, beatPlans, beatNarrations: narrations, validatedByConcept: { frame: 'iconify-lucide:frame' } } as unknown as PreparedLesson;
+const visualVocabularies = Object.fromEntries(sceneIds.map((sceneId) => [sceneId, {
+  sceneId,
+  family: 'simi-house-v1/domain-outline',
+  concepts: [
+    { conceptId: 'frame', label: 'Frame', conceptKind: 'entity', depiction: { kind: 'icon' as const, entryId: 'iconify-lucide:frame', rung: 'R3', houseFamily: 'simi-house-v1/domain-outline' } },
+    { conceptId: 'stack', label: 'Stack', conceptKind: 'entity', depiction: { kind: 'labelled' as const } },
+  ],
+}]));
+const prepared = { plan, graph, sourceDoc, beatPlans, beatNarrations: narrations, visualVocabularies, validatedByConcept: { frame: 'iconify-lucide:frame' } } as unknown as PreparedLesson;
 const oneBindings = { conceptIds: ['frame', 'stack'], claimIds: ['one_c'] };
 const twoBindings = { conceptIds: ['frame', 'stack'], claimIds: ['two_c'] };
 const fixtureDurationSec = (perWordMs: number, sceneOverheadMs: number): number => (
@@ -99,7 +108,9 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       return { durationMs, words, aligner: 'stable-ts' as const, repairedWordIndexes: [], audioPath };
     };
     const out = path.join(dir, 'run');
-    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...prepared, groundingMode: 'SOURCE_PLUS_BACKGROUND', requestedDurationSec: fixtureDurationSec(300, 100) }, plannerModel: 'google/x', apiKey: 'k', client, aligner: aligner as never, fps: 8 });
+    const s6Prompts: string[] = [];
+    const recordingClient: ModelClient = { provider: 'fake', chat: async (request) => { s6Prompts.push(`${request.system}\n${request.user}`); return client.chat(request); } };
+    const result = await runLessonV2({ lessonId: 'lesson-test', outputDir: out, prepared: { ...prepared, groundingMode: 'SOURCE_PLUS_BACKGROUND', requestedDurationSec: fixtureDurationSec(300, 100) }, plannerModel: 'google/x', apiKey: 'k', client: recordingClient, aligner: aligner as never, fps: 8 });
     assert.equal(result.status, 'draft', JSON.stringify(result.failures));
     assert.equal(result.artifactCertification.artifactStatus, 'DRAFT', 'an encoded video is still a draft while required QA gates are unmeasured');
     assert.ok(result.artifactCertification.artifactGates.some((gate) => gate.id === 'complete-semantic-qa-suite' && gate.status === 'unmeasured'));
@@ -110,6 +121,17 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.equal(result.metrics['v2.hardGeometryProblems'], 0);
     assert.equal(result.metrics['v2.pictorialEntities'], 1, 'the exact vendored frame icon is counted after scene-family filtering');
     assert.equal(result.metrics['v2.scenesWithIconFamily'], 2);
+    assert.equal(s6Prompts.length, 2);
+    assert.ok(s6Prompts.every((prompt) => /Frame \(entity\): a real picture exists \(draw it literally\)/.test(prompt)), 'the actual V2 S6 requests receive S3b depiction guidance');
+    assert.ok(s6Prompts.every((prompt) => /add a bound entity element for that exact concept/i.test(prompt)), 'the S6 contract requires the selected icon to be represented by an entity');
+    assert.ok(s6Prompts.every((prompt) => !prompt.includes('iconify-lucide:frame')), 'private registry asset IDs stay out of model prompts');
+    const iconScene = result.compiled[0]!;
+    const iconFrame = iconScene.timeline.durationMs - 1;
+    const iconSvg = renderSceneSvg(iconScene, iconFrame);
+    const labelledScene = { ...iconScene, concepts: new Map([...(iconScene.concepts ?? [])].filter(([id]) => id !== 'frame')) };
+    const labelledSvg = renderSceneSvg(labelledScene, iconFrame);
+    assert.notEqual(iconSvg, labelledSvg, 'the approved library picture changes the actual rendered board relative to its labelled fallback');
+    assert.match(labelledSvg, />FRAME</, 'without icon metadata the same entity renders as a label');
     const lessonContext = JSON.parse(await readFile(path.join(out, 'v2', 'lesson-context.json'), 'utf8')) as {
       schemaVersion: string;
       groundingMode: string;
@@ -176,8 +198,9 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     await writeFile(path.join(out, 'evaluation-bundle.json'), `${JSON.stringify(evaluation, null, 2)}\n`);
     const lock = JSON.parse(await readFile(path.join(out, 'lesson.lock.v2.json'), 'utf8')) as { scenes: Array<{ sceneId: string; audioHash: string; captured: { file: string } }>; renderPlan: Array<{ kind: 'hold' | 'transition'; sceneId: string; firstFrame: number; frameCount: number; svgHash?: string; svgHashes?: string[] }> };
     const firstScene = lock.scenes[0]!;
-    const capturedScene = JSON.parse(await readFile(path.join(out, firstScene.captured.file), 'utf8')) as { concepts: Array<[string, { houseFamily?: string }]> };
+    const capturedScene = JSON.parse(await readFile(path.join(out, firstScene.captured.file), 'utf8')) as { concepts: Array<[string, { houseFamily?: string; validatedAssetId?: string }]> };
     assert.ok(capturedScene.concepts.every(([, concept]) => concept.houseFamily === 'simi-house-v1/domain-outline'), 'the lock pins the chosen icon family for deterministic replay');
+    assert.equal(capturedScene.concepts.find(([id]) => id === 'frame')?.[1].validatedAssetId, 'iconify-lucide:frame', 'the locked V2 scene pins the exact library icon selected by S3b');
     const firstSegment = lock.renderPlan.find((segment) => segment.firstFrame === 0)!;
     const firstFrameHash = firstSegment.kind === 'hold' ? firstSegment.svgHash! : firstSegment.svgHashes![0]!;
     const acceptedAtEpochMs = 1000;

@@ -10,6 +10,7 @@ import { sourceClaimSemanticProblem } from '../provenance/ground.js';
 import type { ClaimVerificationStatus, EpistemicType } from '../../evidence/ledger.js';
 import { diagnoseSceneGeometry, layoutScene, type GeometryDiagnostic, type PriorLayout } from '../layout/sceneLayout.js';
 import type { SceneBoardDraft } from './types.js';
+import type { VisualVocabulary } from '../../planner/visualDiscovery.js';
 
 export interface BoardContext {
   sceneId: string;
@@ -28,7 +29,9 @@ export interface BoardContext {
   }>;
   /** The scene's narration, sentence by sentence, per beat. Sentence indexes are what `cue` refers to. */
   narration: Array<{ beatId: string; sentences: string[] }>;
-  concepts: Array<{ id: string; label: string; /** Source quotes available to cite for this concept. */ evidence?: Array<{ spanId: string; quote: string }> }>;
+  concepts: Array<{ id: string; label: string; kind?: string; /** Source quotes available to cite for this concept. */ evidence?: Array<{ spanId: string; quote: string }> }>;
+  /** The S3b depiction choice that S6 must use when planning this scene. */
+  visualVocabulary?: VisualVocabulary;
   /** The board the scene inherits (empty for the first scene). */
   initial: BoardState;
   /** The previous scene's geometry; retained objects keep their rectangles when possible. */
@@ -201,6 +204,18 @@ function nestedKitProblems(op: BoardOp, state: BoardState, at: string): Validato
 
 export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): ValidatorProblem[] {
   const problems: ValidatorProblem[] = [];
+  const conceptById = new Map(ctx.concepts.map((concept) => [concept.id, concept]));
+  const vocabularyIds = new Set<string>();
+  for (const [index, vocabularyConcept] of (ctx.visualVocabulary?.concepts ?? []).entries()) {
+    const path = `/visualVocabulary/concepts/${index}`;
+    const canonical = conceptById.get(vocabularyConcept.conceptId);
+    if (!canonical) problems.push({ path: `${path}/conceptId`, message: `unknown visual vocabulary concept ${vocabularyConcept.conceptId}` });
+    if (vocabularyIds.has(vocabularyConcept.conceptId)) problems.push({ path: `${path}/conceptId`, message: `duplicate visual vocabulary concept ${vocabularyConcept.conceptId}` });
+    vocabularyIds.add(vocabularyConcept.conceptId);
+    if (canonical && canonical.label !== vocabularyConcept.label) problems.push({ path: `${path}/label`, message: `visual vocabulary label does not match canonical concept ${canonical.id}` });
+    if (canonical?.kind && canonical.kind !== vocabularyConcept.conceptKind) problems.push({ path: `${path}/conceptKind`, message: `visual vocabulary kind ${vocabularyConcept.conceptKind} does not match canonical kind ${canonical.kind} for ${canonical.id}` });
+    if (canonical?.kind !== undefined && canonical.kind !== 'entity' && vocabularyConcept.depiction.kind === 'icon') problems.push({ path: `${path}/depiction`, message: `only a canonical entity concept can use a noun icon; ${canonical.id} is ${canonical.kind}` });
+  }
   if (draft.transition.mode === 'retain-regions' && !draft.transition.regions?.length) problems.push({ path: '/transition/regions', message: 'retain-regions needs the regions to keep' });
   const order = new Map(ctx.beats.map((beat, index) => [beat.beatId, index]));
   let furthest = -1;
@@ -261,6 +276,9 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
     } catch { states.push(before); }
   });
   const labelOf = new Map(ctx.concepts.map((c) => [c.id, c.label]));
+  const iconConcepts = new Set((ctx.visualVocabulary?.concepts ?? [])
+    .filter((item) => item.conceptKind === 'entity' && item.depiction.kind === 'icon' && conceptById.get(item.conceptId)?.kind === 'entity')
+    .map((item) => item.conceptId));
   // Coverage is judged only on a board whose ops all applied; otherwise it just repeats the failed ops as missing concepts.
   for (const beat of opProblems.length > 0 ? [] : ctx.beats) {
     const at = lastOpOfBeat.get(beat.beatId);
@@ -272,6 +290,9 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
       const shown = live.some((el) => (el.spec.type === 'entity' && el.spec.conceptId === entity.conceptId)
         || (el.spec.bindings?.conceptIds.includes(entity.conceptId) ?? false));
       if (!shown) problems.push({ path: `/ops/${at + 1}`, message: `concept ${entity.conceptId}${label ? ` (${label})` : ''} is not bound to a live visual by the end of beat ${beat.beatId}; add a bound element with conceptIds:["${entity.conceptId}"] and its supporting claimIds` });
+      if (iconConcepts.has(entity.conceptId) && !live.some((el) => el.spec.type === 'entity' && el.spec.conceptId === entity.conceptId)) {
+        problems.push({ path: `/ops/${at + 1}`, message: `S3b selected a library icon for ${entity.conceptId}${label ? ` (${label})` : ''}; a live entity element bound to that concept is required by the end of beat ${beat.beatId}` });
+      }
     }
   }
   // Geometry: the board must lay out inside the safe area without overlap or unreadable slots. These problems name no single op.
