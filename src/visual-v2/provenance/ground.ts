@@ -96,7 +96,11 @@ export function sourceEdgeProblem(from: string | undefined, relation: string, to
   // (opposes/excepts/compares/...) keep the strict word requirement because
   // their wording is the claim.
   const ProcessRelations = new Set(['causes', 'feeds', 'produces']);
-  const mismatch = sourceTextProblem(ProcessRelations.has(relation) ? [from, to] : [from, relation, to], citation, grounding, 'edge');
+  // Multi-word relations ("net flow toward") ground word by word in order:
+  // every word must occur, but they need not form one literal phrase, since
+  // prose states relations structurally ("net flow of water toward...").
+  const relWords = normalized(relation).split(' ').filter(Boolean);
+  const mismatch = sourceTextProblem(ProcessRelations.has(relation) ? [from, to] : [from, ...relWords, to], citation, grounding, 'edge');
   if (mismatch) return mismatch;
   const quote = normalized(grounding!.verify(citation!.spanId, citation!.quote)!);
   const start = quote.indexOf(normalized(from));
@@ -107,9 +111,14 @@ export function sourceEdgeProblem(from: string | undefined, relation: string, to
     if (unsupportedQualifier(clause)) return 'the cited relationship is negated or qualified; use an explicit supported claim or remove the factual edge';
     return undefined;
   }
-  const middle = quote.indexOf(normalized(relation), start + normalized(from).length);
-  const end = quote.indexOf(normalized(to), middle + normalized(relation).length);
-  if (start < 0 || middle <= start || end <= middle) return 'the cited quote does not state this directed subject–relation–object sequence; use a matching quote or change the edge';
+  let cursor = start + normalized(from).length;
+  for (const word of relWords) {
+    const at = quote.indexOf(word, cursor);
+    if (at < 0) return 'the cited quote does not state this directed subject–relation–object sequence; use a matching quote or change the edge';
+    cursor = at + word.length;
+  }
+  const end = quote.indexOf(normalized(to), cursor);
+  if (start < 0 || end < 0) return 'the cited quote does not state this directed subject–relation–object sequence; use a matching quote or change the edge';
   // Lexical order alone can invert a claim: "light does not cause heat" contains all three terms.
   // Treat scoped negation and qualification as unsupported rather than promoting a positive edge.
   const clause = quote.slice(0, end + normalized(to).length);

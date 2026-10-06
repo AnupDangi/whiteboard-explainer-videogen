@@ -57,3 +57,24 @@ describe('chained numeric equality', () => {
     assert.equal(verifyEquation('3^2+4^2=6^2').status, 'refuted');
   });
 });
+
+describe('multi-word relation grounding', () => {
+  it('grounds word by word in order, not as one literal phrase', async () => {
+    const { sourceEdgeProblem } = await import('../visual-v2/provenance/ground.js');
+    const grounding = { verify: (spanId: string, quote: string) => (spanId === 'S1' ? quote : undefined) };
+    const quote = 'Osmosis drives net flow of water toward the dense side.';
+    assert.equal(
+      sourceEdgeProblem('osmosis', 'net flow toward', 'dense side', { spanId: 'S1', quote }, grounding),
+      undefined,
+    );
+  });
+
+  it('scrambled word order still fails', async () => {
+    const { sourceEdgeProblem } = await import('../visual-v2/provenance/ground.js');
+    const grounding = { verify: (spanId: string, quote: string) => (spanId === 'S1' ? quote : undefined) };
+    assert.match(
+      sourceEdgeProblem('dense side', 'net flow toward', 'osmosis', { spanId: 'S1', quote: 'Osmosis drives net flow of water toward the dense side.' }, grounding) ?? '',
+      /directed subject–relation–object sequence/,
+    );
+  });
+});

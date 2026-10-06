@@ -2836,3 +2836,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 
 - **cavecrew-reviewer:** 0 red, 10 yellow, 1 question. Acted now: STOPWORDS trimmed to closed-class; driver writes per-attempt MISSING-aN (never masks/overwrites video); ledger rows added for semicolon removal, maxRepairs bumps, tolerance stacking.
 - **Deferred with reason:** tolerance evidence (needs run data), S1b owner reconciliation (needs live phys/bio reruns), causes-connective rule (needs wider eval), board-ops retries (needs S6 first-try fix).
+
+## Continuation — relation wording + lamina mirror list (wt/stcc/charter)
+
+- **Fixed:** multi-word edge relations ground word-by-word in order (was: literal-phrase only); chained numeric equality verifies pairwise.
+- **Lamina videos identified:** Attention 75s, photosynthesis 69s, brainstorm/interview 157s, intelligence-spend 313s.
+- **Mirror list:** lamina-attention=AIML-02 fixture, lamina-photosynthesis=BIO-03 fixture. Twitter two have no benchmark counterpart/source — out of scope, noted.
+- **Verification:** grounding-wording 8/8; grounding 9, illustrative 21, board 45, board-state 21, ops-plan 20, lesson-v2 8; typecheck clean, manifest verified.
