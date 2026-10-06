@@ -1,3 +1,4 @@
+import type { VisualVocabulary } from '../../planner/visualDiscovery.js';
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import { semanticEventId, type TeachingBeat } from '../../teaching/beat-plan/types.js';
 import { wordsPerSec } from '../../plan/analyze.js';
@@ -16,6 +17,8 @@ export interface NarrationContext {
   durationSec: number;
   /** Concept labels the speaker may stress. */
   emphasisCandidates: string[];
+  /** The same validated depictions the beat planner and renderer receive. */
+  visualVocabulary?: VisualVocabulary;
   /** Canonical claim meanings keyed by claim id; used only to validate the anchored sentence. */
   canonicalClaims?: Record<string, { statement: string; semantics?: ClaimSemantics; identity?: ClaimIdentity; epistemicType?: EpistemicType }>;
   /** ISO 639-1 language of the speech (default en). */

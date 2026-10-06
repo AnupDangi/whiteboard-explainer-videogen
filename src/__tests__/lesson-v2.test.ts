@@ -120,7 +120,7 @@ test('V2 semantic execution compiles supported state changes and carries the exa
   const result = executeSemanticScene({ context: sourceContext, narration: sceneNarration, beatTimings: [beatTiming] });
   assert.equal(result.status, 'compiled');
   if (result.status !== 'compiled') return;
-  assert.equal(result.record.providerVersion, 'state-transition/v3');
+  assert.equal(result.record.providerVersion, 'state-transition/v4');
   assert.equal(result.record.semanticOperations.length, 2);
   assert.equal(result.operations.length, 4, 'each introduced entity has a live entity plus a visible state value');
   assert.deepEqual(result.record.selectedAssetIds, { frame: 'iconify-lucide:frame' });
@@ -184,6 +184,67 @@ test('V2 executes a separation as a typed split and carries its selected catalog
   const split = result.operations.find((op) => op.op === 'split');
   assert.ok(split && split.op === 'split');
   if (split?.op === 'split') assert.equal(split.into.length, 2);
+});
+
+test('V2 executes a beat-pinned merge through the provider and preserves the result icon and state', () => {
+  const sceneId = 'merge_scene';
+  const claimId = 'merge_claim';
+  const beatContext = {
+    sceneId, conceptIds: ['frame', 'stack'],
+    claims: [{ id: claimId, statement: 'A frame and stack combine into one structure.', conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: [] }],
+    relations: [], misconceptionIds: [], durationSec: 8,
+  };
+  const beats = compileBeatPlan(BeatPlanDraftSchema.parse({ beats: [
+    {
+      claimIds: [claimId], learnerDelta: 'Two parts are visible.', learningQuestion: 'What is visible first?', learnerBefore: 'No parts are visible.', learnerAfter: 'Two parts are visible.', dependsOnOrders: [], beatType: 'introduce', cognitiveOperation: 'identify', representationFamily: 'state_transition',
+      entities: [{ identityKey: 'left_part', conceptId: 'frame', state: 'left part' }, { identityKey: 'right_part', conceptId: 'stack', state: 'right part' }], semanticRevealOrder: ['left_part', 'right_part'],
+      requiredSemanticChanges: [{ identityKey: 'left_part', kind: 'introduce', toState: 'left part' }, { identityKey: 'right_part', kind: 'introduce', toState: 'right part' }], relationships: [], misconceptionIds: [], narrationGoal: 'Show the two parts.', visualInvariant: 'Two parts are visible.', mutedMeaning: 'Two parts are visible.', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
+    },
+    {
+      claimIds: [claimId], learnerDelta: 'The learner sees one combined structure.', learningQuestion: 'What happens to the two parts?', learnerBefore: 'Two parts are separate.', learnerAfter: 'The parts are one structure.', dependsOnOrders: [1], beatType: 'transform', cognitiveOperation: 'transform', representationFamily: 'state_transition',
+      entities: [{ identityKey: 'left_part', conceptId: 'frame', state: 'left part' }, { identityKey: 'right_part', conceptId: 'stack', state: 'right part' }, { identityKey: 'combined', conceptId: 'frame', state: 'one combined structure' }], semanticRevealOrder: ['combined'],
+      requiredSemanticChanges: [{ identityKey: 'combined', kind: 'merge', mergeInputIdentityKeys: ['left_part', 'right_part'], toState: 'one combined structure' }], relationships: [], misconceptionIds: [], narrationGoal: 'Show the parts joining.', visualInvariant: 'One combined structure is visible.', mutedMeaning: 'The two parts joined.', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
+    },
+  ] }), beatContext);
+  const narration = compileSceneNarration(sceneId, SceneNarrationDraftSchema.parse({ beats: [
+    { beatId: `${sceneId}.b1`, sentences: ['A frame part appears.', 'A stack part appears.'], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${sceneId}.b1.e1`, sentenceIndex: 0, phrase: 'frame part' }, { semanticEventId: `${sceneId}.b1.e2`, sentenceIndex: 1, phrase: 'stack part' }], emphasisTerms: [] },
+    { beatId: `${sceneId}.b2`, sentences: ['The frame and stack combine into one structure.'], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${sceneId}.b2.e1`, sentenceIndex: 0, phrase: 'combine into one structure' }], emphasisTerms: [] },
+  ] }), beats);
+  const visualVocabulary = { sceneId, family: 'simi-house-v1/domain-outline', concepts: [
+    { conceptId: 'frame', label: 'Frame', conceptKind: 'entity', depiction: { kind: 'icon' as const, entryId: 'iconify-lucide:frame', rung: 'R3', houseFamily: 'simi-house-v1/domain-outline' } },
+    { conceptId: 'stack', label: 'Stack', conceptKind: 'entity', depiction: { kind: 'labelled' as const } },
+  ] };
+  const context: BoardContext = {
+    sceneId, title: 'Merge', beats,
+    claims: [{ id: claimId, statement: 'A frame and stack combine into one structure.', conceptIds: ['frame', 'stack'], relations: [] }],
+    narration: narration.beatSpans.map((span) => ({ beatId: span.beatId, sentences: span.sentenceSpans.map((sentence) => narration.text.slice(sentence.charStart, sentence.charEnd)) })),
+    concepts: [{ id: 'frame', label: 'Frame', kind: 'entity' }, { id: 'stack', label: 'Stack', kind: 'entity' }],
+    visualVocabulary, initial: emptyBoardState(),
+  };
+  const beatTimings = narration.beatSpans.map((span, beatIndex) => ({
+    beatId: span.beatId, startMs: beatIndex * 2000, endMs: (beatIndex + 1) * 2000,
+    sentences: span.sentenceSpans.map((_, sentenceIndex) => ({ startMs: beatIndex * 2000 + sentenceIndex * 800, endMs: beatIndex * 2000 + (sentenceIndex + 1) * 800 })),
+    semanticAnchors: narration.semanticAnchors.filter((anchor) => anchor.beatId === span.beatId).map((anchor) => {
+      const sentenceIndex = span.sentenceSpans.findIndex((sentence) => anchor.charStart >= sentence.charStart && anchor.charStart < sentence.charEnd);
+      return { semanticEventId: anchor.semanticEventId, phrase: anchor.phrase, startMs: beatIndex * 2000 + sentenceIndex * 800 + 10, endMs: beatIndex * 2000 + sentenceIndex * 800 + 500 };
+    }),
+  }));
+  const result = executeSemanticScene({ context, narration, beatTimings });
+  assert.equal(result.status, 'compiled');
+  if (result.status !== 'compiled') return;
+  assert.equal(result.record.providerVersion, 'state-transition/v4');
+  assert.deepEqual(result.record.semanticOperations.map((operation) => operation.type), ['introduce', 'introduce', 'merge']);
+  assert.deepEqual(result.record.selectedAssetIds, { frame: 'iconify-lucide:frame' });
+  const merge = result.operations.find((operation) => operation.op === 'merge');
+  assert.ok(merge && merge.op === 'merge');
+  if (merge?.op === 'merge') {
+    assert.deepEqual(merge.targets, [beats[0]!.entities[0]!.entityId, beats[0]!.entities[1]!.entityId]);
+    assert.equal(merge.into.id, beats[1]!.entities[2]!.entityId);
+    assert.equal(merge.into.element.type, 'entity');
+    if (merge.into.element.type === 'entity') assert.deepEqual(merge.into.element.bindings, { conceptIds: ['frame'], claimIds: [claimId] });
+  }
+  assert.ok(result.operations.some((operation) => operation.op === 'remove' && operation.target.endsWith('.state')));
+  assert.ok(result.operations.some((operation) => operation.op === 'add' && operation.element.type === 'value' && operation.element.value === 'one combined structure'));
 });
 
 test('the V2 runner turns beats and narration into a retained-board video with real audio timing, captions, metrics and a scorecard', async () => {
@@ -514,7 +575,7 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     const scenes = context.representationExecution.scenes;
     assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v3');
     assert.equal(scenes.length, 2);
-    assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v3'));
+    assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v4'));
     assert.ok(scenes.every((scene) => scene.semanticOperations.length === 2));
     assert.ok(scenes.every((scene) => scene.selectedAssetIds.frame === 'iconify-lucide:frame'));
     const frameDepiction = scenes[0]!.renderedEntityAssets.find((entity) => entity.conceptId === 'frame');
@@ -535,6 +596,29 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     type ExecutionScene = { sceneId: string; semanticOperations: Array<{ type: string; entity?: { state?: string } }>; renderedEntityAssets: Array<{ conceptId: string; resolvedAssetId: string | null }>; claimCoverage: { rows: Array<{ rationale: string }> } };
     const contextValue = JSON.parse(await readFile(contextPath, 'utf8')) as { representationExecution: { scenes: ExecutionScene[] } };
     const sceneValue = JSON.parse(await readFile(scenePath, 'utf8')) as { representationExecution: ExecutionScene };
+    // A current-pipeline lock cannot relabel its v4 provider as v3, even when no merge occurs.
+    const originalContextBytes = await readFile(contextPath, 'utf8');
+    const originalSceneBytes = await readFile(scenePath, 'utf8');
+    const providerContext = JSON.parse(originalContextBytes);
+    const providerScene = JSON.parse(originalSceneBytes);
+    for (const execution of [providerContext.representationExecution.scenes.find((item: { sceneId: string }) => item.sceneId === 'one'), providerScene.representationExecution]) {
+      execution.providerVersion = 'state-transition/v3';
+      for (const beat of execution.beats) beat.providerVersion = 'state-transition/v3';
+    }
+    const downgradedContextBytes = `${JSON.stringify(providerContext, null, 2)}\n`;
+    const downgradedSceneBytes = `${JSON.stringify(providerScene, null, 2)}\n`;
+    await writeFile(contextPath, downgradedContextBytes);
+    await writeFile(scenePath, downgradedSceneBytes);
+    lock.context.hash = sha256(downgradedContextBytes);
+    sceneLock.fileHash = sha256(downgradedSceneBytes);
+    const { contentHash: _providerHash, ...providerBody } = lock;
+    lock.contentHash = canonicalHash(providerBody);
+    const providerLockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, providerLockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), providerLockBytes);
+    assert.ok((await verifyLessonLockV2(out)).some((problem) => /typed semantic provider identity is not recognized/.test(problem)));
+    await writeFile(contextPath, originalContextBytes);
+    await writeFile(scenePath, originalSceneBytes);
     contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.semanticOperations[0]!.entity!.state = 'forged state';
     contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.renderedEntityAssets.find((entity) => entity.conceptId === 'frame')!.resolvedAssetId = 'iconify-tabler:frame';
     contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.claimCoverage.rows[0]!.rationale = 'forged coverage';

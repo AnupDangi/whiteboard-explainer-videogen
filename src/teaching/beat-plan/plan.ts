@@ -1,3 +1,4 @@
+import type { VisualVocabulary } from '../../planner/visualDiscovery.js';
 import type { ConceptGraph, SceneContract } from '../../plan/schemas.js';
 import { emptyUsage, structuredCall, type StructuredCallResult } from '../../llm/structuredCall.js';
 import type { ModelClient } from '../../llm/modelClient.js';
@@ -12,12 +13,12 @@ export interface BeatSection { id: string; title: string; goal: string; conceptI
 export interface BeatStageModel { /** ISO 639-1 language the narration is written in (default en). */ language?: string; model: string; apiKey: string; remainingBudgetUsd: number; budgetLedger?: PersistentBudgetLedger; fetcher?: typeof fetch; client?: ModelClient }
 
 /** S3b: the beats of one scene, planned from its S3 contract and the concept graph. The model sees no source text and writes no wording. */
-export async function planSceneBeats(input: { section: BeatSection; graph: ConceptGraph }, m: BeatStageModel): Promise<StructuredCallResult<TeachingBeat[]> & { context?: BeatContext }> {
+export async function planSceneBeats(input: { section: BeatSection; graph: ConceptGraph; visualVocabulary?: VisualVocabulary }, m: BeatStageModel): Promise<StructuredCallResult<TeachingBeat[]> & { context?: BeatContext }> {
   const { section, graph } = input;
   if (!section.contract) {
     return { usage: emptyUsage(), rawResponses: [], reports: [], trace: emptyTrace(), failures: [{ code: 'beats-no-contract', stage: 'beats', message: `scene ${section.id}: no S3 scene contract to plan beats from`, hard: true }] };
   }
-  const ctx = beatContextFor(section, graph);
+  const ctx = beatContextFor(section, graph, input.visualVocabulary);
   const { system, user } = buildBeatPrompt(ctx, {
     title: section.title, goal: section.goal, learningDelta: section.contract.learningDelta, ...(section.contract.mentalModel ? { mentalModel: section.contract.mentalModel } : {}),
     misconceptionRisk: section.contract.misconceptionRisk ?? [], priorKnowledge: section.contract.priorKnowledge ?? [],

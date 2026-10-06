@@ -175,7 +175,7 @@ function claimCoverageReplayProblems(
 }
 
 /** Cross-checks the new provider record against the pinned beat plan, phrase clocks and captured BoardOps. */
-function representationExecutionProblems(sceneRecord: JsonRecord | undefined, context: JsonRecord, planBeats: unknown[], capturedOps: unknown[], captured: CapturedScene | undefined, sceneId: string): string[] {
+function representationExecutionProblems(sceneRecord: JsonRecord | undefined, context: JsonRecord, planBeats: unknown[], capturedOps: unknown[], captured: CapturedScene | undefined, sceneId: string, allowLegacyProviderVersion = false): string[] {
   const problems: string[] = [];
   const topLevel = recordOf(context.representationExecution);
   if (!topLevel) return context.schemaVersion === 'lesson-context/v10'
@@ -231,8 +231,13 @@ function representationExecutionProblems(sceneRecord: JsonRecord | undefined, co
     return problems;
   }
 
-  const expectedProviderVersion = execution.schemaVersion === 'v2-representation-execution/v3' ? stateTransitionProvider.version
+  const pinnedMerge = visualBeats.some((beat) => (arrayOf(beat.requiredSemanticChanges) ?? []).some((raw) => recordOf(raw)?.kind === 'merge'));
+  const expectedProviderVersion = execution.schemaVersion === 'v2-representation-execution/v3'
+    ? allowLegacyProviderVersion && execution.providerVersion === 'state-transition/v3' && !pinnedMerge ? 'state-transition/v3' : stateTransitionProvider.version
     : execution.schemaVersion === 'v2-representation-execution/v2' ? 'state-transition/v2' : 'state-transition/v1';
+  if (execution.schemaVersion === 'v2-representation-execution/v3' && execution.providerVersion === 'state-transition/v3' && pinnedMerge) {
+    problems.push(`scene ${sceneId} legacy state-transition/v3 cannot claim support for merge changes`);
+  }
   if (execution.providerVersion !== expectedProviderVersion || execution.providerSource !== 'family-fallback') problems.push(`scene ${sceneId} typed semantic provider identity is not recognized`);
   if (!visualBeats.length || visualBeats.some((beat) => beat.representationFamily !== 'state_transition')) problems.push(`scene ${sceneId} typed semantic provider is incompatible with its pinned representation families`);
   if (execution.beats.some((beat) => beat.status !== 'compiled' || beat.providerVersion !== expectedProviderVersion)) problems.push(`scene ${sceneId} typed semantic beat provider statuses are incomplete`);
@@ -368,7 +373,7 @@ const relationKey = (value: unknown): string | undefined => {
 };
 
 /** Cross-check the teaching graph and all scene artifacts after their byte hashes have been verified. */
-function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['scenes'], semantic: unknown[], captured: CapturedScene[]): string[] {
+function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['scenes'], semantic: unknown[], captured: CapturedScene[], allowLegacyProviderVersion = false): string[] {
   let context: JsonRecord;
   try { context = recordOf(JSON.parse(contextBytes.toString('utf8'))) ?? {}; } catch { return []; }
   const plan = recordOf(context.plan);
@@ -713,7 +718,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
     const capturedScene = captured[sceneIndex];
     const capturedOps = capturedScene?.timeline.ops.map((scheduled) => scheduled.op) ?? [];
     if (canonicalHash(ops) !== canonicalHash(capturedOps)) problems.push(`scene ${locked.sceneId} semantic BoardOps do not match the captured timeline`);
-    problems.push(...representationExecutionProblems(sceneRecord, context, planBeats ?? [], capturedOps, capturedScene, locked.sceneId));
+    problems.push(...representationExecutionProblems(sceneRecord, context, planBeats ?? [], capturedOps, capturedScene, locked.sceneId, allowLegacyProviderVersion));
     const transition = SceneTransitionSchema.safeParse(sceneRecord?.transition);
     const parsedOps = ops.map((op) => BoardOpSchema.safeParse(op));
     if (!transition.success || parsedOps.some((parsed) => !parsed.success)) {
@@ -1216,7 +1221,7 @@ async function inspectLock(outputDir: string, options: { allowRasterOnlyToolDrif
   }
   if (alignment) problems.push(...alignmentProblems(alignment, lock.scenes, semantic));
   if (context) {
-    problems.push(...teachingIdentityProblems(context, lock.scenes, semantic, captured));
+    problems.push(...teachingIdentityProblems(context, lock.scenes, semantic, captured, Boolean(options.allowRasterOnlyToolDrift && lock.versions.pipeline !== current.pipeline)));
     problems.push(...lessonHierarchyProblems(context, lock.scenes, alignment, hierarchyInput));
   }
   if (endMs !== lock.render.durationMs || lock.render.frames !== Math.max(1, Math.round(lock.render.durationMs * lock.render.fps / 1000))) problems.push('render duration or frame count invalid');

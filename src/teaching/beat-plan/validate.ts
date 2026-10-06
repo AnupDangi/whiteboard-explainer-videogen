@@ -3,6 +3,7 @@ import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { BeatPlanDraft, RelationSpec } from './types.js';
 import type { ClaimSemantics } from '../../evidence/claims.js';
 import type { ClaimVerificationStatus, EpistemicType } from '../../evidence/ledger.js';
+import type { VisualVocabulary } from '../../planner/visualDiscovery.js';
 import { representationSelectionProblems } from './representationRegistry.js';
 
 export interface BeatContext {
@@ -14,6 +15,8 @@ export interface BeatContext {
   /** m1, m2 ... one per scene misconceptionRisk entry. */
   misconceptionIds: string[];
   durationSec: number;
+  /** Validated depiction choices shared with narration and rendering. */
+  visualVocabulary?: VisualVocabulary;
 }
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
@@ -26,7 +29,7 @@ export function beatCountRange(durationSec: number): { min: number; max: number 
 
 const relationKey = (r: { from: string; to: string; type: string }): string => `${r.from}|${r.type}|${r.to}`;
 
-export function beatContextFor(section: { id: string; conceptIds: string[]; budgetSec: number; contract?: SceneContract }, graph: ConceptGraph): BeatContext {
+export function beatContextFor(section: { id: string; conceptIds: string[]; budgetSec: number; contract?: SceneContract }, graph: ConceptGraph, visualVocabulary?: VisualVocabulary): BeatContext {
   const contract = section.contract;
   if (!contract) throw new Error(`section ${section.id} has no scene contract; beats are planned from the S3 contract`);
   const conceptIds = [...new Set([...section.conceptIds, ...contract.requiredConceptIds])];
@@ -34,6 +37,7 @@ export function beatContextFor(section: { id: string; conceptIds: string[]; budg
   return {
     sceneId: section.id,
     conceptIds,
+    ...(visualVocabulary ? { visualVocabulary: { ...visualVocabulary, sceneId: section.id, concepts: visualVocabulary.concepts.filter((concept) => inScene.has(concept.conceptId)) } } : {}),
     claims: contract.essentialClaims.map((claim) => ({ id: claim.id, statement: claim.statement, conceptIds: claim.conceptIds, relations: claim.relations, evidenceSpanIds: claim.evidenceSpanIds, ...(claim.semantics ? { semantics: claim.semantics } : {}), ...(claim.epistemicType ? { epistemicType: claim.epistemicType } : {}), ...(claim.verificationStatus ? { verificationStatus: claim.verificationStatus } : {}) })),
     relations: graph.relations.filter((r) => inScene.has(r.from) && inScene.has(r.to)).map(({ from, to, type }) => ({ from, to, type })),
     misconceptionIds: (contract.misconceptionRisk ?? []).map((_, index) => `m${index + 1}`),
@@ -52,7 +56,9 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
   const beatCountByClaim = new Map<string, number>();
   const conceptByIdentityKey = new Map<string, string>();
   const seenIdentityKeys = new Set<string>();
-  const statefulChanges = new Set(['flow', 'transform', 'move', 'separate', 'merge', 'quantity_update', 'select', 'finalize', 'plot', 'feedback']);
+  const activeIdentityKeys = new Set<string>();
+  const currentSemanticStates = new Map<string, string>();
+  const statefulChanges = new Set(['flow', 'transform', 'move', 'separate', 'quantity_update', 'select', 'finalize', 'plot', 'feedback']);
   plan.beats.forEach((beat, i) => {
     const at = `/beats/${i}`;
     if (!/[?？]$/u.test(beat.learningQuestion.trim())) problems.push({ path: `${at}/learningQuestion`, message: 'learningQuestion must be phrased as a question' });
@@ -75,7 +81,10 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
     const beatEntityKeys = new Set<string>();
     const newlySeenEntityKeys = new Set<string>();
     const separateChanges = beat.requiredSemanticChanges.filter((change) => change.kind === 'separate');
+    const mergeChanges = beat.requiredSemanticChanges.filter((change) => change.kind === 'merge');
     if (separateChanges.length > 1) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a state-transition beat may contain at most one separate change until multi-separation composition is implemented' });
+    if (mergeChanges.length > 1) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a state-transition beat may contain at most one merge change until multi-merge composition is implemented' });
+    if (separateChanges.length && mergeChanges.length) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a state-transition beat cannot combine separate and merge changes yet' });
     const unverifiedClaims = citedClaims.filter((claim) => claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified');
     if (unverifiedClaims.length) {
       if (beat.claimIds.length !== 1 || beat.claimIds[0] !== unverifiedClaims[0]!.id) problems.push({ path: `${at}/claimIds`, message: 'an unverified explanation must be isolated in a beat that cites only that one claim' });
@@ -120,22 +129,108 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
         }
       }
     }
+    if (mergeChanges.length === 1) {
+      const merge = mergeChanges[0]!;
+      const mergeIndex = beat.requiredSemanticChanges.indexOf(merge);
+      const inputKeys = merge.mergeInputIdentityKeys ?? [];
+      if (inputKeys.length < 2 || inputKeys.length > 6) {
+        problems.push({ path: `${at}/requiredSemanticChanges/${mergeIndex}/mergeInputIdentityKeys`, message: 'a merge must name two through six ordered source identities' });
+      }
+      if (inputKeys.includes(merge.identityKey)) {
+        problems.push({ path: `${at}/requiredSemanticChanges/${mergeIndex}/mergeInputIdentityKeys`, message: 'a merge result must use a new identity distinct from every input' });
+      }
+      if (seenIdentityKeys.has(merge.identityKey)) {
+        problems.push({ path: `${at}/requiredSemanticChanges/${mergeIndex}/identityKey`, message: 'a merge creates a new result entity and cannot reuse an earlier identity' });
+      }
+      if (beat.requiredSemanticChanges.some((change) => change.identityKey === merge.identityKey && change.kind === 'introduce')) {
+        problems.push({ path: `${at}/requiredSemanticChanges/${mergeIndex}/identityKey`, message: 'a merge result cannot also have an introduce change' });
+      }
+      const resultEntity = beat.entities.find((entity) => entity.identityKey === merge.identityKey);
+      if (resultEntity?.state && resultEntity.state !== merge.toState) {
+        problems.push({ path: `${at}/entities/${beat.entities.indexOf(resultEntity)}/state`, message: 'merge result state must match the required change toState' });
+      }
+      const resultRevealIndex = beat.semanticRevealOrder.indexOf(merge.identityKey);
+      for (const inputKey of inputKeys) {
+        if (!beatEntityKeys.has(inputKey)) {
+          problems.push({ path: `${at}/requiredSemanticChanges/${mergeIndex}/mergeInputIdentityKeys`, message: `merge input ${inputKey} must be declared in this beat's entities` });
+          continue;
+        }
+        if (newlySeenEntityKeys.has(inputKey)) {
+          const introduceIndex = beat.requiredSemanticChanges.findIndex((change) => change.identityKey === inputKey && change.kind === 'introduce');
+          if (introduceIndex < 0 || introduceIndex >= mergeIndex) {
+            problems.push({ path: `${at}/requiredSemanticChanges/${mergeIndex}/mergeInputIdentityKeys`, message: `new merge input ${inputKey} must be introduced before the merge` });
+          }
+          const inputRevealIndex = beat.semanticRevealOrder.indexOf(inputKey);
+          if (resultRevealIndex >= 0 && inputRevealIndex > resultRevealIndex) {
+            problems.push({ path: `${at}/semanticRevealOrder`, message: `new merge input ${inputKey} must be revealed before the merge result ${merge.identityKey}` });
+          }
+        }
+        const inputEntity = beat.entities.find((entity) => entity.identityKey === inputKey);
+        if (inputEntity && !inputEntity.state?.trim()) {
+          problems.push({ path: `${at}/entities/${beat.entities.indexOf(inputEntity)}/state`, message: `merge input ${inputKey} must declare its exact active state` });
+        }
+      }
+    }
     for (const identityKey of newlySeenEntityKeys) {
       if (!revealKeys.has(identityKey)) problems.push({ path: `${at}/semanticRevealOrder`, message: `new semantic entity ${identityKey} must appear in its first-reveal order` });
       const isSeparatedResult = separateChanges.length === 1 && separateChanges[0]!.identityKey !== identityKey;
-      if (!beat.requiredSemanticChanges.some((change) => change.identityKey === identityKey && change.kind === 'introduce') && !isSeparatedResult) {
+      const isMergedResult = mergeChanges.length === 1 && mergeChanges[0]!.identityKey === identityKey;
+      if (!beat.requiredSemanticChanges.some((change) => change.identityKey === identityKey && change.kind === 'introduce') && !isSeparatedResult && !isMergedResult) {
         problems.push({ path: `${at}/requiredSemanticChanges`, message: `new semantic entity ${identityKey} needs an introduce change` });
       }
     }
     beat.requiredSemanticChanges.forEach((change, changeIndex) => {
       const path = `${at}/requiredSemanticChanges/${changeIndex}`;
       if (!beatEntityKeys.has(change.identityKey)) problems.push({ path: `${path}/identityKey`, message: `semantic change references entity ${change.identityKey} which is not declared by this beat` });
+      if (change.kind !== 'merge' && change.mergeInputIdentityKeys !== undefined) {
+        problems.push({ path: `${path}/mergeInputIdentityKeys`, message: 'merge input identities are allowed only on a merge change' });
+      }
+      if (change.kind === 'merge' && change.fromState !== undefined) {
+        problems.push({ path: `${path}/fromState`, message: 'merge source states are declared on each input entity; omit the shared fromState' });
+      }
       if (statefulChanges.has(change.kind) && !change.fromState?.trim()) problems.push({ path: `${path}/fromState`, message: `${change.kind} requires a fromState so the expected state transition is explicit` });
       if (beat.claimIds.length > 1 && !change.claimIds) problems.push({ path: `${path}/claimIds`, message: 'a semantic change in a multi-claim beat must name the exact claim ids it supports' });
       const eventClaimIds = change.claimIds ?? (beat.claimIds.length === 1 ? beat.claimIds : []);
       if (!eventClaimIds.length) problems.push({ path: `${path}/claimIds`, message: 'a semantic change must be bound to at least one canonical claim' });
       if (new Set(eventClaimIds).size !== eventClaimIds.length) problems.push({ path: `${path}/claimIds`, message: 'semantic change claim ids must be unique' });
       const entity = beat.entities.find((candidate) => candidate.identityKey === change.identityKey);
+      if (change.kind === 'introduce') {
+        activeIdentityKeys.add(change.identityKey);
+        currentSemanticStates.set(change.identityKey, change.toState);
+      }
+      if (change.kind === 'transform') currentSemanticStates.set(change.identityKey, change.toState);
+      if (change.kind === 'separate') {
+        activeIdentityKeys.delete(change.identityKey);
+        currentSemanticStates.delete(change.identityKey);
+        for (const resultKey of newlySeenEntityKeys) if (resultKey !== change.identityKey) {
+          activeIdentityKeys.add(resultKey);
+          const resultEntity = beat.entities.find((candidate) => candidate.identityKey === resultKey);
+          if (resultEntity?.state) currentSemanticStates.set(resultKey, resultEntity.state);
+        }
+      }
+      if (change.kind === 'finalize') {
+        activeIdentityKeys.delete(change.identityKey);
+        currentSemanticStates.delete(change.identityKey);
+      }
+      if (change.kind === 'merge') {
+        for (const [inputIndex, inputKey] of (change.mergeInputIdentityKeys ?? []).entries()) {
+          if (inputKey === change.identityKey) continue;
+          if (!beatEntityKeys.has(inputKey)) continue;
+          if (!activeIdentityKeys.has(inputKey)) {
+            problems.push({ path: `${path}/mergeInputIdentityKeys/${inputIndex}`, message: `merge input ${inputKey} must be active before this event` });
+          }
+          const inputEntity = beat.entities.find((candidate) => candidate.identityKey === inputKey);
+          if (inputEntity?.state && currentSemanticStates.get(inputKey) !== inputEntity.state) {
+            problems.push({ path: `${at}/entities/${beat.entities.indexOf(inputEntity)}/state`, message: `merge input ${inputKey} state must match its current semantic state` });
+          }
+          activeIdentityKeys.delete(inputKey);
+          currentSemanticStates.delete(inputKey);
+        }
+        if (!seenIdentityKeys.has(change.identityKey)) {
+          activeIdentityKeys.add(change.identityKey);
+          currentSemanticStates.set(change.identityKey, change.toState);
+        }
+      }
       for (const [claimIndex, claimId] of eventClaimIds.entries()) {
         if (!beat.claimIds.includes(claimId)) {
           problems.push({ path: `${path}/claimIds/${claimIndex}`, message: `semantic change claim ${claimId} is not listed by this beat` });
@@ -145,6 +240,14 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
         if (!claim) continue;
         if (entity && !claim.conceptIds.includes(entity.conceptId)) {
           problems.push({ path: `${path}/claimIds/${claimIndex}`, message: `claim ${claimId} does not include the changed entity concept ${entity.conceptId}` });
+        }
+        if (change.kind === 'merge') {
+          for (const inputKey of change.mergeInputIdentityKeys ?? []) {
+            const inputEntity = beat.entities.find((candidate) => candidate.identityKey === inputKey);
+            if (inputEntity && !claim.conceptIds.includes(inputEntity.conceptId)) {
+              problems.push({ path: `${path}/claimIds/${claimIndex}`, message: `claim ${claimId} does not include merge input concept ${inputEntity.conceptId}` });
+            }
+          }
         }
       }
     });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { runBeatStages } from '../teaching/beat-pipeline.js';
 import type { ModelClient } from '../llm/modelClient.js';
 import type { ConceptGraph, TeachingPlan } from '../plan/schemas.js';
+import type { VisualVocabulary } from '../planner/visualDiscovery.js';
 import { sourceDocFromText } from '../intake/sourceDoc.js';
 
 const doc = sourceDocFromText('# Notes\n\nA call pushes a frame onto the stack. A return pops the top frame. The base case stops the calls after 3 steps.', 'markdown');
@@ -76,4 +77,32 @@ test('a number the source never states is rejected in narration, and a scene tha
   const result = await runBeatStages({ plan, graph, sourceDoc: doc }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client: c });
   assert.equal(result.value, undefined);
   assert.ok(result.failures.some((f) => f.hard && /beat-narration/.test(f.code)));
+});
+
+
+test('beat planning and beat-local narration share scene depictions without exposing asset IDs', async () => {
+  const visualVocabulary: Record<string, VisualVocabulary> = {
+    one: { sceneId: 'one', concepts: [{ conceptId: 'frame', label: 'Frame', conceptKind: 'entity', depiction: { kind: 'icon', entryId: 'private-selected-asset', rung: 'R3-exact' } }] },
+    two: { sceneId: 'two', concepts: [{ conceptId: 'stack', label: 'Stack', conceptKind: 'entity', depiction: { kind: 'labelled' } }] },
+  };
+  const observed: string[] = [];
+  const c = client((schema, user) => {
+    const scene = /SCENE (\w+)/.exec(user)?.[1] ?? '';
+    observed.push(`${schema}:${scene}`);
+    assert.match(user, /HOW EACH CONCEPT WILL BE DRAWN/);
+    assert.doesNotMatch(user, /private-selected-asset/);
+    if (scene === 'one') {
+      assert.match(user, /Frame \(entity\): a real picture exists/);
+      assert.doesNotMatch(user, /Stack \(entity\): no picture exists/);
+    } else {
+      assert.match(user, /Stack \(entity\): no picture exists/);
+      assert.doesNotMatch(user, /Frame \(entity\): a real picture exists/);
+    }
+    return schema === 'teaching_beats' ? beatJson(`${scene}_c`) : narrationJson(`${scene}.b1`, `${scene}_c`);
+  });
+  const result = await runBeatStages({ plan, graph, sourceDoc: doc, visualVocabulary }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client: c });
+  assert.ok(result.value, JSON.stringify(result.failures));
+  assert.deepEqual(observed.sort(), ['beat_narration:one', 'beat_narration:two', 'teaching_beats:one', 'teaching_beats:two']);
+  assert.deepEqual(result.value.narrationContexts.one!.visualVocabulary, visualVocabulary.one);
+  assert.deepEqual(result.value.narrationContexts.two!.visualVocabulary, visualVocabulary.two);
 });

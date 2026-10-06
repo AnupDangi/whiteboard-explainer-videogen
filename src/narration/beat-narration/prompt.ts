@@ -1,3 +1,4 @@
+import { vocabularyPromptBlock } from '../../planner/visualDiscovery.js';
 import type { NarrationContext } from './validate.js';
 import { NARRATION_PROMPT_CEILING } from './validate.js';
 import { wordsPerSec } from '../../plan/analyze.js';
@@ -51,6 +52,7 @@ ${outputContract}`;
   const user = `${around}SCENE ${ctx.sceneId}: "${scene.title}" — ${scene.goal}
 ${ctx.revision ? `${ctx.revision.direction === 'shorten' ? 'At most' : 'At least'} ${ctx.revision.targetWords} spoken words (the audio sets the real length).` : `About ${words} spoken words for ${ctx.durationSec} s (never more than ${Math.round(words * NARRATION_PROMPT_CEILING)}); the audio sets the real length.`}${revision}
 ${terminology}${flow}
+${vocabularyPromptBlock(ctx.visualVocabulary)}
 ${beatInstruction}
 ${beatLines}
 Concept labels you may stress: ${JSON.stringify(ctx.emphasisCandidates)}

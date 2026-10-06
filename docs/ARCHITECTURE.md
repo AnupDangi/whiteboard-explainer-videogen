@@ -446,8 +446,12 @@ separately from end-to-end lesson timing.
 ## Assets and rights
 
 The legacy V1 route separates S6 representation intents from S7 resolution.
-The beat-mode V2 route runs S3b Visual Discovery before narration and carries
-its per-scene vocabulary into either the typed lowerer or the S6 preview. The
+The beat-mode V2 route runs S3b Visual Discovery before narration. The same
+per-scene vocabulary now reaches beat planning, each beat-local narration call,
+and either the typed lowerer or the S6 preview. Its contents participate in the
+combined beat/narration cache identity; a changed depiction invalidates that
+stage. Prompt guidance names concept labels, semantic kinds and depiction
+strategies, without exposing catalog IDs or coordinates. The
 S6 prompt receives concept kind and depiction guidance without catalog IDs.
 When S3b selected an icon for a
 canonical `entity`, BoardOps validation requires a live bound `entity` element
@@ -464,7 +468,10 @@ uses the exact scene-vocabulary entry for eligible entity rendering, subject to
 the existing semantic-type, exact/curated selection, domain and licensing
 gates. The locked concept metadata captures the selected asset and scene style,
 and replay uses the pinned selection. New runs write
-`lesson-context/v10`; v9 and earlier contexts remain readable. The diagnostic
+`lesson-context/v10`; v9 and earlier contexts remain readable. Current-pipeline
+locks require the current typed provider version. Older state-transition/v3
+records are accepted only on an explicitly requested raster replay with a
+different pinned pipeline digest, and cannot claim merge support. The diagnostic
 `v2/scene-icon-families.json` records each scene's family.
 
 An icon being present in a local catalog is not evidence that it is cleared for

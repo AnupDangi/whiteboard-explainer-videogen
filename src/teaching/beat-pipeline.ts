@@ -1,3 +1,4 @@
+import type { VisualVocabulary } from '../planner/visualDiscovery.js';
 import { addUsage, emptyUsage, type CallUsage, type StructuredCallReport } from '../llm/structuredCall.js';
 import type { StageFailure } from '../shared/types.js';
 import type { ConceptGraph, Script, TeachingPlan } from '../plan/schemas.js';
@@ -43,7 +44,7 @@ function lessonPosition(plan: TeachingPlan, sceneId: string): NonNullable<Narrat
 const numbersIn = (texts: readonly string[]): Set<string> => new Set(texts.flatMap((text) => text.match(/\d+(?:\.\d+)?/g) ?? []));
 
 /** S3b + S4 in beat mode: per scene, plan the teaching beats, then write the speech of each beat. Scenes run in parallel. */
-export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptGraph; sourceDoc: SourceDoc; terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }> }, m: BeatStageModel): Promise<BeatStagesResult> {
+export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptGraph; sourceDoc: SourceDoc; visualVocabulary?: Record<string, VisualVocabulary>; terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }> }, m: BeatStageModel): Promise<BeatStagesResult> {
   const { plan, graph, sourceDoc, terminology } = input;
   const claimRelationProblems = plan.sections.flatMap((section) => (section.contract?.essentialClaims ?? []).flatMap((claim) => claimRelationContractProblems(section.id, claim, graph)));
   if (claimRelationProblems.length) return {
@@ -54,7 +55,7 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
   const perScene = m.remainingBudgetUsd / Math.max(1, plan.sections.length);
   const outcomes = await Promise.all(plan.sections.map((section) => withHostResourcePermit('provider-beats', BEAT_PROVIDER_CONCURRENCY, async () => {
     const stage = { ...m, remainingBudgetUsd: perScene };
-    const beats = await planSceneBeats({ section, graph }, stage);
+    const beats = await planSceneBeats({ section, graph, ...(input.visualVocabulary?.[section.id] ? { visualVocabulary: input.visualVocabulary[section.id]! } : {}) }, stage);
     if (!beats.value || !beats.context) return { section, beats, narration: undefined as undefined | Awaited<ReturnType<typeof writeBeatNarration>>, ctx: undefined as NarrationContext | undefined };
     const claims = beats.context.claims;
     const evidence = section.conceptIds.flatMap((id) => graph.concepts.find((c) => c.id === id)?.evidence.map((ref) => ref.quote) ?? []);
@@ -63,6 +64,7 @@ export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptG
     const sourceExcerpt = sectionSourcePrompt(sourceDoc, section, graph);
     const ctx: NarrationContext = {
       sceneId: section.id, beats: beats.value, durationSec: beats.context.durationSec,
+      ...(beats.context.visualVocabulary ? { visualVocabulary: beats.context.visualVocabulary } : {}),
       canonicalClaims: Object.fromEntries((section.contract?.essentialClaims ?? claims).map((claim) => [claim.id, {
         statement: claim.statement,
         ...(claim.semantics ? { semantics: claim.semantics } : {}),

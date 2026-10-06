@@ -129,6 +129,67 @@ test('a separate change reveals two or more new result entities in declared orde
   assert.ok(oneResult.some((problem) => /needs 2 through 6 newly revealed result entities/.test((problem as { message: string }).message)));
 });
 
+test('a merge names active source identities explicitly and compiles them to stable entity ids', () => {
+  const mergeContext: BeatContext = {
+    sceneId: 'merge_scene', conceptIds: ['frame', 'stack'],
+    claims: [{ id: 'merge_claim', statement: 'A frame and stack join into one structure.', conceptIds: ['frame', 'stack'], relations: [], evidenceSpanIds: ['s1'] }],
+    relations: [], misconceptionIds: [], durationSec: 8,
+  };
+  const inputBeat = beat({
+    claimIds: ['merge_claim'], beatType: 'introduce', cognitiveOperation: 'transform', representationFamily: 'state_transition',
+    entities: [{ identityKey: 'left_part', conceptId: 'frame' }, { identityKey: 'right_part', conceptId: 'stack' }],
+    semanticRevealOrder: ['left_part', 'right_part'],
+    requiredSemanticChanges: [
+      { identityKey: 'left_part', kind: 'introduce', toState: 'left part' },
+      { identityKey: 'right_part', kind: 'introduce', toState: 'right part' },
+    ], relationships: [], visualInvariant: 'Both parts are visible.', mutedMeaning: 'Two parts are visible.',
+  });
+  const mergeBeat = beat({
+    claimIds: ['merge_claim'], beatType: 'transform', cognitiveOperation: 'transform', representationFamily: 'state_transition',
+    entities: [
+      { identityKey: 'left_part', conceptId: 'frame', state: 'left part' },
+      { identityKey: 'right_part', conceptId: 'stack', state: 'right part' },
+      { identityKey: 'combined', conceptId: 'frame', state: 'one combined structure' },
+    ],
+    semanticRevealOrder: ['combined'],
+    requiredSemanticChanges: [{
+      identityKey: 'combined', kind: 'merge', mergeInputIdentityKeys: ['left_part', 'right_part'],
+      toState: 'one combined structure',
+    }], relationships: [], visualInvariant: 'One combined structure is visible.', mutedMeaning: 'The two parts joined.',
+  });
+  const planned = draft([inputBeat, mergeBeat]);
+  assert.deepEqual(validateBeatPlan(planned, mergeContext), []);
+  const compiled = compileBeatPlan(planned, mergeContext);
+  assert.deepEqual(compiled[1]!.requiredSemanticChanges[0]!.mergeInputEntityIds, [
+    semanticEntityId('left_part', mergeContext.sceneId), semanticEntityId('right_part', mergeContext.sceneId),
+  ]);
+
+  // Inputs introduced and then transformed earlier in this beat are active at merge time.
+  const sameBeat = beat({
+    ...mergeBeat,
+    entities: mergeBeat.entities.map((entity) => entity.identityKey === 'left_part' ? { ...entity, state: 'ready left part' } : entity),
+    semanticRevealOrder: ['left_part', 'right_part', 'combined'],
+    requiredSemanticChanges: [
+      ...inputBeat.requiredSemanticChanges,
+      { identityKey: 'left_part', kind: 'transform', fromState: 'left part', toState: 'ready left part' },
+      ...mergeBeat.requiredSemanticChanges,
+    ],
+  });
+  assert.deepEqual(validateBeatPlan(draft([sameBeat]), mergeContext), []);
+  const staleInput = { ...sameBeat, entities: mergeBeat.entities };
+  assert.ok(validateBeatPlan(draft([staleInput]), mergeContext).some((problem) => /state must match its current semantic state/.test((problem as { message: string }).message)));
+  const mergePrompt = buildBeatPrompt(mergeContext, { title: 'Join parts', goal: 'Explain joining', learningDelta: 'Understand joining', misconceptionRisk: [], priorKnowledge: [] }, []);
+  assert.match(mergePrompt.system, /Omit fromState on a merge/);
+  assert.doesNotMatch(mergePrompt.system, /separation, merge, quantity/);
+
+  const undeclaredInput = draft([inputBeat, beat({
+    ...mergeBeat, requiredSemanticChanges: [{ ...mergeBeat.requiredSemanticChanges[0]!, mergeInputIdentityKeys: ['left_part', 'unknown_part'] }],
+    entities: [...mergeBeat.entities, { identityKey: 'unknown_part', conceptId: 'frame' }],
+  })]);
+  const problems = validateBeatPlan(undeclaredInput, mergeContext);
+  assert.ok(problems.some((problem) => /merge input unknown_part must be active before this event/.test((problem as { message: string }).message)));
+});
+
 test('problems carry JSON pointers so a repair patches only the failing location', () => {
   const problems = validateBeatPlan(draft([
     beat({ claimIds: ['c1', 'ghost'], entities: [{ identityKey: 'unknown_main', conceptId: 'nope' }], semanticRevealOrder: ['unknown_main'], requiredSemanticChanges: [{ identityKey: 'unknown_main', kind: 'introduce', toState: 'Unknown entity appears.' }], relationships: [{ from: 'frame', to: 'call', type: 'produces' }], misconceptionIds: ['m9'], mutedMeaning: '  ', visualInvariant: '' }),

@@ -10,7 +10,13 @@ export function compileBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Teaching
     return {
       ...beat,
       entities,
-      requiredSemanticChanges: beat.requiredSemanticChanges.map((change) => ({ ...change, entityId: entityIdByKey.get(change.identityKey) ?? semanticEntityId(change.identityKey, ctx.sceneId) })),
+      requiredSemanticChanges: beat.requiredSemanticChanges.map((change) => ({
+        ...change,
+        entityId: entityIdByKey.get(change.identityKey) ?? semanticEntityId(change.identityKey, ctx.sceneId),
+        ...(change.mergeInputIdentityKeys ? {
+          mergeInputEntityIds: change.mergeInputIdentityKeys.map((identityKey) => entityIdByKey.get(identityKey) ?? semanticEntityId(identityKey, ctx.sceneId)),
+        } : {}),
+      })),
       semanticRevealOrder: beat.semanticRevealOrder.map((identityKey) => entityIdByKey.get(identityKey) ?? semanticEntityId(identityKey, ctx.sceneId)),
       persistentEntityIds: beat.persistence === 'beat' ? [] : [...new Set(entities.map((entity) => entity.entityId))],
       beatId: `${ctx.sceneId}.b${index + 1}`,
