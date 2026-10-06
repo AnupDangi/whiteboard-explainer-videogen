@@ -7,13 +7,14 @@ import { beatIntervals } from '../narration/beat-narration/intervals.js';
 import { buildNarrationPrompt } from '../narration/beat-narration/prompt.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
 import { tokenizeWords } from '../narration/align.js';
-import type { TeachingBeat } from '../teaching/beat-plan/types.js';
+import { semanticEntityId, type TeachingBeat } from '../teaching/beat-plan/types.js';
 import type { ModelClient } from '../llm/modelClient.js';
 import { deriveClaimIdentity } from '../evidence/claimIdentity.js';
 
 const planBeat = (n: number, claimIds: string[]): TeachingBeat => ({
   beatId: `scene.b${n}`, sceneId: 'scene', order: n, claimIds, learnerDelta: 'delta', learningQuestion: 'What changes?', learnerBefore: 'The learner has not traced this step.', learnerAfter: 'The learner can trace this step.', dependsOnOrders: [], dependsOnBeatIds: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
-  entities: [{ conceptId: 'frame' }], relationships: [], misconceptionIds: [], narrationGoal: 'Make clear that a call pushes a frame.', visualInvariant: 'a frame is visible', mutedMeaning: 'a pile grows',
+  entities: [{ identityKey: 'frame_main', entityId: semanticEntityId('frame_main', 'scene'), conceptId: 'frame' }], semanticRevealOrder: [semanticEntityId('frame_main', 'scene')],
+  requiredSemanticChanges: [{ identityKey: 'frame_main', entityId: semanticEntityId('frame_main', 'scene'), kind: 'introduce', toState: 'A frame is on the stack.' }], persistentEntityIds: [semanticEntityId('frame_main', 'scene')], relationships: [], misconceptionIds: [], narrationGoal: 'Make clear that a call pushes a frame.', visualInvariant: 'a frame is visible', mutedMeaning: 'a pile grows',
   narrationOnly: false, persistence: 'scene', pauseIntent: 'micro', evidenceSpanIds: ['s1'],
 });
 const beats = [planBeat(1, ['c1']), planBeat(2, ['c2'])];

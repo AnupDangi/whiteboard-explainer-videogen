@@ -146,13 +146,19 @@ Before audio generation, V2 projects canonical claims into
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v6`; lock verification
+concatenated bundle hash. New runs write `lesson-context/v7`; lock verification
 requires each claim's explicit type and derived verification status, checks
 its source refs against the claim's cited spans, verifies the beat learner
 question, before/after state, stable order, and compiled dependency IDs, and
 joins S3b-selected asset ids back to the concept metadata captured in each
-scene. `lesson-context/v2` through `/v5` remain readable through compatibility
-paths.
+scene. It also validates compiled entities and semantic changes against strict
+schemas, recomputes scene-scoped ids from stable identity keys, and checks
+within-scene concept continuity, first-reveal order, and declared persistence
+ids. These change records
+are not yet checked against rendered BoardOps, and scene-local identity does
+not establish cross-scene lesson continuity; those checks require the later
+semantic compiler and hierarchy phases. `lesson-context/v2` through `/v6`
+remain readable through compatibility paths.
 The CLI carries grounding mode through request and run
 identity. `STRICT_SOURCE` and `SOURCE_PLUS_BACKGROUND` are accepted:
 direct-source and derived-relation claims require primary-only citations;
@@ -263,7 +269,7 @@ offers library vocabulary; the depiction director proposes drawable nouns,
 code resolves each noun to an exact catalog entry, and a separate judge must
 approve the referent-picture pair. Asset ids stay internal. The selected
 `validatedByConcept` map and per-scene visual vocabulary are pinned in
-`lesson-context/v6`; V2 copies the selected id into captured concept metadata.
+`lesson-context/v7`; V2 copies the selected id into captured concept metadata.
 V2 then probes the concrete entities actually used on each board and chooses
 the most common non-exempt `houseFamily` with a stable tie-break. It resolves
 only type-eligible pictorial entities inside that family and the lesson domain.

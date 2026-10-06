@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BeatPlanDraftSchema, BEAT_TYPES, REPRESENTATION_FAMILIES, type BeatPlanDraft } from '../teaching/beat-plan/types.js';
+import { BeatPlanDraftSchema, BEAT_TYPES, REPRESENTATION_FAMILIES, semanticEntityId, type BeatPlanDraft } from '../teaching/beat-plan/types.js';
 import { beatContextFor, beatCountRange, validateBeatPlan, type BeatContext } from '../teaching/beat-plan/validate.js';
 import { compileBeatPlan, beatPlanMetrics } from '../teaching/beat-plan/compile.js';
 import { buildBeatPrompt } from '../teaching/beat-plan/prompt.js';
@@ -22,7 +22,7 @@ const ctx: BeatContext = {
 
 const beat = (over: Record<string, unknown> = {}) => ({
   claimIds: ['c1'], learnerDelta: 'The learner sees that a call creates a new frame.', learningQuestion: 'What does a call add to the stack?', learnerBefore: 'The learner knows the stack can hold frames.', learnerAfter: 'The learner knows a call adds one frame.', dependsOnOrders: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
-  entities: [{ conceptId: 'frame', role: 'new item', count: 1 }], relationships: [{ from: 'call', to: 'frame', type: 'produces' }],
+  entities: [{ identityKey: 'frame_main', conceptId: 'frame', role: 'new item', count: 1 }], semanticRevealOrder: ['frame_main'], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', toState: 'One frame sits on the stack.' }], relationships: [{ from: 'call', to: 'frame', type: 'produces' }],
   stateBefore: { description: 'The stack is empty.' }, stateAfter: { description: 'One frame sits on the stack.', quantities: [{ label: 'frames', value: 1 }] },
   misconceptionIds: [], narrationGoal: 'Say that each call pushes a frame.', visualInvariant: 'A frame is visible on the stack.', mutedMeaning: 'Calling something puts a box on a pile.',
   narrationOnly: false, persistence: 'scene', pauseIntent: 'micro', ...over,
@@ -39,31 +39,43 @@ test('the beat schema is strict: unknown enum values and extra keys are rejected
 });
 
 test('a complete plan that covers every claim is valid', () => {
-  assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], beatType: 'transform', cognitiveOperation: 'transform', learnerDelta: 'The learner sees returning remove the top frame.' })]), ctx), []);
+  assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }], beatType: 'transform', cognitiveOperation: 'transform', learnerDelta: 'The learner sees returning remove the top frame.' })]), ctx), []);
 });
 
-test('learner state transitions are distinct and dependencies resolve only to earlier stable beat ids', () => {
-  const planned = draft([beat(), beat({ claimIds: ['c2'], relationships: [], dependsOnOrders: [1] })]);
+test('learner state transitions and persistent semantic entities resolve only to earlier stable beat ids', () => {
+  const planned = draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }], dependsOnOrders: [1] })]);
   assert.deepEqual(validateBeatPlan(planned, ctx), []);
   const compiled = compileBeatPlan(planned, ctx);
   assert.deepEqual(compiled[1]!.dependsOnBeatIds, ['stack_scene.b1']);
   assert.deepEqual(compiled[0]!.dependsOnBeatIds, []);
+  assert.equal(compiled[0]!.entities[0]!.entityId, compiled[1]!.entities[0]!.entityId, 'the same identity key compiles to the same semantic id across beats');
+  assert.match(compiled[0]!.entities[0]!.entityId, /^se_[0-9a-f]{24}$/u, 'the persisted id is deterministic and separate from model keys and renderer ids');
+  assert.deepEqual(compiled[0]!.persistentEntityIds, compiled[1]!.persistentEntityIds);
+  assert.deepEqual(compiled[0]!.semanticRevealOrder, [compiled[0]!.entities[0]!.entityId]);
+  assert.equal(compiled[1]!.semanticRevealOrder.length, 0, 'an existing entity is not revealed a second time');
+  assert.equal(compiled[1]!.requiredSemanticChanges[0]!.entityId, compiled[1]!.entities[0]!.entityId);
   assert.equal(beatPlanMetrics([{ ctx, beats: compiled }]).dependencyLinks, 1);
   assert.equal(beatPlanMetrics([{ ctx, beats: compiled }]).danglingDependencyIds, 0);
 
-  const selfDependency = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], dependsOnOrders: [2] })]), ctx);
+  const selfDependency = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }], dependsOnOrders: [2] })]), ctx);
   assert.ok(selfDependency.some((problem) => /must reference an earlier beat order/.test((problem as { message: string }).message)));
-  const repeatedDependency = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], dependsOnOrders: [1, 1] })]), ctx);
+  const repeatedDependency = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }], dependsOnOrders: [1, 1] })]), ctx);
   assert.ok(repeatedDependency.some((problem) => /listed more than once/.test((problem as { message: string }).message)));
-  const unchangedState = validateBeatPlan(draft([beat({ learnerAfter: 'The learner knows the stack can hold frames.' }), beat({ claimIds: ['c2'], relationships: [] })]), ctx);
+  const unchangedState = validateBeatPlan(draft([beat({ learnerAfter: 'The learner knows the stack can hold frames.' }), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] })]), ctx);
   assert.ok(unchangedState.some((problem) => /different from learnerBefore/.test((problem as { message: string }).message)));
-  const nonQuestion = validateBeatPlan(draft([beat({ learningQuestion: 'A call adds a frame.' }), beat({ claimIds: ['c2'], relationships: [] })]), ctx);
+  const nonQuestion = validateBeatPlan(draft([beat({ learningQuestion: 'A call adds a frame.' }), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] })]), ctx);
   assert.ok(nonQuestion.some((problem) => /phrased as a question/.test((problem as { message: string }).message)));
+  const identityDrift = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], entities: [{ identityKey: 'frame_main', conceptId: 'stack' }], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The stack is now empty.' }] })]), ctx);
+  assert.ok(identityDrift.some((problem) => /persistent identity frame_main changes concept/u.test((problem as { message: string }).message)));
+  const missingReveal = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], entities: [{ identityKey: 'top_frame', conceptId: 'frame' }], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'top_frame', kind: 'introduce', toState: 'The top frame is visible.' }] })]), ctx);
+  assert.ok(missingReveal.some((problem) => /must appear in its first-reveal order/u.test((problem as { message: string }).message)));
+  const stateChangeWithoutBefore = validateBeatPlan(draft([beat({ requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'move', toState: 'Frame is at the top.' }] })]), ctx);
+  assert.ok(stateChangeWithoutBefore.some((problem) => /move requires a fromState/u.test((problem as { message: string }).message)));
 });
 
 test('problems carry JSON pointers so a repair patches only the failing location', () => {
   const problems = validateBeatPlan(draft([
-    beat({ claimIds: ['c1', 'ghost'], entities: [{ conceptId: 'nope' }], relationships: [{ from: 'frame', to: 'call', type: 'produces' }], misconceptionIds: ['m9'], mutedMeaning: '  ', visualInvariant: '' }),
+    beat({ claimIds: ['c1', 'ghost'], entities: [{ identityKey: 'unknown_main', conceptId: 'nope' }], semanticRevealOrder: ['unknown_main'], requiredSemanticChanges: [{ identityKey: 'unknown_main', kind: 'introduce', toState: 'Unknown entity appears.' }], relationships: [{ from: 'frame', to: 'call', type: 'produces' }], misconceptionIds: ['m9'], mutedMeaning: '  ', visualInvariant: '' }),
   ]), ctx);
   const byPath = Object.fromEntries(problems.map((p) => [(p as { path: string }).path, (p as { message: string }).message]));
   assert.match(byPath['/beats/0/claimIds/1']!, /unknown claim/);
@@ -78,7 +90,7 @@ test('problems carry JSON pointers so a repair patches only the failing location
 
 test('entities must be linked to a claim cited by the same beat, even when they are known scene concepts', () => {
   const problems = validateBeatPlan(draft([
-    beat({ claimIds: ['c2'], entities: [{ conceptId: 'call' }], relationships: [] }),
+    beat({ claimIds: ['c2'], entities: [{ identityKey: 'call_main', conceptId: 'call' }], semanticRevealOrder: ['call_main'], requiredSemanticChanges: [{ identityKey: 'call_main', kind: 'introduce', toState: 'A call appears.' }], relationships: [] }),
     beat({ claimIds: ['c1'], relationships: [] }),
   ]), ctx);
   const issue = problems.find((p) => (p as { path: string }).path === '/beats/0/entities/0/conceptId') as { path: string; message: string } | undefined;
@@ -108,9 +120,9 @@ test('relationships must match a directed relation on a claim cited by that beat
 });
 
 test('a narration-only beat may omit its muted meaning, a visual beat may not', () => {
-  const base = [beat(), beat({ claimIds: ['c2'], relationships: [], narrationOnly: true, mutedMeaning: '' })];
+  const base = [beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [], narrationOnly: true, mutedMeaning: '' })];
   assert.deepEqual(validateBeatPlan(draft(base), ctx), []);
-  const visual = [beat(), beat({ claimIds: ['c2'], relationships: [], narrationOnly: false, mutedMeaning: '' })];
+  const visual = [beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }], narrationOnly: false, mutedMeaning: '' })];
   assert.ok(validateBeatPlan(draft(visual), ctx).some((p) => (p as { path: string }).path === '/beats/1/mutedMeaning'));
 });
 
@@ -120,16 +132,16 @@ test('an unverified explanation is isolated in one narration-only beat', () => {
     epistemicType: 'unverified_explanation' as const, verificationStatus: 'unverified' as const,
   };
   const openCtx: BeatContext = { ...ctx, claims: [...ctx.claims, openClaim] };
-  const openBeat = beat({ claimIds: ['open'], entities: [], relationships: [], narrationOnly: true, mutedMeaning: '' });
-  assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [] }), openBeat]), openCtx), []);
+  const openBeat = beat({ claimIds: ['open'], entities: [], semanticRevealOrder: [], requiredSemanticChanges: [], relationships: [], narrationOnly: true, mutedMeaning: '' });
+  assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] }), openBeat]), openCtx), []);
 
   const mixed = validateBeatPlan(draft([beat({ claimIds: ['c1', 'open'] }), beat({ claimIds: ['c2'], relationships: [] })]), openCtx);
   assert.ok(mixed.some((problem) => /unverified explanation must be isolated/.test((problem as { message: string }).message)));
-  const visual = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [] }), { ...openBeat, narrationOnly: false }]), openCtx);
+  const visual = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] }), { ...openBeat, narrationOnly: false }]), openCtx);
   assert.ok(visual.some((problem) => /must be narration-only/.test((problem as { message: string }).message)));
-  const depicted = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [] }), { ...openBeat, entities: [{ conceptId: 'frame' }] }]), openCtx);
+  const depicted = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] }), { ...openBeat, entities: [{ identityKey: 'frame_main', conceptId: 'frame' }] }]), openCtx);
   assert.ok(depicted.some((problem) => /cannot depict entities/.test((problem as { message: string }).message)));
-  const repeated = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [] }), openBeat, openBeat]), openCtx);
+  const repeated = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] }), openBeat, openBeat]), openCtx);
   assert.ok(repeated.some((problem) => /exactly one isolated narration-only beat/.test((problem as { message: string }).message)));
 });
 
@@ -152,9 +164,18 @@ test('compile assigns stable beat ids in order and derives evidence spans from t
   assert.ok(beats.every((b) => b.sceneId === 'stack_scene'));
 });
 
+test('semantic entity ids are scoped to their independently planned scene', () => {
+  const sceneOne = compileBeatPlan(draft([beat({ entities: [{ identityKey: 'main', conceptId: 'frame' }], semanticRevealOrder: ['main'], requiredSemanticChanges: [{ identityKey: 'main', kind: 'introduce', toState: 'A frame is visible.' }] })]), { ...ctx, sceneId: 'scene_one' });
+  const sceneTwo = compileBeatPlan(draft([beat({ entities: [{ identityKey: 'main', conceptId: 'stack' }], semanticRevealOrder: ['main'], requiredSemanticChanges: [{ identityKey: 'main', kind: 'introduce', toState: 'A stack is visible.' }] })]), { ...ctx, sceneId: 'scene_two' });
+  assert.equal(sceneOne[0]!.entities[0]!.identityKey, sceneTwo[0]!.entities[0]!.identityKey);
+  assert.notEqual(sceneOne[0]!.entities[0]!.entityId, sceneTwo[0]!.entities[0]!.entityId);
+  assert.equal(sceneOne[0]!.entities[0]!.entityId, semanticEntityId('main', 'scene_one'));
+  assert.equal(sceneTwo[0]!.entities[0]!.entityId, semanticEntityId('main', 'scene_two'));
+});
+
 test('exit metrics: every claim covered, learner transitions and visual meaning complete, no dangling ids', () => {
-  const beats = compileBeatPlan(draft([beat(), beat({ claimIds: ['c2'] })]), ctx);
-  assert.deepEqual(beatPlanMetrics([{ ctx, beats }]), { majorClaims: 2, claimsCovered: 2, beats: 2, beatsWithLearningQuestion: 2, beatsWithLearnerStateTransition: 2, dependencyLinks: 0, danglingDependencyIds: 0, beatsWithLearnerDelta: 2, beatsWithFamily: 2, beatsWithInvariant: 2, visualBeats: 2, visualBeatsWithMutedMeaning: 2, danglingClaimIds: 0, unsupportedEvidenceIds: 0 });
+  const beats = compileBeatPlan(draft([beat(), beat({ claimIds: ['c2'], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] })]), ctx);
+  assert.deepEqual(beatPlanMetrics([{ ctx, beats }]), { majorClaims: 2, claimsCovered: 2, beats: 2, beatsWithLearningQuestion: 2, beatsWithLearnerStateTransition: 2, beatsWithSemanticEntities: 2, beatsWithRequiredSemanticChanges: 2, beatsWithRevealOrder: 1, persistentEntityReferences: 2, dependencyLinks: 0, danglingDependencyIds: 0, beatsWithLearnerDelta: 2, beatsWithFamily: 2, beatsWithInvariant: 2, visualBeats: 2, visualBeatsWithMutedMeaning: 2, danglingClaimIds: 0, unsupportedEvidenceIds: 0 });
   const dangling = beatPlanMetrics([{ ctx, beats: [{ ...beats[0]!, claimIds: ['ghost'] }] }]);
   assert.equal(dangling.danglingClaimIds, 1);
   assert.equal(dangling.claimsCovered, 0);
@@ -201,7 +222,8 @@ test('beatContextFor reads the scene contract and the concept graph, nothing els
 });
 
 test('planSceneBeats returns compiled beats on a valid first response', async () => {
-  const { client } = scripted([JSON.stringify({ beats: [beat(), beat({ claimIds: ['c2'], relationships: [] })] })]);
+  const secondBeat = beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] });
+  const { client } = scripted([JSON.stringify({ beats: [beat(), secondBeat] })]);
   const result = await planSceneBeats({ section: { ...section, contract: contract() } as never, graph }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
   assert.deepEqual(result.value?.map((b) => b.beatId), ['stack_scene.b1', 'stack_scene.b2']);
   assert.equal(result.reports[0]!.stage, 'beats');
@@ -209,7 +231,7 @@ test('planSceneBeats returns compiled beats on a valid first response', async ()
 });
 
 test('an uncovered claim is repaired by a patch that adds the missing beat, not by regenerating the plan', async () => {
-  const addBeat = { op: 'add', path: '/beats/1', valueJson: JSON.stringify(beat({ claimIds: ['c2'], relationships: [] })) };
+  const addBeat = { op: 'add', path: '/beats/1', valueJson: JSON.stringify(beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] })) };
   const { client, requests } = scripted([JSON.stringify({ beats: [beat()] }), JSON.stringify({ patches: [addBeat] })]);
   const result = await planSceneBeats({ section: { ...section, contract: contract() } as never, graph }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
   assert.equal(result.value?.length, 2);

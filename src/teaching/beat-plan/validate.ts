@@ -49,6 +49,9 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
   const misconceptions = new Set(ctx.misconceptionIds);
   const covered = new Set<string>();
   const beatCountByClaim = new Map<string, number>();
+  const conceptByIdentityKey = new Map<string, string>();
+  const seenIdentityKeys = new Set<string>();
+  const statefulChanges = new Set(['flow', 'transform', 'move', 'separate', 'merge', 'quantity_update', 'select', 'finalize', 'plot', 'feedback']);
   plan.beats.forEach((beat, i) => {
     const at = `/beats/${i}`;
     if (!/[?？]$/u.test(beat.learningQuestion.trim())) problems.push({ path: `${at}/learningQuestion`, message: 'learningQuestion must be phrased as a question' });
@@ -67,6 +70,8 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
       const claim = claimsById.get(claimId);
       return claim ? [claim] : [];
     });
+    const beatEntityKeys = new Set<string>();
+    const newlySeenEntityKeys = new Set<string>();
     const unverifiedClaims = citedClaims.filter((claim) => claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified');
     if (unverifiedClaims.length) {
       if (beat.claimIds.length !== 1 || beat.claimIds[0] !== unverifiedClaims[0]!.id) problems.push({ path: `${at}/claimIds`, message: 'an unverified explanation must be isolated in a beat that cites only that one claim' });
@@ -75,15 +80,41 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
       if (beat.entities.length) problems.push({ path: `${at}/entities`, message: 'an unverified explanation beat cannot depict entities' });
     }
     beat.entities.forEach((entity, j) => {
-      const path = `${at}/entities/${j}/conceptId`;
+      const path = `${at}/entities/${j}`;
+      if (beatEntityKeys.has(entity.identityKey)) problems.push({ path: `${path}/identityKey`, message: `identity key ${entity.identityKey} is repeated in one beat` });
+      beatEntityKeys.add(entity.identityKey);
+      const priorConceptId = conceptByIdentityKey.get(entity.identityKey);
+      if (priorConceptId && priorConceptId !== entity.conceptId) problems.push({ path: `${path}/conceptId`, message: `persistent identity ${entity.identityKey} changes concept from ${priorConceptId} to ${entity.conceptId}` });
+      else conceptByIdentityKey.set(entity.identityKey, entity.conceptId);
+      if (!seenIdentityKeys.has(entity.identityKey)) newlySeenEntityKeys.add(entity.identityKey);
       if (!concepts.has(entity.conceptId)) {
-        problems.push({ path, message: `${entity.conceptId} is not a concept of this scene; use one of: ${ctx.conceptIds.join(', ')}` });
+        problems.push({ path: `${path}/conceptId`, message: `${entity.conceptId} is not a concept of this scene; use one of: ${ctx.conceptIds.join(', ')}` });
         return;
       }
       if (!citedClaims.some((claim) => claim.conceptIds.includes(entity.conceptId))) {
-        problems.push({ path, message: `${entity.conceptId} is not linked to any cited claim (${beat.claimIds.join(', ')}); cite a claim containing this concept or remove the entity` });
+        problems.push({ path: `${path}/conceptId`, message: `${entity.conceptId} is not linked to any cited claim (${beat.claimIds.join(', ')}); cite a claim containing this concept or remove the entity` });
       }
     });
+    const revealKeys = new Set<string>();
+    beat.semanticRevealOrder.forEach((identityKey, revealIndex) => {
+      if (revealKeys.has(identityKey)) problems.push({ path: `${at}/semanticRevealOrder/${revealIndex}`, message: `identity key ${identityKey} is repeated in semanticRevealOrder` });
+      revealKeys.add(identityKey);
+      if (!beatEntityKeys.has(identityKey)) problems.push({ path: `${at}/semanticRevealOrder/${revealIndex}`, message: `identity key ${identityKey} is not declared by this beat` });
+      if (seenIdentityKeys.has(identityKey)) problems.push({ path: `${at}/semanticRevealOrder/${revealIndex}`, message: `identity key ${identityKey} was already revealed by an earlier beat` });
+    });
+    for (const identityKey of newlySeenEntityKeys) {
+      if (!revealKeys.has(identityKey)) problems.push({ path: `${at}/semanticRevealOrder`, message: `new semantic entity ${identityKey} must appear in its first-reveal order` });
+      if (!beat.requiredSemanticChanges.some((change) => change.identityKey === identityKey && change.kind === 'introduce')) {
+        problems.push({ path: `${at}/requiredSemanticChanges`, message: `new semantic entity ${identityKey} needs an introduce change` });
+      }
+    }
+    beat.requiredSemanticChanges.forEach((change, changeIndex) => {
+      const path = `${at}/requiredSemanticChanges/${changeIndex}`;
+      if (!beatEntityKeys.has(change.identityKey)) problems.push({ path: `${path}/identityKey`, message: `semantic change references entity ${change.identityKey} which is not declared by this beat` });
+      if (statefulChanges.has(change.kind) && !change.fromState?.trim()) problems.push({ path: `${path}/fromState`, message: `${change.kind} requires a fromState so the expected state transition is explicit` });
+    });
+    if (beat.narrationOnly && beat.requiredSemanticChanges.length) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a narration-only beat cannot require visual semantic changes' });
+    if (beat.narrationOnly && beat.semanticRevealOrder.length) problems.push({ path: `${at}/semanticRevealOrder`, message: 'a narration-only beat cannot reveal visual entities' });
     beat.relationships.forEach((relation, j) => {
       if (!citedClaims.some((claim) => claim.relations.some((claimedRelation) => relationKey(claimedRelation) === relationKey(relation)))) {
         problems.push({ path: `${at}/relationships/${j}`, message: `${relation.from} -[${relation.type}]-> ${relation.to} is not asserted by any cited claim (${beat.claimIds.join(', ')}); cite a claim that lists this directed relation or remove/revise it` });
@@ -93,6 +124,8 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
     if (!beat.visualInvariant.trim()) problems.push({ path: `${at}/visualInvariant`, message: 'visualInvariant must say what is visible when the beat ends' });
     if (!beat.narrationOnly && !beat.mutedMeaning.trim()) problems.push({ path: `${at}/mutedMeaning`, message: 'a visual beat needs a muted meaning: what a viewer with the sound off should conclude from the board' });
     if (!beat.narrationOnly && !beat.entities.length) problems.push({ path: `${at}/entities`, message: 'a visual beat needs at least one entity to show' });
+    if (!beat.narrationOnly && !beat.requiredSemanticChanges.length) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a visual beat must name at least one required semantic change' });
+    for (const identityKey of beatEntityKeys) seenIdentityKeys.add(identityKey);
   });
   const range = beatCountRange(ctx.durationSec);
   if (plan.beats.length < range.min) problems.push({ path: '/beats', message: `a ${ctx.durationSec}s scene needs at least ${range.min} beats, got ${plan.beats.length}` });

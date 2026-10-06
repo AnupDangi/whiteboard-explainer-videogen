@@ -6,7 +6,7 @@ import { salvageSceneBoard } from '../visual-v2/ops-plan/salvage.js';
 import { planSceneBoard } from '../visual-v2/ops-plan/plan.js';
 import { applyOpAfter, emptyBoardState, startScene } from '../visual-v2/board-state/reducer.js';
 import type { ModelClient } from '../llm/modelClient.js';
-import type { TeachingBeat } from '../teaching/beat-plan/types.js';
+import { semanticEntityId, type TeachingBeat } from '../teaching/beat-plan/types.js';
 
 const SPANS: Record<string, string> = {
   s1: 'Each call pushes a frame onto the stack.',
@@ -14,12 +14,14 @@ const SPANS: Record<string, string> = {
 };
 const beat = (n: number, over: Partial<TeachingBeat> = {}): TeachingBeat => ({
   beatId: `sc.b${n}`, sceneId: 'sc', order: n, claimIds: ['c1'], learnerDelta: 'delta', learningQuestion: 'What changes?', learnerBefore: 'The learner has not traced this step.', learnerAfter: 'The learner can trace this step.', dependsOnOrders: [], dependsOnBeatIds: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
-  entities: [{ conceptId: 'frame' }], relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'a frame is on the pile', mutedMeaning: 'a pile grows',
+  entities: [{ identityKey: 'frame_main', entityId: semanticEntityId('frame_main', 'sc'), conceptId: 'frame' }], semanticRevealOrder: [semanticEntityId('frame_main', 'sc')],
+  requiredSemanticChanges: [{ identityKey: 'frame_main', entityId: semanticEntityId('frame_main', 'sc'), kind: 'introduce', toState: 'A frame is on the pile.' }], persistentEntityIds: [semanticEntityId('frame_main', 'sc')],
+  relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'a frame is on the pile', mutedMeaning: 'a pile grows',
   narrationOnly: false, persistence: 'scene', pauseIntent: 'micro', evidenceSpanIds: ['s1'], ...over,
 });
 const ctx: BoardContext = {
   sceneId: 'sc', title: 'Stack scene',
-  beats: [beat(1), beat(2, { entities: [{ conceptId: 'stack' }], claimIds: ['c2'] })],
+  beats: [beat(1), beat(2, { entities: [{ identityKey: 'stack_main', entityId: semanticEntityId('stack_main', 'sc'), conceptId: 'stack' }], semanticRevealOrder: [semanticEntityId('stack_main', 'sc')], requiredSemanticChanges: [{ identityKey: 'stack_main', entityId: semanticEntityId('stack_main', 'sc'), kind: 'introduce', toState: 'The stack is shown.' }], persistentEntityIds: [semanticEntityId('stack_main', 'sc')], claimIds: ['c2'] })],
   narration: [
     { beatId: 'sc.b1', sentences: ['Each call pushes a frame.', 'The frame holds the call.'] },
     { beatId: 'sc.b2', sentences: ['A return pops the top frame.'] },

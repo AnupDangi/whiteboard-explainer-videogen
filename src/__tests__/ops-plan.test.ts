@@ -11,17 +11,19 @@ import { KIT_NAMES } from '../visual-v2/board-ops/types.js';
 import { parseKitParams } from '../visual-v2/kits/registry.js';
 import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import type { ModelClient } from '../llm/modelClient.js';
-import type { TeachingBeat } from '../teaching/beat-plan/types.js';
+import { semanticEntityId, type TeachingBeat } from '../teaching/beat-plan/types.js';
 import type { GeometryDiagnostic } from '../visual-v2/layout/sceneLayout.js';
 
 const beat = (n: number, over: Partial<TeachingBeat> = {}): TeachingBeat => ({
   beatId: `sc.b${n}`, sceneId: 'sc', order: n, claimIds: ['c1'], learnerDelta: 'delta', learningQuestion: 'What changes?', learnerBefore: 'The learner has not traced this step.', learnerAfter: 'The learner can trace this step.', dependsOnOrders: [], dependsOnBeatIds: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
-  entities: [{ conceptId: 'frame' }], relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'a frame is on the pile', mutedMeaning: 'a pile grows',
+  entities: [{ identityKey: 'frame_main', entityId: semanticEntityId('frame_main', 'sc'), conceptId: 'frame' }], semanticRevealOrder: [semanticEntityId('frame_main', 'sc')],
+  requiredSemanticChanges: [{ identityKey: 'frame_main', entityId: semanticEntityId('frame_main', 'sc'), kind: 'introduce', toState: 'A frame is on the pile.' }], persistentEntityIds: [semanticEntityId('frame_main', 'sc')],
+  relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'a frame is on the pile', mutedMeaning: 'a pile grows',
   narrationOnly: false, persistence: 'scene', pauseIntent: 'micro', evidenceSpanIds: ['s1'], ...over,
 });
 const ctx: BoardContext = {
   sceneId: 'sc', title: 'Stack scene',
-  beats: [beat(1), beat(2, { entities: [{ conceptId: 'stack' }] })],
+  beats: [beat(1), beat(2, { entities: [{ identityKey: 'stack_main', entityId: semanticEntityId('stack_main', 'sc'), conceptId: 'stack' }], semanticRevealOrder: [semanticEntityId('stack_main', 'sc')], requiredSemanticChanges: [{ identityKey: 'stack_main', entityId: semanticEntityId('stack_main', 'sc'), kind: 'introduce', toState: 'The stack is shown.' }], persistentEntityIds: [semanticEntityId('stack_main', 'sc')] })],
   narration: [
     { beatId: 'sc.b1', sentences: ['Each call pushes a frame.', 'The frame holds the call.'] },
     { beatId: 'sc.b2', sentences: ['A return pops the top frame.'] },
@@ -99,7 +101,7 @@ test('a visual beat without any op is a problem, a narration-only beat is not', 
 
 test('unverified explanations stay narration-only and cannot be visualized or bound to BoardOps', () => {
   const openClaim = { id: 'open', statement: 'One possible explanation is not verified by the supplied source.', conceptIds: ['frame', 'stack'], relations: [], epistemicType: 'unverified_explanation' as const, verificationStatus: 'unverified' as const };
-  const openBeat = beat(2, { claimIds: ['open'], entities: [{ conceptId: 'stack' }], relationships: [], narrationOnly: true, mutedMeaning: '' });
+  const openBeat = beat(2, { claimIds: ['open'], entities: [], semanticRevealOrder: [], requiredSemanticChanges: [], persistentEntityIds: [], relationships: [], narrationOnly: true, mutedMeaning: '' });
   const openCtx: BoardContext = { ...ctx, claims: [{ id: 'c1', statement: 'Each call pushes a frame onto the stack.', conceptIds: ['frame', 'stack'], relations: [] }, openClaim], beats: [ctx.beats[0]!, openBeat] };
   const prompt = buildBoardPrompt(openCtx);
   assert.match(prompt.system, /unverified_explanation claim is narration-only/i);

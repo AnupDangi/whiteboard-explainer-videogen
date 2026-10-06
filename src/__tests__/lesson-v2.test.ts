@@ -39,7 +39,7 @@ const claims = (id: string) => {
   }];
 };
 const beatDraft = (sceneId: string) => BeatPlanDraftSchema.parse({ beats: [{
-  claimIds: [`${sceneId}_c`], learnerDelta: 'd', learningQuestion: 'What changes in the stack?', learnerBefore: 'The learner knows the stack can hold frames.', learnerAfter: 'The learner can trace how the top frame changes.', dependsOnOrders: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model', entities: [{ conceptId: 'frame' }, { conceptId: 'stack' }],
+  claimIds: [`${sceneId}_c`], learnerDelta: 'd', learningQuestion: 'What changes in the stack?', learnerBefore: 'The learner knows the stack can hold frames.', learnerAfter: 'The learner can trace how the top frame changes.', dependsOnOrders: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model', entities: [{ identityKey: 'frame_main', conceptId: 'frame' }, { identityKey: 'stack_main', conceptId: 'stack' }], semanticRevealOrder: ['frame_main', 'stack_main'], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', toState: 'A frame appears.' }, { identityKey: 'stack_main', kind: 'introduce', toState: 'A stack contains the frame.' }],
   relationships: [], misconceptionIds: [], narrationGoal: 'g', visualInvariant: 'v', mutedMeaning: 'm', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
 }] });
 const ctxFor = (sceneId: string) => ({ sceneId, conceptIds: ['frame', 'stack'], claims: claims(sceneId), relations: [], misconceptionIds: [], durationSec: 6 });
@@ -113,7 +113,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       validatedByConcept: Record<string, string>;
       evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v6');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v7');
     assert.deepEqual(lessonContext.validatedByConcept, { frame: 'iconify-lucide:frame' });
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
@@ -345,7 +345,7 @@ test('OPEN_EXPLANATION survives the V2 runner and a rehashed lock still rejects 
     openSection.contract.evidenceSpanIds = [];
     const openBeatContext = { ...ctxFor('two'), claims: [openClaim] };
     const openBeats = compileBeatPlan(BeatPlanDraftSchema.parse({ beats: [{
-      ...beatDraft('two').beats[0]!, narrationOnly: true, mutedMeaning: '', entities: [], relationships: [],
+      ...beatDraft('two').beats[0]!, narrationOnly: true, mutedMeaning: '', entities: [], semanticRevealOrder: [], requiredSemanticChanges: [], relationships: [],
     }] }), openBeatContext);
     const openNarrations = {
       ...narrations,
@@ -486,12 +486,12 @@ test('the V2 lock pins ops, narration, timings, audio and versions before render
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects untyped claims and invalid learner dependencies in rehashed lesson-context/v6', async () => {
+test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v7', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
     const lockPath = path.join(out, 'lesson.lock.v2.json');
-    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { context: { file: string; hash: string }; contentHash: string };
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { context: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string }>; contentHash: string };
     const contextPath = path.join(out, lock.context.file);
     const context = JSON.parse(await readFile(contextPath, 'utf8')) as {
       schemaVersion: string;
@@ -499,7 +499,7 @@ test('the V2 lock rejects untyped claims and invalid learner dependencies in reh
       beatPlans: Record<string, Array<Record<string, unknown>>>;
       validatedByConcept: Record<string, string>;
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v6');
+    assert.equal(context.schemaVersion, 'lesson-context/v7');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -550,7 +550,60 @@ test('the V2 lock rejects untyped claims and invalid learner dependencies in reh
     await writeFile(lockPath, visualLockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), visualLockBytes);
     const visualProblems = await verifyLessonLockV2(out);
-    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v6 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
+    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v7 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
+
+    context.plan.sections[0]!.contract.essentialClaims[0]!.verificationStatus = 'source_cited';
+    context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType = 'direct_source';
+    context.beatPlans.one![0]!.dependsOnOrders = [];
+    context.beatPlans.one![0]!.dependsOnBeatIds = [];
+    context.validatedByConcept.frame = 'iconify-lucide:frame';
+    const semanticSceneRef = lock.scenes.find((scene) => scene.sceneId === 'one')!;
+    const semanticScenePath = path.join(out, semanticSceneRef.file);
+    const semanticScene = JSON.parse(await readFile(semanticScenePath, 'utf8')) as { beats: Array<Record<string, unknown>> };
+    const contextEntity = (context.beatPlans.one![0]!.entities as Array<Record<string, unknown>>)[0]!;
+    const sceneEntity = (semanticScene.beats[0]!.entities as Array<Record<string, unknown>>)[0]!;
+    contextEntity.entityId = 'se_tampered_entity_id';
+    sceneEntity.entityId = 'se_tampered_entity_id';
+    const semanticSceneBytes = `${JSON.stringify(semanticScene, null, 2)}\n`;
+    await writeFile(semanticScenePath, semanticSceneBytes);
+    semanticSceneRef.fileHash = sha256(semanticSceneBytes);
+    const semanticContextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, semanticContextBytes);
+    lock.context.hash = sha256(semanticContextBytes);
+    const { contentHash: _oldSemanticHash, ...semanticBody } = lock;
+    lock.contentHash = canonicalHash(semanticBody);
+    const semanticLockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, semanticLockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), semanticLockBytes);
+    const semanticProblems = await verifyLessonLockV2(out);
+    assert.ok(semanticProblems.some((problem) => /semantic entity frame_main has an unstable compiled id/u.test(problem)), semanticProblems.join('\n'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('the V2 lock rejects malformed compiled semantic records after all affected hashes are recomputed', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v7-semantic-change-'));
+  try {
+    const out = await fixtureRun(dir);
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { context: { file: string; hash: string }; contentHash: string };
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8')) as { beatPlans: Record<string, Array<Record<string, unknown>>> };
+    const changes = context.beatPlans.one![0]!.requiredSemanticChanges as unknown[];
+    const entities = context.beatPlans.one![0]!.entities as unknown[];
+    entities.push(null);
+    changes.push(null, { ...(changes[0] as Record<string, unknown>), fromState: 123, unrecognized: true });
+    const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    lock.context.hash = sha256(contextBytes);
+    const { contentHash: _oldHash, ...body } = lock;
+    lock.contentHash = canonicalHash(body);
+    const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, lockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+
+    const problems = await verifyLessonLockV2(out);
+    assert.ok(problems.some((problem) => /has a malformed semantic entity/u.test(problem)), problems.join('\n'));
+    assert.ok(problems.some((problem) => /has a malformed required semantic change/u.test(problem)), problems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

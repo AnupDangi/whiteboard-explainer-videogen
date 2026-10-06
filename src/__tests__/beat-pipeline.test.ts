@@ -21,7 +21,8 @@ const plan = { targetDurationSec: 24, intro: { sourceTitle: 't', sections: [] },
 
 const beatJson = (sceneClaim: string) => JSON.stringify({ beats: [{
   claimIds: [sceneClaim], learnerDelta: 'sees a push', learningQuestion: 'What does a call add to the stack?', learnerBefore: 'The learner knows the stack can hold frames.', learnerAfter: 'The learner knows a call adds one frame.', dependsOnOrders: [], beatType: 'demonstrate', cognitiveOperation: 'trace', representationFamily: 'spatial_model',
-  entities: [{ conceptId: 'frame' }], relationships: [], misconceptionIds: [], narrationGoal: 'say it', visualInvariant: 'a frame', mutedMeaning: 'a pile', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
+  entities: [{ identityKey: 'frame_main', conceptId: 'frame' }], semanticRevealOrder: ['frame_main'], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', toState: 'A frame is shown.' }],
+  relationships: [], misconceptionIds: [], narrationGoal: 'say it', visualInvariant: 'a frame', mutedMeaning: 'a pile', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
 }] });
 const narrationJson = (beatId: string, claimId: string) => JSON.stringify({ beats: [{ beatId, sentences: ['Every call pushes a frame onto the stack, up to 3 steps deep.'], claimSentences: [{ claimId, sentenceIndex: 0 }], emphasisTerms: ['frame'] }] });
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };
