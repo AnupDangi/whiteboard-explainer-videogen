@@ -2813,3 +2813,8 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **b2:** 10s scene 67 words vs ~20 stated → narration maxRepairs 2→3 (67→21, still 1 over).
 - **b3:** repair converged, then S5 aligner flaked (stable-ts zero-interval word 1 in both modes; CTC fallback fails closed on digits). MISSING stands.
 - **Horizontal issue (not math-specific):** stable-ts zero-interval flakiness + CTC digit intolerance. Needs its own aligner-robustness task; not blocking rotation.
+
+## Continuation — deterministic bindings completion (wt/stcc/charter)
+
+- **Top investigator finding:** missing bindings cause 32/63 hard failures. Fix (compiler aid, not prompt/schema change): `completeBindings` fills claimIds for single-claim beats, conceptIds from entity fields, and connect bindings from endpoints — only when unambiguous, never overwriting. Raw output retained; ambiguous gaps still fail for model repair.
+- **Verification:** bindings-complete 4/4 new; ops-plan 20, lesson-v2 8, board-semantics 5, visual-model 4; typecheck clean.
