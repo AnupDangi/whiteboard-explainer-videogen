@@ -106,9 +106,19 @@ choice is missing or incompatible.
 
 This is the first selection gate, not the completed provider architecture.
 It checks structural compatibility, not the semantic fit of the question or
-whether a family actually depicts the mechanism. S6 still plans BoardOps
-directly using family-specific kit hints; typed family models, mechanism
-requirements, semantic compilers, and family-specific fallbacks remain open.
+whether a family actually depicts the mechanism. The generic provider boundary
+in `src/teaching/representation/providerRegistry.ts` defines schema-checked
+family models, suitability, visible mechanism requirements, semantic
+compilation, and an explicit family fallback. Its availability inventory lists
+all 19 planned families; a missing provider returns `provider_unavailable`
+instead of generating a generic BoardOps substitute.
+
+No family provider is active yet, and the current V2 S6 execution path does not
+call this registry: S6 still writes BoardOps directly using family-specific kit
+hints. The registry is a tested fail-closed boundary for callers that use it,
+not evidence that current generated videos use semantic providers. Shared
+SemanticEntity/SemanticState/SemanticOp types, benchmark-led family providers,
+V2 integration, and family-specific fallback verification remain open.
 
 ## Ownership and trust boundaries
 

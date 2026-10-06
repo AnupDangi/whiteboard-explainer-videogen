@@ -84,6 +84,7 @@ export type BeatDraft = z.infer<typeof BeatDraftSchema>;
 export type BeatPlanDraft = z.infer<typeof BeatPlanDraftSchema>;
 export type CognitiveOperation = (typeof COGNITIVE_OPERATIONS)[number];
 export type RepresentationFamily = (typeof REPRESENTATION_FAMILIES)[number];
+export type SemanticChangeKind = (typeof SEMANTIC_CHANGE_KINDS)[number];
 export type EntityRef = z.infer<typeof EntityRefSchema>;
 export type RequiredSemanticChange = z.infer<typeof RequiredSemanticChangeSchema>;
 export type RelationSpec = z.infer<typeof RelationSpecSchema>;
