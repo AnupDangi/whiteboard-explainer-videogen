@@ -221,30 +221,44 @@ test('the narration prompt carries the beat plan and the teaching rules and no t
 });
 
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };
-const scripted = (replies: string[]): { client: ModelClient; requests: Array<{ schemaName: string }> } => {
-  const requests: Array<{ schemaName: string }> = [];
-  return { requests, client: { provider: 'fake', chat: async (r) => { requests.push({ schemaName: r.schemaName }); return { content: replies[requests.length - 1] ?? '{}', finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage }; } } };
+const scripted = (replies: string[]): { client: ModelClient; requests: Array<{ schemaName: string; system: string; user: string }> } => {
+  const requests: Array<{ schemaName: string; system: string; user: string }> = [];
+  return { requests, client: { provider: 'fake', chat: async (r) => { requests.push({ schemaName: r.schemaName, system: r.system, user: r.user }); return { content: replies[requests.length - 1] ?? '{}', finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage }; } } };
 };
-const goodJson = JSON.stringify(draft());
+const goodJson = draft().beats.map((beat) => JSON.stringify(beat));
 
-test('writeBeatNarration returns compiled narration and records a stage report', async () => {
-  const { client } = scripted([goodJson]);
+test('writeBeatNarration makes one coherent call per beat, then compiles the complete scene', async () => {
+  const { client, requests } = scripted(goodJson);
   const result = await writeBeatNarration({ ctx, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
   assert.equal(result.value?.text.startsWith('Every call pushes'), true);
-  assert.equal(result.reports[0]!.stage, 'beat-narration');
-  assert.equal(result.reports[0]!.firstTryValid, true);
+  assert.equal(result.reports.length, 2);
+  assert.ok(result.reports.every((report) => report.stage === 'beat-narration' && report.firstTryValid));
+  assert.equal(requests.length, 2);
+  assert.match(requests[0]!.system, /Return ONE JSON object for the supplied beat/);
+  assert.match(requests[0]!.user, /scene\.b1/);
+  assert.doesNotMatch(requests[0]!.user, /scene\.b2/);
+  assert.match(requests[1]!.user, /scene\.b2/);
+  assert.match(requests[1]!.user, /Earlier beats in this scene said: Every call pushes a new frame onto the stack\./);
 });
 
 test('a screen reference is repaired by patching that one sentence', async () => {
-  const bad = JSON.stringify(draft([{ sentences: ['Look at the box on the left.', 'The frame remembers where to return.'] }]));
-  const patch = JSON.stringify({ patches: [
-    { op: 'replace', path: '/beats/0/sentences/0', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') },
-    { op: 'replace', path: '/beats/0/semanticAnchors/0/phrase', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') },
+  const first = draft().beats[0]!;
+  const bad = JSON.stringify({ ...first, sentences: ['Look at the box on the left.', 'The frame remembers where to return.'], semanticAnchors: [{ ...first.semanticAnchors[0]!, phrase: 'Look at the box on the left.' }] });
+  const sentencePatch = JSON.stringify({ patches: [
+    { op: 'replace', path: '/sentences/0', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') },
   ] });
-  const { client, requests } = scripted([bad, patch]);
+  const anchorPatch = JSON.stringify({ patches: [
+    { op: 'replace', path: '/semanticAnchors/0/phrase', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') },
+  ] });
+  const { client, requests } = scripted([bad, sentencePatch, anchorPatch, goodJson[1]!]);
   const result = await writeBeatNarration({ ctx, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
-  assert.equal(result.value?.beats[0]!.sentenceIds.length, 2);
+  assert.equal(result.value?.beats[0]!.sentenceIds.length, 2, JSON.stringify({ failures: result.failures, requests: requests.map(({ schemaName, user }) => ({ schemaName, user })) }));
   assert.equal(requests[1]!.schemaName, 'json_patch');
+  assert.match(requests[1]!.user, /\/sentences\/0/);
+  assert.doesNotMatch(requests[1]!.user, /\/beats\/0/);
+  assert.equal(requests[2]!.schemaName, 'json_patch');
+  assert.match(requests[2]!.user, /\/semanticAnchors\/0\/phrase/);
+  assert.doesNotMatch(requests[1]!.user, /scene\.b2/, 'the repair is scoped to the current beat');
 });
 
 test('Greek text is allowed while mathematical operators remain a pointer problem', () => {

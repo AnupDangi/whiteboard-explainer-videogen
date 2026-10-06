@@ -837,7 +837,7 @@ const reviser = (calls: string[], reply: Record<string, string[]> = shorter): Mo
           : sentences[sentenceIndex]!;
         return { semanticEventId: `${scene}.b1.e${index + 1}`, sentenceIndex, phrase };
       });
-      return { content: JSON.stringify({ beats: [{ beatId: `${scene}.b1`, sentences, claimSentences: [{ claimId: `${scene}_c`, sentenceIndex: 0 }], semanticAnchors, emphasisTerms: [] }] }), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage };
+      return { content: JSON.stringify({ beatId: `${scene}.b1`, sentences, claimSentences: [{ claimId: `${scene}_c`, sentenceIndex: 0 }], semanticAnchors, emphasisTerms: [] }), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage };
     }
     return client.chat(request);
   },

@@ -48,10 +48,10 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
       })) };
     }
     if (name === 'beat_narration') {
-      value = { beats: narrationSentences.map((sentence, index) => {
-        const beatId = `${sceneId}.b${index + 1}`;
-        return { beatId, sentences: [sentence], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${beatId}.e1`, sentenceIndex: 0, phrase: sentence }], emphasisTerms: [concept.label] };
-      }) };
+      const beatId = /\n- ([a-z0-9_.]+) \[/.exec(userText)?.[1] ?? `${sceneId}.b1`;
+      const beatIndex = Number(/\.b(\d+)$/.exec(beatId)?.[1] ?? 1) - 1;
+      const sentence = narrationSentences[beatIndex] ?? narrationSentences.at(-1)!;
+      value = { beatId, sentences: [sentence], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${beatId}.e1`, sentenceIndex: 0, phrase: sentence }], emphasisTerms: [concept.label] };
     }
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) }, finish_reason: 'stop' }], usage: { prompt_tokens: 50, completion_tokens: 40, cost: 0.001 } }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
@@ -64,7 +64,9 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
   assert.equal(prepared.plan?.lessonBible?.terminology.length, 3);
   assert.deepEqual(seen.filter((item) => item.name === 'lesson_syllabus' || item.name === 'concept_graph' || item.name === 'teaching_plan').map((item) => item.name), ['lesson_syllabus', 'concept_graph', 'teaching_plan']);
   assert.equal(seen.filter((item) => item.name === 'teaching_beats').length, 3);
-  assert.equal(seen.filter((item) => item.name === 'beat_narration').length, 3);
+  const expectedBeatIds = Object.values(prepared.beatPlans ?? {}).flat().map((beat) => beat.beatId).sort();
+  const narratedBeatIds = seen.filter((item) => item.name === 'beat_narration').map((item) => /\n- ([a-z0-9_.]+) \[/.exec(item.user)?.[1] ?? '').sort();
+  assert.deepEqual(narratedBeatIds, expectedBeatIds, 'S4 makes exactly one root-object call per planned beat');
   assert.ok(prepared.visualVocabularies?.['01-water_cycle_idea_1']);
   assert.equal(prepared.visualVocabularies?.['01-water_cycle_idea_1']?.concepts.find((item) => item.conceptId === 'sunlight')?.depiction.kind, 'icon');
   const visualDiscoveryIndex = prepared.stageRuns.findIndex((run) => run.stage.startsWith('S3b-visual-discovery'));

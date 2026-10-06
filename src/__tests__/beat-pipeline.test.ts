@@ -24,7 +24,7 @@ const beatJson = (sceneClaim: string) => JSON.stringify({ beats: [{
   entities: [{ identityKey: 'frame_main', conceptId: 'frame' }], semanticRevealOrder: ['frame_main'], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', toState: 'A frame is shown.' }],
   relationships: [], misconceptionIds: [], narrationGoal: 'say it', visualInvariant: 'a frame', mutedMeaning: 'a pile', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
 }] });
-const narrationJson = (beatId: string, claimId: string) => JSON.stringify({ beats: [{ beatId, sentences: ['Every call pushes a frame onto the stack, up to 3 steps deep.'], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${beatId}.e1`, sentenceIndex: 0, phrase: 'pushes a frame' }], emphasisTerms: ['frame'] }] });
+const narrationJson = (beatId: string, claimId: string) => JSON.stringify({ beatId, sentences: ['Every call pushes a frame onto the stack, up to 3 steps deep.'], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${beatId}.e1`, sentenceIndex: 0, phrase: 'pushes a frame' }], emphasisTerms: ['frame'] });
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };
 function client(handler: (schemaName: string, user: string) => string): ModelClient {
   return { provider: 'fake', chat: async (r) => ({ content: handler(r.schemaName, r.user), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage }) };
@@ -58,7 +58,7 @@ test('a number the source never states is rejected in narration, and a scene tha
   const c = client((schema, user) => {
     const scene = /SCENE (\w+)/.exec(user)?.[1] ?? '';
     if (schema === 'teaching_beats') return beatJson(`${scene}_c`);
-    return JSON.stringify({ beats: [{ beatId: `${scene}.b1`, sentences: ['It takes 99 steps.'], claimSentences: [{ claimId: `${scene}_c`, sentenceIndex: 0 }], emphasisTerms: [] }] });
+    return JSON.stringify({ beatId: `${scene}.b1`, sentences: ['It takes 99 steps.'], claimSentences: [{ claimId: `${scene}_c`, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${scene}.b1.e1`, sentenceIndex: 0, phrase: '99 steps' }], emphasisTerms: [] });
   });
   const result = await runBeatStages({ plan, graph, sourceDoc: doc }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client: c });
   assert.equal(result.value, undefined);

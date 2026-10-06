@@ -61,15 +61,26 @@ harness maps `V2_BENCH_PLANNER` to that option and records both model IDs.
 This isolated route has passed typecheck and offline suite verification but
 does not yet have a live scaled trial under the per-lesson budget cap.
 
-Beat narration currently returns one scene response containing one
-`NarrationBeat` per planned beat. Each required semantic change has a stable
-event ID (`<beatId>.eN`) and one exact, unique phrase copied from a nominated
-sentence. Compilation stores absolute character offsets. The runner rejects
-missing or inconsistent compiled anchors before audio generation, and v9 lock
-verification recomputes those identities and offsets against the pinned beat
-plan. This checks span integrity; it does not prove that the phrase entails the
-planned state change. Beat-local provider calls and repairs, semantic
-realization review, and post-TTS anchor-to-time resolution remain separate work.
+Beat narration makes sequential provider calls, one for each planned beat. Each
+call receives only that beat's contract, the earlier beats' accepted speech,
+and the next beat's teaching goal. Schema checks, claim semantics, number and
+screen-reference checks, phrase-anchor validation, and pointer-scoped repairs
+run against that beat object. A repair cannot change a later beat or another
+field that has not failed; if a sentence repair invalidates its phrase anchor,
+the anchor is repaired in a later bounded call. Reports, usage, repair traces,
+and raw responses are aggregated for the scene. The complete scene is checked
+again before compilation. For now, each beat gets an equal share of the scene's
+duration budget; the plan does not yet carry measured or pedagogically weighted
+per-beat durations.
+
+Each required semantic change has a stable event ID (`<beatId>.eN`) and one
+exact, unique phrase copied from a nominated sentence. Compilation stores
+absolute character offsets. The runner rejects missing or inconsistent
+compiled anchors before audio generation, and v9 lock verification recomputes
+those identities and offsets against the pinned beat plan. This checks span
+integrity; it does not prove that the phrase entails the planned state change.
+Independent semantic-realization review and post-TTS phrase-to-time resolution
+remain separate work.
 
 ## Ownership and trust boundaries
 

@@ -24,6 +24,8 @@ export interface NarrationContext {
   speechLanguagePolicy?: 'native-plus-english-terms';
   /** Lesson-wide canonical terminology; explanations remain in the spoken language. */
   terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }>;
+  /** Present for beat-local S4 calls so transitions stay coherent without rewriting adjacent beats. */
+  beatFlow?: { index: number; count: number; previousSentences?: string[]; nextGoal?: string };
   /**
    * Set when the measured audio of an earlier draft missed the lesson's runtime: rewrite this scene to a word budget derived from the
    * real speaking rate. The claims and beats stay exactly as planned; only the amount of speech changes.
@@ -70,7 +72,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
   const problems: ValidatorProblem[] = [];
   const planIds = ctx.beats.map((beat) => beat.beatId);
   if (draft.beats.length !== planIds.length) problems.push({ path: '/beats', message: `write exactly ${planIds.length} narration beats, one per teaching beat (${planIds.join(', ')}); got ${draft.beats.length}` });
-  const seen = new Set<string>();
+  const seen = new Set((ctx.beatFlow?.previousSentences ?? []).map(normalize).filter(Boolean));
   draft.beats.forEach((narration, i) => {
     const at = `/beats/${i}`;
     const plan = ctx.beats[i];
