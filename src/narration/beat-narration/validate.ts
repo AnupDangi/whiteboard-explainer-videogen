@@ -127,7 +127,7 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
   });
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
   const ceiling = Math.round(statedWords(ctx) * NARRATION_HARD_CEILING);
-  if (words > ceiling) problems.push({ path: '/beats', message: `too long: ${words} spoken words, at most ${ceiling} for a ${ctx.durationSec}s scene (about ${Math.max(6, Math.floor(ceiling / Math.max(1, draft.beats.length)))} words per beat for ${draft.beats.length} beats); cut or merge the longest sentences` });
+  if (words > ceiling) problems.push({ path: '/beats', message: `too long: ${words} spoken words, at most ${ceiling} for a ${ctx.durationSec}s scene (about ${Math.max(6, Math.floor(ceiling / Math.max(1, draft.beats.length)))} words per beat for ${draft.beats.length} beats); shorten by cutting words or splitting long sentences, never by merging into longer sentences` });
   // Scene-level teaching gates (hook, address, bridges, ask-answer, recap) live
   // in the pedagogy evaluator (harness/pedagogy.ts), not here: they need lesson
   // position and neighbor speech, and they must stay measurable-but-advisory
