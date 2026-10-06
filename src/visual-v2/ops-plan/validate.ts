@@ -210,9 +210,10 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
       default: return [];
     }
   };
-  // Closed-class function words (while, and, with, from) carry grammar, not
-  // meaning; only content words must be lesson vocabulary.
-  const STOPWORDS = new Set('a,an,the,is,are,was,were,be,been,of,to,in,on,for,with,as,by,at,from,or,and,but,so,it,its,this,that,these,those,you,we,they,them,what,why,how,when,not,no,do,does,did,can,will,just,very,more,most,one,into,over,than,then,there,here,such,only,also,which,who,whom,whose,now,let,while,until,against,between,through,during,before,after,above,below,under,again,once'.split(','));
+  // Closed-class function words carry grammar, not meaning; only content words
+  // must be lesson vocabulary. True closed-class only: articles, pronouns,
+  // prepositions, conjunctions, auxiliaries, and spatiotemporal grammar words.
+  const STOPWORDS = new Set('a,an,the,is,are,was,were,be,been,of,to,in,on,for,with,as,by,at,from,or,and,but,so,it,its,this,that,these,those,you,we,they,them,what,why,how,when,not,no,do,does,did,can,will,while,until,against,between,through,during,before,after,above,below,under,again,once'.split(','));
   draft.ops.forEach((op, i) => {
     for (const { spec, path } of opSpecs(op, `/ops/${i}`)) {
       for (const text of wordingOf(spec)) {
