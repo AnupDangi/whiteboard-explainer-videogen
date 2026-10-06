@@ -607,6 +607,36 @@ test('the V2 lock rejects malformed compiled semantic records after all affected
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('the V2 lock recomputes each beat evidence-span union from canonical claims after rehashing', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v7-beat-evidence-'));
+  try {
+    const out = await fixtureRun(dir);
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { context: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string }>; contentHash: string };
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8')) as { beatPlans: Record<string, Array<Record<string, unknown>>> };
+    context.beatPlans.one![0]!.evidenceSpanIds = [];
+    const sceneRef = lock.scenes.find((scene) => scene.sceneId === 'one')!;
+    const scenePath = path.join(out, sceneRef.file);
+    const scene = JSON.parse(await readFile(scenePath, 'utf8')) as { beats: Array<Record<string, unknown>> };
+    scene.beats[0]!.evidenceSpanIds = [];
+    const sceneBytes = `${JSON.stringify(scene, null, 2)}\n`;
+    await writeFile(scenePath, sceneBytes);
+    sceneRef.fileHash = sha256(sceneBytes);
+    const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    lock.context.hash = sha256(contextBytes);
+    const { contentHash: _oldHash, ...body } = lock;
+    lock.contentHash = canonicalHash(body);
+    const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, lockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+
+    const problems = await verifyLessonLockV2(out);
+    assert.ok(problems.some((problem) => /evidence span projection does not match its cited canonical claims/u.test(problem)), problems.join('\n'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('replaying a V2 lock twenty times gives identical ops, geometry, events, assets, audio and frames without any model call', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-replay-v2-'));
   try {

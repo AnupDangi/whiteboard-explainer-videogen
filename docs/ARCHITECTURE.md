@@ -153,8 +153,8 @@ question, before/after state, stable order, and compiled dependency IDs, and
 joins S3b-selected asset ids back to the concept metadata captured in each
 scene. It also validates compiled entities and semantic changes against strict
 schemas, recomputes scene-scoped ids from stable identity keys, and checks
-within-scene concept continuity, first-reveal order, and declared persistence
-ids. These change records
+within-scene concept continuity, first-reveal order, declared persistence ids,
+and each beat's exact evidence-span union from its cited canonical claims. These change records
 are not yet checked against rendered BoardOps, and scene-local identity does
 not establish cross-scene lesson continuity; those checks require the later
 semantic compiler and hierarchy phases. `lesson-context/v2` through `/v6`

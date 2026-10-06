@@ -373,8 +373,20 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
         for (const id of entityIds) sceneSeenSemanticEntityIds.add(id);
       }
       beatsById.set(beat.beatId, beat);
-      const beatClaimIds = arrayOf(beat.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [];
+      const rawBeatClaimIds = arrayOf(beat.claimIds) ?? [];
+      const beatClaimIds = rawBeatClaimIds.filter((id): id is string => typeof id === 'string');
+      if (contextV7 && (!Array.isArray(beat.claimIds) || !beatClaimIds.length || beatClaimIds.length !== rawBeatClaimIds.length)) {
+        problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has no valid claim ids`);
+      }
       for (const claimId of beatClaimIds) if (!claimsById.has(claimId)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} cites unknown claim ${claimId}`);
+      if (contextV7) {
+        const expectedEvidenceSpanIds = [...new Set(beatClaimIds.flatMap((claimId) => arrayOf(claimsById.get(claimId)?.evidenceSpanIds)?.filter((id): id is string => typeof id === 'string') ?? []))];
+        const rawEvidenceSpanIds = arrayOf(beat.evidenceSpanIds);
+        const evidenceSpanIds = rawEvidenceSpanIds?.filter((id): id is string => typeof id === 'string') ?? [];
+        if (!rawEvidenceSpanIds || evidenceSpanIds.length !== rawEvidenceSpanIds.length || canonicalHash(expectedEvidenceSpanIds) !== canonicalHash(evidenceSpanIds)) {
+          problems.push(`scene ${locked.sceneId} beat ${beat.beatId} evidence span projection does not match its cited canonical claims`);
+        }
+      }
       const cited = beatClaimIds.map((id) => claimsById.get(id)).filter((claim): claim is JsonRecord => Boolean(claim));
       const unverifiedClaims = cited.filter((claim) => claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified');
       if (unverifiedClaims.length && (beatClaimIds.length !== 1 || beatClaimIds[0] !== unverifiedClaims[0]?.id)) problems.push(`scene ${locked.sceneId} unverified explanation beat ${beat.beatId} must cite only its one unverified claim`);
