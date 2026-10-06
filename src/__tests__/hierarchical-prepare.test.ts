@@ -48,7 +48,10 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
       })) };
     }
     if (name === 'beat_narration') {
-      value = { beats: narrationSentences.map((sentence, index) => ({ beatId: `${sceneId}.b${index + 1}`, sentences: [sentence], claimSentences: [{ claimId, sentenceIndex: 0 }], emphasisTerms: [concept.label] })) };
+      value = { beats: narrationSentences.map((sentence, index) => {
+        const beatId = `${sceneId}.b${index + 1}`;
+        return { beatId, sentences: [sentence], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${beatId}.e1`, sentenceIndex: 0, phrase: sentence }], emphasisTerms: [concept.label] };
+      }) };
     }
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) }, finish_reason: 'stop' }], usage: { prompt_tokens: 50, completion_tokens: 40, cost: 0.001 } }), { status: 200, headers: { 'content-type': 'application/json' } });
   };

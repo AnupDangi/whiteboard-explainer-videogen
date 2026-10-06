@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SceneNarrationDraftSchema, type SceneNarrationDraft } from '../narration/beat-narration/types.js';
 import { validateSceneNarration, type NarrationContext } from '../narration/beat-narration/validate.js';
-import { compileSceneNarration } from '../narration/beat-narration/compile.js';
+import { compileSceneNarration, compiledSemanticAnchorProblems } from '../narration/beat-narration/compile.js';
 import { beatIntervals } from '../narration/beat-narration/intervals.js';
 import { buildNarrationPrompt } from '../narration/beat-narration/prompt.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
 import { tokenizeWords } from '../narration/align.js';
-import { semanticEntityId, type TeachingBeat } from '../teaching/beat-plan/types.js';
+import { semanticEntityId, semanticEventId, type TeachingBeat } from '../teaching/beat-plan/types.js';
 import type { ModelClient } from '../llm/modelClient.js';
 import { deriveClaimIdentity } from '../evidence/claimIdentity.js';
 
@@ -19,12 +19,16 @@ const planBeat = (n: number, claimIds: string[]): TeachingBeat => ({
 });
 const beats = [planBeat(1, ['c1']), planBeat(2, ['c2'])];
 const ctx: NarrationContext = { sceneId: 'scene', beats, allowedNumbers: new Set(['3']), durationSec: 20, emphasisCandidates: ['frame', 'stack'] };
-const draft = (over: Partial<SceneNarrationDraft['beats'][number]>[] = []): SceneNarrationDraft => SceneNarrationDraftSchema.parse({
-  beats: [
-    { beatId: 'scene.b1', sentences: ['Every call pushes a new frame onto the stack.', 'The frame remembers where to return.'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }], emphasisTerms: ['frame'], ...(over[0] ?? {}) },
-    { beatId: 'scene.b2', sentences: ['When a call returns, its frame is popped off the top.'], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }], emphasisTerms: [], ...(over[1] ?? {}) },
-  ],
-});
+const draft = (over: Partial<SceneNarrationDraft['beats'][number]>[] = []): SceneNarrationDraft => {
+  const base = [
+    { beatId: 'scene.b1', sentences: ['Every call pushes a new frame onto the stack.', 'The frame remembers where to return.'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }], emphasisTerms: ['frame'] },
+    { beatId: 'scene.b2', sentences: ['When a call returns, its frame is popped off the top.'], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }], emphasisTerms: [] },
+  ];
+  return SceneNarrationDraftSchema.parse({ beats: base.map((beat, i) => {
+    const result = { ...beat, ...(over[i] ?? {}) };
+    return { ...result, semanticAnchors: over[i]?.semanticAnchors ?? [{ semanticEventId: semanticEventId(beats[i]!.beatId, 0), sentenceIndex: 0, phrase: result.sentences[0] }] };
+  }) });
+};
 
 test('the narration draft is strict and bounded', () => {
   assert.equal(SceneNarrationDraftSchema.safeParse({ beats: [] }).success, false);
@@ -139,6 +143,54 @@ test('compile joins sentences into one scene text with exact beat and sentence s
   assert.equal(c.text.slice(first.sentenceSpans[1]!.charStart, first.sentenceSpans[1]!.charEnd), 'The frame remembers where to return.');
   assert.deepEqual(c.claimSpans.map((s) => [s.claimId, s.exactText]), [['c1', 'Every call pushes a new frame onto the stack.'], ['c2', 'When a call returns, its frame is popped off the top.']]);
   assert.equal(c.text.slice(c.claimSpans[1]!.plainStart, c.claimSpans[1]!.plainEnd), c.claimSpans[1]!.exactText);
+  assert.deepEqual(compiledSemanticAnchorProblems(c, beats), []);
+  assert.equal(c.semanticAnchors[0]!.semanticEventId, 'scene.b1.e1');
+  assert.equal(c.text.slice(c.semanticAnchors[0]!.charStart, c.semanticAnchors[0]!.charEnd), 'Every call pushes a new frame onto the stack.');
+});
+
+test('semantic phrase anchors follow every required change in order and name an exact unique phrase', () => {
+  const twoChanges = [{ ...beats[0]!, requiredSemanticChanges: [...beats[0]!.requiredSemanticChanges, { identityKey: 'frame_main', entityId: semanticEntityId('frame_main', 'scene'), kind: 'focus' as const, toState: 'The return place is remembered.' }] }, beats[1]!];
+  const twoCtx = { ...ctx, beats: twoChanges };
+  const valid = draft([{ semanticAnchors: [
+    { semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'pushes a new frame' },
+    { semanticEventId: 'scene.b1.e2', sentenceIndex: 1, phrase: 'remembers where to return' },
+  ] }]);
+  assert.deepEqual(validateSceneNarration(valid, twoCtx), []);
+  const compiled = compileSceneNarration('scene', valid, twoChanges);
+  assert.deepEqual(compiledSemanticAnchorProblems(compiled, twoChanges), []);
+  assert.equal(compiled.text.slice(compiled.semanticAnchors[1]!.charStart, compiled.semanticAnchors[1]!.charEnd), 'remembers where to return');
+  const duplicateSpan = draft([{ semanticAnchors: [
+    { semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'pushes a new frame' },
+    { semanticEventId: 'scene.b1.e2', sentenceIndex: 0, phrase: 'pushes a new frame' },
+  ] }]);
+  assert.ok(validateSceneNarration(duplicateSpan, twoCtx).some((problem) => /distinct, non-overlapping spans in required-change order/.test((problem as { message: string }).message)));
+  assert.throws(() => compileSceneNarration('scene', duplicateSpan, twoChanges), /duplicate, overlapping, or out of order/);
+  const reversedSpan = draft([{ semanticAnchors: [
+    { semanticEventId: 'scene.b1.e1', sentenceIndex: 1, phrase: 'remembers where to return' },
+    { semanticEventId: 'scene.b1.e2', sentenceIndex: 0, phrase: 'pushes a new frame' },
+  ] }]);
+  assert.ok(validateSceneNarration(reversedSpan, twoCtx).some((problem) => /distinct, non-overlapping spans in required-change order/.test((problem as { message: string }).message)));
+  assert.throws(() => compileSceneNarration('scene', reversedSpan, twoChanges), /duplicate, overlapping, or out of order/);
+  const rehashedDuplicate = { ...compiled, semanticAnchors: [compiled.semanticAnchors[0]!, { ...compiled.semanticAnchors[1]!, ...compiled.semanticAnchors[0]!, semanticEventId: 'scene.b1.e2' }] };
+  assert.ok(compiledSemanticAnchorProblems(rehashedDuplicate, twoChanges).some((problem) => /overlaps or precedes/.test(problem)));
+  const absent = draft([{ semanticAnchors: [] }]);
+  assert.ok(validateSceneNarration(absent, ctx).some((problem) => /exactly 1 semantic phrase anchors/.test((problem as { message: string }).message)));
+  const wrongOrder = draft([{ semanticAnchors: [{ semanticEventId: 'scene.b1.e2', sentenceIndex: 0, phrase: 'pushes a new frame' }] }]);
+  assert.ok(validateSceneNarration(wrongOrder, ctx).some((problem) => /must be scene.b1.e1/.test((problem as { message: string }).message)));
+  const repeated = draft([{ sentences: ['A frame stays; A frame stays.'], semanticAnchors: [{ semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'A frame' }] }]);
+  assert.ok(validateSceneNarration(repeated, ctx).some((problem) => /exactly once/.test((problem as { message: string }).message)));
+  const changedCase = draft([{ semanticAnchors: [{ semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'Pushes a new frame' }] }]);
+  assert.ok(validateSceneNarration(changedCase, ctx).some((problem) => /copied exactly/.test((problem as { message: string }).message)));
+  const badSentence = draft([{ semanticAnchors: [{ semanticEventId: 'scene.b1.e1', sentenceIndex: 3, phrase: 'frame' }] }]);
+  assert.ok(validateSceneNarration(badSentence, ctx).some((problem) => /outside this beat/.test((problem as { message: string }).message)));
+  assert.throws(() => compileSceneNarration('scene', absent, beats), /needs 1 semantic anchors/);
+});
+
+test('compiled semantic anchors reject rehashed identity and offset tampering', () => {
+  const compiled = compileSceneNarration('scene', draft(), beats);
+  assert.ok(compiledSemanticAnchorProblems({ ...compiled, semanticAnchors: [{ ...compiled.semanticAnchors[0]!, semanticEventId: 'scene.b1.e2' }, compiled.semanticAnchors[1]!] }, beats).some((problem) => /wrong event/.test(problem)));
+  assert.ok(compiledSemanticAnchorProblems({ ...compiled, semanticAnchors: [{ ...compiled.semanticAnchors[0]!, charStart: compiled.semanticAnchors[0]!.charStart + 1 }, compiled.semanticAnchors[1]!] }, beats).some((problem) => /invalid phrase/.test(problem)));
+  assert.ok(compiledSemanticAnchorProblems({ ...compiled, semanticAnchors: compiled.semanticAnchors.slice(1) }, beats).length > 0);
 });
 
 test('beat intervals come from the aligned words by token position, not from any estimate', () => {
@@ -162,6 +214,9 @@ test('the narration prompt carries the beat plan and the teaching rules and no t
   assert.match(system, /never refer to the screen/i);
   assert.match(user, /scene\.b1/);
   assert.match(user, /Make clear that a call pushes a frame/);
+  assert.match(user, /scene\.b1\.e1/);
+  assert.match(user, /A frame is on the stack/);
+  assert.match(system, /semanticAnchors/);
   assert.match(user, /SOURCE EXCERPT/);
 });
 
@@ -182,7 +237,10 @@ test('writeBeatNarration returns compiled narration and records a stage report',
 
 test('a screen reference is repaired by patching that one sentence', async () => {
   const bad = JSON.stringify(draft([{ sentences: ['Look at the box on the left.', 'The frame remembers where to return.'] }]));
-  const patch = JSON.stringify({ patches: [{ op: 'replace', path: '/beats/0/sentences/0', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') }] });
+  const patch = JSON.stringify({ patches: [
+    { op: 'replace', path: '/beats/0/sentences/0', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') },
+    { op: 'replace', path: '/beats/0/semanticAnchors/0/phrase', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') },
+  ] });
   const { client, requests } = scripted([bad, patch]);
   const result = await writeBeatNarration({ ctx, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
   assert.equal(result.value?.beats[0]!.sentenceIds.length, 2);
@@ -227,8 +285,8 @@ test('the spoken-word budget scales with the language: Hindi gets more words per
 
 test('CJK narration uses Intl word segmentation for its spoken-word budget', () => {
   const mandarin = SceneNarrationDraftSchema.parse({ beats: [
-    { beatId: 'scene.b1', sentences: ['你好世界欢迎大家。'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }], emphasisTerms: [] },
-    { beatId: 'scene.b2', sentences: ['欢迎大家来到世界。'], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }], emphasisTerms: [] },
+    { beatId: 'scene.b1', sentences: ['你好世界欢迎大家。'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: '你好世界欢迎大家。' }], emphasisTerms: [] },
+    { beatId: 'scene.b2', sentences: ['欢迎大家来到世界。'], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: 'scene.b2.e1', sentenceIndex: 0, phrase: '欢迎大家来到世界。' }], emphasisTerms: [] },
   ] });
   const findings = validateSceneNarration(mandarin, { ...ctx, language: 'zh', durationSec: 0.5 }) as Array<{ message: string }>;
   assert.ok(findings.some((problem) => /too long/.test(problem.message)));

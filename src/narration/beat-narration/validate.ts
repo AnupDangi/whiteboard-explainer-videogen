@@ -1,5 +1,5 @@
 import type { ValidatorProblem } from '../../llm/structuredCall.js';
-import type { TeachingBeat } from '../../teaching/beat-plan/types.js';
+import { semanticEventId, type TeachingBeat } from '../../teaching/beat-plan/types.js';
 import { wordsPerSec } from '../../plan/analyze.js';
 import type { CoercionEntry } from '../../structured/coercionLedger.js';
 import type { SceneNarrationDraft } from './types.js';
@@ -109,6 +109,28 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
       }
     });
     for (const claim of planClaims) if (!anchored.has(claim)) problems.push({ path: `${at}/claimSentences`, message: `claim ${claim} must be anchored to the sentence of this beat that states it` });
+    const expectedChanges = plan?.requiredSemanticChanges ?? [];
+    if (narration.semanticAnchors.length !== expectedChanges.length) problems.push({ path: `${at}/semanticAnchors`, message: `write exactly ${expectedChanges.length} semantic phrase anchors, one for each required change in order; got ${narration.semanticAnchors.length}` });
+    let previousSemanticPosition: { sentenceIndex: number; charEnd: number } | undefined;
+    narration.semanticAnchors.forEach((anchor, j) => {
+      const path = `${at}/semanticAnchors/${j}`;
+      const expectedId = plan ? semanticEventId(plan.beatId, j) : undefined;
+      if (!expectedId || j >= expectedChanges.length || anchor.semanticEventId !== expectedId) problems.push({ path: `${path}/semanticEventId`, message: `semantic event ${j + 1} must be ${expectedId ?? 'from a planned beat'}, got ${anchor.semanticEventId}` });
+      const sentence = narration.sentences[anchor.sentenceIndex];
+      if (!sentence) { problems.push({ path: `${path}/sentenceIndex`, message: `sentenceIndex ${anchor.sentenceIndex} is outside this beat's ${narration.sentences.length} sentences` }); return; }
+      if (!anchor.phrase.trim() || anchor.phrase !== anchor.phrase.trim()) problems.push({ path: `${path}/phrase`, message: 'phrase must be nonempty and have no leading or trailing whitespace' });
+      else if (sentence.indexOf(anchor.phrase) < 0) problems.push({ path: `${path}/phrase`, message: 'phrase must be copied exactly from the nominated sentence' });
+      else if (sentence.indexOf(anchor.phrase) !== sentence.lastIndexOf(anchor.phrase)) problems.push({ path: `${path}/phrase`, message: 'phrase must occur exactly once in the nominated sentence' });
+      else {
+        const charStart = sentence.indexOf(anchor.phrase);
+        const charEnd = charStart + anchor.phrase.length;
+        if (previousSemanticPosition && (anchor.sentenceIndex < previousSemanticPosition.sentenceIndex
+          || (anchor.sentenceIndex === previousSemanticPosition.sentenceIndex && charStart < previousSemanticPosition.charEnd))) {
+          problems.push({ path: `${path}/phrase`, message: 'semantic phrase anchors must point to distinct, non-overlapping spans in required-change order' });
+        }
+        previousSemanticPosition = { sentenceIndex: anchor.sentenceIndex, charEnd };
+      }
+    });
   });
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
   if (ctx.revision) {

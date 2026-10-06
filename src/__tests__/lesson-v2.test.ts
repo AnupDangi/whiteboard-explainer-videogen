@@ -45,7 +45,13 @@ const beatDraft = (sceneId: string) => BeatPlanDraftSchema.parse({ beats: [{
 const ctxFor = (sceneId: string) => ({ sceneId, conceptIds: ['frame', 'stack'], claims: claims(sceneId), relations: [], misconceptionIds: [], durationSec: 6 });
 const sceneIds = ['one', 'two'];
 const beatPlans = Object.fromEntries(sceneIds.map((id) => [id, compileBeatPlan(beatDraft(id), ctxFor(id))]));
-const narrations = Object.fromEntries(sceneIds.map((id) => [id, compileSceneNarration(id, SceneNarrationDraftSchema.parse({ beats: [{ beatId: `${id}.b1`, sentences: sentences[id], claimSentences: [{ claimId: `${id}_c`, sentenceIndex: 0 }], emphasisTerms: [] }] }), beatPlans[id]!)]));
+const narrations = Object.fromEntries(sceneIds.map((id) => [id, compileSceneNarration(id, SceneNarrationDraftSchema.parse({ beats: [{
+  beatId: `${id}.b1`, sentences: sentences[id], claimSentences: [{ claimId: `${id}_c`, sentenceIndex: 0 }],
+  semanticAnchors: id === 'one'
+    ? [{ semanticEventId: `${id}.b1.e1`, sentenceIndex: 0, phrase: 'pushes a frame' }, { semanticEventId: `${id}.b1.e2`, sentenceIndex: 0, phrase: 'onto the stack' }]
+    : [{ semanticEventId: `${id}.b1.e1`, sentenceIndex: 0, phrase: 'pops the top frame' }, { semanticEventId: `${id}.b1.e2`, sentenceIndex: 1, phrase: 'stack shrinks' }],
+  emphasisTerms: [],
+}] }), beatPlans[id]!)]));
 const plan = { targetDurationSec: 10, intro: { sourceTitle: 't', sections: [] }, recap: { keyPoints: [] }, sections: sceneIds.map((id) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 6, contract: { learningDelta: 'd', targetDurationSec: 6, requiredConceptIds: ['frame', 'stack'], requiredRelations: [], evidenceSpanIds: claims(id)[0]!.evidenceSpanIds, essentialClaims: claims(id), teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } })) };
 const graphEvidence = Object.values(sentences).flatMap((items) => [sourceEvidenceFor(items[0]!)]);
 const graph = { concepts: [{ id: 'frame', label: 'Frame', kind: 'entity', definition: 'd', evidence: graphEvidence, level: 'one-step' }, { id: 'stack', label: 'Stack', kind: 'entity', definition: 'd', evidence: graphEvidence, level: 'one-step' }], relations: [], prerequisites: [] };
@@ -113,7 +119,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       validatedByConcept: Record<string, string>;
       evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v8');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v9');
     assert.deepEqual(lessonContext.validatedByConcept, { frame: 'iconify-lucide:frame' });
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
@@ -211,6 +217,27 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     await writeFile(bundledVideo, videoBytes);
     assert.equal((await bundleModule.verifyReviewBundle(bundleDir)).verified, true);
     await writeFile(path.join(dir, 'done'), 'ok');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('missing compiled semantic phrases fail before audio or board planning', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-semantic-anchor-gate-'));
+  try {
+    const invalidNarration = structuredClone(narrations.one!);
+    invalidNarration.semanticAnchors.pop();
+    let audioCalls = 0;
+    let boardCalls = 0;
+    const result = await runLessonV2({
+      lessonId: 'missing-semantic-anchor', outputDir: path.join(dir, 'run'),
+      prepared: { ...prepared, beatNarrations: { ...narrations, one: invalidNarration } },
+      plannerModel: 'google/x', apiKey: 'k',
+      client: { ...client, chat: async (request) => { boardCalls++; return client.chat(request); } },
+      aligner: async () => { audioCalls++; throw new Error('must not synthesize invalid narration'); },
+    });
+    assert.equal(result.status, 'failed');
+    assert.ok(result.failures.some((failure) => failure.code === 'v2-semantic-anchor-invalid'));
+    assert.equal(audioCalls, 0);
+    assert.equal(boardCalls, 0);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -361,7 +388,7 @@ test('OPEN_EXPLANATION survives the V2 runner and a rehashed lock still rejects 
     const openNarrations = {
       ...narrations,
       two: compileSceneNarration('two', SceneNarrationDraftSchema.parse({ beats: [{
-        beatId: 'two.b1', sentences: [openStatement], claimSentences: [{ claimId: 'two_c', sentenceIndex: 0 }], emphasisTerms: [],
+        beatId: 'two.b1', sentences: [openStatement], claimSentences: [{ claimId: 'two_c', sentenceIndex: 0 }], semanticAnchors: [], emphasisTerms: [],
       }] }), openBeats),
     };
     const openPrepared = {
@@ -478,11 +505,12 @@ test('OPEN_EXPLANATION survives the V2 runner and a rehashed lock still rejects 
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock pins ops, narration, timings, audio and versions before rendering, verifies, and detects any edit', async () => {
+test('the V2 lock pins ops, narration, timings, audio and versions, then rejects rehashed semantic-anchor tampering', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v2-'));
   try {
     const out = await fixtureRun(dir);
-    const lock = JSON.parse(await readFile(path.join(out, 'lesson.lock.v2.json'), 'utf8')) as { schemaVersion: string; scenes: Array<{ sceneId: string; fileHash: string; audioHash: string; timelineHash: string }>; versions: Record<string, string>; contentHash: string };
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { schemaVersion: string; context: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string; audioHash: string; timelineHash: string }>; versions: Record<string, string>; contentHash: string };
     assert.equal(lock.schemaVersion, 'lesson.lock/v5-teaching-compiler-v2');
     assert.equal(lock.scenes.length, 2);
     assert.ok(lock.scenes.every((scene) => scene.fileHash.length === 64 && scene.audioHash.length === 64 && scene.timelineHash.length === 64));
@@ -494,6 +522,27 @@ test('the V2 lock pins ops, narration, timings, audio and versions before render
     assert.ok((await verifyLessonLockV2(out)).some((p) => /scene one.*hash/.test(p)));
     await writeFile(scenePath, original);
     assert.deepEqual(await verifyLessonLockV2(out), []);
+
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8')) as { beatNarrations: Record<string, { semanticAnchors: Array<Record<string, unknown>> }> };
+    context.beatNarrations.one!.semanticAnchors[1] = { ...context.beatNarrations.one!.semanticAnchors[0]!, semanticEventId: 'one.b1.e2' };
+    const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    lock.context.hash = sha256(contextBytes);
+    const lockedScene = lock.scenes.find((scene) => scene.sceneId === 'one')!;
+    const semanticScenePath = path.join(out, lockedScene.file);
+    const semanticScene = JSON.parse(await readFile(semanticScenePath, 'utf8')) as { narration: { semanticAnchors: Array<Record<string, unknown>> } };
+    semanticScene.narration.semanticAnchors[1] = { ...semanticScene.narration.semanticAnchors[0]!, semanticEventId: 'one.b1.e2' };
+    const semanticSceneBytes = `${JSON.stringify(semanticScene, null, 2)}\n`;
+    await writeFile(semanticScenePath, semanticSceneBytes);
+    lockedScene.fileHash = sha256(semanticSceneBytes);
+    const { contentHash: _oldHash, ...lockBody } = lock;
+    lock.contentHash = canonicalHash(lockBody);
+    const resignedBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, resignedBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), resignedBytes);
+    const anchorProblems = await verifyLessonLockV2(out);
+    assert.ok(anchorProblems.some((problem) => /overlaps or precedes the previous semantic event phrase/u.test(problem)), anchorProblems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -508,7 +557,7 @@ test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject r
       schemaVersion: string;
       lessonHierarchy: { mode: string; chapters: Array<{ chapterId: string; sceneIds: string[]; scenes: Array<{ sceneId: string }>; plannedBudgetMs: number; evidenceSpanIds: string[]; recallOfChapterIds: string[]; checkpoint: { cumulativeClaimIds: string[] } }> };
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v8');
+    assert.equal(context.schemaVersion, 'lesson-context/v9');
     assert.equal(context.lessonHierarchy.mode, 'syllabus');
     assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.sceneIds), [['one'], ['two']]);
     assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.scenes.map((scene) => scene.sceneId)), [['one'], ['two']]);
@@ -551,7 +600,7 @@ test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject r
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v8', async () => {
+test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v9', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
@@ -564,7 +613,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
       beatPlans: Record<string, Array<Record<string, unknown>>>;
       validatedByConcept: Record<string, string>;
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v8');
+    assert.equal(context.schemaVersion, 'lesson-context/v9');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -615,7 +664,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
     await writeFile(lockPath, visualLockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), visualLockBytes);
     const visualProblems = await verifyLessonLockV2(out);
-    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v8 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
+    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v9 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
 
     context.plan.sections[0]!.contract.essentialClaims[0]!.verificationStatus = 'source_cited';
     context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType = 'direct_source';
@@ -756,7 +805,16 @@ const reviser = (calls: string[], reply: Record<string, string[]> = shorter): Mo
     if (/REVISION/.test(request.user)) {
       const scene = /SCENE (\w+)/.exec(request.user)?.[1] ?? '';
       calls.push(scene);
-      return { content: JSON.stringify({ beats: [{ beatId: `${scene}.b1`, sentences: reply[scene], claimSentences: [{ claimId: `${scene}_c`, sentenceIndex: 0 }], emphasisTerms: [] }] }), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage };
+      const sentences = reply[scene]!;
+      const changes = beatPlans[scene]?.[0]?.requiredSemanticChanges ?? [];
+      const semanticAnchors = changes.map((_change, index) => {
+        const sentenceIndex = Math.min(index, sentences.length - 1);
+        const phrase = scene === 'two' && sentences.length === 1 && changes.length > 1
+          ? (index === 0 ? 'pops' : 'the top frame')
+          : sentences[sentenceIndex]!;
+        return { semanticEventId: `${scene}.b1.e${index + 1}`, sentenceIndex, phrase };
+      });
+      return { content: JSON.stringify({ beats: [{ beatId: `${scene}.b1`, sentences, claimSentences: [{ claimId: `${scene}_c`, sentenceIndex: 0 }], semanticAnchors, emphasisTerms: [] }] }), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage };
     }
     return client.chat(request);
   },

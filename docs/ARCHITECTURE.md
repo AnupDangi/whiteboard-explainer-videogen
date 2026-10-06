@@ -44,7 +44,7 @@ S6 semantic board planning (sequential, retained board)
 ```
 
 The source-to-plan stages live under `src/plan/` and `src/pipeline/`.
-`src/narration/` compiles beat text and markers. `src/audio/` owns speech,
+`src/narration/` compiles beat text, claim spans, and semantic phrase anchors. `src/audio/` owns speech,
 alignment, and audio timing. `src/planner/board.ts` builds the board-planning
 contract and validates model output. `src/pipeline-v2/` runs V2, compiles
 BoardOps against the retained board, writes the V2 lock, and verifies replay
@@ -58,6 +58,16 @@ The CLI now supports `--s6-planner` to override only BoardOps; the benchmark
 harness maps `V2_BENCH_PLANNER` to that option and records both model IDs.
 This isolated route has passed typecheck and offline suite verification but
 does not yet have a live scaled trial under the per-lesson budget cap.
+
+Beat narration currently returns one scene response containing one
+`NarrationBeat` per planned beat. Each required semantic change has a stable
+event ID (`<beatId>.eN`) and one exact, unique phrase copied from a nominated
+sentence. Compilation stores absolute character offsets. The runner rejects
+missing or inconsistent compiled anchors before audio generation, and v9 lock
+verification recomputes those identities and offsets against the pinned beat
+plan. This checks span integrity; it does not prove that the phrase entails the
+planned state change. Beat-local provider calls and repairs, semantic
+realization review, and post-TTS anchor-to-time resolution remain separate work.
 
 ## Ownership and trust boundaries
 
@@ -146,7 +156,8 @@ Before audio generation, V2 projects canonical claims into
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v8`; lock verification
+concatenated bundle hash. New runs write `lesson-context/v9`; v8 locks retain
+their historical compatibility contract. Lock verification
 requires each claim's explicit type and derived verification status, checks
 its source refs against the claim's cited spans, verifies the beat learner
 question, before/after state, stable order, and compiled dependency IDs, and
@@ -155,7 +166,7 @@ scene. It also validates compiled entities and semantic changes against strict
 schemas, recomputes scene-scoped ids from stable identity keys, and checks
 within-scene concept continuity, first-reveal order, declared persistence ids,
 and each beat's exact evidence-span union from its cited canonical claims.
-For hierarchical lessons, v8 also locks Lesson → Chapter → Scene → Beat
+For hierarchical lessons, v8/v9 also lock Lesson → Chapter → Scene → Beat
 membership, chapter budgets, measured scene speech/window timings, and
 end-of-chapter cumulative concept/claim/terminology checkpoints. Lock
 verification recomputes the chapter partition and those projections from the
@@ -279,8 +290,9 @@ narration generation. For a concept without an exact catalog match, retrieval
 offers library vocabulary; the depiction director proposes drawable nouns,
 code resolves each noun to an exact catalog entry, and a separate judge must
 approve the referent-picture pair. Asset ids stay internal. The selected
-`validatedByConcept` map and per-scene visual vocabulary are pinned in
-`lesson-context/v8`; V2 copies the selected id into captured concept metadata.
+`validatedByConcept` map and per-scene visual vocabulary are pinned in the
+lesson context; new runs use v9, while historical contexts remain readable. V2
+copies the selected id into captured concept metadata.
 V2 then probes the concrete entities actually used on each board and chooses
 the most common non-exempt `houseFamily` with a stable tie-break. It resolves
 only type-eligible pictorial entities inside that family and the lesson domain.

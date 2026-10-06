@@ -270,15 +270,16 @@ const stringArray = (value: unknown): string[] | undefined => Array.isArray(valu
 export function lessonHierarchyProblems(contextBytes: Buffer, scenes: Array<{ sceneId: string; startMs: number; endMs: number }>, alignmentBytes?: Buffer, inputBytes?: Buffer): string[] {
   let context: JsonRecord;
   try { context = recordOf(JSON.parse(contextBytes.toString('utf8'))) ?? {}; } catch { return []; }
-  if (context.schemaVersion !== 'lesson-context/v8') return [];
-  if (!Object.hasOwn(context, 'lessonHierarchy')) return ['lesson context v8 has no lessonHierarchy field'];
-  if (context.lessonHierarchy === null) return ['lesson context v8 must carry a non-null structural hierarchy'];
+  const contextVersion = context.schemaVersion === 'lesson-context/v9' ? 'v9' : context.schemaVersion === 'lesson-context/v8' ? 'v8' : undefined;
+  if (!contextVersion) return [];
+  if (!Object.hasOwn(context, 'lessonHierarchy')) return [`lesson context ${contextVersion} has no lessonHierarchy field`];
+  if (context.lessonHierarchy === null) return [`lesson context ${contextVersion} must carry a non-null structural hierarchy`];
   const parsed = LessonHierarchySchema.safeParse(context.lessonHierarchy);
   if (!parsed.success) return parsed.error.issues.map((issue) => `lesson hierarchy is malformed at ${issue.path.join('.') || '<root>'}: ${issue.message}`);
 
   const problems: string[] = [];
   const hierarchy = parsed.data;
-  if (!inputBytes) return ['lesson context v8 hierarchy input artifact is not pinned by the V2 lock'];
+  if (!inputBytes) return [`lesson context ${contextVersion} hierarchy input artifact is not pinned by the V2 lock`];
   let inputValue: unknown;
   try { inputValue = JSON.parse(inputBytes.toString('utf8')); } catch { return ['locked lesson hierarchy input artifact is invalid JSON']; }
   const parsedInput = LessonHierarchyInputArtifactSchema.safeParse(inputValue);

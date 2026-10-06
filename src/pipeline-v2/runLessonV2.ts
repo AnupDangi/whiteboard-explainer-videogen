@@ -13,6 +13,7 @@ import type { ContentAddressedArtifactStore } from '../run/artifactCache.js';
 import type { StageFailure } from '../shared/types.js';
 import { certifyArtifact, type ArtifactCertification } from '../shared/artifactStatus.js';
 import { beatIntervals } from '../narration/beat-narration/intervals.js';
+import { compiledSemanticAnchorProblems } from '../narration/beat-narration/compile.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
 import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
@@ -157,6 +158,13 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const plan = prepared.plan;
   if (!plan || !prepared.beatPlans || !prepared.beatNarrations || !prepared.graph) {
     failures.push({ code: 'v2-no-beats', stage: 'v2', message: 'V2 needs a teaching plan with beat plans and beat narration (TEACHING_BEATS_V2)', hard: true });
+    return finish('failed');
+  }
+  const semanticAnchorProblems = plan.sections.flatMap((section) => compiledSemanticAnchorProblems(
+    prepared.beatNarrations![section.id], prepared.beatPlans![section.id] ?? [],
+  ).map((problem) => `${section.id}: ${problem}`));
+  if (semanticAnchorProblems.length) {
+    failures.push({ code: 'v2-semantic-anchor-invalid', stage: 'narration', message: semanticAnchorProblems.join('; '), hard: true });
     return finish('failed');
   }
   const graph = prepared.graph;
@@ -448,7 +456,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v8', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
+  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v9', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'semantic-phrase-anchors/v1' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });

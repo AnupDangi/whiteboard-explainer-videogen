@@ -24,7 +24,7 @@ const beatJson = (sceneClaim: string) => JSON.stringify({ beats: [{
   entities: [{ identityKey: 'frame_main', conceptId: 'frame' }], semanticRevealOrder: ['frame_main'], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', toState: 'A frame is shown.' }],
   relationships: [], misconceptionIds: [], narrationGoal: 'say it', visualInvariant: 'a frame', mutedMeaning: 'a pile', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
 }] });
-const narrationJson = (beatId: string, claimId: string) => JSON.stringify({ beats: [{ beatId, sentences: ['Every call pushes a frame onto the stack, up to 3 steps deep.'], claimSentences: [{ claimId, sentenceIndex: 0 }], emphasisTerms: ['frame'] }] });
+const narrationJson = (beatId: string, claimId: string) => JSON.stringify({ beats: [{ beatId, sentences: ['Every call pushes a frame onto the stack, up to 3 steps deep.'], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${beatId}.e1`, sentenceIndex: 0, phrase: 'pushes a frame' }], emphasisTerms: ['frame'] }] });
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };
 function client(handler: (schemaName: string, user: string) => string): ModelClient {
   return { provider: 'fake', chat: async (r) => ({ content: handler(r.schemaName, r.user), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage }) };

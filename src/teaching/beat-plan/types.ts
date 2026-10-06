@@ -93,6 +93,12 @@ export function semanticEntityId(identityKey: string, sceneId: string): string {
   return `se_${createHash('sha256').update(`${sceneId}\0${identityKey}`, 'utf8').digest('hex').slice(0, 24)}`;
 }
 
+/** Stable, ordered event identity for one required meaning change within a beat. */
+export function semanticEventId(beatId: string, changeIndex: number): string {
+  if (!beatId || !Number.isSafeInteger(changeIndex) || changeIndex < 0) throw new Error('semantic event needs a beat id and a zero-based change index');
+  return `${beatId}.e${changeIndex + 1}`;
+}
+
 export type CompiledEntityRef = z.infer<typeof CompiledEntityRefSchema>;
 export type CompiledSemanticChange = z.infer<typeof CompiledSemanticChangeSchema>;
 
