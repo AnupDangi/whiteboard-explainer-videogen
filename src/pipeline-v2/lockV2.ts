@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { canonicalHash, type ReplayDigest } from '../harness/replayDeterminism.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
 import { compiledSemanticAnchorProblems } from '../narration/beat-narration/compile.js';
+import { representationSelectionProblems } from '../teaching/beat-plan/representationRegistry.js';
 import { alignedSemanticAnchorIntervals } from '../narration/beat-narration/intervals.js';
 import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
 import { claimIdentityMismatch, deriveClaimIdentity, formatClaimIdentityMismatch } from '../evidence/claimIdentity.js';
@@ -340,6 +341,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
         if (canonicalHash(expectedDependencyIds) !== canonicalHash(dependencyIds)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} compiled dependency ids do not match its declared earlier orders`);
       }
       if (contextV7) {
+        for (const message of representationSelectionProblems(beat)) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} representation selection: ${message}`);
         for (const field of ['entities', 'semanticRevealOrder', 'requiredSemanticChanges', 'persistentEntityIds']) {
           if (!Array.isArray(beat[field])) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has no ${field} array`);
         }

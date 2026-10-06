@@ -92,6 +92,24 @@ scheduler still schedules BoardOps from sentence cues; it does not yet schedule
 meaning changes directly from event phrases. Independent semantic-realization
 review remains separate work.
 
+## Representation selection
+
+Each teaching beat carries a question, a cognitive operation, and a required
+representation family. The topic-independent registry in
+`src/teaching/beat-plan/representationRegistry.ts` records the 19 planned
+families and the generic learner operations each family can support. S3b is
+prompted to choose from the beat question and operation, and the planner
+rejects unknown families or incompatible operation/family pairs before S4.
+The V2 lock rechecks that compatibility from pinned beat data, so rehashing a
+bad selection does not make it valid. There is no fallback family when the
+choice is missing or incompatible.
+
+This is the first selection gate, not the completed provider architecture.
+It checks structural compatibility, not the semantic fit of the question or
+whether a family actually depicts the mechanism. S6 still plans BoardOps
+directly using family-specific kit hints; typed family models, mechanism
+requirements, semantic compilers, and family-specific fallbacks remain open.
+
 ## Ownership and trust boundaries
 
 Models decide teaching order, claims, narration, representation intent, and

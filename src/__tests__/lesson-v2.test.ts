@@ -748,6 +748,22 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
     await writeFile(path.join(out, 'lesson.lock.json'), semanticLockBytes);
     const semanticProblems = await verifyLessonLockV2(out);
     assert.ok(semanticProblems.some((problem) => /semantic entity frame_main has an unstable compiled id/u.test(problem)), semanticProblems.join('\n'));
+
+    context.beatPlans.one![0]!.representationFamily = 'literal_object';
+    semanticScene.beats[0]!.representationFamily = 'literal_object';
+    const invalidFamilySceneBytes = `${JSON.stringify(semanticScene, null, 2)}\n`;
+    await writeFile(semanticScenePath, invalidFamilySceneBytes);
+    semanticSceneRef.fileHash = sha256(invalidFamilySceneBytes);
+    const invalidFamilyContextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, invalidFamilyContextBytes);
+    lock.context.hash = sha256(invalidFamilyContextBytes);
+    const { contentHash: _oldFamilyHash, ...familyBody } = lock;
+    lock.contentHash = canonicalHash(familyBody);
+    const invalidFamilyLockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, invalidFamilyLockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), invalidFamilyLockBytes);
+    const familyProblems = await verifyLessonLockV2(out);
+    assert.ok(familyProblems.some((problem) => /literal_object is not registered for trace/.test(problem)), familyProblems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

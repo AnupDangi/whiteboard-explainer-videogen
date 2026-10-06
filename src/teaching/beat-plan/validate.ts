@@ -3,6 +3,7 @@ import type { ValidatorProblem } from '../../llm/structuredCall.js';
 import type { BeatPlanDraft, RelationSpec } from './types.js';
 import type { ClaimSemantics } from '../../evidence/claims.js';
 import type { ClaimVerificationStatus, EpistemicType } from '../../evidence/ledger.js';
+import { representationSelectionProblems } from './representationRegistry.js';
 
 export interface BeatContext {
   sceneId: string;
@@ -55,6 +56,7 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
   plan.beats.forEach((beat, i) => {
     const at = `/beats/${i}`;
     if (!/[?？]$/u.test(beat.learningQuestion.trim())) problems.push({ path: `${at}/learningQuestion`, message: 'learningQuestion must be phrased as a question' });
+    for (const message of representationSelectionProblems(beat)) problems.push({ path: `${at}/representationFamily`, message });
     if (beat.learnerBefore.trim().toLowerCase() === beat.learnerAfter.trim().toLowerCase()) problems.push({ path: `${at}/learnerAfter`, message: 'learnerAfter must describe a state different from learnerBefore' });
     const seenDependencies = new Set<number>();
     beat.dependsOnOrders.forEach((order, dependencyIndex) => {

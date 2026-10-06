@@ -23,6 +23,10 @@ export const FAMILY_KIT_HINTS: Record<string, string> = {
   causal_chain: 'graph with connect arrows, or queue', feedback_loop: 'cycle', quantity: 'array, axes-plot or value elements',
   spatial_model: 'compartment or graph', equation: 'equation element with equationStep ops', plot: 'axes-plot',
   code: 'array or stack', scientific_diagram: 'compartment, graph or layered-stack',
+  weighted_graph: 'weighted-links with a declared weight for each connection',
+  material_flow: 'graph with arrows that show each material movement between explicit states',
+  wave_propagation: 'sequence or axes-plot showing ordered wave positions over time',
+  circuit: 'graph with explicit connected components and open/closed path states',
 };
 
 export function describeKitParams(name: (typeof KIT_NAMES)[number]): string {

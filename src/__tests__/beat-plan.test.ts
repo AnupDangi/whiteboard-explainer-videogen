@@ -4,6 +4,7 @@ import { BeatPlanDraftSchema, BEAT_TYPES, REPRESENTATION_FAMILIES, semanticEntit
 import { beatContextFor, beatCountRange, validateBeatPlan, type BeatContext } from '../teaching/beat-plan/validate.js';
 import { compileBeatPlan, beatPlanMetrics } from '../teaching/beat-plan/compile.js';
 import { buildBeatPrompt } from '../teaching/beat-plan/prompt.js';
+import { REPRESENTATION_REGISTRY, representationSelectionProblems } from '../teaching/beat-plan/representationRegistry.js';
 import { planSceneBeats } from '../teaching/beat-plan/plan.js';
 import type { ModelClient } from '../llm/modelClient.js';
 import type { SceneContract, ConceptGraph } from '../plan/schemas.js';
@@ -36,6 +37,16 @@ test('the beat schema is strict: unknown enum values and extra keys are rejected
   assert.equal(BeatPlanDraftSchema.safeParse({ beats: [beat({ extra: 1 })] }).success, false);
   assert.equal(BeatPlanDraftSchema.safeParse({ beats: [] }).success, false);
   assert.equal(BeatPlanDraftSchema.safeParse({ beats: [beat()] }).success, true);
+});
+
+test('representation selection is topic-independent, registered, and checked against the beat operation', () => {
+  assert.deepEqual(Object.keys(REPRESENTATION_REGISTRY).sort(), [...REPRESENTATION_FAMILIES].sort());
+  assert.ok(Object.values(REPRESENTATION_REGISTRY).every((provider) => provider.suitableOperations.length > 0));
+  assert.deepEqual(representationSelectionProblems({ learningQuestion: 'How does the state change?', cognitiveOperation: 'trace', representationFamily: 'state_transition' }), []);
+  assert.deepEqual(representationSelectionProblems({ learningQuestion: 'How does the state change?', cognitiveOperation: 'trace', representationFamily: 'material_flow' }), []);
+  const mismatch = validateBeatPlan(draft([beat({ representationFamily: 'literal_object' }), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] })]), ctx);
+  assert.ok(mismatch.some((problem) => (problem as { path: string }).path === '/beats/0/representationFamily' && /literal_object is not registered for trace/.test((problem as { message: string }).message)));
+  assert.ok(representationSelectionProblems({ learningQuestion: 'What changes?', cognitiveOperation: 'trace', representationFamily: 'topic_specific_board' }).some((message) => /unknown representation family/.test(message)));
 });
 
 test('a complete plan that covers every claim is valid', () => {
@@ -191,6 +202,8 @@ test('the prompt states the scene contract, claim ids, misconception ids and the
   assert.match(system, /learningQuestion/);
   assert.match(system, /learnerBefore and learnerAfter/);
   assert.match(system, /dependsOnOrders/);
+  assert.match(system, /learningQuestion for its cognitiveOperation/);
+  assert.match(system, /Never branch on.*topic names, source names, case IDs, or benchmark labels/);
 });
 
 test('the beat prompt makes unverified explanations visibly isolated and non-visual', () => {

@@ -9,7 +9,7 @@ import { RELATION_TYPES } from '../../plan/schemas.js';
  */
 export const BEAT_TYPES = ['motivate', 'introduce', 'demonstrate', 'transform', 'contrast', 'counterexample', 'connect', 'summarize'] as const;
 export const COGNITIVE_OPERATIONS = ['identify', 'compare', 'classify', 'trace', 'transform', 'quantify', 'predict', 'infer', 'explain_cause', 'understand_system'] as const;
-export const REPRESENTATION_FAMILIES = ['literal_object', 'process', 'state_transition', 'sequence', 'topology', 'hierarchy', 'comparison', 'causal_chain', 'feedback_loop', 'quantity', 'spatial_model', 'equation', 'plot', 'code', 'scientific_diagram'] as const;
+export const REPRESENTATION_FAMILIES = ['literal_object', 'process', 'state_transition', 'sequence', 'topology', 'hierarchy', 'comparison', 'causal_chain', 'feedback_loop', 'quantity', 'spatial_model', 'equation', 'plot', 'code', 'scientific_diagram', 'weighted_graph', 'material_flow', 'wave_propagation', 'circuit'] as const;
 export const BEAT_PERSISTENCE = ['beat', 'scene', 'lesson'] as const;
 export const PAUSE_INTENTS = ['none', 'micro', 'think', 'scene_close'] as const;
 export const SEMANTIC_CHANGE_KINDS = ['introduce', 'focus', 'compare', 'flow', 'transform', 'move', 'separate', 'merge', 'quantity_update', 'select', 'finalize', 'plot', 'cause', 'feedback', 'annotate'] as const;
@@ -82,6 +82,8 @@ export const BeatPlanDraftSchema = z.object({ beats: z.array(BeatDraftSchema).mi
 
 export type BeatDraft = z.infer<typeof BeatDraftSchema>;
 export type BeatPlanDraft = z.infer<typeof BeatPlanDraftSchema>;
+export type CognitiveOperation = (typeof COGNITIVE_OPERATIONS)[number];
+export type RepresentationFamily = (typeof REPRESENTATION_FAMILIES)[number];
 export type EntityRef = z.infer<typeof EntityRefSchema>;
 export type RequiredSemanticChange = z.infer<typeof RequiredSemanticChangeSchema>;
 export type RelationSpec = z.infer<typeof RelationSpecSchema>;

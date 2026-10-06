@@ -42,7 +42,7 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
       value = { beats: [0, 1].map((index) => ({
         claimIds: [claimId], learnerDelta: `The learner can explain ${concept.label}.`, learningQuestion: `What happens to ${concept.label.toLowerCase()}?`,
         learnerBefore: `The learner has not explained ${concept.label.toLowerCase()}.`, learnerAfter: `The learner can explain ${concept.label.toLowerCase()}.`, dependsOnOrders: index ? [1] : [],
-        beatType: 'demonstrate', cognitiveOperation: 'explain_cause', representationFamily: 'literal_object', entities: [{ identityKey: `${concept.id}_main`, conceptId: concept.id }],
+        beatType: 'demonstrate', cognitiveOperation: 'explain_cause', representationFamily: 'scientific_diagram', entities: [{ identityKey: `${concept.id}_main`, conceptId: concept.id }],
         semanticRevealOrder: index === 0 ? [`${concept.id}_main`] : [], requiredSemanticChanges: [{ identityKey: `${concept.id}_main`, kind: index === 0 ? 'introduce' : 'transform', ...(index === 0 ? {} : { fromState: 'The concept is not yet explained.' }), toState: concept.definition }], relationships: [], misconceptionIds: [],
         narrationGoal: `Explain ${concept.definition}`, visualInvariant: `${concept.label} remains visible.`, mutedMeaning: `${concept.label} is part of the water cycle.`, narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
       })) };
