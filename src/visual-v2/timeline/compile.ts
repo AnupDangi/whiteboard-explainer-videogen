@@ -11,7 +11,15 @@ import { canonicalHash } from '../../harness/replayDeterminism.js';
  * end of its sentence. An op that cannot is reported as late, never silently moved.
  */
 export type PausePolicy = 'none' | 'micro' | 'think' | 'scene_close';
-export interface BeatTiming { beatId: string; startMs: number; endMs: number; sentences: Array<{ startMs: number; endMs: number }>; pauseIntent?: PausePolicy }
+export interface BeatTiming {
+  beatId: string;
+  startMs: number;
+  endMs: number;
+  sentences: Array<{ startMs: number; endMs: number }>;
+  /** Exact event phrase intervals from the final aligned narration, when available. */
+  semanticAnchors?: Array<{ semanticEventId: string; phrase: string; startMs: number; endMs: number }>;
+  pauseIntent?: PausePolicy;
+}
 
 /** Instructional pauses are compiler policy (V2 plan Phase 10), never model-written milliseconds: the board must settle this long before its beat ends. */
 export const PAUSE_MS: Record<PausePolicy, number> = { none: 0, micro: 175, think: 550, scene_close: 700 };

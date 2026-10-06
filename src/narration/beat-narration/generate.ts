@@ -12,6 +12,14 @@ function wordCount(sentences: readonly string[], language?: string): number {
   return tokenizeWords(sentences.join(' '), language ?? 'und').length;
 }
 
+/** Allocate the scene's spoken-time budget by structural obligations, not by equal beat count. */
+function beatDurationBudgets(ctx: NarrationContext): number[] {
+  if (!ctx.beats.length) return [];
+  const weights = ctx.beats.map((beat) => Math.max(1, beat.claimIds.length, beat.requiredSemanticChanges.length));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  return weights.map((weight) => ctx.durationSec * weight / total);
+}
+
 /** Allocate a scene revision target across beats, weighted by their previous spoken length. */
 function revisionTargets(ctx: NarrationContext): number[] | undefined {
   if (!ctx.revision) return undefined;
@@ -31,7 +39,7 @@ function revisionTargets(ctx: NarrationContext): number[] | undefined {
   return targets;
 }
 
-function contextForBeat(ctx: NarrationContext, index: number, previousSentences: string[], targetWords?: number): NarrationContext {
+function contextForBeat(ctx: NarrationContext, index: number, previousSentences: string[], durationSec: number, targetWords?: number): NarrationContext {
   const beat = ctx.beats[index]!;
   const priorVersion = ctx.revision?.previous.find((item) => item.beatId === beat.beatId);
   const canonicalClaims = ctx.canonicalClaims
@@ -40,7 +48,7 @@ function contextForBeat(ctx: NarrationContext, index: number, previousSentences:
   return {
     ...ctx,
     beats: [beat],
-    durationSec: ctx.durationSec / Math.max(1, ctx.beats.length),
+    durationSec,
     ...(canonicalClaims ? { canonicalClaims } : {}),
     beatFlow: {
       index,
@@ -65,9 +73,12 @@ export async function writeBeatNarration(input: { ctx: NarrationContext; scene: 
   const drafts: BeatNarrationDraft[] = [];
   const results: Array<StructuredCallResult<BeatNarrationDraft>> = [];
   const targets = revisionTargets(ctx);
+  const durations = ctx.revision && targets
+    ? targets.map((target) => target / Math.max(0.1, ctx.revision!.measuredWordsPerSec))
+    : beatDurationBudgets(ctx);
   for (let index = 0; index < ctx.beats.length; index++) {
     const beat = ctx.beats[index]!;
-    const beatCtx = contextForBeat(ctx, index, drafts.flatMap((draft) => draft.sentences), targets?.[index]);
+    const beatCtx = contextForBeat(ctx, index, drafts.flatMap((draft) => draft.sentences), durations[index]!, targets?.[index]);
     const { system, user } = buildNarrationPrompt(beatCtx, input.scene, input.sourceExcerpt);
     const result = await structuredCall({
       stage: 'beat-narration', subject: `scene ${ctx.sceneId} beat ${beat.beatId}`, model: m.model, apiKey: m.apiKey, system, user,

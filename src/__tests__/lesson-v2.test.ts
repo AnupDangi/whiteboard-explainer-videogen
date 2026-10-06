@@ -115,6 +115,16 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.equal(result.artifactCertification.artifactStatus, 'DRAFT', 'an encoded video is still a draft while required QA gates are unmeasured');
     assert.ok(result.artifactCertification.artifactGates.some((gate) => gate.id === 'complete-semantic-qa-suite' && gate.status === 'unmeasured'));
     assert.equal(result.scenes, 2);
+    const alignment = JSON.parse(await readFile(path.join(out, 'v2', 'alignment.json'), 'utf8')) as {
+      schemaVersion: string;
+      scenes: Array<{ sceneId: string; semanticAnchors: Array<{ semanticEventId: string; beatId: string; phrase: string; startMs: number; endMs: number }> }>;
+    };
+    assert.equal(alignment.schemaVersion, 'v2-alignment/v2');
+    assert.ok(alignment.scenes.every((scene) => scene.semanticAnchors.length > 0 && scene.semanticAnchors.every((anchor) => anchor.startMs >= 0 && anchor.endMs > anchor.startMs && anchor.phrase.length > 0)));
+    const sceneOne = JSON.parse(await readFile(path.join(out, 'v2', 'scene.one.json'), 'utf8')) as {
+      beatTimings: Array<{ beatId: string; semanticAnchors?: Array<{ semanticEventId: string; startMs: number; endMs: number }> }>;
+    };
+    assert.ok(sceneOne.beatTimings[0]?.semanticAnchors?.length, 'scene timing artifact carries phrase-level clocks');
     assert.equal(result.metrics['v2.ops'], 6);
     assert.equal(result.metrics['v2.stateChangingOps'], 2, 'remove and highlight change the board');
     assert.equal(result.metrics['v2.visualBeatCoverage'], 1);
@@ -533,12 +543,36 @@ test('the V2 lock pins ops, narration, timings, audio and versions, then rejects
   try {
     const out = await fixtureRun(dir);
     const lockPath = path.join(out, 'lesson.lock.v2.json');
-    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { schemaVersion: string; context: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string; audioHash: string; timelineHash: string }>; versions: Record<string, string>; contentHash: string };
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { schemaVersion: string; context: { file: string; hash: string }; alignment: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string; audioHash: string; timelineHash: string }>; versions: Record<string, string>; contentHash: string };
     assert.equal(lock.schemaVersion, 'lesson.lock/v5-teaching-compiler-v2');
     assert.equal(lock.scenes.length, 2);
     assert.ok(lock.scenes.every((scene) => scene.fileHash.length === 64 && scene.audioHash.length === 64 && scene.timelineHash.length === 64));
     assert.ok(lock.versions.resvg && lock.versions.roughjs && lock.versions.pipeline);
     assert.deepEqual(await verifyLessonLockV2(out), []);
+
+    const alignmentPath = path.join(out, lock.alignment.file);
+    const originalAlignmentBytes = await readFile(alignmentPath, 'utf8');
+    const alignment = JSON.parse(originalAlignmentBytes) as { schemaVersion: string; scenes: Array<{ semanticAnchors: Array<{ startMs: number }> }> };
+    assert.equal(alignment.schemaVersion, 'v2-alignment/v2');
+    alignment.scenes[0]!.semanticAnchors[0]!.startMs += 1;
+    const tamperedAlignmentBytes = `${JSON.stringify(alignment, null, 2)}\n`;
+    await writeFile(alignmentPath, tamperedAlignmentBytes);
+    lock.alignment.hash = sha256(tamperedAlignmentBytes);
+    const resign = async () => {
+      const { contentHash: _old, ...body } = lock;
+      lock.contentHash = canonicalHash(body);
+      const bytes = `${JSON.stringify(lock, null, 2)}\n`;
+      await writeFile(lockPath, bytes);
+      await writeFile(path.join(out, 'lesson.lock.json'), bytes);
+    };
+    await resign();
+    const alignmentProblems = await verifyLessonLockV2(out);
+    assert.ok(alignmentProblems.some((problem) => /semantic anchors differ from final narration and aligned word times/.test(problem)), alignmentProblems.join('\n'));
+    await writeFile(alignmentPath, originalAlignmentBytes);
+    lock.alignment.hash = sha256(originalAlignmentBytes);
+    await resign();
+    assert.deepEqual(await verifyLessonLockV2(out), [], 'restoring the original aligned anchors restores the lock');
+
     const scenePath = path.join(out, 'v2', 'scene.one.json');
     const original = await readFile(scenePath, 'utf8');
     await writeFile(scenePath, original.replace('"cue": 0', '"cue": 1'));

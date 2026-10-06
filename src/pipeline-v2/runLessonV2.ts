@@ -12,7 +12,7 @@ import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import type { ContentAddressedArtifactStore } from '../run/artifactCache.js';
 import type { StageFailure } from '../shared/types.js';
 import { certifyArtifact, type ArtifactCertification } from '../shared/artifactStatus.js';
-import { beatIntervals } from '../narration/beat-narration/intervals.js';
+import { alignedSemanticAnchorIntervals, beatIntervals, type AlignedSemanticAnchor } from '../narration/beat-narration/intervals.js';
 import { compiledSemanticAnchorProblems } from '../narration/beat-narration/compile.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
@@ -298,13 +298,27 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
 
   // Preserve the complete measured word clock of the FINAL speech, including aligner/repair/calibration metadata.
   // Beat token matching alone cannot establish valid intervals.
-  await dump('alignment.json', { schemaVersion: 'v2-alignment/v1', scenes: audioScenes.map(({ section, audio }) => ({
-    sceneId: section.id, durationMs: audio.durationMs, words: audio.words,
-    aligner: audio.aligner, repairedWordIndexes: audio.repairedWordIndexes,
-    calibration: input.calibrationMedianErrorMs === undefined
-      ? { status: 'unmeasured' }
-      : { status: 'measured', medianAbsoluteBoundaryErrorMs: input.calibrationMedianErrorMs },
-  })) });
+  const alignedAnchorsByScene = new Map<string, AlignedSemanticAnchor[]>();
+  const alignmentScenes = [];
+  for (const { section, narration, audio } of audioScenes) {
+    const speechLanguage = prepared.beatNarrationContexts?.[section.id]?.language ?? language;
+    let semanticAnchors: AlignedSemanticAnchor[];
+    try {
+      semanticAnchors = alignedSemanticAnchorIntervals(narration, audio.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })), speechLanguage);
+    } catch (error) {
+      failures.push({ code: 'v2-anchor-alignment-failed', stage: 'align', message: `${section.id}: ${error instanceof Error ? error.message : String(error)}`, hard: true });
+      return finish('failed');
+    }
+    alignedAnchorsByScene.set(section.id, semanticAnchors);
+    alignmentScenes.push({
+      sceneId: section.id, durationMs: audio.durationMs, language: speechLanguage, words: audio.words, semanticAnchors,
+      aligner: audio.aligner, repairedWordIndexes: audio.repairedWordIndexes,
+      calibration: input.calibrationMedianErrorMs === undefined
+        ? { status: 'unmeasured' as const }
+        : { status: 'measured' as const, medianAbsoluteBoundaryErrorMs: input.calibrationMedianErrorMs },
+    });
+  }
+  await dump('alignment.json', { schemaVersion: 'v2-alignment/v2', scenes: alignmentScenes });
 
   timing['v2.audioMs'] = Date.now() - startedAt;
   const conceptIndex = new Map(graph.concepts.map((c) => [c.id, {
@@ -345,11 +359,18 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const depictionRequests = new Map<string, SceneEntityRequest>();
   for (const { section, narration, audio } of audioScenes) {
     let intervals;
-    try { intervals = beatIntervals(narration, audio.words.map((w) => ({ w: w.word, startMs: w.startMs, endMs: w.endMs }))); } catch (error) {
+    const speechLanguage = prepared.beatNarrationContexts?.[section.id]?.language ?? language;
+    try { intervals = beatIntervals(narration, audio.words.map((w) => ({ w: w.word, startMs: w.startMs, endMs: w.endMs })), speechLanguage); } catch (error) {
       failures.push({ code: 'v2-alignment-mismatch', stage: 'align', message: `${section.id}: ${error instanceof Error ? error.message : String(error)}`, hard: true });
       return finish('failed');
     }
-    const beatTimings: BeatTiming[] = intervals.map((interval) => ({ beatId: interval.beatId, startMs: interval.startMs, endMs: interval.endMs, sentences: interval.sentences.map((s) => ({ startMs: s.startMs, endMs: s.endMs })), pauseIntent: narration.beatSpans.find((span) => span.beatId === interval.beatId)?.pauseIntent ?? 'none' }));
+    const sceneAnchors = alignedAnchorsByScene.get(section.id) ?? [];
+    const beatTimings: BeatTiming[] = intervals.map((interval) => ({
+      beatId: interval.beatId, startMs: interval.startMs, endMs: interval.endMs,
+      sentences: interval.sentences.map((s) => ({ startMs: s.startMs, endMs: s.endMs })),
+      semanticAnchors: sceneAnchors.filter((anchor) => anchor.beatId === interval.beatId).map(({ semanticEventId, phrase, startMs, endMs }) => ({ semanticEventId, phrase, startMs, endMs })),
+      pauseIntent: narration.beatSpans.find((span) => span.beatId === interval.beatId)?.pauseIntent ?? 'none',
+    }));
     timings.push(beatTimings);
     const beats = prepared.beatPlans![section.id]!;
     const visualVocabulary = prepared.visualVocabularies?.[section.id];
@@ -465,7 +486,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v9', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'semantic-phrase-anchors/v1' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
+  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v9', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'beat-narration/v2-weighted-duration-anchor-clocks' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });

@@ -69,9 +69,13 @@ run against that beat object. A repair cannot change a later beat or another
 field that has not failed; if a sentence repair invalidates its phrase anchor,
 the anchor is repaired in a later bounded call. Reports, usage, repair traces,
 and raw responses are aggregated for the scene. The complete scene is checked
-again before compilation. For now, each beat gets an equal share of the scene's
-duration budget; the plan does not yet carry measured or pedagogically weighted
-per-beat durations.
+again before compilation. The compiler allocates the scene's word-time budget
+by the larger of each beat's claim count and required semantic-change count,
+with a minimum weight of one. This is a deterministic structural heuristic;
+it is not a measured speaking time or a human-validated estimate.
+For a measured runtime revision, local ceilings instead follow each beat's
+allocated revision-word target at the measured speaking rate, keeping the
+local validation budgets consistent with the requested split.
 
 Each required semantic change has a stable event ID (`<beatId>.eN`) and one
 exact, unique phrase copied from a nominated sentence. Compilation stores
@@ -79,8 +83,14 @@ absolute character offsets. The runner rejects missing or inconsistent
 compiled anchors before audio generation, and v9 lock verification recomputes
 those identities and offsets against the pinned beat plan. This checks span
 integrity; it does not prove that the phrase entails the planned state change.
-Independent semantic-realization review and post-TTS phrase-to-time resolution
-remain separate work.
+After final TTS and word alignment, `v2-alignment/v2` stores the language and
+the first/last aligned word times for each phrase. Lock verification recomputes
+those times from the pinned narration character spans and aligned words, so a
+rehash cannot silently move an event anchor. Beat timing artifacts carry the
+resolved phrase intervals for downstream scheduling. The current timeline
+scheduler still schedules BoardOps from sentence cues; it does not yet schedule
+meaning changes directly from event phrases. Independent semantic-realization
+review remains separate work.
 
 ## Ownership and trust boundaries
 

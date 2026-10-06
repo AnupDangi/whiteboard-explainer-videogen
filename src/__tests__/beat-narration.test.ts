@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SceneNarrationDraftSchema, type SceneNarrationDraft } from '../narration/beat-narration/types.js';
 import { validateSceneNarration, type NarrationContext } from '../narration/beat-narration/validate.js';
 import { compileSceneNarration, compiledSemanticAnchorProblems } from '../narration/beat-narration/compile.js';
-import { beatIntervals } from '../narration/beat-narration/intervals.js';
+import { alignedSemanticAnchorIntervals, beatIntervals } from '../narration/beat-narration/intervals.js';
 import { buildNarrationPrompt } from '../narration/beat-narration/prompt.js';
 import { writeBeatNarration } from '../narration/beat-narration/generate.js';
 import { tokenizeWords } from '../narration/align.js';
@@ -208,6 +208,33 @@ test('beat intervals come from the aligned words by token position, not from any
   assert.throws(() => beatIntervals(c, words.slice(1)), /do not match/);
 });
 
+test('semantic phrase anchors resolve to their exact final aligned word intervals', () => {
+  const draftWithShortPhrase = draft([{ semanticAnchors: [{ semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'pushes a new frame' }] }]);
+  const c = compileSceneNarration('scene', draftWithShortPhrase, beats);
+  const tokens = tokenizeWords(c.text);
+  const words = tokens.map((w, i) => ({ w, startMs: i * 300, endMs: i * 300 + 250 }));
+  const anchors = alignedSemanticAnchorIntervals(c, words);
+  assert.deepEqual(anchors[0], { semanticEventId: 'scene.b1.e1', beatId: 'scene.b1', phrase: 'pushes a new frame', startMs: 600, endMs: 1750 });
+  assert.equal(anchors[1]!.startMs, tokenizeWords(c.beats[0]!.text).length * 300);
+  assert.equal(anchors[1]!.endMs, (tokens.length - 1) * 300 + 250);
+  assert.throws(() => alignedSemanticAnchorIntervals({ ...c, semanticAnchors: [{ ...c.semanticAnchors[0]!, charStart: -1 }, c.semanticAnchors[1]!] }, words), /invalid compiled character span/);
+
+  const chineseBeat = planBeat(1, ['c1']);
+  const chinese = compileSceneNarration('scene', SceneNarrationDraftSchema.parse({ beats: [{
+    beatId: chineseBeat.beatId,
+    sentences: ['你好世界欢迎大家。'],
+    claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }],
+    emphasisTerms: [],
+    semanticAnchors: [{ semanticEventId: semanticEventId(chineseBeat.beatId, 0), sentenceIndex: 0, phrase: '欢迎大家' }],
+  }] }), [chineseBeat]);
+  const chineseTokens = tokenizeWords(chinese.text, 'zh');
+  assert.deepEqual(chineseTokens, ['你好', '世界', '欢迎', '大家']);
+  const chineseWords = chineseTokens.map((w, i) => ({ w, startMs: i * 100, endMs: i * 100 + 80 }));
+  assert.deepEqual(alignedSemanticAnchorIntervals(chinese, chineseWords, 'zh'), [{
+    semanticEventId: 'scene.b1.e1', beatId: 'scene.b1', phrase: '欢迎大家', startMs: 200, endMs: 380,
+  }]);
+});
+
 test('the narration prompt carries the beat plan and the teaching rules and no topic knowledge', () => {
   const { system, user } = buildNarrationPrompt(ctx, { title: 'T', goal: 'g' }, 'SOURCE EXCERPT');
   assert.match(system, /audio/i);
@@ -239,6 +266,49 @@ test('writeBeatNarration makes one coherent call per beat, then compiles the com
   assert.doesNotMatch(requests[0]!.user, /scene\.b2/);
   assert.match(requests[1]!.user, /scene\.b2/);
   assert.match(requests[1]!.user, /Earlier beats in this scene said: Every call pushes a new frame onto the stack\./);
+});
+
+test('per-beat duration budgets scale with the planned semantic obligations', async () => {
+  const weightedBeats = structuredClone(ctx.beats);
+  weightedBeats[1]!.requiredSemanticChanges.push(
+    { ...weightedBeats[1]!.requiredSemanticChanges[0]!, toState: 'The active frame is removed.' },
+    { ...weightedBeats[1]!.requiredSemanticChanges[0]!, toState: 'Control returns to the caller.' },
+  );
+  const second = {
+    beatId: 'scene.b2',
+    sentences: ['When a call returns, its frame is removed from the top.', 'This reveals the work is done.', 'Now the caller can continue.'],
+    claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }],
+    semanticAnchors: [
+      { semanticEventId: 'scene.b2.e1', sentenceIndex: 0, phrase: 'When a call returns' },
+      { semanticEventId: 'scene.b2.e2', sentenceIndex: 0, phrase: 'its frame is removed' },
+      { semanticEventId: 'scene.b2.e3', sentenceIndex: 2, phrase: 'caller can continue' },
+    ],
+    emphasisTerms: [],
+  };
+  const { client, requests } = scripted([goodJson[0]!, JSON.stringify(second)]);
+  const result = await writeBeatNarration({ ctx: { ...ctx, beats: weightedBeats }, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+  assert.ok(result.value);
+  assert.match(requests[0]!.user, /About 11 spoken words for 5 s/);
+  assert.match(requests[1]!.user, /About 34 spoken words for 15 s/);
+});
+
+test('revision duration ceilings follow the measured per-beat word targets', async () => {
+  const revising: NarrationContext = {
+    ...ctx,
+    durationSec: 10,
+    revision: {
+      direction: 'shorten', targetWords: 20, measuredWordsPerSec: 2, previousSeconds: 10,
+      previous: [{ beatId: 'scene.b1', sentences: ['A'] }, { beatId: 'scene.b2', sentences: [Array.from({ length: 19 }, (_, i) => `word${i}`).join(' ')] }],
+    },
+  };
+  const first = { beatId: 'scene.b1', sentences: ['Frame appears.'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'Frame appears.' }], emphasisTerms: [] };
+  const secondSentence = 'When the call returns, the frame leaves the stack, so control returns to the caller who resumes saved work.';
+  assert.equal(tokenizeWords(secondSentence).length, 19);
+  const second = { beatId: 'scene.b2', sentences: [secondSentence], claimSentences: [{ claimId: 'c2', sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: 'scene.b2.e1', sentenceIndex: 0, phrase: 'frame leaves the stack' }], emphasisTerms: [] };
+  const { client } = scripted([JSON.stringify(first), JSON.stringify(second)]);
+  const result = await writeBeatNarration({ ctx: revising, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+  assert.ok(result.value, JSON.stringify(result.failures));
+  assert.equal(tokenizeWords(result.value.text).length, 21);
 });
 
 test('a screen reference is repaired by patching that one sentence', async () => {

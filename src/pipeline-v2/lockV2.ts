@@ -7,6 +7,8 @@ import { z } from 'zod';
 import { canonicalHash, type ReplayDigest } from '../harness/replayDeterminism.js';
 import { alignedWordTimingProblems, tokenizeWords } from '../narration/align.js';
 import { compiledSemanticAnchorProblems } from '../narration/beat-narration/compile.js';
+import { alignedSemanticAnchorIntervals } from '../narration/beat-narration/intervals.js';
+import type { CompiledSceneNarration } from '../narration/beat-narration/types.js';
 import { claimIdentityMismatch, deriveClaimIdentity, formatClaimIdentityMismatch } from '../evidence/claimIdentity.js';
 import { ClaimVerificationStatusSchema, EpistemicTypeSchema, epistemicClaimProblems, epistemicTextFramingProblem, parseEvidenceLedger, validateEvidenceLedger, validateEvidenceLedgerClaims, validateEvidenceLedgerSources, type CanonicalTeachingClaimEvidence } from '../evidence/ledger.js';
 import type { EvidenceReference } from '../shared/contracts.js';
@@ -72,25 +74,35 @@ const jsonBytes = (value: unknown): string => `${JSON.stringify(value, null, 2)}
 const lockHash = (lock: LessonLockV2): string => { const { contentHash: _ignored, ...body } = lock; return canonicalHash(body); };
 
 
-const AlignmentSchema = z.object({
-  schemaVersion: z.literal('v2-alignment/v1'),
-  scenes: z.array(z.object({
-    sceneId: z.string().min(1), durationMs: z.number().positive(),
-    words: z.array(z.object({ word: z.string().min(1), startMs: z.number(), endMs: z.number() }).strict()).min(1),
-    aligner: z.enum(['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair', 'elevenlabs-timestamps']),
-    repairedWordIndexes: z.array(z.number().int().nonnegative()),
-    calibration: z.object({ status: z.enum(['measured', 'unmeasured']), medianAbsoluteBoundaryErrorMs: z.number().nonnegative().optional() }).strict()
-      .refine((value) => value.status === 'measured' ? value.medianAbsoluteBoundaryErrorMs !== undefined : value.medianAbsoluteBoundaryErrorMs === undefined, 'calibration status must match the recorded boundary error'),
-  }).strict()).min(1),
+const AlignmentSceneBaseSchema = z.object({
+  sceneId: z.string().min(1), durationMs: z.number().positive(),
+  words: z.array(z.object({ word: z.string().min(1), startMs: z.number(), endMs: z.number() }).strict()).min(1),
+  aligner: z.enum(['stable-ts', 'stable-ts-fast-mode', 'torchaudio-wav2vec2-ctc', 'stable-ts+collapsed-repair', 'elevenlabs-timestamps']),
+  repairedWordIndexes: z.array(z.number().int().nonnegative()),
+  calibration: z.object({ status: z.enum(['measured', 'unmeasured']), medianAbsoluteBoundaryErrorMs: z.number().nonnegative().optional() }).strict()
+    .refine((value) => value.status === 'measured' ? value.medianAbsoluteBoundaryErrorMs !== undefined : value.medianAbsoluteBoundaryErrorMs === undefined, 'calibration status must match the recorded boundary error'),
 }).strict();
+const AlignedSemanticAnchorSchema = z.object({
+  semanticEventId: z.string().min(1), beatId: z.string().min(1), phrase: z.string().min(1),
+  startMs: z.number().nonnegative(), endMs: z.number().positive(),
+}).strict().refine((anchor) => anchor.endMs > anchor.startMs, 'semantic anchor interval must have positive duration');
+const AlignmentSchemaV1 = z.object({ schemaVersion: z.literal('v2-alignment/v1'), scenes: z.array(AlignmentSceneBaseSchema).min(1) }).strict();
+const AlignmentSchemaV2 = z.object({
+  schemaVersion: z.literal('v2-alignment/v2'),
+  scenes: z.array(AlignmentSceneBaseSchema.extend({ language: z.string().min(1), semanticAnchors: z.array(AlignedSemanticAnchorSchema) }).strict()).min(1),
+}).strict();
+const AlignmentSchema = z.discriminatedUnion('schemaVersion', [AlignmentSchemaV1, AlignmentSchemaV2]);
 
 function alignmentProblems(bytes: Buffer, scenes: Array<{ sceneId: string; startMs: number; endMs: number }>, semantic: unknown[]): string[] {
   const problems: string[] = [];
   let record: z.infer<typeof AlignmentSchema>;
   try { record = AlignmentSchema.parse(JSON.parse(bytes.toString('utf8'))); }
   catch (error) { return [`alignment artifact invalid: ${error instanceof Error ? error.message : String(error)}`]; }
-  const byId = new Map(record.scenes.map((scene) => [scene.sceneId, scene]));
-  if (byId.size !== record.scenes.length || record.scenes.length !== scenes.length || record.scenes.some((scene) => !scenes.some((locked) => locked.sceneId === scene.sceneId))) problems.push('alignment scene set does not match locked scenes');
+  type ParsedAlignmentScene = z.infer<typeof AlignmentSceneBaseSchema> & { language?: string; semanticAnchors?: Array<z.infer<typeof AlignedSemanticAnchorSchema>> };
+  const alignmentScenes = record.scenes as ParsedAlignmentScene[];
+  const isAlignmentV2 = record.schemaVersion === 'v2-alignment/v2';
+  const byId = new Map(alignmentScenes.map((scene) => [scene.sceneId, scene]));
+  if (byId.size !== alignmentScenes.length || alignmentScenes.length !== scenes.length || alignmentScenes.some((scene) => !scenes.some((locked) => locked.sceneId === scene.sceneId))) problems.push('alignment scene set does not match locked scenes');
   scenes.forEach((scene, index) => {
     const aligned = byId.get(scene.sceneId);
     if (!aligned) { problems.push(`alignment missing for scene ${scene.sceneId}`); return; }
@@ -99,9 +111,28 @@ function alignmentProblems(bytes: Buffer, scenes: Array<{ sceneId: string; start
     if (new Set(aligned.repairedWordIndexes).size !== aligned.repairedWordIndexes.length || aligned.repairedWordIndexes.some((wordIndex) => wordIndex >= aligned.words.length)) problems.push(`alignment scene ${scene.sceneId} repaired word indexes invalid`);
     const narration = z.object({ narration: z.object({ text: z.string().min(1) }).passthrough() }).passthrough().safeParse(semantic[index]);
     if (!narration.success) { problems.push(`alignment scene ${scene.sceneId} needs locked narration text`); return; }
-    const expected = tokenizeWords(narration.data.narration.text);
-    const actual = aligned.words.flatMap((word) => tokenizeWords(word.word));
+    const language = aligned.language ?? 'und';
+    const expected = tokenizeWords(narration.data.narration.text, language);
+    const actual = aligned.words.flatMap((word) => tokenizeWords(word.word, language));
     if (actual.length !== expected.length || actual.some((word, wordIndex) => word !== expected[wordIndex])) problems.push(`alignment scene ${scene.sceneId} words do not match narration token sequence`);
+    if (isAlignmentV2) {
+      const narrationValue = (semantic[index] as { narration?: unknown } | undefined)?.narration;
+      if (!narrationValue || typeof narrationValue !== 'object' || Array.isArray(narrationValue)) {
+        problems.push(`alignment scene ${scene.sceneId} needs compiled narration anchors`);
+      } else {
+        try {
+          const expectedAnchors = alignedSemanticAnchorIntervals(
+            narrationValue as CompiledSceneNarration,
+            aligned.words.map((word) => ({ w: word.word, startMs: word.startMs, endMs: word.endMs })),
+            language,
+          );
+          const actualAnchors = aligned.semanticAnchors ?? [];
+          if (JSON.stringify(actualAnchors) !== JSON.stringify(expectedAnchors)) problems.push(`alignment scene ${scene.sceneId} semantic anchors differ from final narration and aligned word times`);
+        } catch (error) {
+          problems.push(`alignment scene ${scene.sceneId} semantic anchor timing invalid: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
   });
   return problems;
 }
