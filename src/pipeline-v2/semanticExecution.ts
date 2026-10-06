@@ -163,6 +163,7 @@ export function executeSemanticScene(input: {
       } else if (op.op === 'updateValue') existingStateValues[op.target] = op.value;
       else if (op.op === 'remove') delete existingStateValues[op.target];
       else if (op.op === 'split') for (const part of op.into) usedElementIds.add(part.id);
+      else if (op.op === 'merge') usedElementIds.add(op.into.id);
       else if (op.op === 'connect') usedEdgeIds.add(op.id);
     }
     beatRecords.push({ beatId: beat.beatId, family: beat.representationFamily, status: 'compiled', providerVersion: provider.providerVersion });

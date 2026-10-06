@@ -4,6 +4,7 @@ import { compileSemanticOpsToBoardOps } from '../teaching/semantic-ir/toBoardOps
 import type { SemanticSceneState } from '../teaching/semantic-ir/types.js';
 import type { VisualVocabulary } from '../planner/visualDiscovery.js';
 import { loadCatalogLibraries } from '../assets/streamline.js';
+import { applyOps, emptyBoardState } from '../visual-v2/board-state/reducer.js';
 
 const emptyState = (): SemanticSceneState => ({ sceneId: 'scene', entities: [], relations: [], selectedEntityIds: [], plots: [], feedbackLoops: [], annotations: [] });
 const concepts = [{ id: 'cell_nuclei', label: 'Cell nuclei', kind: 'entity' }];
@@ -114,6 +115,94 @@ test('separation lowers to a state-checked split and preserves library-icon bind
   const stale = compileSemanticOpsToBoardOps(initial, [separate], { ...context, existingStateValues: { 'se_cell_nuclei.state': 'already divided' } });
   assert.equal(stale.ok, false);
   if (!stale.ok) assert.match(stale.problems[0]!.message, /visible state value does not match/);
+});
+
+test('merge removes verified source states, preserves the selected result icon, and emits a bound result state', () => {
+  const initial = {
+    ...emptyState(),
+    entities: [
+      { id: 'se_cell_left', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'left fragment', lifecycle: 'active' as const },
+      { id: 'se_cell_right', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'right fragment', lifecycle: 'active' as const },
+    ],
+  };
+  const merge = {
+    type: 'merge', eventId: 'scene.b2.e1', beatId: 'scene.b2', claimIds: ['claim_a'], dependsOnEventIds: [],
+    entityIds: ['se_cell_left', 'se_cell_right'],
+    result: { id: 'se_cell_combined', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'combined nucleus', lifecycle: 'active' },
+  };
+  const context = {
+    concepts, visualVocabulary: iconVocabulary,
+    knownBeatIds: new Set(['scene.b2']), knownClaimIds: new Set(['claim_a']),
+    existingElementIds: new Set(['se_cell_left', 'se_cell_left.state', 'se_cell_right', 'se_cell_right.state']),
+    existingStateValues: { 'se_cell_left.state': 'left fragment', 'se_cell_right.state': 'right fragment' },
+  };
+  const result = compileSemanticOpsToBoardOps(initial, [merge], context);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const repeated = compileSemanticOpsToBoardOps(initial, [merge], context);
+  assert.equal(repeated.ok, true);
+  if (repeated.ok) assert.deepEqual(repeated.operations, result.operations);
+  assert.deepEqual(result.selectedAssetIds, { cell_nuclei: 'iconify-healthicons:cell-nuclei-outline' });
+  assert.deepEqual(result.operations.map((op) => op.op), ['remove', 'remove', 'merge', 'add']);
+  const boardMerge = result.operations[2]!;
+  assert.equal(boardMerge.op, 'merge');
+  if (boardMerge.op === 'merge') {
+    assert.deepEqual(boardMerge.targets, ['se_cell_left', 'se_cell_right']);
+    assert.equal(boardMerge.into.id, 'se_cell_combined');
+    assert.deepEqual(boardMerge.into.at, { region: 'center' });
+    assert.equal(boardMerge.into.element.type, 'entity');
+    if (boardMerge.into.element.type === 'entity') {
+      assert.equal(boardMerge.into.element.label, 'Cell nuclei');
+      assert.deepEqual(boardMerge.into.element.bindings, { conceptIds: ['cell_nuclei'], claimIds: ['claim_a'] });
+    }
+  }
+  const resultState = result.operations[3]!;
+  assert.equal(resultState.op, 'add');
+  if (resultState.op === 'add') {
+    assert.equal(resultState.id, 'se_cell_combined.state');
+    assert.equal(resultState.element.type, 'value');
+    if (resultState.element.type === 'value') {
+      assert.equal(resultState.element.value, 'combined nucleus');
+      assert.deepEqual(resultState.element.bindings, { conceptIds: ['cell_nuclei'], claimIds: ['claim_a'] });
+    }
+  }
+  const boardBeforeMerge = applyOps(emptyBoardState(), [
+    { op: 'add', opId: 'seed.left', beatId: 'scene.b1', id: 'se_cell_left', element: { type: 'entity', conceptId: 'cell_nuclei', label: 'Cell nuclei', provenance: 'derived' }, at: { region: 'left' } },
+    { op: 'add', opId: 'seed.left-state', beatId: 'scene.b1', id: 'se_cell_left.state', element: { type: 'value', label: 'State', value: 'left fragment', provenance: 'derived' }, at: { region: 'left' } },
+    { op: 'add', opId: 'seed.right', beatId: 'scene.b1', id: 'se_cell_right', element: { type: 'entity', conceptId: 'cell_nuclei', label: 'Cell nuclei', provenance: 'derived' }, at: { region: 'right' } },
+    { op: 'add', opId: 'seed.right-state', beatId: 'scene.b1', id: 'se_cell_right.state', element: { type: 'value', label: 'State', value: 'right fragment', provenance: 'derived' }, at: { region: 'right' } },
+  ]).state;
+  const boardAfterMerge = applyOps(boardBeforeMerge, result.operations).state;
+  assert.equal(boardAfterMerge.elements.se_cell_left!.lifecycle.removedAtBeat, 'scene.b2');
+  assert.equal(boardAfterMerge.elements['se_cell_left.state']!.lifecycle.removedAtBeat, 'scene.b2');
+  assert.equal(boardAfterMerge.elements.se_cell_right!.lifecycle.removedAtBeat, 'scene.b2');
+  assert.equal(boardAfterMerge.elements['se_cell_right.state']!.lifecycle.removedAtBeat, 'scene.b2');
+  assert.equal(boardAfterMerge.elements.se_cell_combined!.lifecycle.removedAtBeat, undefined);
+  assert.equal(boardAfterMerge.elements['se_cell_combined.state']!.value, 'combined nucleus');
+  assert.deepEqual(result.resultingSemanticState.entities.map((entity) => [entity.id, entity.lifecycle]), [
+    ['se_cell_left', 'merged'], ['se_cell_right', 'merged'], ['se_cell_combined', 'active'],
+  ]);
+
+  const stale = compileSemanticOpsToBoardOps(initial, [merge], { ...context, existingStateValues: { ...context.existingStateValues, 'se_cell_right.state': 'stale' } });
+  assert.equal(stale.ok, false);
+  if (!stale.ok) assert.match(stale.problems[0]!.message, /visible state value does not match semantic source state/);
+});
+
+test('semantic merge refuses more inputs than the renderer can display', () => {
+  const entityIds = Array.from({ length: 7 }, (_, index) => `se_part_${index + 1}`);
+  const initial = {
+    ...emptyState(),
+    entities: entityIds.map((id) => ({ id, conceptId: 'cell_nuclei', claimIds: ['claim_a'], lifecycle: 'active' as const })),
+  };
+  const merge = {
+    type: 'merge', eventId: 'scene.b2.e1', beatId: 'scene.b2', claimIds: ['claim_a'], dependsOnEventIds: [],
+    entityIds, result: { id: 'se_combined', conceptId: 'cell_nuclei', claimIds: ['claim_a'], lifecycle: 'active' },
+  };
+  const result = compileSemanticOpsToBoardOps(initial, [merge], {
+    concepts, knownBeatIds: new Set(['scene.b2']), knownClaimIds: new Set(['claim_a']), existingElementIds: new Set(entityIds),
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.problems[0]!.message, /two through six source entities/);
 });
 
 test('causal semantic relations lower to deterministic directed edges with exact claim and concept bindings', () => {

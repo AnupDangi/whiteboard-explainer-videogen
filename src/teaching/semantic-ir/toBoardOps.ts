@@ -79,7 +79,9 @@ export function compileSemanticOpsToBoardOps(
   const usedElementIds = new Set(context.existingElementIds ?? []);
   const usedRendererIds = new Set([...usedElementIds, ...(context.existingEdgeIds ?? [])]);
   const stateValues = new Map(Object.entries(context.existingStateValues ?? {}));
-  const introduced = new Set(initialState.entities.map((entity) => entity.id));
+  // Only entities emitted during this lowering are known to have renderer
+  // elements. Initial semantic entities must be backed by existingElementIds.
+  const introduced = new Set<string>();
   const add = (op: unknown, path: string): SemanticIrProblem[] => {
     const parsed = BoardOpSchema.safeParse(op);
     if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: `${path}/${issue.path.map(String).join('/')}`, message: issue.message }));
@@ -185,6 +187,73 @@ export function compileSemanticOpsToBoardOps(
         const stateProblems = add({ op: 'add', ...base, opId: `${op.eventId}.result-${resultIndex + 1}-state`, id: valueId, element: stateElement, at: parts[resultIndex]!.at, persistence: 'scene' }, `${path}/boardOps/results/${resultIndex}/state`);
         if (stateProblems.length) return { ok: false, problems: stateProblems };
         stateValues.set(valueId, result.state);
+      }
+      continue;
+    }
+
+    if (op.type === 'merge') {
+      if (op.entityIds.length < 2 || op.entityIds.length > 6) {
+        return { ok: false, problems: [problem(`${path}/entityIds`, 'a visible merge needs two through six source entities')] };
+      }
+      const resultConcept = concepts.get(op.result.conceptId);
+      if (!resultConcept) return { ok: false, problems: [problem(`${path}/result/conceptId`, `unknown canonical concept ${op.result.conceptId}`)] };
+      if (op.result.state !== undefined && op.result.state.length > 60) {
+        return { ok: false, problems: [problem(`${path}/result/state`, 'state exceeds the visible value limit; preserve it verbatim and repair the semantic representation instead of shortening it')] };
+      }
+
+      const sourceStateValueIds: string[] = [];
+      for (const [entityIndex, entityId] of op.entityIds.entries()) {
+        const entity = replay.state.entities.find((candidate) => candidate.id === entityId);
+        if (!entity) return { ok: false, problems: [problem(`${path}/entityIds/${entityIndex}`, `no semantic entity exists for merge source ${entityId}`)] };
+        if (!introduced.has(entityId) && !context.existingElementIds?.has(entityId)) {
+          return { ok: false, problems: [problem(`${path}/entityIds/${entityIndex}`, `no board entity exists for semantic merge source ${entityId}`)] };
+        }
+        const valueId = stateValueId(entityId);
+        if (entity.state !== undefined) {
+          if (!stateValues.has(valueId)) return { ok: false, problems: [problem(`${path}/entityIds/${entityIndex}`, `no visible state value exists for semantic merge source ${entityId}`)] };
+          if (stateValues.get(valueId) !== entity.state) {
+            return { ok: false, problems: [problem(`${path}/entityIds/${entityIndex}`, `visible state value does not match semantic source state ${JSON.stringify(entity.state)}`)] };
+          }
+          sourceStateValueIds.push(valueId);
+        } else if (stateValues.has(valueId)) {
+          return { ok: false, problems: [problem(`${path}/entityIds/${entityIndex}`, `unexpected visible state value exists for semantic merge source ${entityId}`)] };
+        }
+      }
+
+      const resultIdProblems = reserveId(op.result.id, `${path}/result/id`);
+      if (resultIdProblems.length) return { ok: false, problems: resultIdProblems };
+      for (const [entityIndex, valueId] of sourceStateValueIds.entries()) {
+        const removeStateProblems = add({
+          op: 'remove', ...base, opId: `${op.eventId}.state-remove-${entityIndex + 1}`, target: valueId,
+        }, `${path}/boardOps/source-state/${entityIndex}`);
+        if (removeStateProblems.length) return { ok: false, problems: removeStateProblems };
+        stateValues.delete(valueId);
+      }
+      const resultElement: ElementSpec = {
+        type: 'entity', conceptId: resultConcept.id, label: resultConcept.label, provenance: 'derived',
+        bindings: bindings(resultConcept.id, op.result.claimIds),
+      };
+      const mergeProblems = add({
+        op: 'merge', ...base, opId: `${op.eventId}.merge`, targets: [...op.entityIds],
+        into: { id: op.result.id, element: resultElement, at: { region: 'center' } },
+      }, `${path}/boardOps/merge`);
+      if (mergeProblems.length) return { ok: false, problems: mergeProblems };
+      introduced.add(op.result.id);
+
+      if (op.result.state !== undefined) {
+        const valueId = stateValueId(op.result.id);
+        const valueIdProblems = reserveId(valueId, `${path}/result/state`);
+        if (valueIdProblems.length) return { ok: false, problems: valueIdProblems };
+        const value: ElementSpec = {
+          type: 'value', label: 'State', value: op.result.state, provenance: 'derived',
+          bindings: bindings(resultConcept.id, op.result.claimIds),
+        };
+        const addStateProblems = add({
+          op: 'add', ...base, opId: `${op.eventId}.result-state`, id: valueId, element: value,
+          at: { region: 'center' }, persistence: 'scene',
+        }, `${path}/boardOps/result-state`);
+        if (addStateProblems.length) return { ok: false, problems: addStateProblems };
+        stateValues.set(valueId, op.result.state);
       }
       continue;
     }
