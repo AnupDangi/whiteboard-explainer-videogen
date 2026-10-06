@@ -63,7 +63,7 @@ export interface PreparedLesson {
 
 /** Content stages whose model can be chosen independently (OPENROUTER_<STAGE>_MODEL). */
 export type ContentStage = 'syllabus' | 'concepts' | 'plan' | 'script';
-const CONTENT_STAGE_FOR: Array<[prefix: string, stage: ContentStage]> = [['S1-syllabus', 'syllabus'], ['S2-concepts', 'concepts'], ['S3-teaching-plan', 'plan'], ['S4-narration-script', 'script']];
+const CONTENT_STAGE_FOR: Array<[prefix: string, stage: ContentStage]> = [['S1-syllabus', 'syllabus'], ['S2-concepts', 'concepts'], ['S3-teaching-plan', 'plan'], ['S3b-visual-discovery', 'plan'], ['S4-narration-script', 'script']];
 
 export async function prepareLesson(req: LessonRequest, m: { model: string; stageModels?: Partial<Record<ContentStage, string>>; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; visionModel?: string; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number; /** Plan beats and write beat narration instead of the marker script (V2 plan Phases 2-3). */ beats?: boolean; beatClient?: ModelClient }): Promise<PreparedLesson> {
   const groundingMode = req.groundingMode ?? 'STRICT_SOURCE';
@@ -233,13 +233,13 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       for (const finding of contractFindings) failures.push({ code: finding.code, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: true });
       for (const finding of analysis.findings) failures.push({ code: `${finding.code}:${finding.check}`, stage: 'plan', message: `${module.id}: ${finding.message}`, hard: finding.severity === 'error' });
       if (!analysis.ok || contractFindings.length) return preparedResult({ syllabus, graph, plan: modulePlan, analysis, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
-      const moduleVocabulary = m.beats ? {} : await discoverFor(`:${moduleTag}`, graph, modulePlan, `${moduleTag}_`);
-      // Beat mode: the teaching beats and their speech replace Visual Discovery and the marker script (flag TEACHING_BEATS_V2).
+      const sectionPrefix = `${moduleTag}_`;
+      // Keep S3b in beat mode: it fixes approved library pictures before S4, and V2 locks those selections with scene concepts.
+      const moduleVocabulary = await discoverFor(`:${moduleTag}`, graph, modulePlan, sectionPrefix);
       const beatRun = m.beats ? await runCached(`S3b-beats:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, terminology: lessonTerminology }, 'claude-beats/v4', 'S3b-beats-v5-learner-state-dependencies', () => runBeatStages({ plan: modulePlan, graph, sourceDoc: scopedSource, terminology: lessonTerminology }, { ...(m.speechLanguage ? { language: m.speechLanguage } : {}), model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.beatClient ? { client: m.beatClient } : {}) })) : undefined;
       const scriptRun = beatRun ? { result: { value: beatRun.result.value?.script, usage: beatRun.result.usage, failures: beatRun.result.failures, rawResponses: beatRun.result.rawResponses } } : await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, vocabulary: moduleVocabulary }, 'claude-script/v1', 'S4-module-script-v10-claim-semantics', () => writeScript(moduleRequest, graph, modulePlan, { visualVocabulary: moduleVocabulary, model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, scriptRun.result.usage); failures.push(...scriptRun.result.failures); rawResponses[`script:${moduleTag}`] = scriptRun.result.rawResponses;
       if (!scriptRun.result.value) return preparedResult({ syllabus, graph, plan: modulePlan, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
-      const sectionPrefix = `${moduleTag}_`;
       const prefixedSections = modulePlan.sections.map((section) => ({ ...section, id: `${sectionPrefix}${section.id}` }));
       const prefixedScenes = scriptRun.result.value.scenes.map((scene) => ({ ...scene, sectionId: `${sectionPrefix}${scene.sectionId}` }));
       allSections.push(...prefixedSections);

@@ -49,7 +49,7 @@ const narrations = Object.fromEntries(sceneIds.map((id) => [id, compileSceneNarr
 const plan = { targetDurationSec: 10, intro: { sourceTitle: 't', sections: [] }, recap: { keyPoints: [] }, sections: sceneIds.map((id) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 6, contract: { learningDelta: 'd', targetDurationSec: 6, requiredConceptIds: ['frame', 'stack'], requiredRelations: [], evidenceSpanIds: claims(id)[0]!.evidenceSpanIds, essentialClaims: claims(id), teachingSkill: 'mechanism', candidateMechanisms: ['chain'] } })) };
 const graphEvidence = Object.values(sentences).flatMap((items) => [sourceEvidenceFor(items[0]!)]);
 const graph = { concepts: [{ id: 'frame', label: 'Frame', kind: 'entity', definition: 'd', evidence: graphEvidence, level: 'one-step' }, { id: 'stack', label: 'Stack', kind: 'entity', definition: 'd', evidence: graphEvidence, level: 'one-step' }], relations: [], prerequisites: [] };
-const prepared = { plan, graph, sourceDoc, beatPlans, beatNarrations: narrations } as unknown as PreparedLesson;
+const prepared = { plan, graph, sourceDoc, beatPlans, beatNarrations: narrations, validatedByConcept: { frame: 'iconify-lucide:frame' } } as unknown as PreparedLesson;
 const oneBindings = { conceptIds: ['frame', 'stack'], claimIds: ['one_c'] };
 const twoBindings = { conceptIds: ['frame', 'stack'], claimIds: ['two_c'] };
 const fixtureDurationSec = (perWordMs: number, sceneOverheadMs: number): number => (
@@ -110,9 +110,11 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       plan: { sections: Array<{ id: string; contract: { evidenceSpanIds: string[]; essentialClaims: Array<{ id: string; epistemicType?: string; verificationStatus?: string; evidenceSpanIds: string[]; sourceRefs?: Array<{ spanId: string }> }> } }> };
       beatPlans: Record<string, Array<{ claimIds: string[]; evidenceSpanIds: string[] }>>;
       beatNarrations: Record<string, { claimSpans: Array<{ claimId: string }> }>;
+      validatedByConcept: Record<string, string>;
       evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v5');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v6');
+    assert.deepEqual(lessonContext.validatedByConcept, { frame: 'iconify-lucide:frame' });
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.ok(lessonContext.plan.sections.flatMap((section) => section.contract.essentialClaims).every((claim) => claim.epistemicType === 'direct_source'));
@@ -136,6 +138,9 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.ok(lockedSceneOne.ops.filter((op) => op.op === 'add').every((op) => op.element?.bindings?.claimIds?.includes('one_c')));
     const iconFamilies = JSON.parse(await readFile(path.join(out, 'v2', 'scene-icon-families.json'), 'utf8')) as { scenes: Array<{ sceneId: string; houseFamily: string | null }> };
     assert.ok(iconFamilies.scenes.every((scene) => scene.houseFamily === 'simi-house-v1/domain-outline'));
+    assert.equal(result.compiled[0]!.concepts?.get('frame')?.validatedAssetId, 'iconify-lucide:frame');
+    const assetProvenance = JSON.parse(await readFile(path.join(out, 'v2', 'asset-provenance.json'), 'utf8')) as { assets: Array<{ assetId: string }> };
+    assert.ok(assetProvenance.assets.some((asset) => asset.assetId === 'iconify-lucide:frame'), 'V2 records the S3b-selected asset in rights provenance');
     assert.ok(Number.isFinite(result.metrics['v2.requestToCompleteMs']));
     assert.equal(result.metrics['v2.timeToFirstPlayableMs'], undefined, 'a silent encoded clip is not audible-playable readiness');
     assert.ok(result.compiled[1]!.timeline.states[0]!.elements.pile, 'scene two starts from the board scene one left');
@@ -481,7 +486,7 @@ test('the V2 lock pins ops, narration, timings, audio and versions before render
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects untyped claims and invalid learner dependencies in rehashed lesson-context/v5', async () => {
+test('the V2 lock rejects untyped claims and invalid learner dependencies in rehashed lesson-context/v6', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
@@ -492,8 +497,9 @@ test('the V2 lock rejects untyped claims and invalid learner dependencies in reh
       schemaVersion: string;
       plan: { sections: Array<{ contract: { essentialClaims: Array<Record<string, unknown>> } }> };
       beatPlans: Record<string, Array<Record<string, unknown>>>;
+      validatedByConcept: Record<string, string>;
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v5');
+    assert.equal(context.schemaVersion, 'lesson-context/v6');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -533,6 +539,18 @@ test('the V2 lock rejects untyped claims and invalid learner dependencies in reh
     await writeFile(path.join(out, 'lesson.lock.json'), dependencyLockBytes);
     const dependencyProblems = await verifyLessonLockV2(out);
     assert.ok(dependencyProblems.some((problem) => /dependency that does not reference an earlier beat order/u.test(problem)), dependencyProblems.join('\n'));
+
+    context.validatedByConcept.frame = 'iconify-lucide:circle';
+    const visualBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, visualBytes);
+    lock.context.hash = sha256(visualBytes);
+    const { contentHash: _oldVisualHash, ...visualBody } = lock;
+    lock.contentHash = canonicalHash(visualBody);
+    const visualLockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, visualLockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), visualLockBytes);
+    const visualProblems = await verifyLessonLockV2(out);
+    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v6 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

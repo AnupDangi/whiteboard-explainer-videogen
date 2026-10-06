@@ -146,11 +146,13 @@ Before audio generation, V2 projects canonical claims into
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v5`; lock verification
+concatenated bundle hash. New runs write `lesson-context/v6`; lock verification
 requires each claim's explicit type and derived verification status, checks
-its source refs against the claim's cited spans, and verifies the beat learner
-question, before/after state, stable order, and compiled dependency IDs.
-`lesson-context/v2` through `/v4` remain readable through compatibility paths.
+its source refs against the claim's cited spans, verifies the beat learner
+question, before/after state, stable order, and compiled dependency IDs, and
+joins S3b-selected asset ids back to the concept metadata captured in each
+scene. `lesson-context/v2` through `/v5` remain readable through compatibility
+paths.
 The CLI carries grounding mode through request and run
 identity. `STRICT_SOURCE` and `SOURCE_PLUS_BACKGROUND` are accepted:
 direct-source and derived-relation claims require primary-only citations;
@@ -255,13 +257,20 @@ library inputs are vendored for offline rendering; retrieval and SVG
 normalization are deterministic. Usage context filters libraries whose
 rights are still under review. An icon being present in a local catalog is not
 evidence that it is cleared for release. Rights review is an independent
-human gate. V2 probes the scene's concrete entities against the vendored
-catalog, considers only exact or curated approved pictures, and chooses the
-most common non-exempt `houseFamily` with a stable tie-break. It then resolves
-each type-eligible pictorial entity using that family and the lesson domain. A
-picture selected only by similarity is still refused; missing or mismatched
-pictures remain labelled fallbacks. `houseFamily` is written to the captured
-scene concepts, so the lock hashes it and replay uses the same style family. A diagnostic
+human gate. Beat-mode preparation runs S3b Visual Discovery before beat and
+narration generation. For a concept without an exact catalog match, retrieval
+offers library vocabulary; the depiction director proposes drawable nouns,
+code resolves each noun to an exact catalog entry, and a separate judge must
+approve the referent-picture pair. Asset ids stay internal. The selected
+`validatedByConcept` map and per-scene visual vocabulary are pinned in
+`lesson-context/v6`; V2 copies the selected id into captured concept metadata.
+V2 then probes the concrete entities actually used on each board and chooses
+the most common non-exempt `houseFamily` with a stable tie-break. It resolves
+only type-eligible pictorial entities inside that family and the lesson domain.
+Similarity alone still cannot authorize a picture; missing, mismatched, or
+unapproved pictures remain labelled fallbacks. `houseFamily` and the S3b
+asset id are covered by the scene lock, so replay uses the same library entry
+and style. A diagnostic
 `v2/scene-icon-families.json` records the per-scene choice. This is asset
 selection and replay evidence, not a golden visual-quality verdict:
 wrong-icon review, muted comprehension and human rights review remain open.

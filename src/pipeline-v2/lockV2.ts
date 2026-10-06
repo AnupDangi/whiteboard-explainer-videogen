@@ -123,10 +123,11 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
   const contextV3 = context.schemaVersion === 'lesson-context/v3';
   const contextV4 = context.schemaVersion === 'lesson-context/v4';
   const contextV5 = context.schemaVersion === 'lesson-context/v5';
-  if (context.schemaVersion !== undefined && !contextV2 && !contextV3 && !contextV4 && !contextV5) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
+  const contextV6 = context.schemaVersion === 'lesson-context/v6';
+  if (context.schemaVersion !== undefined && !contextV2 && !contextV3 && !contextV4 && !contextV5 && !contextV6) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
   // Older synthetic and cached V2 locks predate the claim graph / beat identity contract.
   if (!sections?.some((section) => recordOf(section.contract))) {
-    return contextV2 || contextV3 || contextV4 || contextV5 ? [`lesson context ${contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
+    return contextV2 || contextV3 || contextV4 || contextV5 || contextV6 ? [`lesson context ${contextV6 ? 'v6' : contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no canonical scene contracts`] : [];
   }
 
   const problems: string[] = [];
@@ -143,7 +144,17 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
     if (parsed && (typeof parsed.from !== 'string' || typeof parsed.to !== 'string' || !conceptLabels.has(parsed.from) || !conceptLabels.has(parsed.to))) problems.push('pinned concept graph relation endpoint is missing');
   }
 
-  if (contextV2 || contextV3 || contextV4 || contextV5) {
+  const validatedByConcept = recordOf(context.validatedByConcept);
+  if (contextV6) {
+    if (!validatedByConcept) problems.push('lesson context v6 has no validatedByConcept map');
+    else for (const [conceptId, assetId] of Object.entries(validatedByConcept)) {
+      if (!conceptLabels.has(conceptId)) problems.push(`lesson context v6 visual selection refers to unknown concept ${conceptId}`);
+      if (typeof assetId !== 'string' || !assetId.trim()) problems.push(`lesson context v6 visual selection for ${conceptId} has no asset id`);
+    }
+    if (!recordOf(context.visualVocabularies)) problems.push('lesson context v6 has no visualVocabularies map');
+  }
+
+  if (contextV2 || contextV3 || contextV4 || contextV5 || contextV6) {
     const ledgerValidation = validateEvidenceLedger(context.evidenceLedger);
     if (!ledgerValidation.valid) problems.push(...ledgerValidation.errors.map((problem) => `pinned evidence ledger: ${problem}`));
     else {
@@ -159,9 +170,9 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
             continue;
           }
           const epistemicType = EpistemicTypeSchema.safeParse(claim.epistemicType);
-          if ((contextV3 || contextV4 || contextV5) && !epistemicType.success) problems.push(`canonical plan claim ${claim.id} has no valid epistemicType`);
+          if ((contextV3 || contextV4 || contextV5 || contextV6) && !epistemicType.success) problems.push(`canonical plan claim ${claim.id} has no valid epistemicType`);
           const verificationStatus = ClaimVerificationStatusSchema.safeParse(claim.verificationStatus);
-          if ((contextV4 || contextV5) && !verificationStatus.success) problems.push(`canonical plan claim ${claim.id} has no valid verificationStatus`);
+          if ((contextV4 || contextV5 || contextV6) && !verificationStatus.success) problems.push(`canonical plan claim ${claim.id} has no valid verificationStatus`);
           if (epistemicType.success) {
             for (const issue of epistemicClaimProblems({ id: claim.id, statement: claim.statement, relations: arrayOf(claim.relations) ?? [], epistemicType: epistemicType.data })) {
               problems.push(`canonical plan ${issue}`);
@@ -188,7 +199,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
       problems.push(...validateEvidenceLedgerClaims(ledger, canonicalClaims));
       const sourceDoc = recordOf(context.sourceDoc);
       if (!sourceDoc || typeof sourceDoc.sourceId !== 'string' || typeof sourceDoc.text !== 'string' || !Array.isArray(sourceDoc.spans)) {
-        problems.push(`lesson context ${contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
+        problems.push(`lesson context ${contextV6 ? 'v6' : contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : 'v2'} has no verifiable source document for its evidence ledger`);
       } else {
         const graphEvidence = [
           ...concepts.flatMap((concept) => arrayOf(concept.evidence) ?? []),
@@ -203,6 +214,18 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
   let expectedCarried: BoardState = emptyBoardState();
 
   scenes.forEach((locked, sceneIndex) => {
+    if (contextV6) {
+      for (const [conceptId, rawInfo] of captured[sceneIndex]!.concepts) {
+        const info = recordOf(rawInfo);
+        const expectedAssetId = validatedByConcept?.[conceptId];
+        if (expectedAssetId !== undefined && info?.validatedAssetId !== expectedAssetId) {
+          problems.push(`scene ${locked.sceneId} concept ${conceptId} visual asset does not match lesson-context/v6 Visual Discovery`);
+        }
+        if (expectedAssetId === undefined && typeof info?.validatedAssetId === 'string') {
+          problems.push(`scene ${locked.sceneId} concept ${conceptId} has an unrecorded Visual Discovery asset`);
+        }
+      }
+    }
     const section = sections.find((candidate) => candidate.id === locked.sceneId);
     const contract = recordOf(section?.contract);
     const claims = arrayOf(contract?.essentialClaims)?.map(recordOf).filter((claim): claim is JsonRecord => Boolean(claim)) ?? [];
@@ -253,7 +276,7 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
     for (const [beatIndex, rawBeat] of (planBeats ?? []).entries()) {
       const beat = recordOf(rawBeat);
       if (!beat || typeof beat.beatId !== 'string') { problems.push(`scene ${locked.sceneId} has a beat without a stable id`); continue; }
-      if (contextV5) {
+      if (contextV5 || contextV6) {
         if (beat.beatId !== `${locked.sceneId}.b${beatIndex + 1}` || beat.order !== beatIndex + 1) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has an unstable order or id`);
         if (typeof beat.learningQuestion !== 'string' || !/[?？]$/u.test(beat.learningQuestion.trim())) problems.push(`scene ${locked.sceneId} beat ${beat.beatId} has no question-form learningQuestion`);
         const learnerBefore = typeof beat.learnerBefore === 'string' ? beat.learnerBefore.trim().toLowerCase() : '';
