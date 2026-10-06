@@ -30,3 +30,7 @@ Prompt recording lands with the recorder change (prompt.json per call); rows bef
 | missing bindings | all scenes | S6 planner | optional schema, required validator | S6 complete.ts | deterministic unambiguous completion pre-validation |
 | short syllabus | phys scenes | S1b syllabus | planned 60s for 90s request, gate compares requested | S1b scope | open: requested vs planned duration reconciliation |
 | short syllabus | phys+bio scenes | S1b syllabus | gate compared requested, syllabus planned short | S1b/runLessonV2 | gate targets min(requested, planned) |
+| semicolon overfire | math scenes | S4 validator | contrastive prose flagged as list | S4 validator | ban dropped (word cap forces splits); no regression fixture kept — accepted gap, revisit if list-glue recurs |
+| repair non-convergence | math/phys scenes | S4/S6 repairs | 67→21 words (still 1 over) at 2 rounds | S4/S6 repair counts | maxRepairs 2→3 on single-sample evidence; needs ≥5-run convergence measure before keeping |
+| tolerance stacking | lesson clock | S5/audio clock | 1.1x scene slack × 10% lesson slack × min(planned) | audio clock | end-to-end overshoot unmeasured; revert one slack if totals drift |
+| stopword breadth | board labels | S6 validator | because/means/one exempted | vocab gate | trimmed to closed-class grammar only |

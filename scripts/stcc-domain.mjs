@@ -55,13 +55,10 @@ const outDir = path.join(ROOT, 'output', 'stcc-proof', name);
 mkdirSync(outDir, { recursive: true });
 const video = runDir && existsSync(path.join(runDir, 'video.mp4')) ? path.join(runDir, 'video.mp4') : null;
 if (!video) {
-  if (existsSync(path.join(outDir, 'video.mp4'))) {
-    console.log(`no new video; keeping existing video.mp4`);
-    process.exit(4);
-  }
+  // Per-attempt record: never touches an existing good video, never masked.
   const hard = (run.stdout ?? '').split('\n').filter((l) => l.includes('[HARD]')).map((l) => l.slice(0, 300)).join('\n');
-  writeFileSync(path.join(outDir, 'MISSING.txt'), `no video on attempt ${attempt}.\n${hard}\nsee .data/stcc-proof/${name}-a${attempt}.log\n`);
-  console.log(`no video; wrote MISSING.txt`);
+  writeFileSync(path.join(outDir, `MISSING-a${attempt}.txt`), `no video on attempt ${attempt}.\n${hard}\nsee .data/stcc-proof/${name}-a${attempt}.log\n`);
+  console.log(`no video; wrote MISSING-a${attempt}.txt`);
   process.exit(3);
 }
 copyFileSync(video, path.join(outDir, 'video.mp4'));

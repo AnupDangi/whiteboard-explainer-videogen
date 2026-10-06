@@ -2831,3 +2831,8 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Root cause (bio-a1 + phys-a3 data):** syllabus deliberately plans 60 s (partial support) while the fixed gate demanded requested 110/90 s — unwinnable by design. `prepared.plannedDurationSec` existed but the gate ignored it.
 - **Fix:** gate + trailing target `min(requested, planned)` when the syllabus shortened, openly metered (`v2.plannedDurationSec`). Requested-length speech for planned-length teaching is no longer demanded.
 - **Verification:** lesson-v2 8/8 (fixture has no plannedDurationSec → behavior unchanged); typecheck clean.
+
+## Continuation — reviewer audit closed (wt/stcc/charter)
+
+- **cavecrew-reviewer:** 0 red, 10 yellow, 1 question. Acted now: STOPWORDS trimmed to closed-class; driver writes per-attempt MISSING-aN (never masks/overwrites video); ledger rows added for semicolon removal, maxRepairs bumps, tolerance stacking.
+- **Deferred with reason:** tolerance evidence (needs run data), S1b owner reconciliation (needs live phys/bio reruns), causes-connective rule (needs wider eval), board-ops retries (needs S6 first-try fix).
