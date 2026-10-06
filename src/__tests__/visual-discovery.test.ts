@@ -12,6 +12,7 @@ test('probe: exact icon, reviewed metaphor, diagram recipe and label are decided
   const exact = catalog.find((entry) => entry.source.startsWith('assetlab-sketchy-downshift:'))!;
   const icon = probeDepiction({ id: 'c1', label: exact.names[0]!, kind: 'entity' }, { catalog });
   assert.equal(icon.kind, 'icon');
+  assert.notEqual(probeDepiction({ id: 'c1-process', label: exact.names[0]!, kind: 'process' }, { catalog }).kind, 'icon', 'literal pictures are reserved for canonical entities');
   const metaphor = probeDepiction({ id: 'c2', label: 'a bottleneck', kind: 'process' }, { catalog });
   assert.equal(metaphor.kind, 'metaphor');
   const plain = probeDepiction({ id: 'c3', label: 'quarterly synergy', kind: 'quantity' }, { catalog });
@@ -22,26 +23,27 @@ test('probe: exact icon, reviewed metaphor, diagram recipe and label are decided
 });
 
 test('discovery validates candidates for concrete concepts lacking an exact icon and never leaks asset ids into prompts', async () => {
-  const graph = { concepts: [concept('c1', 'quarterly synergy widget', 'entity'), concept('c2', 'a bottleneck', 'process')], relations: [], prerequisites: [] } as unknown as ConceptGraph;
+  const graph = { concepts: [concept('c1', 'quarterly synergy widget', 'entity'), concept('c2', 'a bottleneck', 'process'), concept('c3', 'unmapped process term', 'process')], relations: [], prerequisites: [] } as unknown as ConceptGraph;
   const draft = TeachingPlanDraftSchema.parse({
     targetDurationSec: 18, intro: { sourceTitle: 'x', sections: [] }, recap: { keyPoints: [] },
-    sections: [{ id: 's1', title: 'T', goal: 'G.', kind: 'explain', conceptIds: ['c1', 'c2'], budgetSec: 18, teachingSkill: 'mechanism', candidateMechanisms: ['chain'], essentialClaims: [{ id: 'k', statement: 'Widget meets bottleneck.', conceptIds: ['c1', 'c2'], relations: [], evidenceSpanIds: ['s1'] }] }],
+    sections: [{ id: 's1', title: 'T', goal: 'G.', kind: 'explain', conceptIds: ['c1', 'c2', 'c3'], budgetSec: 18, teachingSkill: 'mechanism', candidateMechanisms: ['chain'], essentialClaims: [{ id: 'k', statement: 'Widget meets bottleneck and an unmapped process term.', conceptIds: ['c1', 'c2', 'c3'], relations: [], evidenceSpanIds: ['s1'] }] }],
   });
   const plan = deriveTeachingPlan(draft, graph, 'learner');
   const catalogEntry = allCatalogEntries().find((entry) => entry.source.startsWith('assetlab-sketchy-downshift:'))!;
-  let directed = 0;
+  let directed: string[] = [];
   const result = await discoverVisualVocabulary({
     plan, graph, model: 'm', apiKey: 'k', remainingBudgetUsd: 1,
     rank: async (queries) => new Map(queries.map((query) => [query.trim().toLowerCase(), [{ id: catalogEntry.id, name: catalogEntry.names[0]!, score: 0.9 }]])),
     // The director proposes drawable nouns; code resolves them by exact name. A noun the library lacks yields no icon.
     judge: async ({ pairs }) => ({ approved: new Set(pairs.map((pair) => `${pair.referent}\u0000${pair.picture}`)), usage: { calls: 1, promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0, repairs: 0 }, failures: [] }),
-    direct: async ({ items }) => { directed = items.length; return { nouns: new Map(items.map((item) => [item.referent, item.referent.includes('widget') ? ['not-in-library', catalogEntry.names[0]!] : []])), usage: { calls: 1, promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0, repairs: 0 }, failures: [] }; },
+    direct: async ({ items }) => { directed = items.map((item) => item.referent); return { nouns: new Map(items.map((item) => [item.referent, item.referent.includes('widget') ? ['not-in-library', catalogEntry.names[0]!] : []])), usage: { calls: 1, promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0, repairs: 0 }, failures: [] }; },
   });
-  assert.equal(directed, 1, 'only the concept without an exact icon or reviewed metaphor is directed');
+  assert.deepEqual(directed, ['quarterly synergy widget'], 'only a concrete entity without an exact icon or reviewed metaphor is directed');
   assert.equal(result.validatedByConcept.c1, catalogEntry.id);
   const vocabulary = result.vocabularies.s1!;
   assert.equal(vocabulary.concepts.find((entry) => entry.conceptId === 'c1')!.depiction.kind, 'icon');
   assert.equal(vocabulary.concepts.find((entry) => entry.conceptId === 'c2')!.depiction.kind, 'metaphor');
+  assert.equal(vocabulary.concepts.find((entry) => entry.conceptId === 'c3')!.depiction.kind, 'labelled');
   const block = vocabularyPromptBlock(vocabulary);
   assert.doesNotMatch(block, new RegExp(catalogEntry.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(block, /bottleneck/);

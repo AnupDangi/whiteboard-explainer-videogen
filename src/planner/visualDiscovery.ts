@@ -43,13 +43,18 @@ export function probeDepiction(
 ): Depiction {
   if (concept.kind === 'formula') return { kind: 'exact', renderer: 'math' };
   const key = referentKeys(concept.label)[0] ?? concept.label.toLowerCase();
-  const literal = resolveObject(concept.label, {
-    size: PROBE_SIZE, visualStrategy: 'literal',
-    ...(options.sceneFamily ? { sceneFamily: options.sceneFamily } : {}),
-    ...(options.lessonDomain ? { lessonDomain: options.lessonDomain } : {}),
-    ...(options.validatedEntryId ? { validatedAssetId: options.validatedEntryId } : {}),
-  }, options.catalog).resolution;
-  if (literal.assetId && literal.strategy && PICTORIAL.test(literal.strategy)) return { kind: 'icon', entryId: literal.assetId, rung: literal.strategy, ...(literal.houseFamily ? { houseFamily: literal.houseFamily } : {}) };
+  // Keep discovery aligned with the typed renderer and semantic BoardOps compiler:
+  // catalog pictures depict canonical entities only. Processes, quantities, rules,
+  // and events must be represented by their structure or remain honest labels.
+  if (concept.kind === 'entity') {
+    const literal = resolveObject(concept.label, {
+      size: PROBE_SIZE, visualStrategy: 'literal',
+      ...(options.sceneFamily ? { sceneFamily: options.sceneFamily } : {}),
+      ...(options.lessonDomain ? { lessonDomain: options.lessonDomain } : {}),
+      ...(options.validatedEntryId ? { validatedAssetId: options.validatedEntryId } : {}),
+    }, options.catalog).resolution;
+    if (literal.assetId && literal.strategy && PICTORIAL.test(literal.strategy)) return { kind: 'icon', entryId: literal.assetId, rung: literal.strategy, ...(literal.houseFamily ? { houseFamily: literal.houseFamily } : {}) };
+  }
   const metaphor = APPROVED_METAPHORS[key];
   if (metaphor) return { kind: 'metaphor', structure: metaphor.structure, reconnectTerm: metaphor.reconnectTerm, ...(metaphor.role ? { role: metaphor.role } : {}), ...(metaphor.topology ? { topology: metaphor.topology } : {}) };
   const bridgeConcept = bridgeConceptFor(concept.label);
@@ -95,10 +100,10 @@ export async function discoverVisualVocabulary(args: DiscoveryArgs): Promise<Dis
   const lessonDomain = args.plan.lessonBible?.domain;
   const exactNames = new Set(catalog.flatMap((entry) => entry.names.map((name) => name.trim().toLowerCase())));
 
-  // 1. Concepts with no exact icon and no reviewed metaphor: the Depiction Director names drawable nouns (using the
+  // 1. Entity concepts with no exact icon and no reviewed metaphor: the Depiction Director names drawable nouns (using
   //    retrieved vocabulary), and code resolves each noun by exact name/alias. Formulas are exact notation, never icons.
   const seeds = [...new Map(args.plan.sections.flatMap((section) => (section.contract?.requiredConceptIds ?? section.conceptIds).map((id) => [id, concepts.get(id)] as const)).filter(([, concept]) => Boolean(concept)) as Array<[string, NonNullable<ReturnType<typeof concepts.get>>]>).values()];
-  const needDirection = seeds.filter((concept) => concept.kind !== 'formula' && !isNumericReferent(concept.label)
+  const needDirection = seeds.filter((concept) => concept.kind === 'entity' && !isNumericReferent(concept.label)
     && !exactNames.has((referentKeys(concept.label)[0] ?? '').toLowerCase()) && !APPROVED_METAPHORS[referentKeys(concept.label)[0] ?? '']);
   const usage = emptyUsage();
   const failures: StageFailure[] = [];
