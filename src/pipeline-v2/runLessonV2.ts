@@ -20,7 +20,7 @@ import { validateSceneBoard } from '../visual-v2/ops-plan/validate.js';
 import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
 import { anchorQuote } from '../plan/evidenceAnchor.js';
 import { validateSceneGeometry, type PriorLayout } from '../visual-v2/layout/sceneLayout.js';
-import { compileSceneTimeline, type BeatTiming } from '../visual-v2/timeline/compile.js';
+import { compileSceneTimeline, degenerateCueBeats, type BeatTiming } from '../visual-v2/timeline/compile.js';
 import { compileScene, type CompiledScene } from '../visual-v2/renderer/frame.js';
 import { mapLimit } from './mapLimit.js';
 import { writeLessonLockV2 } from './lockV2.js';
@@ -309,6 +309,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     }
     const initial = startScene(carried, result.value.transition, section.id);
     const timeline = compileSceneTimeline({ ops, initial, beats: beatTimings });
+    metrics['v2.degenerateCueBeats'] = (metrics['v2.degenerateCueBeats'] ?? 0) + degenerateCueBeats(ops, beatTimings).length;
     const scene = compileScene(section.id, section.title, timeline, input.lessonId, conceptIndex, prior);
     for (const message of validateSceneGeometry(scene.geometry, timeline.states)) failures.push({ code: 'v2-geometry', stage: 'layout', message: `${section.id}: ${message}`, hard: true });
     for (const opId of timeline.lateOps) failures.push({ code: 'v2-late-op', stage: 'timeline', message: `${section.id}: ${opId} could not finish inside its sentence`, hard: false });

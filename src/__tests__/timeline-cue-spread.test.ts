@@ -71,3 +71,44 @@ describe('arrow leads the eye', () => {
     assert.ok(edge.t0 < target.t1, `arrow starts (${edge.t0}) before its target finishes drawing (${target.t1})`);
   });
 });
+
+describe('arrow timing at render', () => {
+  it('the arrow appears in the frame exactly when its schedule starts', async () => {
+    const { BoardOpSchema } = await import('../visual-v2/board-ops/types.js');
+    const { compileSceneTimeline } = await import('../visual-v2/timeline/compile.js');
+    const { compileScene, renderSceneSvg } = await import('../visual-v2/renderer/frame.js');
+    const { emptyBoardState } = await import('../visual-v2/board-state/reducer.js');
+    const tok = (text: string) => ({ type: 'token', text, provenance: 'illustrative' });
+    const at = (region: string) => ({ region });
+    const ops = [
+      BoardOpSchema.parse({ op: 'add', opId: 's.a', beatId: 's.b1', id: 'a', element: tok('source'), at: at('left'), cue: 0 }),
+      BoardOpSchema.parse({ op: 'add', opId: 's.b', beatId: 's.b1', id: 'b', element: tok('target'), at: at('right'), cue: 2 }),
+      BoardOpSchema.parse({ op: 'connect', opId: 's.e', beatId: 's.b1', id: 'e', from: 'a', to: 'b', relation: 'causes', cue: 1 }),
+    ];
+    const beats = [{ beatId: 's.b1', startMs: 0, endMs: 12000, sentences: [{ startMs: 0, endMs: 4000 }, { startMs: 4000, endMs: 8000 }, { startMs: 8000, endMs: 12000 }] }];
+    const timeline = compileSceneTimeline({ initial: emptyBoardState(), ops, beats });
+    const scene = compileScene('s', 'T', timeline);
+    const edge = timeline.ops.find((s) => s.op.opId === 's.e')!;
+    const paths = (svg: string): number => (svg.match(/<path/g) ?? []).length;
+    const before = paths(renderSceneSvg(scene, Math.max(0, edge.t0 - 50)));
+    const atEdge = paths(renderSceneSvg(scene, edge.t0 + 50));
+    assert.ok(atEdge > before, `arrow adds paths once its schedule starts (${before} → ${atEdge})`);
+  });
+});
+
+describe('degenerate cue audit', () => {
+  it('counts beats where every op carries cue 0 across several sentences', async () => {
+    const { degenerateCueBeats } = await import('../visual-v2/timeline/compile.js');
+    const beats = [
+      { beatId: 'b1', sentences: [{ startMs: 0, endMs: 1000 }, { startMs: 1000, endMs: 2000 }] },
+      { beatId: 'b2', sentences: [{ startMs: 0, endMs: 1000 }] },
+    ] as const;
+    const ops = [
+      { beatId: 'b1', cue: 0 },
+      { beatId: 'b1', cue: 0 },
+      { beatId: 'b2', cue: 0 },
+    ] as const;
+    assert.deepEqual(degenerateCueBeats(ops, beats), ['b1']);
+    assert.deepEqual(degenerateCueBeats([{ beatId: 'b1', cue: 1 }], beats), []);
+  });
+});

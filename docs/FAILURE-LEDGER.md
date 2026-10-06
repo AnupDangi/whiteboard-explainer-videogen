@@ -34,3 +34,4 @@ Prompt recording lands with the recorder change (prompt.json per call); rows bef
 | repair non-convergence | math/phys scenes | S4/S6 repairs | 67→21 words (still 1 over) at 2 rounds | S4/S6 repair counts | maxRepairs 2→3 on single-sample evidence; needs ≥5-run convergence measure before keeping |
 | tolerance stacking | lesson clock | S5/audio clock | 1.1x scene slack × 10% lesson slack × min(planned) | audio clock | end-to-end overshoot unmeasured; revert one slack if totals drift |
 | stopword breadth | board labels | S6 validator | because/means/one exempted | vocab gate | trimmed to closed-class grammar only |
+| test debt | harness | reviewer follow-ups | contrastive/repair/chain/arrow coverage | test-only | reviewer-regressions + arrow render tests |

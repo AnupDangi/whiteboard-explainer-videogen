@@ -56,6 +56,20 @@ function naturalDuration(op: BoardOp, effects: BoardEffect[]): number {
   return Math.max(120, ...effects.map((effect) => DURATION_MS[effect.kind]));
 }
 
+/** Beats whose every op carries cue 0 despite several sentences: the planner abdicated timing to the compiler spread. Audit metric, not a failure. */
+export function degenerateCueBeats(
+  ops: readonly { beatId: string; cue?: number }[],
+  beats: readonly { beatId: string; sentences: readonly { startMs: number; endMs: number }[] }[],
+): string[] {
+  return beats
+    .filter((beat) => beat.sentences.length > 1)
+    .map((beat) => beat.beatId)
+    .filter((beatId) => {
+      const cues = ops.filter((op) => op.beatId === beatId).map((op) => op.cue ?? 0);
+      return cues.length > 0 && cues.every((cue) => cue === 0);
+    });
+}
+
 export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: BoardState; beats: readonly BeatTiming[]; sceneStartMs?: number; tailMs?: number }): SceneTimeline {
   const beatById = new Map(input.beats.map((beat) => [beat.beatId, beat]));
   const countByBeat = new Map<string, number>();

@@ -2843,3 +2843,8 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 - **Lamina videos identified:** Attention 75s, photosynthesis 69s, brainstorm/interview 157s, intelligence-spend 313s.
 - **Mirror list:** lamina-attention=AIML-02 fixture, lamina-photosynthesis=BIO-03 fixture. Twitter two have no benchmark counterpart/source — out of scope, noted.
 - **Verification:** grounding-wording 8/8; grounding 9, illustrative 21, board 45, board-state 21, ops-plan 20, lesson-v2 8; typecheck clean, manifest verified.
+
+## Continuation — W1 test debt + cue audit (wt/stcc/charter)
+
+- **Built:** reviewer-regressions (contrastive prose, split-not-merge guidance, 4-segment chains) 3/3; arrow render timing test (paths appear at edge start); `degenerateCueBeats` audit helper + `v2.degenerateCueBeats` run metric.
+- **Verification:** cue-spread 6/6; render 17, lock 7, clips 4, lesson-v2 8, timeline 12, arrows 5; typecheck clean.
