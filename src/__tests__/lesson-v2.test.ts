@@ -464,23 +464,35 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     const out = await fixtureRun(dir, false, true);
     assert.deepEqual(await verifyLessonLockV2(out), []);
     const context = JSON.parse(await readFile(path.join(out, 'v2', 'lesson-context.json'), 'utf8')) as {
-      representationExecution: { scenes: Array<{ sceneId: string; mode: string; providerVersion?: string; semanticOperations: unknown[]; selectedAssetIds: Record<string, string> }> };
+      representationExecution: { schemaVersion: string; scenes: Array<{ sceneId: string; mode: string; providerVersion?: string; semanticOperations: unknown[]; selectedAssetIds: Record<string, string>; renderedEntityAssets: Array<{ elementId: string; conceptId: string; selectedAssetId: string | null; resolvedAssetId: string | null; depictionFamily: string; meaningful: boolean; pathCount: number; fillCount: number; embedCount: number }>; unrenderedSelectedConceptIds: string[] }> };
     };
     const scenes = context.representationExecution.scenes;
+    assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v2');
     assert.equal(scenes.length, 2);
     assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v1'));
     assert.ok(scenes.every((scene) => scene.semanticOperations.length === 2));
     assert.ok(scenes.every((scene) => scene.selectedAssetIds.frame === 'iconify-lucide:frame'));
+    const frameDepiction = scenes[0]!.renderedEntityAssets.find((entity) => entity.conceptId === 'frame');
+    assert.ok(frameDepiction, 'the pinned board contains a rendered frame entity');
+    assert.equal(frameDepiction.selectedAssetId, 'iconify-lucide:frame');
+    assert.equal(frameDepiction.resolvedAssetId, frameDepiction.selectedAssetId);
+    assert.equal(frameDepiction.depictionFamily, 'pictorial');
+    assert.equal(frameDepiction.meaningful, true);
+    assert.ok(frameDepiction.pathCount + frameDepiction.fillCount + frameDepiction.embedCount > 0, 'the exact icon resolves to drawable SVG content');
+    assert.deepEqual(scenes[0]!.unrenderedSelectedConceptIds, []);
 
     const lockPath = path.join(out, 'lesson.lock.v2.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { contentHash: string; context: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string }> };
     const contextPath = path.join(out, lock.context.file);
     const sceneLock = lock.scenes.find((scene) => scene.sceneId === 'one')!;
     const scenePath = path.join(out, sceneLock.file);
-    const contextValue = JSON.parse(await readFile(contextPath, 'utf8')) as { representationExecution: { scenes: Array<{ sceneId: string; semanticOperations: Array<{ type: string; entity?: { state?: string } }> }> } };
-    const sceneValue = JSON.parse(await readFile(scenePath, 'utf8')) as { representationExecution: { semanticOperations: Array<{ type: string; entity?: { state?: string } }> } };
+    type ExecutionScene = { sceneId: string; semanticOperations: Array<{ type: string; entity?: { state?: string } }>; renderedEntityAssets: Array<{ conceptId: string; resolvedAssetId: string | null }> };
+    const contextValue = JSON.parse(await readFile(contextPath, 'utf8')) as { representationExecution: { scenes: ExecutionScene[] } };
+    const sceneValue = JSON.parse(await readFile(scenePath, 'utf8')) as { representationExecution: ExecutionScene };
     contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.semanticOperations[0]!.entity!.state = 'forged state';
+    contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.renderedEntityAssets.find((entity) => entity.conceptId === 'frame')!.resolvedAssetId = 'iconify-tabler:frame';
     sceneValue.representationExecution.semanticOperations[0]!.entity!.state = 'forged state';
+    sceneValue.representationExecution.renderedEntityAssets.find((entity) => entity.conceptId === 'frame')!.resolvedAssetId = 'iconify-tabler:frame';
     const contextBytes = `${JSON.stringify(contextValue, null, 2)}\n`;
     const sceneBytes = `${JSON.stringify(sceneValue, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -494,6 +506,7 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
     const tampered = await verifyLessonLockV2(out);
     assert.ok(tampered.some((problem) => /typed semantic operations do not derive from the pinned beat changes/.test(problem)), tampered.join('\n'));
+    assert.ok(tampered.some((problem) => /rendered entity asset evidence differs from deterministic depiction resolution/.test(problem)), tampered.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

@@ -43,6 +43,7 @@ import { TEACHING_COMPILER_VERSION } from '../run/featureFlags.js';
 import { claimVerificationStatusFor, createEvidenceLedgerFromClaims, epistemicClaimProblems, epistemicTextFramingProblem, validateEvidenceLedgerSources, type EvidenceLedger } from '../evidence/ledger.js';
 import { buildLessonHierarchy, lessonHierarchyInputArtifact } from './lessonHierarchy.js';
 import { executeSemanticScene, type RepresentationExecutionRecord } from './semanticExecution.js';
+import { auditRenderedEntityAssets, selectedIconVisibilityProblems, unrenderedSelectedConceptIds } from './renderedEntityAssets.js';
 import { canonicalHash } from '../harness/replayDeterminism.js';
 import type { SceneBoardDraft } from '../visual-v2/ops-plan/types.js';
 
@@ -452,6 +453,19 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       depictionRequests.set(`${key}\0${houseFamily ?? ''}`, { ...request, ...(concept ? { concept } : {}) });
     }
     const scene = compileScene(section.id, section.title, timeline, input.lessonId, sceneConceptIndex, prior);
+    const renderedAssetAudit = auditRenderedEntityAssets(
+      scene.timeline.states,
+      scene.timeline.states.map((state) => Object.keys(state.elements).flatMap((id) => {
+        const rect = scene.geometry.rectFor(state, id);
+        return rect ? [{ id, rect }] : [];
+      })),
+      [...(scene.concepts?.entries() ?? [])],
+    );
+    if (renderedAssetAudit.problems.length) failures.push({ code: 'v2-rendered-asset-audit-failed', stage: 'icons', message: `${section.id}: ${renderedAssetAudit.problems.join('; ')}`, hard: true });
+    const selectedWithoutEntity = unrenderedSelectedConceptIds(Object.fromEntries(selectedIcons), renderedAssetAudit.evidence);
+    if (selectedWithoutEntity.length) failures.push({ code: 'v2-selected-icons-unused', stage: 'icons', message: `${section.id}: Visual Discovery selected library icons for concepts with no live entity BoardOp: ${selectedWithoutEntity.join(', ')}`, hard: false });
+    const invisibleSelections = selectedIconVisibilityProblems(renderedAssetAudit.evidence);
+    if (invisibleSelections.length) failures.push({ code: 'v2-selected-icon-not-visible', stage: 'icons', message: `${section.id}: selected library icons did not resolve to drawable pictorial assets: ${invisibleSelections.join('; ')}`, hard: false });
     for (const message of validateSceneGeometry(scene.geometry, timeline.states)) failures.push({ code: 'v2-geometry', stage: 'layout', message: `${section.id}: ${message}`, hard: true });
     for (const opId of timeline.lateOps) failures.push({ code: 'v2-late-op', stage: 'timeline', message: `${section.id}: ${opId} could not finish inside its sentence`, hard: false });
     for (const id of scene.geometry.moved) failures.push({ code: 'v2-retained-moved', stage: 'layout', message: `${section.id}: ${id} had to move or resize at the scene cut`, hard: false });
@@ -461,6 +475,8 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     const representationExecution: RepresentationExecutionRecord = {
       ...semanticExecution.record,
       selectedAssetIds: Object.fromEntries([...selectedIcons]),
+      renderedEntityAssets: renderedAssetAudit.evidence,
+      unrenderedSelectedConceptIds: selectedWithoutEntity,
       boardOpsHash: canonicalHash(timeline.ops.map((scheduled) => scheduled.op)),
     };
     representationExecutions.push(representationExecution);
@@ -513,6 +529,8 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     'v2.hardGeometryProblems': failures.filter((f) => f.code === 'v2-geometry').length,
     'v2.semanticProviderScenes': representationExecutions.filter((execution) => execution.mode === 'typed-semantic').length,
     'v2.semanticProviderUnavailableScenes': representationExecutions.filter((execution) => execution.beats.some((beat) => beat.status === 'provider-unavailable')).length,
+    'v2.visibleSelectedIcons': representationExecutions.flatMap((execution) => execution.renderedEntityAssets).filter((entity) => entity.selectedAssetId !== null && entity.selectedAssetId === entity.resolvedAssetId && entity.depictionFamily === 'pictorial' && entity.meaningful && entity.pathCount + entity.fillCount + entity.embedCount > 0).length,
+    'v2.selectedIconsWithoutVisual': representationExecutions.reduce((count, execution) => count + execution.unrenderedSelectedConceptIds.length + selectedIconVisibilityProblems(execution.renderedEntityAssets).length, 0),
   });
 
   // 4. Master audio, video and captions.
@@ -520,7 +538,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v9', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'beat-narration/v2-weighted-duration-anchor-clocks' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, representationExecution: { schemaVersion: 'v2-representation-execution/v1', scenes: representationExecutions }, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
+  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v9', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'beat-narration/v2-weighted-duration-anchor-clocks' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, representationExecution: { schemaVersion: 'v2-representation-execution/v2', scenes: representationExecutions }, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });

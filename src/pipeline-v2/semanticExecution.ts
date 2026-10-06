@@ -9,9 +9,10 @@ import type { BeatTiming } from '../visual-v2/timeline/compile.js';
 import type { BoardOp, SceneTransition } from '../visual-v2/board-ops/types.js';
 import { startScene } from '../visual-v2/board-state/reducer.js';
 import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
+import type { RenderedEntityAssetEvidence } from './renderedEntityAssets.js';
 
 export interface RepresentationExecutionRecord {
-  schemaVersion: 'v2-representation-execution/v1';
+  schemaVersion: 'v2-representation-execution/v2';
   sceneId: string;
   mode: 'typed-semantic' | 'legacy-boardops-preview';
   providerVersion?: string;
@@ -26,6 +27,8 @@ export interface RepresentationExecutionRecord {
   semanticOperations: SemanticOp[];
   cueByEventId: Record<string, number>;
   selectedAssetIds: Record<string, string>;
+  renderedEntityAssets: RenderedEntityAssetEvidence[];
+  unrenderedSelectedConceptIds: string[];
   boardOpsHash?: string;
 }
 
@@ -90,8 +93,9 @@ export function executeSemanticScene(input: {
     return {
       status: 'legacy-preview',
       record: {
-        schemaVersion: 'v2-representation-execution/v1', sceneId: context.sceneId,
+        schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId,
         mode: 'legacy-boardops-preview', beats, semanticOperations: [], cueByEventId: {}, selectedAssetIds: icons,
+        renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
       },
     };
   }
@@ -117,9 +121,9 @@ export function executeSemanticScene(input: {
       return {
         status: 'failed',
         record: {
-          schemaVersion: 'v2-representation-execution/v1', sceneId: context.sceneId, mode: 'typed-semantic',
+          schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId, mode: 'typed-semantic',
           providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
-          semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons,
+          semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
         },
         problems: beatRecords.map((item) => `${item.beatId}: ${item.problem ?? 'provider failed'}`),
       };
@@ -135,9 +139,9 @@ export function executeSemanticScene(input: {
       return {
         status: 'failed',
         record: {
-          schemaVersion: 'v2-representation-execution/v1', sceneId: context.sceneId, mode: 'typed-semantic',
+          schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId, mode: 'typed-semantic',
           providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
-          semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons,
+          semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
         },
         problems: beatRecords.map((item) => `${item.beatId}: ${item.problem ?? 'lowering failed'}`),
       };
@@ -159,18 +163,18 @@ export function executeSemanticScene(input: {
     return {
       status: 'failed',
       record: {
-        schemaVersion: 'v2-representation-execution/v1', sceneId: context.sceneId, mode: 'typed-semantic',
+        schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId, mode: 'typed-semantic',
         providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
-        semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons,
+        semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
       },
       problems: semanticReplay.problems.map((problem) => `${problem.path}: ${problem.message}`),
     };
   }
   const record: RepresentationExecutionRecord = {
-    schemaVersion: 'v2-representation-execution/v1', sceneId: context.sceneId,
+    schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId,
     mode: 'typed-semantic', providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback',
     beats: beatRecords, semanticOperations: allSemanticOperations,
-    cueByEventId: cuesFromNarration(narration), selectedAssetIds: icons,
+    cueByEventId: cuesFromNarration(narration), selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
   };
   // The timing-derived cue map and source-text-derived cue map must agree before compiling a board.
   if (canonicalHash(record.cueByEventId) !== canonicalHash(cueByEventId)) {
