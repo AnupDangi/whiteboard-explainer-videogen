@@ -167,6 +167,10 @@ the source's exact visible state, removes its old state value, emits a
 deterministic split into canonically bound result entities, and preserves their
 concept bindings for icon resolution. Unknown mechanisms, missing visible
 state, mismatched values, or overlong state text fail closed.
+After layout, V2 audits selected icon IDs against drawable renderer output. An
+icon selected for a concept used by a visual beat must resolve to that exact
+pictorial asset; missing or label-only output blocks encoding, and lock replay
+recomputes the same requirement from the pinned beat plan and captured states.
 The scene record and pinned lesson context store provider version, semantic
 operations, phrase-derived sentence cues, exact selected asset ids, and a hash
 of the emitted BoardOps. Lock verification re-derives the state-transition

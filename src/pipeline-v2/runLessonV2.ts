@@ -43,7 +43,7 @@ import { TEACHING_COMPILER_VERSION } from '../run/featureFlags.js';
 import { claimVerificationStatusFor, createEvidenceLedgerFromClaims, epistemicClaimProblems, epistemicTextFramingProblem, validateEvidenceLedgerSources, type EvidenceLedger } from '../evidence/ledger.js';
 import { buildLessonHierarchy, lessonHierarchyInputArtifact } from './lessonHierarchy.js';
 import { executeSemanticScene, type RepresentationExecutionRecord } from './semanticExecution.js';
-import { auditRenderedEntityAssets, selectedIconVisibilityProblems, unrenderedSelectedConceptIds } from './renderedEntityAssets.js';
+import { auditRenderedEntityAssets, requiredSelectedIconConceptIds, requiredSelectedIconProblems, selectedIconVisibilityProblems, unrenderedSelectedConceptIds } from './renderedEntityAssets.js';
 import { canonicalHash } from '../harness/replayDeterminism.js';
 import type { SceneBoardDraft } from '../visual-v2/ops-plan/types.js';
 
@@ -464,6 +464,10 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     if (renderedAssetAudit.problems.length) failures.push({ code: 'v2-rendered-asset-audit-failed', stage: 'icons', message: `${section.id}: ${renderedAssetAudit.problems.join('; ')}`, hard: true });
     const selectedWithoutEntity = unrenderedSelectedConceptIds(Object.fromEntries(selectedIcons), renderedAssetAudit.evidence);
     if (selectedWithoutEntity.length) failures.push({ code: 'v2-selected-icons-unused', stage: 'icons', message: `${section.id}: Visual Discovery selected library icons for concepts with no live entity BoardOp: ${selectedWithoutEntity.join(', ')}`, hard: false });
+    const visualBeatConceptIds = beats.filter((beat) => !beat.narrationOnly).flatMap((beat) => beat.entities.map((entity) => entity.conceptId));
+    const requiredIconConceptIds = requiredSelectedIconConceptIds(visualBeatConceptIds, Object.fromEntries(selectedIcons));
+    const requiredIconProblems = requiredSelectedIconProblems(requiredIconConceptIds, Object.fromEntries(selectedIcons), renderedAssetAudit.evidence);
+    if (requiredIconProblems.length) failures.push({ code: 'v2-required-icon-not-visible', stage: 'icons', message: `${section.id}: selected Visual Discovery icons required by visual beats did not render as their exact pictorial assets: ${requiredIconProblems.join('; ')}`, hard: true });
     const invisibleSelections = selectedIconVisibilityProblems(renderedAssetAudit.evidence);
     if (invisibleSelections.length) failures.push({ code: 'v2-selected-icon-not-visible', stage: 'icons', message: `${section.id}: selected library icons did not resolve to drawable pictorial assets: ${invisibleSelections.join('; ')}`, hard: false });
     for (const message of validateSceneGeometry(scene.geometry, timeline.states)) failures.push({ code: 'v2-geometry', stage: 'layout', message: `${section.id}: ${message}`, hard: true });

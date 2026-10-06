@@ -105,3 +105,41 @@ export function selectedIconVisibilityProblems(renderedEntities: readonly Render
     return [`${entity.conceptId} (${entity.elementId}) selected ${entity.selectedAssetId} but resolved to ${entity.depictionFamily}${entity.resolvedAssetId ? `/${entity.resolvedAssetId}` : ''} with ${entity.pathCount} paths, ${entity.fillCount} fills, and ${entity.embedCount} embeds`];
   });
 }
+
+/**
+ * Selected library icons only become a pipeline requirement when a visual beat
+ * actually names that concept. This keeps unused vocabulary entries from
+ * blocking a scene while preventing an icon promised by the beat plan from
+ * silently degrading to a label or disappearing from the board.
+ */
+export function requiredSelectedIconConceptIds(
+  beatConceptIds: readonly string[],
+  selectedAssetIds: Readonly<Record<string, string>>,
+): string[] {
+  return [...new Set(beatConceptIds)].filter((conceptId) => Boolean(selectedAssetIds[conceptId])).sort();
+}
+
+/** Checks that every beat-required selection is present and visibly resolves to its exact catalog asset. */
+export function requiredSelectedIconProblems(
+  requiredConceptIds: readonly string[],
+  selectedAssetIds: Readonly<Record<string, string>>,
+  renderedEntities: readonly RenderedEntityAssetEvidence[],
+): string[] {
+  const problems: string[] = [];
+  for (const conceptId of [...new Set(requiredConceptIds)].sort()) {
+    const selectedAssetId = selectedAssetIds[conceptId];
+    if (!selectedAssetId) continue;
+    const depictions = renderedEntities.filter((entity) => entity.conceptId === conceptId);
+    if (!depictions.length) {
+      problems.push(`${conceptId} selected ${selectedAssetId} but no live rendered entity uses it`);
+      continue;
+    }
+    for (const entity of depictions) {
+      const drawable = entity.pathCount + entity.fillCount + entity.embedCount > 0;
+      if (entity.selectedAssetId === selectedAssetId && entity.resolvedAssetId === selectedAssetId
+        && entity.depictionFamily === 'pictorial' && entity.meaningful && drawable) continue;
+      problems.push(`${conceptId} (${entity.elementId}) selected ${selectedAssetId} but rendered ${entity.depictionFamily}${entity.resolvedAssetId ? `/${entity.resolvedAssetId}` : ''} with ${entity.pathCount} paths, ${entity.fillCount} fills, and ${entity.embedCount} embeds`);
+    }
+  }
+  return problems;
+}

@@ -32,7 +32,7 @@ import { compileSemanticOpsToBoardOps } from '../teaching/semantic-ir/toBoardOps
 import { stateTransitionProvider } from '../teaching/representation/stateTransition.js';
 import type { TeachingBeat } from '../teaching/beat-plan/types.js';
 import type { VisualVocabulary } from '../planner/visualDiscovery.js';
-import { auditRenderedEntityAssets } from './renderedEntityAssets.js';
+import { auditRenderedEntityAssets, requiredSelectedIconConceptIds, requiredSelectedIconProblems } from './renderedEntityAssets.js';
 
 export const LESSON_LOCK_V2_VERSION = 'lesson.lock/v5-teaching-compiler-v2';
 const Hash = z.string().regex(/^[0-9a-f]{64}$/);
@@ -154,6 +154,13 @@ function representationExecutionProblems(sceneRecord: JsonRecord | undefined, co
       const rendered = auditRenderedEntityAssets(captured.timeline.states, captured.geometry.states, captured.concepts);
       if (rendered.problems.length) problems.push(...rendered.problems.map((problem) => `scene ${sceneId} rendered entity asset evidence: ${problem}`));
       if (canonicalHash(rendered.evidence) !== canonicalHash(execution.renderedEntityAssets)) problems.push(`scene ${sceneId} rendered entity asset evidence differs from deterministic depiction resolution`);
+      const visualBeatConceptIds = visualBeats.flatMap((beat) => (arrayOf(beat.entities) ?? []).flatMap((rawEntity) => {
+        const entity = recordOf(rawEntity);
+        return typeof entity?.conceptId === 'string' ? [entity.conceptId] : [];
+      }));
+      const requiredIconConceptIds = requiredSelectedIconConceptIds(visualBeatConceptIds, execution.selectedAssetIds);
+      const requiredIconProblems = requiredSelectedIconProblems(requiredIconConceptIds, execution.selectedAssetIds, rendered.evidence);
+      if (requiredIconProblems.length) problems.push(...requiredIconProblems.map((problem) => `scene ${sceneId} selected icon coverage: ${problem}`));
       const renderedConceptIds = new Set(execution.renderedEntityAssets.map((entity) => entity.conceptId));
       const expectedUnrendered = Object.keys(execution.selectedAssetIds).filter((conceptId) => !renderedConceptIds.has(conceptId)).sort();
       if (canonicalHash(expectedUnrendered) !== canonicalHash(execution.unrenderedSelectedConceptIds)) problems.push(`scene ${sceneId} unrendered selected icon concepts differ from captured entities`);

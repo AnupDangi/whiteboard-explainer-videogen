@@ -220,6 +220,8 @@ test('the V2 runner turns beats and narration into a retained-board video with r
     assert.equal(result.metrics['v2.visualBeatCoverage'], 1);
     assert.equal(result.metrics['v2.hardGeometryProblems'], 0);
     assert.equal(result.metrics['v2.pictorialEntities'], 1, 'the exact vendored frame icon is counted after scene-family filtering');
+    assert.equal(result.metrics['v2.visibleSelectedIcons'], 2, 'the selected library asset is audited in each scene that renders it');
+    assert.ok(!result.failures.some((failure) => failure.code === 'v2-required-icon-not-visible'), 'a required selected icon passes only after visible resolution');
     assert.equal(result.metrics['v2.scenesWithIconFamily'], 2);
     assert.equal(s6Prompts.length, 2);
     assert.ok(s6Prompts.every((prompt) => /Frame \(entity\): a real picture exists \(draw it literally\)/.test(prompt)), 'the actual V2 S6 requests receive S3b depiction guidance');
