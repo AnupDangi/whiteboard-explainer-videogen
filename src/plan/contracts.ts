@@ -1,6 +1,7 @@
 import { recordCoercion } from '../structured/coercionLedger.js';
 import { claimSemanticsFromText } from '../evidence/claims.js';
 import { claimVerificationStatusFor, epistemicClaimProblems } from '../evidence/ledger.js';
+import { claimIdentityMismatch, deriveClaimIdentity, formatClaimIdentityMismatch } from '../evidence/claimIdentity.js';
 import type { ConceptGraph, TeachingPlan, TeachingPlanDraft } from './schemas.js';
 import { fitBudgetsToTarget, rebalanceSceneBudgets } from './analyze.js';
 
@@ -75,12 +76,40 @@ export const CONTRACT_CODES = {
   ESSENTIAL_CLAIM_DUPLICATE: 'ESSENTIAL_CLAIM_DUPLICATE',
   ESSENTIAL_CLAIM_CONCEPT: 'ESSENTIAL_CLAIM_CONCEPT',
   ESSENTIAL_CLAIM_RELATION: 'ESSENTIAL_CLAIM_RELATION',
+  ESSENTIAL_CLAIM_RELATION_IDENTITY: 'ESSENTIAL_CLAIM_RELATION_IDENTITY',
+  ESSENTIAL_CLAIM_ATOMICITY: 'ESSENTIAL_CLAIM_ATOMICITY',
   ESSENTIAL_CLAIM_EVIDENCE: 'ESSENTIAL_CLAIM_EVIDENCE',
   ESSENTIAL_CLAIM_EPISTEMIC_TYPE: 'ESSENTIAL_CLAIM_EPISTEMIC_TYPE',
 } as const;
 
 export type ContractCode = (typeof CONTRACT_CODES)[keyof typeof CONTRACT_CODES];
 export interface ContractFinding { code: ContractCode; message: string }
+type EssentialClaim = NonNullable<TeachingPlan['sections'][number]['contract']>['essentialClaims'][number];
+
+/** Ensure relation-bearing claims are atomic and their canonical statement matches the declared graph edge. */
+export function claimRelationContractProblems(sectionId: string, claim: EssentialClaim, graph: ConceptGraph): ContractFinding[] {
+  const findings: ContractFinding[] = [];
+  if (claim.relations.length > 1) findings.push({
+    code: CONTRACT_CODES.ESSENTIAL_CLAIM_ATOMICITY,
+    message: `${sectionId} claim ${claim.id} links ${claim.relations.length} graph relations; split it into atomic claims with at most one directed relation each`,
+  });
+  const identity = deriveClaimIdentity(claim, graph.concepts);
+  const concepts = new Map(graph.concepts.map((concept) => [concept.id, concept.label]));
+  for (const relation of claim.relations) {
+    const identityRelation = identity.relations.find((item) => item.fromConceptId === relation.from && item.toConceptId === relation.to);
+    if (!identityRelation?.lexicallyExpressed) findings.push({
+      code: CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION_IDENTITY,
+      message: `${sectionId} claim ${claim.id} must explicitly state the directed ${relation.type} relation from ${concepts.get(relation.from) ?? relation.from} to ${concepts.get(relation.to) ?? relation.to}; don't rely on clause order or a separate outcome to imply it`,
+    });
+  }
+  for (const mismatch of claimIdentityMismatch(identity, claim.statement)) {
+    if (mismatch.kind === 'canonical_contract_conflict') findings.push({
+      code: CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION_IDENTITY,
+      message: `${sectionId} claim ${claim.id} has a relation identity conflict: ${formatClaimIdentityMismatch(mismatch)}; rewrite the statement to match its declared directed relation`,
+    });
+  }
+  return findings;
+}
 
 /** S3 checks are code-owned. A plausible learning goal is not evidence for a visual claim. Returns one finding per violation, with a stable machine code so a calibration harness can count failures by rule across many attempts. */
 export function teachingContractFindings(plan: TeachingPlan, graph: ConceptGraph, audience?: string): ContractFinding[] {
@@ -157,6 +186,7 @@ export function teachingContractFindings(plan: TeachingPlan, graph: ConceptGraph
         if (!claim.conceptIds.includes(relation.from) || !claim.conceptIds.includes(relation.to)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION, `${section.id} claim ${claim.id} relation endpoints must be linked concepts`);
         if (source && listed.has(relationKey(relation))) for (const ref of source.evidence) linkedEvidence.add(ref.spanId);
       }
+      for (const problem of claimRelationContractProblems(section.id, claim, graph)) push(problem.code, problem.message);
       if (new Set(claim.evidenceSpanIds).size !== claim.evidenceSpanIds.length) push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} repeats evidence`);
       for (const spanId of claim.evidenceSpanIds) if (!linkedEvidence.has(spanId) || !contract.evidenceSpanIds.includes(spanId)) push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} cites unsupported evidence ${spanId}`);
       if (!claim.evidenceSpanIds.length && claim.epistemicType !== 'unverified_explanation') push(CONTRACT_CODES.ESSENTIAL_CLAIM_EVIDENCE, `${section.id} claim ${claim.id} needs linked source evidence`);

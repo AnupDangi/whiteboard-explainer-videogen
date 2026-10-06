@@ -91,3 +91,49 @@ test('generated claims require consistent explicit epistemic types and framed ex
   assert.deepEqual(epistemicClaimProblems({ id: 'analogy', statement: 'A queue works like a line at a shop.', relations: [], epistemicType: 'analogy' }), []);
   assert.deepEqual(epistemicClaimProblems({ id: 'analogy', statement: 'A queue stores tasks.', relations: [], epistemicType: 'analogy' }), ['claim analogy needs explicit analogy framing']);
 });
+
+test('relation claims are atomic, explicitly directed, and do not borrow a predicate across coordinated clauses', () => {
+  const implicit = structuredClone(plan);
+  implicit.sections[0]!.contract!.essentialClaims[0]!.statement = 'Heat enters, and pressure rises.';
+  assert.ok(teachingContractFindings(implicit, graph).some((finding) => finding.code === CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION_IDENTITY && /must explicitly state the directed causes relation/.test(finding.message)));
+
+  const reversed = structuredClone(plan);
+  reversed.sections[0]!.contract!.essentialClaims[0]!.statement = 'Pressure raises heat.';
+  assert.ok(teachingContractFindings(reversed, graph).some((finding) => finding.code === CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION_IDENTITY && /relation identity conflict/.test(finding.message)));
+
+  const compound = structuredClone(plan);
+  compound.sections[0]!.contract!.essentialClaims[0]!.relations.push({ from: 'pressure', to: 'heat', type: 'causes' });
+  assert.ok(teachingContractFindings(compound, graph).some((finding) => finding.code === CONTRACT_CODES.ESSENTIAL_CLAIM_ATOMICITY));
+
+  const clauses = {
+    concepts: [
+      { ...graph.concepts[0]!, id: 'mitosis', label: 'Mitosis' },
+      { ...graph.concepts[1]!, id: 'nucleus', label: 'Nucleus' },
+      { ...graph.concepts[1]!, id: 'cytokinesis', label: 'Cytokinesis' },
+    ],
+    relations: [{ from: 'mitosis', to: 'cytokinesis', type: 'precedes', evidence: [relationRef] }],
+    prerequisites: [],
+  } as unknown as ConceptGraph;
+  const claimWithSeparateOutcomes: (typeof contract.essentialClaims)[number] = {
+    ...contract.essentialClaims[0]!,
+    id: 'mitosis_outcomes',
+    statement: 'Mitosis produces two nuclei, and cytokinesis divides the cytoplasm.',
+    conceptIds: ['mitosis', 'nucleus', 'cytokinesis'],
+    relations: [{ from: 'mitosis', to: 'cytokinesis', type: 'precedes' }],
+  };
+  const identityProblems = teachingContractFindings({
+    ...plan,
+    sections: [{
+      ...plan.sections[0]!,
+      conceptIds: ['mitosis', 'nucleus', 'cytokinesis'],
+      contract: {
+        ...contract,
+        requiredConceptIds: ['mitosis', 'nucleus', 'cytokinesis'],
+        requiredRelations: [{ from: 'mitosis', to: 'cytokinesis', type: 'precedes' }],
+        essentialClaims: [claimWithSeparateOutcomes],
+      },
+    }],
+  }, clauses).filter((finding) => finding.code === CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION_IDENTITY);
+  assert.ok(identityProblems.some((finding) => /must explicitly state the directed precedes relation/.test(finding.message)));
+  assert.equal(identityProblems.some((finding) => /expresses forward produces/.test(finding.message)), false);
+});

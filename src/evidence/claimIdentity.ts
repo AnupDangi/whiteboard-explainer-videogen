@@ -47,7 +47,7 @@ interface PredicateForms {
  */
 const PREDICATES: Record<RelationType, PredicateForms> = {
   causes: {
-    active: [/\bcaus(?:e|es)\b/iu, /\bcaused\b(?!\s+by)/iu, /\bleads?\s+to\b/iu, /\bresults?\s+in\b/iu, /\btriggers?\b/iu, /\bdrives?\b/iu, /\binduces?\b/iu],
+    active: [/\bcaus(?:e|es)\b/iu, /\bcaused\b(?!\s+by)/iu, /\bleads?\s+to\b/iu, /\bresults?\s+in\b/iu, /\btriggers?\b/iu, /\bdrives?\b/iu, /\binduces?\b/iu, /\braises?\b/iu],
     passive: [/\b(?:is|are|was|were|be|been|being)\s+caused\s+by\b/iu, /\bcaused\s+by\b/iu, /\bresults?\s+from\b/iu, /\btriggered\s+by\b/iu, /\b(?:is|are|was|were|be|been|being)\s+(?:driven|induced)\s+by\b/iu, /\b(?:driven|induced)\s+by\b/iu],
   },
   feeds: {
@@ -98,6 +98,8 @@ const PREDICATES: Record<RelationType, PredicateForms> = {
 
 const labelTokens = (label: string): string[] => label.normalize('NFKC').match(/[\p{L}\p{N}]+/gu) ?? [];
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+const crossesClauseBoundary = (text: string): boolean => /[.!?;]/u.test(text)
+  || /,\s*(?:and|but|while|whereas|however|although|yet|so)\b/iu.test(text);
 
 function labelPattern(label: string): RegExp | undefined {
   const tokens = labelTokens(label);
@@ -126,7 +128,7 @@ interface PredicateMatch { type: RelationType; direction: 'forward' | 'reverse' 
 interface PredicateOrientation { type: RelationType; orientation: 'left_to_right' | 'right_to_left' }
 
 function predicateMatchesBetween(text: string, left: Mention, right: Mention): PredicateOrientation[] {
-  if (left.end > right.start || /[.!?;]/u.test(text.slice(left.end, right.start))) return [];
+  if (left.end > right.start || crossesClauseBoundary(text.slice(left.end, right.start))) return [];
   const middle = text.slice(left.end, right.start);
   const matches: PredicateOrientation[] = [];
   for (const [type, forms] of Object.entries(PREDICATES) as Array<[RelationType, PredicateForms]>) {
@@ -143,7 +145,7 @@ function relationMatches(text: string, fromId: string, toId: string, concepts: r
     const left = endpoints[i]!; const right = endpoints[j]!;
     if (left.conceptId === right.conceptId || left.start === right.start) continue;
     const between = text.slice(left.end, right.start);
-    if (/[.!?;]/u.test(between)) continue;
+    if (crossesClauseBoundary(between)) continue;
     // Any other graph-linked concept in the same span makes the endpoint pair
     // ambiguous. This avoids joining predicates across independent clauses.
     if (mentionsIn(text, concepts).some((mention) => mention.conceptId !== left.conceptId && mention.conceptId !== right.conceptId && mention.start >= left.end && mention.end <= right.start)) continue;

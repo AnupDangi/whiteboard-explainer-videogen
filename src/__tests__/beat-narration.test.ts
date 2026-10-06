@@ -245,6 +245,12 @@ test('the narration prompt carries the beat plan and the teaching rules and no t
   assert.match(user, /A frame is on the stack/);
   assert.match(system, /semanticAnchors/);
   assert.match(user, /SOURCE EXCERPT/);
+
+  const graphConcepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
+  const canonicalClaim = { statement: 'Alpha causes Beta.', conceptIds: ['alpha', 'beta'], relations: [{ from: 'alpha', to: 'beta', type: 'causes' as const }] };
+  const relationPrompt = buildNarrationPrompt({ ...ctx, canonicalClaims: { c1: { statement: canonicalClaim.statement, identity: deriveClaimIdentity(canonicalClaim, graphConcepts) } } }, { title: 'T', goal: 'g' }, 'SOURCE EXCERPT');
+  assert.match(relationPrompt.system, /state that directed relation explicitly with its correct predicate/);
+  assert.match(relationPrompt.user, /requiredRelations.*Alpha.*causes.*Beta/);
 });
 
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };
@@ -316,18 +322,16 @@ test('a screen reference is repaired by patching that one sentence', async () =>
   const bad = JSON.stringify({ ...first, sentences: ['Look at the box on the left.', 'The frame remembers where to return.'], semanticAnchors: [{ ...first.semanticAnchors[0]!, phrase: 'Look at the box on the left.' }] });
   const sentencePatch = JSON.stringify({ patches: [
     { op: 'replace', path: '/sentences/0', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') },
-  ] });
-  const anchorPatch = JSON.stringify({ patches: [
     { op: 'replace', path: '/semanticAnchors/0/phrase', valueJson: JSON.stringify('Every call pushes a new frame onto the stack.') },
   ] });
-  const { client, requests } = scripted([bad, sentencePatch, anchorPatch, goodJson[1]!]);
+  const { client, requests } = scripted([bad, sentencePatch, goodJson[1]!]);
   const result = await writeBeatNarration({ ctx, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
   assert.equal(result.value?.beats[0]!.sentenceIds.length, 2, JSON.stringify({ failures: result.failures, requests: requests.map(({ schemaName, user }) => ({ schemaName, user })) }));
   assert.equal(requests[1]!.schemaName, 'json_patch');
   assert.match(requests[1]!.user, /\/sentences\/0/);
   assert.doesNotMatch(requests[1]!.user, /\/beats\/0/);
-  assert.equal(requests[2]!.schemaName, 'json_patch');
-  assert.match(requests[2]!.user, /\/semanticAnchors\/0\/phrase/);
+  assert.match(requests[1]!.user, /\/semanticAnchors\/0\/phrase/);
+  assert.equal(requests[2]!.schemaName, 'beat_narration');
   assert.doesNotMatch(requests[1]!.user, /scene\.b2/, 'the repair is scoped to the current beat');
 });
 

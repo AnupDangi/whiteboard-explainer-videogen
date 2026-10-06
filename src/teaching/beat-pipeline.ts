@@ -12,6 +12,7 @@ import type { CompiledSceneNarration } from '../narration/beat-narration/types.j
 import type { NarrationContext } from '../narration/beat-narration/validate.js';
 import type { StructuredCallAttemptRecord } from '../llm/structuredCall.js';
 import { deriveClaimIdentity } from '../evidence/claimIdentity.js';
+import { claimRelationContractProblems } from '../plan/contracts.js';
 
 export interface BeatStagesValue {
   beatPlans: Record<string, TeachingBeat[]>;
@@ -44,6 +45,12 @@ const numbersIn = (texts: readonly string[]): Set<string> => new Set(texts.flatM
 /** S3b + S4 in beat mode: per scene, plan the teaching beats, then write the speech of each beat. Scenes run in parallel. */
 export async function runBeatStages(input: { plan: TeachingPlan; graph: ConceptGraph; sourceDoc: SourceDoc; terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }> }, m: BeatStageModel): Promise<BeatStagesResult> {
   const { plan, graph, sourceDoc, terminology } = input;
+  const claimRelationProblems = plan.sections.flatMap((section) => (section.contract?.essentialClaims ?? []).flatMap((claim) => claimRelationContractProblems(section.id, claim, graph)));
+  if (claimRelationProblems.length) return {
+    usage: emptyUsage(),
+    failures: claimRelationProblems.map((problem) => ({ code: 'beat-canonical-claim-invalid', stage: 'beat-narration' as const, message: problem.message, hard: true })),
+    reports: [], trace: mergeTraces([]), rawResponses: [],
+  };
   const perScene = m.remainingBudgetUsd / Math.max(1, plan.sections.length);
   const outcomes = await Promise.all(plan.sections.map((section) => withHostResourcePermit('provider-beats', BEAT_PROVIDER_CONCURRENCY, async () => {
     const stage = { ...m, remainingBudgetUsd: perScene };

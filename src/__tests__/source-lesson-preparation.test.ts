@@ -28,7 +28,7 @@ test('S1-S4 source lesson preparation carries evidence, blocks relation loss, an
       contract: {
         learningDelta: 'Explain how leaves build sugar', targetDurationSec: 15, requiredConceptIds: ['leaf', 'sugar'],
         requiredRelations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id],
-        essentialClaims: [{ id: 'build_sugar_claim', statement: 'Leaves use light to build sugar.', epistemicType: 'derived_relation', conceptIds: ['leaf', 'sugar'], relations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id] }],
+        essentialClaims: [{ id: 'build_sugar_claim', statement: 'The leaf produces starch granules using light.', epistemicType: 'derived_relation', conceptIds: ['leaf', 'sugar'], relations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id] }],
         teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
         mentalModel: 'Light enters the leaf and sugar leaves it.',
         semanticVisualIntents: [{ claimId: 'build_sugar_claim', conceptType: 'process', strategy: 'diagram', conceptIds: ['leaf', 'sugar'], roles: [], relationType: 'produces' }],
@@ -207,7 +207,7 @@ test('S3 never trusts a relation the model writes: contract relations are derive
         // between leaf and sugar: the invented relation must never reach the SceneContract.
         learningDelta: 'Explain how leaves build sugar', targetDurationSec: 15, requiredConceptIds: ['leaf', 'sugar'],
         requiredRelations: [{ from: 'leaf', to: 'sugar', type: 'contains' }], evidenceSpanIds: [sourceSpan.id],
-        essentialClaims: [{ id: 'build_sugar_claim', statement: 'Leaves use light to build sugar.', epistemicType: 'derived_relation', conceptIds: ['leaf', 'sugar'], relations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id] }],
+        essentialClaims: [{ id: 'build_sugar_claim', statement: 'The leaf produces starch granules using light.', epistemicType: 'derived_relation', conceptIds: ['leaf', 'sugar'], relations: [{ from: 'leaf', to: 'sugar', type: 'produces' }], evidenceSpanIds: [sourceSpan.id] }],
         teachingSkill: 'mechanism', candidateMechanisms: ['chain'],
         mentalModel: 'Light enters the leaf and sugar leaves it.',
         semanticVisualIntents: [{ claimId: 'build_sugar_claim', conceptType: 'process', strategy: 'diagram', conceptIds: ['leaf', 'sugar'], roles: [], relationType: 'produces' }],

@@ -133,6 +133,16 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
         previousSemanticPosition = { sentenceIndex: anchor.sentenceIndex, charEnd };
       }
     });
+    narration.semanticAnchors.forEach((anchor, j) => {
+      const sentencePath = `${at}/sentences/${anchor.sentenceIndex}`;
+      const anchorPath = `${at}/semanticAnchors/${j}/phrase`;
+      const sentenceRejected = problems.some((problem) => typeof problem !== 'string' && problem.path === sentencePath);
+      const anchorAlreadyRejected = problems.some((problem) => typeof problem !== 'string' && problem.path === anchorPath);
+      if (sentenceRejected && !anchorAlreadyRejected) problems.push({
+        path: anchorPath,
+        message: `sentence ${anchor.sentenceIndex} is being repaired; update this semantic phrase in the same repair so it is copied exactly from the final sentence and still names the planned meaning change`,
+      });
+    });
   });
   const words = draft.beats.reduce((sum, beat) => sum + beat.sentences.reduce((n, sentence) => n + wordCount(sentence, ctx.language), 0), 0);
   if (ctx.revision) {

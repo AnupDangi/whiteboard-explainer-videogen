@@ -11,10 +11,10 @@ const ev = [{ spanId: span.id, quote: 'A call pushes a frame onto the stack.', s
 const graph = { concepts: [
   { id: 'frame', label: 'Frame', kind: 'entity', definition: 'A record of one call.', evidence: ev, level: 'one-step' },
   { id: 'stack', label: 'Stack', kind: 'entity', definition: 'Holds frames.', evidence: ev, level: 'one-step' },
-], relations: [{ from: 'frame', to: 'stack', type: 'contains', evidence: ev }], prerequisites: [] } as unknown as ConceptGraph;
-const claim = (id: string) => ({ id, statement: 'Every call pushes a frame onto the stack, up to 3 steps deep.', conceptIds: ['frame', 'stack'], relations: [{ from: 'frame', to: 'stack', type: 'contains' }], evidenceSpanIds: [span.id] });
+], relations: [{ from: 'stack', to: 'frame', type: 'contains', evidence: ev }], prerequisites: [] } as unknown as ConceptGraph;
+const claim = (id: string) => ({ id, statement: 'The stack contains each call frame, up to 3 steps deep.', conceptIds: ['stack', 'frame'], relations: [{ from: 'stack', to: 'frame', type: 'contains' }], evidenceSpanIds: [span.id] });
 const section = (id: string) => ({ id, title: `Scene ${id}`, goal: 'g', kind: 'explain', conceptIds: ['frame', 'stack'], budgetSec: 8, contract: {
-  learningDelta: 'delta', targetDurationSec: 8, requiredConceptIds: ['frame', 'stack'], requiredRelations: [{ from: 'frame', to: 'stack', type: 'contains' }], evidenceSpanIds: [span.id],
+  learningDelta: 'delta', targetDurationSec: 8, requiredConceptIds: ['frame', 'stack'], requiredRelations: [{ from: 'stack', to: 'frame', type: 'contains' }], evidenceSpanIds: [span.id],
   essentialClaims: [claim(`${id}_c`)], teachingSkill: 'mechanism', candidateMechanisms: ['chain'], mentalModel: 'm', misconceptionRisk: [],
 } });
 const plan = { targetDurationSec: 24, intro: { sourceTitle: 't', sections: [] }, sections: [section('one'), section('two')], recap: { keyPoints: [] } } as unknown as TeachingPlan;
@@ -24,7 +24,7 @@ const beatJson = (sceneClaim: string) => JSON.stringify({ beats: [{
   entities: [{ identityKey: 'frame_main', conceptId: 'frame' }], semanticRevealOrder: ['frame_main'], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', toState: 'A frame is shown.' }],
   relationships: [], misconceptionIds: [], narrationGoal: 'say it', visualInvariant: 'a frame', mutedMeaning: 'a pile', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
 }] });
-const narrationJson = (beatId: string, claimId: string) => JSON.stringify({ beatId, sentences: ['Every call pushes a frame onto the stack, up to 3 steps deep.'], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${beatId}.e1`, sentenceIndex: 0, phrase: 'pushes a frame' }], emphasisTerms: ['frame'] });
+const narrationJson = (beatId: string, claimId: string) => JSON.stringify({ beatId, sentences: ['The stack contains each call frame, up to 3 steps deep.'], claimSentences: [{ claimId, sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${beatId}.e1`, sentenceIndex: 0, phrase: 'contains each call frame' }], emphasisTerms: ['frame'] });
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };
 function client(handler: (schemaName: string, user: string) => string): ModelClient {
   return { provider: 'fake', chat: async (r) => ({ content: handler(r.schemaName, r.user), finishReason: 'stop', temperatureApplied: true, schemaConstrained: true, usage }) };
@@ -46,12 +46,25 @@ test('every scene gets beats and beat narration, keyed by scene id, and the scri
   assert.deepEqual(Object.keys(result.value!.beatPlans).sort(), ['one', 'two']);
   assert.equal(result.value!.beatPlans.one![0]!.beatId, 'one.b1');
   assert.equal(result.value!.script.scenes[0]!.sectionId, 'one');
-  assert.equal(result.value!.script.scenes[0]!.text, 'Every call pushes a frame onto the stack, up to 3 steps deep.');
-  assert.deepEqual(result.value!.script.scenes[0]!.claimSpans, [{ claimId: 'one_c', exactText: 'Every call pushes a frame onto the stack, up to 3 steps deep.' }]);
+  assert.equal(result.value!.script.scenes[0]!.text, 'The stack contains each call frame, up to 3 steps deep.');
+  assert.deepEqual(result.value!.script.scenes[0]!.claimSpans, [{ claimId: 'one_c', exactText: 'The stack contains each call frame, up to 3 steps deep.' }]);
   assert.equal(result.reports.filter((r) => r.stage === 'beats').length, 2);
   assert.equal(result.reports.filter((r) => r.stage === 'beat-narration').length, 2);
   assert.deepEqual(result.value!.narrationContexts.one!.terminology, terminology);
   assert.equal(result.value!.narrationContexts.one!.speechLanguagePolicy, 'native-plus-english-terms');
+});
+
+test('invalid canonical relation identity fails before S3b or S4 provider calls', async () => {
+  const calls: string[] = [];
+  const invalid = structuredClone(plan);
+  invalid.sections[0]!.contract!.essentialClaims[0]!.statement = 'The frame contains the stack, up to 3 steps deep.';
+  const result = await runBeatStages({ plan: invalid, graph, sourceDoc: doc }, {
+    model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1,
+    client: client((schema) => { calls.push(schema); return '{}'; }),
+  });
+  assert.equal(result.value, undefined);
+  assert.deepEqual(calls, []);
+  assert.ok(result.failures.some((failure) => failure.code === 'beat-canonical-claim-invalid' && /relation identity conflict/.test(failure.message)));
 });
 
 test('a number the source never states is rejected in narration, and a scene that cannot be written fails the stage instead of being skipped', async () => {
