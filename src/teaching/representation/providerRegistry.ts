@@ -28,6 +28,7 @@ export interface MechanismRequirement {
 export interface RepresentationProvider<TModel, TState, TOperation> {
   family: RepresentationFamily;
   version: string;
+  supportedChangeKinds: readonly SemanticChangeKind[];
   modelSchema: z.ZodType<TModel>;
   suitability(beat: TeachingBeat): number;
   validateModel(model: TModel, beat: TeachingBeat): RepresentationProblem[];
@@ -65,6 +66,7 @@ export type ProviderExecutionResult<TOperation> =
 export interface ExecutableRepresentationProvider<TState, TOperation> {
   readonly family: RepresentationFamily;
   readonly version: string;
+  readonly supportedChangeKinds: readonly SemanticChangeKind[];
   compile(model: unknown, state: TState, beat: TeachingBeat): ProviderExecutionResult<TOperation>;
   compileFallback(state: TState, beat: TeachingBeat): ProviderExecutionResult<TOperation>;
 }
@@ -160,6 +162,7 @@ export function defineRepresentationProvider<TModel, TState, TOperation>(
   return Object.freeze({
     family: provider.family,
     version: provider.version,
+    supportedChangeKinds: Object.freeze([...new Set(provider.supportedChangeKinds)]),
     compile: (model: unknown, state: TState, beat: TeachingBeat) => run(model, state, beat, 'model'),
     compileFallback: (state: TState, beat: TeachingBeat) => {
       let fallback: TModel;
@@ -183,6 +186,7 @@ export interface RepresentationProviderStatus {
   family: RepresentationFamily;
   status: 'implemented' | 'not_implemented';
   version?: string;
+  supportedChangeKinds?: readonly SemanticChangeKind[];
 }
 
 export interface RepresentationProviderRegistry<TState, TOperation> {
@@ -211,12 +215,9 @@ export function createRepresentationProviderRegistry<TState, TOperation>(
   return Object.freeze({
     statuses: Object.freeze(REPRESENTATION_FAMILIES.map((family) => {
       const provider = byFamily.get(family);
-      return provider ? { family, status: 'implemented' as const, version: provider.version } : { family, status: 'not_implemented' as const };
+      return provider ? { family, status: 'implemented' as const, version: provider.version, supportedChangeKinds: provider.supportedChangeKinds } : { family, status: 'not_implemented' as const };
     })),
     compile: (family: RepresentationFamily, model: unknown, state: TState, beat: TeachingBeat) => byFamily.get(family)?.compile(model, state, beat) ?? unavailable(family),
     compileFallback: (family: RepresentationFamily, state: TState, beat: TeachingBeat) => byFamily.get(family)?.compileFallback(state, beat) ?? unavailable(family),
   });
 }
-
-/** Empty until a family provider is implemented and verified; its status is explicit for all planned families. */
-export const REPRESENTATION_PROVIDER_REGISTRY = createRepresentationProviderRegistry<never, never>([]);

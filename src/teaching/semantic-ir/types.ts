@@ -9,7 +9,6 @@ export const SEMANTIC_ENTITY_LIFECYCLES = ['active', 'finalized', 'merged', 'sep
 export const SemanticEntitySchema = z.object({
   id: semanticId(),
   conceptId: semanticId(),
-  label: z.string().trim().min(1).max(100),
   claimIds: claimIds(),
   state: z.string().trim().min(1).max(160).optional(),
   /** A semantic location identity, never a screen region or coordinate. */

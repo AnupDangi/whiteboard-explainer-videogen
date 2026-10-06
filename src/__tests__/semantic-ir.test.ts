@@ -4,7 +4,7 @@ import { applySemanticProgram } from '../teaching/semantic-ir/program.js';
 import { SemanticOpSchema, type SemanticSceneState } from '../teaching/semantic-ir/types.js';
 
 const emptyState = (): SemanticSceneState => ({ sceneId: 'scene', entities: [], relations: [], selectedEntityIds: [], plots: [], feedbackLoops: [], annotations: [] });
-const entity = (id: string, state?: string) => ({ id, conceptId: `concept_${id}`, label: id, claimIds: ['claim_a'], lifecycle: 'active' as const, ...(state ? { state } : {}) });
+const entity = (id: string, state?: string) => ({ id, conceptId: `concept_${id}`, claimIds: ['claim_a'], lifecycle: 'active' as const, ...(state ? { state } : {}) });
 const common = (eventId: string, beatId: string, dependsOnEventIds: string[] = []) => ({ eventId, beatId, claimIds: ['claim_a'], dependsOnEventIds });
 
 test('SemanticOp is a geometry-free, strict meaning-level contract', () => {

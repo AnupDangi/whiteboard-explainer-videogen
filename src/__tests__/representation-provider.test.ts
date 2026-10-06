@@ -17,6 +17,7 @@ function testProvider(options: { mechanisms?: boolean; suitability?: number } = 
   return defineRepresentationProvider({
     family: 'state_transition',
     version: 'state-transition/test-v1',
+    supportedChangeKinds: ['transform'],
     modelSchema: z.object({ step: z.string().min(1) }).strict(),
     suitability: () => options.suitability ?? 0.9,
     validateModel: () => [],
@@ -50,7 +51,7 @@ test('provider runtime validates model shape, required mechanisms, and explicit 
   const provider = testProvider();
   const registry = createRepresentationProviderRegistry<null, string>([provider]);
   assert.deepEqual(registry.statuses.find((status) => status.family === 'state_transition'), {
-    family: 'state_transition', status: 'implemented', version: 'state-transition/test-v1',
+    family: 'state_transition', status: 'implemented', version: 'state-transition/test-v1', supportedChangeKinds: ['transform'],
   });
 
   const valid = registry.compile('state_transition', { step: 'split' }, null, beat);

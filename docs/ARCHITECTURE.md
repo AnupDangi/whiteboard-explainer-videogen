@@ -113,12 +113,13 @@ compilation, and an explicit family fallback. Its availability inventory lists
 all 19 planned families; a missing provider returns `provider_unavailable`
 instead of generating a generic BoardOps substitute.
 
-No family provider is active yet, and the current V2 S6 execution path does not
-call this registry: S6 still writes BoardOps directly using family-specific kit
-hints. The registry is a tested fail-closed boundary for callers that use it,
-not evidence that current generated videos use semantic providers. Shared
-SemanticEntity/SemanticState/SemanticOp types, benchmark-led family providers,
-V2 integration, and family-specific fallback verification remain open.
+The registry currently activates only `state_transition` v1, for `introduce`
+and `transform` changes; its other change kinds and the other 18 families stay
+unavailable. The current V2 S6 execution path does not call this registry: S6
+still writes BoardOps directly using family-specific kit hints. The registry
+is a tested fail-closed boundary for callers that use it, not evidence that
+current generated videos use semantic providers. Family coverage, V2
+integration, and live visual verification remain open.
 
 ## Semantic representation IR
 
@@ -137,6 +138,13 @@ and operation-specific preconditions. It returns a pointer-scoped failure
 without mutating the input state when a transition is invalid. This is a
 scene-level contract only: V2 does not yet call it, the lesson lock does not
 yet pin it, and the compiler does not yet lower its operations to BoardOps.
+
+The initial state-transition provider in
+`src/teaching/representation/stateTransition.ts` maps beat-bound introduction
+and transformation changes to semantic operations. It checks exact entity and
+state identity and replays its output before returning it. Split/merge and
+other transition kinds remain unsupported; no generated video uses this
+provider until V2 execution is wired to the registry.
 
 ## Ownership and trust boundaries
 
