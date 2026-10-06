@@ -84,6 +84,32 @@ test('learner state transitions and persistent semantic entities resolve only to
   assert.ok(stateChangeWithoutBefore.some((problem) => /move requires a fromState/u.test((problem as { message: string }).message)));
 });
 
+test('a separate change reveals two or more new result entities in declared order', () => {
+  const separated = beat({
+    claimIds: ['c2'], relationships: [], beatType: 'transform', cognitiveOperation: 'transform', representationFamily: 'state_transition',
+    entities: [
+      { identityKey: 'frame_main', conceptId: 'frame', state: 'one frame' },
+      { identityKey: 'daughter_left', conceptId: 'frame', state: 'daughter frame' },
+      { identityKey: 'daughter_right', conceptId: 'frame', state: 'daughter frame' },
+    ],
+    semanticRevealOrder: ['daughter_left', 'daughter_right'],
+    requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'separate', fromState: 'one frame', toState: 'two daughter frames' }],
+    learnerDelta: 'The learner sees one frame become two daughter frames.',
+    learnerBefore: 'The learner sees one frame.', learnerAfter: 'The learner sees two daughter frames.',
+    visualInvariant: 'Two distinct daughter frames are visible.', mutedMeaning: 'One frame became two frames.',
+  });
+  const planned = draft([beat(), separated]);
+  assert.deepEqual(validateBeatPlan(planned, ctx), []);
+  const compiled = compileBeatPlan(planned, ctx);
+  assert.deepEqual(compiled[1]!.semanticRevealOrder, [
+    semanticEntityId('daughter_left', ctx.sceneId), semanticEntityId('daughter_right', ctx.sceneId),
+  ]);
+  assert.equal(compiled[1]!.requiredSemanticChanges[0]!.entityId, compiled[0]!.entities[0]!.entityId);
+
+  const oneResult = validateBeatPlan(draft([beat(), { ...separated, entities: separated.entities.slice(0, 2), semanticRevealOrder: ['daughter_left'] }]), ctx);
+  assert.ok(oneResult.some((problem) => /needs 2 through 6 newly revealed result entities/.test((problem as { message: string }).message)));
+});
+
 test('problems carry JSON pointers so a repair patches only the failing location', () => {
   const problems = validateBeatPlan(draft([
     beat({ claimIds: ['c1', 'ghost'], entities: [{ identityKey: 'unknown_main', conceptId: 'nope' }], semanticRevealOrder: ['unknown_main'], requiredSemanticChanges: [{ identityKey: 'unknown_main', kind: 'introduce', toState: 'Unknown entity appears.' }], relationships: [{ from: 'frame', to: 'call', type: 'produces' }], misconceptionIds: ['m9'], mutedMeaning: '  ', visualInvariant: '' }),
@@ -204,6 +230,7 @@ test('the prompt states the scene contract, claim ids, misconception ids and the
   assert.match(system, /dependsOnOrders/);
   assert.match(system, /learningQuestion for its cognitiveOperation/);
   assert.match(system, /Never branch on.*topic names, source names, case IDs, or benchmark labels/);
+  assert.match(system, /separate change introduces its two to six newly revealed result entities/);
 });
 
 test('the beat prompt makes unverified explanations visibly isolated and non-visual', () => {

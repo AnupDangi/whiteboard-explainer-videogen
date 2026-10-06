@@ -72,11 +72,17 @@ test('semantic event dependencies must point to earlier successful events and cl
 
 test('split and merge preserve old identities as inactive instead of recycling them', () => {
   const split = applySemanticProgram({ ...emptyState(), entities: [entity('se_parent', 'whole')] }, [
-    { type: 'separate', ...common('scene.b1.e1', 'scene.b1'), sourceEntityId: 'se_parent', results: [entity('se_left', 'part'), entity('se_right', 'part')] },
+    { type: 'separate', ...common('scene.b1.e1', 'scene.b1'), sourceEntityId: 'se_parent', fromState: 'whole', results: [entity('se_left', 'part'), entity('se_right', 'part')] },
   ]);
   assert.equal(split.ok, true);
   if (!split.ok) return;
   assert.equal(split.state.entities.find((candidate) => candidate.id === 'se_parent')!.lifecycle, 'separated');
+
+  const stale = applySemanticProgram({ ...emptyState(), entities: [entity('se_parent', 'whole')] }, [
+    { type: 'separate', ...common('scene.b1.e1', 'scene.b1'), sourceEntityId: 'se_parent', fromState: 'already split', results: [entity('se_left'), entity('se_right')] },
+  ]);
+  assert.equal(stale.ok, false);
+  if (!stale.ok) assert.match(stale.problems[0]!.message, /expected prior state/);
 
   const reuse = applySemanticProgram(split.state, [
     { type: 'introduce', ...common('scene.b2.e1', 'scene.b2'), entity: entity('se_parent') },

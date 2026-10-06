@@ -1,4 +1,4 @@
-import { BoardOpSchema, type BoardOp, type ElementSpec } from '../../visual-v2/board-ops/types.js';
+import { BoardOpSchema, type BoardOp, type ElementSpec, type RegionId } from '../../visual-v2/board-ops/types.js';
 import type { VisualVocabulary } from '../../planner/visualDiscovery.js';
 import type { SemanticProgramContext } from './program.js';
 import { applySemanticProgram } from './program.js';
@@ -21,6 +21,17 @@ export type SemanticBoardLoweringResult =
 
 const problem = (path: string, message: string): SemanticIrProblem => ({ path, message });
 const stateValueId = (entityId: string): string => `${entityId}.state`;
+
+function separationRegions(count: number): RegionId[] {
+  const regions: Record<number, RegionId[]> = {
+    2: ['left', 'right'],
+    3: ['left', 'center', 'right'],
+    4: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+    5: ['top', 'left', 'right', 'bottom-left', 'bottom-right'],
+    6: ['top-left', 'top-right', 'left', 'right', 'bottom-left', 'bottom-right'],
+  };
+  return regions[count] ?? [];
+}
 
 /**
  * Deterministic first-stage lowering from semantic operations to existing BoardOps.
@@ -123,6 +134,48 @@ export function compileSemanticOpsToBoardOps(
       const updateProblems = add({ op: 'updateValue', ...base, target, value: op.toState }, `${path}/boardOps/state`);
       if (updateProblems.length) return { ok: false, problems: updateProblems };
       stateValues.set(target, op.toState);
+      continue;
+    }
+
+    if (op.type === 'separate') {
+      if (!introduced.has(op.sourceEntityId) && !context.existingElementIds?.has(op.sourceEntityId)) {
+        return { ok: false, problems: [problem(`${path}/sourceEntityId`, `no board entity exists for semantic source ${op.sourceEntityId}`)] };
+      }
+      const sourceStateId = stateValueId(op.sourceEntityId);
+      if (!usedElementIds.has(sourceStateId)) return { ok: false, problems: [problem(`${path}/fromState`, `no visible state value exists for semantic source ${op.sourceEntityId}`)] };
+      if (stateValues.get(sourceStateId) !== op.fromState) return { ok: false, problems: [problem(`${path}/fromState`, `visible state value does not match required prior state ${JSON.stringify(op.fromState)}`)] };
+      if (op.results.length < 2 || op.results.length > 6) return { ok: false, problems: [problem(`${path}/results`, 'a visible separation needs two through six result entities')] };
+      const regions = separationRegions(op.results.length);
+      const parts: Array<{ id: string; element: ElementSpec; at: { region: RegionId } }> = [];
+      for (const [resultIndex, result] of op.results.entries()) {
+        const concept = concepts.get(result.conceptId);
+        if (!concept) return { ok: false, problems: [problem(`${path}/results/${resultIndex}/conceptId`, `unknown canonical concept ${result.conceptId}`)] };
+        if (result.state !== undefined && result.state.length > 60) return { ok: false, problems: [problem(`${path}/results/${resultIndex}/state`, 'state exceeds the visible value limit; preserve it verbatim and repair the semantic representation instead of shortening it')] };
+        const idProblems = reserveId(result.id, `${path}/results/${resultIndex}/id`);
+        if (idProblems.length) return { ok: false, problems: idProblems };
+        parts.push({
+          id: result.id,
+          element: { type: 'entity', conceptId: concept.id, label: concept.label, provenance: 'derived', bindings: bindings(concept.id, result.claimIds) },
+          at: { region: regions[resultIndex]! },
+        });
+      }
+      const removeStateProblems = add({ op: 'remove', ...base, opId: `${op.eventId}.state-remove`, target: sourceStateId }, `${path}/boardOps/source-state`);
+      if (removeStateProblems.length) return { ok: false, problems: removeStateProblems };
+      stateValues.delete(sourceStateId);
+      const splitProblems = add({ op: 'split', ...base, opId: `${op.eventId}.split`, target: op.sourceEntityId, into: parts }, `${path}/boardOps/split`);
+      if (splitProblems.length) return { ok: false, problems: splitProblems };
+      for (const [resultIndex, result] of op.results.entries()) {
+        introduced.add(result.id);
+        if (result.state === undefined) continue;
+        const valueId = stateValueId(result.id);
+        const valueIdProblems = reserveId(valueId, `${path}/results/${resultIndex}/state`);
+        if (valueIdProblems.length) return { ok: false, problems: valueIdProblems };
+        const concept = concepts.get(result.conceptId)!;
+        const stateElement: ElementSpec = { type: 'value', label: 'State', value: result.state, provenance: 'derived', bindings: bindings(concept.id, result.claimIds) };
+        const stateProblems = add({ op: 'add', ...base, opId: `${op.eventId}.result-${resultIndex + 1}-state`, id: valueId, element: stateElement, at: parts[resultIndex]!.at, persistence: 'scene' }, `${path}/boardOps/results/${resultIndex}/state`);
+        if (stateProblems.length) return { ok: false, problems: stateProblems };
+        stateValues.set(valueId, result.state);
+      }
       continue;
     }
 

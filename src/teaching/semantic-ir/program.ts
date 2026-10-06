@@ -127,6 +127,7 @@ function applyOperation(state: SemanticSceneState, op: SemanticOp, at: string): 
     case 'separate': {
       const source = activeEntity(state, op.sourceEntityId, `${at}/sourceEntityId`);
       if (Array.isArray(source)) return source;
+      if (source.state !== op.fromState) return fail(`${at}/fromState`, `expected prior state ${JSON.stringify(source.state)}, received ${JSON.stringify(op.fromState)}`);
       for (const [index, result] of op.results.entries()) {
         const problems = newEntityProblems(state, result, op.claimIds, `${at}/results/${index}`);
         if (problems.length) return problems;

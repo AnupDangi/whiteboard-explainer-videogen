@@ -79,6 +79,43 @@ test('state transformation lowers only when the locked visible before-value matc
   if (!stale.ok) assert.match(stale.problems[0]!.message, /visible state value does not match/);
 });
 
+test('separation lowers to a state-checked split and preserves library-icon bindings on every result', () => {
+  const initial = { ...emptyState(), entities: [{ id: 'se_cell_nuclei', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'intact', lifecycle: 'active' as const }] };
+  const separate = {
+    type: 'separate', eventId: 'scene.b2.e1', beatId: 'scene.b2', claimIds: ['claim_a'], dependsOnEventIds: [],
+    sourceEntityId: 'se_cell_nuclei', fromState: 'intact',
+    results: [
+      { id: 'se_left', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'daughter nucleus', lifecycle: 'active' },
+      { id: 'se_right', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'daughter nucleus', lifecycle: 'active' },
+    ],
+  };
+  const context = {
+    concepts, visualVocabulary: iconVocabulary,
+    knownBeatIds: new Set(['scene.b2']), knownClaimIds: new Set(['claim_a']),
+    existingElementIds: new Set(['se_cell_nuclei', 'se_cell_nuclei.state']), existingStateValues: { 'se_cell_nuclei.state': 'intact' },
+  };
+  const result = compileSemanticOpsToBoardOps(initial, [separate], context);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.selectedAssetIds, { cell_nuclei: 'iconify-healthicons:cell-nuclei-outline' });
+  assert.deepEqual(result.operations.map((op) => op.op), ['remove', 'split', 'add', 'add']);
+  const split = result.operations[1]!;
+  assert.equal(split.op, 'split');
+  if (split.op === 'split') {
+    assert.equal(split.target, 'se_cell_nuclei');
+    assert.deepEqual(split.into.map((part) => part.id), ['se_left', 'se_right']);
+    for (const part of split.into) {
+      assert.equal(part.element.type, 'entity');
+      if (part.element.type === 'entity') assert.deepEqual(part.element.bindings, { conceptIds: ['cell_nuclei'], claimIds: ['claim_a'] });
+    }
+  }
+  assert.deepEqual(result.resultingSemanticState.entities.map((entity) => [entity.id, entity.lifecycle]), [['se_cell_nuclei', 'separated'], ['se_left', 'active'], ['se_right', 'active']]);
+
+  const stale = compileSemanticOpsToBoardOps(initial, [separate], { ...context, existingStateValues: { 'se_cell_nuclei.state': 'already divided' } });
+  assert.equal(stale.ok, false);
+  if (!stale.ok) assert.match(stale.problems[0]!.message, /visible state value does not match/);
+});
+
 test('unsupported mechanisms and overlong visible state fail without text shortening or generic substitution', () => {
   const flow = {
     type: 'flow', eventId: 'scene.b1.e1', beatId: 'scene.b1', claimIds: ['claim_a'], dependsOnEventIds: [],

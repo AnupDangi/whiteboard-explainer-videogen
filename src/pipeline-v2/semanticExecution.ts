@@ -154,6 +154,8 @@ export function executeSemanticScene(input: {
         usedElementIds.add(op.id);
         if (op.element.type === 'value') existingStateValues[op.id] = op.element.value;
       } else if (op.op === 'updateValue') existingStateValues[op.target] = op.value;
+      else if (op.op === 'remove') delete existingStateValues[op.target];
+      else if (op.op === 'split') for (const part of op.into) usedElementIds.add(part.id);
     }
     beatRecords.push({ beatId: beat.beatId, family: beat.representationFamily, status: 'compiled', providerVersion: provider.providerVersion });
   }

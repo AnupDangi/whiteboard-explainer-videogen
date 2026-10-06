@@ -117,17 +117,21 @@ compilation, and an explicit family fallback. Its availability inventory lists
 all 19 planned families; a missing provider returns `provider_unavailable`
 instead of generating a generic BoardOps substitute.
 
-The registry currently activates only `state_transition` v1, for `introduce`
-and `transform` changes; its other change kinds and the other 18 families stay
-unavailable. V2 routes a scene through that provider only when every visual
-beat in the scene selects `state_transition` and all required changes are
-supported. It derives the family model from pinned beat changes, compiles and
-replays `SemanticOp`s, then lowers them to BoardOps. A provider or lowering
-failure is hard and does not fall through to generic BoardOps. Mixed or
-unsupported families are explicitly recorded as `legacy-boardops-preview`,
-run through S6 for diagnostics, and carry a draft failure. They are not
-reported as typed-provider output. Broad family coverage and live visual
-verification remain open.
+The registry currently activates only `state_transition` v2, for `introduce`,
+`transform`, and `separate` changes; merge and other change kinds and the other
+18 families stay unavailable. V2 routes a scene through that provider only
+when every visual beat in the scene selects `state_transition` and all required
+changes are supported. It derives the family model from pinned beat changes,
+compiles and replays `SemanticOp`s, then lowers them to BoardOps. A separation
+names one source and uses the beat's ordered first-reveal entities as its two
+to six results; a newly revealed source must first be introduced in that beat.
+The lowerer checks the source's exact visible state, removes that state value,
+splits the source into canonically bound result entities, and retains selected
+catalog icon IDs for rendering. A provider or lowering failure is hard and
+does not fall through to generic BoardOps. Mixed or unsupported families are
+explicitly recorded as `legacy-boardops-preview`, run through S6 for
+diagnostics, and carry a draft failure. They are not reported as typed-provider
+output. Broad family coverage and live visual verification remain open.
 
 ## Semantic representation IR
 
@@ -147,19 +151,22 @@ without mutating the input state when a transition is invalid. The supported
 state-transition route uses this replay before lowering, and V2 locks pin the
 provider record with the beat plan and captured operations.
 
-The initial state-transition provider in
-`src/teaching/representation/stateTransition.ts` maps beat-bound introduction
-and transformation changes to semantic operations. It checks exact entity and
-state identity and replays its output before returning it. Split/merge and
-other transition kinds remain unsupported.
+The state-transition provider in `src/teaching/representation/stateTransition.ts`
+maps beat-bound introduction, transformation, and separation changes to
+semantic operations. It checks exact entity and state identity, derives
+separation outputs from the pinned beat reveal order, and replays its output
+before returning it. Merge and other transition kinds remain unsupported.
 
 `src/teaching/semantic-ir/toBoardOps.ts` currently lowers introduction,
-transformation, focus/selection, and finalization to deterministic BoardOps.
+transformation, separation, focus/selection, and finalization to deterministic BoardOps.
 For introductions it requires canonical concept labels and emits an entity
 element bound to the beat's claims. If S3b selected a library icon, the lowerer
 preserves its exact entry id and validates the entity type; the existing V2
-renderer and rights path resolve and lock that same asset. Unknown mechanisms,
-missing visible state, mismatched values, or overlong state text fail closed.
+renderer and rights path resolve and lock that same asset. Separation checks
+the source's exact visible state, removes its old state value, emits a
+deterministic split into canonically bound result entities, and preserves their
+concept bindings for icon resolution. Unknown mechanisms, missing visible
+state, mismatched values, or overlong state text fail closed.
 The scene record and pinned lesson context store provider version, semantic
 operations, phrase-derived sentence cues, exact selected asset ids, and a hash
 of the emitted BoardOps. Lock verification re-derives the state-transition

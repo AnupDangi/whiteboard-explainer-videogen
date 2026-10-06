@@ -6,13 +6,14 @@ import type { SemanticSceneState } from '../teaching/semantic-ir/types.js';
 import { REPRESENTATION_PROVIDER_REGISTRY } from '../teaching/representation/registry.js';
 import { deriveStateTransitionModel } from '../teaching/representation/stateTransition.js';
 
-function beatFor(change: { kind: 'introduce' | 'transform' | 'move'; entityId: string; fromState?: string; toState: string }): TeachingBeat {
+function beatFor(change: { kind: 'introduce' | 'transform' | 'move' | 'separate'; entityId: string; fromState?: string; toState: string }, extra: Partial<TeachingBeat> = {}): TeachingBeat {
   return {
     beatId: 'scene.b1', sceneId: 'scene', order: 1, claimIds: ['claim_a'], learnerDelta: 'The learner sees the state change.',
     learningQuestion: 'How does the state change?', learnerBefore: 'The entity is closed.', learnerAfter: 'The entity is open.', dependsOnOrders: [], dependsOnBeatIds: [],
     beatType: 'transform', cognitiveOperation: 'transform', representationFamily: 'state_transition', entities: [{ identityKey: 'cell_main', entityId: change.entityId, conceptId: 'cell' }],
     semanticRevealOrder: [change.entityId], requiredSemanticChanges: [change], relationships: [], misconceptionIds: [], narrationGoal: 'Explain the transition.',
     visualInvariant: 'The current state is visible.', mutedMeaning: 'The state changed.', narrationOnly: false, persistence: 'scene', pauseIntent: 'none', persistentEntityIds: [change.entityId], evidenceSpanIds: [],
+    ...extra,
   } as unknown as TeachingBeat;
 }
 
@@ -64,4 +65,27 @@ test('state-transition fallback is explicit and unsupported semantic changes rem
   const unsupported = REPRESENTATION_PROVIDER_REGISTRY.compile('state_transition', unsupportedModel, emptyState(), unsupportedBeat);
   assert.equal(unsupported.ok, false);
   if (!unsupported.ok) assert.match(unsupported.problems[0]!.message, /does not yet support semantic change move/);
+});
+
+test('state-transition provider compiles a declared separation into ordered semantic result entities', () => {
+  const beat = beatFor({ kind: 'separate', entityId: 'se_parent', fromState: 'one cell', toState: 'two daughter cells' }, {
+    entities: [
+      { identityKey: 'parent', entityId: 'se_parent', conceptId: 'cell', state: 'one cell' },
+      { identityKey: 'daughter_left', entityId: 'se_left', conceptId: 'cell', state: 'daughter cell' },
+      { identityKey: 'daughter_right', entityId: 'se_right', conceptId: 'cell', state: 'daughter cell' },
+    ],
+    semanticRevealOrder: ['se_left', 'se_right'],
+  });
+  const model = deriveStateTransitionModel(beat);
+  assert.deepEqual(model.events, [{ kind: 'separate', eventId: 'scene.b1.e1', entityId: 'se_parent', fromState: 'one cell', toState: 'two daughter cells', resultEntityIds: ['se_left', 'se_right'] }]);
+  const initial = { ...emptyState(), entities: [activeEntity('se_parent', 'one cell')] };
+  const compiled = REPRESENTATION_PROVIDER_REGISTRY.compileFallback('state_transition', initial, beat);
+  assert.equal(compiled.ok, true);
+  if (compiled.ok) {
+    assert.equal(compiled.providerVersion, 'state-transition/v2');
+    assert.equal(compiled.operations[0]!.type, 'separate');
+    const replay = applySemanticProgram(initial, compiled.operations);
+    assert.equal(replay.ok, true);
+    if (replay.ok) assert.deepEqual(replay.state.entities.map((entity) => [entity.id, entity.lifecycle]), [['se_parent', 'separated'], ['se_left', 'active'], ['se_right', 'active']]);
+  }
 });

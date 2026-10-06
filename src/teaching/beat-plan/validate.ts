@@ -74,6 +74,8 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
     });
     const beatEntityKeys = new Set<string>();
     const newlySeenEntityKeys = new Set<string>();
+    const separateChanges = beat.requiredSemanticChanges.filter((change) => change.kind === 'separate');
+    if (separateChanges.length > 1) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a state-transition beat may contain at most one separate change until multi-separation composition is implemented' });
     const unverifiedClaims = citedClaims.filter((claim) => claim.epistemicType === 'unverified_explanation' || claim.verificationStatus === 'unverified');
     if (unverifiedClaims.length) {
       if (beat.claimIds.length !== 1 || beat.claimIds[0] !== unverifiedClaims[0]!.id) problems.push({ path: `${at}/claimIds`, message: 'an unverified explanation must be isolated in a beat that cites only that one claim' });
@@ -104,9 +106,24 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
       if (!beatEntityKeys.has(identityKey)) problems.push({ path: `${at}/semanticRevealOrder/${revealIndex}`, message: `identity key ${identityKey} is not declared by this beat` });
       if (seenIdentityKeys.has(identityKey)) problems.push({ path: `${at}/semanticRevealOrder/${revealIndex}`, message: `identity key ${identityKey} was already revealed by an earlier beat` });
     });
+    if (separateChanges.length === 1) {
+      const sourceKey = separateChanges[0]!.identityKey;
+      const resultKeys = [...newlySeenEntityKeys].filter((identityKey) => identityKey !== sourceKey);
+      if (resultKeys.length < 2 || resultKeys.length > 6) {
+        problems.push({ path: `${at}/semanticRevealOrder`, message: `a separate change needs 2 through 6 newly revealed result entities besides its source; got ${resultKeys.length}` });
+      }
+      if (newlySeenEntityKeys.has(sourceKey)) {
+        const sourceIntroduceIndex = beat.requiredSemanticChanges.findIndex((change) => change.identityKey === sourceKey && change.kind === 'introduce');
+        const separateIndex = beat.requiredSemanticChanges.findIndex((change) => change.kind === 'separate');
+        if (sourceIntroduceIndex < 0 || sourceIntroduceIndex >= separateIndex) {
+          problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a source first revealed in the same beat must be introduced before it is separated' });
+        }
+      }
+    }
     for (const identityKey of newlySeenEntityKeys) {
       if (!revealKeys.has(identityKey)) problems.push({ path: `${at}/semanticRevealOrder`, message: `new semantic entity ${identityKey} must appear in its first-reveal order` });
-      if (!beat.requiredSemanticChanges.some((change) => change.identityKey === identityKey && change.kind === 'introduce')) {
+      const isSeparatedResult = separateChanges.length === 1 && separateChanges[0]!.identityKey !== identityKey;
+      if (!beat.requiredSemanticChanges.some((change) => change.identityKey === identityKey && change.kind === 'introduce') && !isSeparatedResult) {
         problems.push({ path: `${at}/requiredSemanticChanges`, message: `new semantic entity ${identityKey} needs an introduce change` });
       }
     }

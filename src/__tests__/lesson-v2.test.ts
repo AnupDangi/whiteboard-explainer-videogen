@@ -120,7 +120,7 @@ test('V2 semantic execution compiles supported state changes and carries the exa
   const result = executeSemanticScene({ context: sourceContext, narration: sceneNarration, beatTimings: [beatTiming] });
   assert.equal(result.status, 'compiled');
   if (result.status !== 'compiled') return;
-  assert.equal(result.record.providerVersion, 'state-transition/v1');
+  assert.equal(result.record.providerVersion, 'state-transition/v2');
   assert.equal(result.record.semanticOperations.length, 2);
   assert.equal(result.operations.length, 4, 'each introduced entity has a live entity plus a visible state value');
   assert.deepEqual(result.record.selectedAssetIds, { frame: 'iconify-lucide:frame' });
@@ -141,6 +141,49 @@ test('V2 semantic execution labels unsupported families as legacy previews', () 
   assert.equal(result.record.mode, 'legacy-boardops-preview');
   assert.equal(result.record.beats[0]?.status, 'provider-unavailable');
   assert.deepEqual(result.record.selectedAssetIds, { frame: 'iconify-lucide:frame' });
+});
+
+test('V2 executes a separation as a typed split and carries its selected catalog icon to each result', () => {
+  const sceneId = 'split_scene';
+  const beatContext = {
+    sceneId, conceptIds: ['frame'],
+    claims: [{ id: 'split_claim', statement: 'One frame separates into two daughter frames.', conceptIds: ['frame'], relations: [], evidenceSpanIds: [] }],
+    relations: [], misconceptionIds: [], durationSec: 12,
+  };
+  const beats = compileBeatPlan(BeatPlanDraftSchema.parse({ beats: [
+    {
+      claimIds: ['split_claim'], learnerDelta: 'The learner sees a whole frame.', learningQuestion: 'What is visible before separation?', learnerBefore: 'No frame is visible.', learnerAfter: 'One whole frame is visible.', dependsOnOrders: [], beatType: 'introduce', cognitiveOperation: 'identify', representationFamily: 'state_transition',
+      entities: [{ identityKey: 'frame_main', conceptId: 'frame', state: 'whole frame' }], semanticRevealOrder: ['frame_main'], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', toState: 'whole frame' }], relationships: [], misconceptionIds: [], narrationGoal: 'Name the whole frame.', visualInvariant: 'One frame is visible.', mutedMeaning: 'One whole frame.', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
+    },
+    {
+      claimIds: ['split_claim'], learnerDelta: 'The learner sees two daughter frames.', learningQuestion: 'What happens when the frame separates?', learnerBefore: 'One whole frame is visible.', learnerAfter: 'Two daughter frames are visible.', dependsOnOrders: [1], beatType: 'transform', cognitiveOperation: 'transform', representationFamily: 'state_transition',
+      entities: [{ identityKey: 'frame_main', conceptId: 'frame', state: 'whole frame' }, { identityKey: 'daughter_left', conceptId: 'frame', state: 'daughter frame' }, { identityKey: 'daughter_right', conceptId: 'frame', state: 'daughter frame' }], semanticRevealOrder: ['daughter_left', 'daughter_right'], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'separate', fromState: 'whole frame', toState: 'two daughter frames' }], relationships: [], misconceptionIds: [], narrationGoal: 'Show one frame separating into two.', visualInvariant: 'Two distinct daughter frames are visible.', mutedMeaning: 'One became two.', narrationOnly: false, persistence: 'scene', pauseIntent: 'none',
+    },
+  ] }), beatContext);
+  const narration = compileSceneNarration(sceneId, SceneNarrationDraftSchema.parse({ beats: [
+    { beatId: `${sceneId}.b1`, sentences: ['One whole frame is visible.'], claimSentences: [{ claimId: 'split_claim', sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${sceneId}.b1.e1`, sentenceIndex: 0, phrase: 'One whole frame' }], emphasisTerms: [] },
+    { beatId: `${sceneId}.b2`, sentences: ['The whole frame separates into two daughter frames.'], claimSentences: [{ claimId: 'split_claim', sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: `${sceneId}.b2.e1`, sentenceIndex: 0, phrase: 'separates into two daughter frames' }], emphasisTerms: [] },
+  ] }), beats);
+  const visualVocabulary = { sceneId, family: 'simi-house-v1/domain-outline', concepts: [{ conceptId: 'frame', label: 'Frame', conceptKind: 'entity', depiction: { kind: 'icon' as const, entryId: 'iconify-lucide:frame', rung: 'R3', houseFamily: 'simi-house-v1/domain-outline' } }] };
+  const context: BoardContext = {
+    sceneId, title: 'Frame separation', beats,
+    claims: [{ id: 'split_claim', statement: 'One frame separates into two daughter frames.', conceptIds: ['frame'], relations: [] }],
+    narration: narration.beatSpans.map((span) => ({ beatId: span.beatId, sentences: [narration.text.slice(span.sentenceSpans[0]!.charStart, span.sentenceSpans[0]!.charEnd)] })),
+    concepts: [{ id: 'frame', label: 'Frame', kind: 'entity' }], visualVocabulary, initial: emptyBoardState(),
+  };
+  const beatTimings = narration.beatSpans.map((span, index) => ({
+    beatId: span.beatId, startMs: index * 1000, endMs: (index + 1) * 1000,
+    sentences: [{ startMs: index * 1000, endMs: (index + 1) * 1000 }],
+    semanticAnchors: narration.semanticAnchors.filter((anchor) => anchor.beatId === span.beatId).map((anchor) => ({ semanticEventId: anchor.semanticEventId, phrase: anchor.phrase, startMs: index * 1000 + 10, endMs: index * 1000 + 500 })),
+  }));
+  const result = executeSemanticScene({ context, narration, beatTimings });
+  assert.equal(result.status, 'compiled');
+  if (result.status !== 'compiled') return;
+  assert.deepEqual(result.record.semanticOperations.map((op) => op.type), ['introduce', 'separate']);
+  assert.deepEqual(result.record.selectedAssetIds, { frame: 'iconify-lucide:frame' });
+  const split = result.operations.find((op) => op.op === 'split');
+  assert.ok(split && split.op === 'split');
+  if (split?.op === 'split') assert.equal(split.into.length, 2);
 });
 
 test('the V2 runner turns beats and narration into a retained-board video with real audio timing, captions, metrics and a scorecard', async () => {
@@ -469,7 +512,7 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     const scenes = context.representationExecution.scenes;
     assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v2');
     assert.equal(scenes.length, 2);
-    assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v1'));
+    assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v2'));
     assert.ok(scenes.every((scene) => scene.semanticOperations.length === 2));
     assert.ok(scenes.every((scene) => scene.selectedAssetIds.frame === 'iconify-lucide:frame'));
     const frameDepiction = scenes[0]!.renderedEntityAssets.find((entity) => entity.conceptId === 'frame');
