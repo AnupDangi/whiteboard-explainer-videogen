@@ -136,15 +136,24 @@ scene state. It checks identity and claim references, earlier-event
 dependencies, lifecycle, exact before-state/value/unit, semantic movement,
 and operation-specific preconditions. It returns a pointer-scoped failure
 without mutating the input state when a transition is invalid. This is a
-scene-level contract only: V2 does not yet call it, the lesson lock does not
-yet pin it, and the compiler does not yet lower its operations to BoardOps.
+scene-level contract only: V2 does not yet call it and the lesson lock does
+not yet pin it.
 
 The initial state-transition provider in
 `src/teaching/representation/stateTransition.ts` maps beat-bound introduction
 and transformation changes to semantic operations. It checks exact entity and
 state identity and replays its output before returning it. Split/merge and
-other transition kinds remain unsupported; no generated video uses this
-provider until V2 execution is wired to the registry.
+other transition kinds remain unsupported.
+
+`src/teaching/semantic-ir/toBoardOps.ts` currently lowers introduction,
+transformation, focus/selection, and finalization to deterministic BoardOps.
+For introductions it requires canonical concept labels and emits an entity
+element bound to the beat's claims. If S3b selected a library icon, the lowerer
+preserves its exact entry id and validates the entity type; the existing V2
+renderer and rights path can then resolve and lock that same asset. Unknown
+mechanisms, missing visible state, mismatched values, or overlong state text
+fail closed. This lowerer and provider are not wired into V2 yet, so current
+generated videos still use the existing direct BoardOps planner.
 
 ## Ownership and trust boundaries
 
