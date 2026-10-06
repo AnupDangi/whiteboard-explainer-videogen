@@ -118,6 +118,7 @@ export function executeSemanticScene(input: {
   const knownClaimIds = new Set(context.beats.flatMap((beat) => beat.claimIds));
   const cueByEventId = cuesFromTimings(context.beats, beatTimings);
   const beatRecords: RepresentationExecutionRecord['beats'] = [];
+  const usedEdgeIds = new Set(Object.keys(startingBoard.edges));
 
   for (const beat of visualBeats) {
     const provider = stateTransitionProvider.compileFallback(semanticState, beat);
@@ -136,7 +137,7 @@ export function executeSemanticScene(input: {
     const lowered = compileSemanticOpsToBoardOps(semanticState, provider.operations, {
       concepts: context.concepts.map(({ id, label, kind }) => ({ id, label, ...(kind ? { kind } : {}) })),
       ...(context.visualVocabulary ? { visualVocabulary: context.visualVocabulary } : {}),
-      knownBeatIds, knownClaimIds, existingElementIds: usedElementIds, existingStateValues,
+      knownBeatIds, knownClaimIds, existingElementIds: usedElementIds, existingEdgeIds: usedEdgeIds, existingStateValues,
       cueByEventId,
     });
     if (!lowered.ok) {
@@ -162,6 +163,7 @@ export function executeSemanticScene(input: {
       } else if (op.op === 'updateValue') existingStateValues[op.target] = op.value;
       else if (op.op === 'remove') delete existingStateValues[op.target];
       else if (op.op === 'split') for (const part of op.into) usedElementIds.add(part.id);
+      else if (op.op === 'connect') usedEdgeIds.add(op.id);
     }
     beatRecords.push({ beatId: beat.beatId, family: beat.representationFamily, status: 'compiled', providerVersion: provider.providerVersion });
   }

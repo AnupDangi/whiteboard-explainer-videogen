@@ -116,6 +116,45 @@ test('separation lowers to a state-checked split and preserves library-icon bind
   if (!stale.ok) assert.match(stale.problems[0]!.message, /visible state value does not match/);
 });
 
+test('causal semantic relations lower to deterministic directed edges with exact claim and concept bindings', () => {
+  const state: SemanticSceneState = {
+    ...emptyState(),
+    entities: [
+      { id: 'se_light', conceptId: 'sunlight', claimIds: ['claim_a'], lifecycle: 'active' },
+      { id: 'se_plant', conceptId: 'plant', claimIds: ['claim_a'], lifecycle: 'active' },
+    ],
+  };
+  const cause = {
+    type: 'cause', eventId: 'scene.b2.e1', beatId: 'scene.b2', claimIds: ['claim_a'], dependsOnEventIds: [],
+    relation: { id: 'rel_light_causes_growth', fromEntityId: 'se_light', toEntityId: 'se_plant', type: 'causes', claimIds: ['claim_a'] },
+  };
+  const context = {
+    concepts: [{ id: 'sunlight', label: 'Sunlight', kind: 'entity' }, { id: 'plant', label: 'Plant', kind: 'entity' }],
+    knownBeatIds: new Set(['scene.b2']), knownClaimIds: new Set(['claim_a']),
+    existingElementIds: new Set(['se_light', 'se_plant']),
+  };
+  const result = compileSemanticOpsToBoardOps(state, [cause], context);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const repeated = compileSemanticOpsToBoardOps(state, [cause], context);
+  assert.equal(repeated.ok, true);
+  assert.deepEqual(repeated.ok ? repeated.operations : [], result.operations);
+  assert.equal(result.operations.length, 1);
+  const edge = result.operations[0]!;
+  assert.equal(edge.op, 'connect');
+  if (edge.op === 'connect') {
+    assert.match(edge.id, /^edge_[a-f0-9]{20}$/);
+    assert.equal(edge.from, 'se_light');
+    assert.equal(edge.to, 'se_plant');
+    assert.equal(edge.relation, 'causes');
+    assert.deepEqual(edge.bindings, { conceptIds: ['sunlight', 'plant'], claimIds: ['claim_a'] });
+  }
+
+  const collision = compileSemanticOpsToBoardOps(state, [cause], { ...context, existingEdgeIds: new Set([edge.op === 'connect' ? edge.id : '']) });
+  assert.equal(collision.ok, false);
+  if (!collision.ok) assert.match(collision.problems[0]!.message, /renderer id .* already in use/);
+});
+
 test('unsupported mechanisms and overlong visible state fail without text shortening or generic substitution', () => {
   const flow = {
     type: 'flow', eventId: 'scene.b1.e1', beatId: 'scene.b1', claimIds: ['claim_a'], dependsOnEventIds: [],

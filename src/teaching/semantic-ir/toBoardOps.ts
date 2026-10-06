@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { BoardOpSchema, type BoardOp, type ElementSpec, type RegionId } from '../../visual-v2/board-ops/types.js';
 import type { VisualVocabulary } from '../../planner/visualDiscovery.js';
 import type { SemanticProgramContext } from './program.js';
@@ -9,6 +10,8 @@ export interface SemanticBoardLoweringContext extends SemanticProgramContext {
   visualVocabulary?: VisualVocabulary;
   /** Existing renderer-element ids are checked only for identity collisions and required update targets. */
   existingElementIds?: ReadonlySet<string>;
+  /** Existing renderer-edge ids share the board id namespace but are not entity targets. */
+  existingEdgeIds?: ReadonlySet<string>;
   /** Current visible state values, keyed by the deterministic `${semanticEntityId}.state` element id. */
   existingStateValues?: Readonly<Record<string, string | number>>;
   /** Optional already-resolved sentence cue for each semantic event. */
@@ -74,6 +77,7 @@ export function compileSemanticOpsToBoardOps(
 
   const operations: BoardOp[] = [];
   const usedElementIds = new Set(context.existingElementIds ?? []);
+  const usedRendererIds = new Set([...usedElementIds, ...(context.existingEdgeIds ?? [])]);
   const stateValues = new Map(Object.entries(context.existingStateValues ?? {}));
   const introduced = new Set(initialState.entities.map((entity) => entity.id));
   const add = (op: unknown, path: string): SemanticIrProblem[] => {
@@ -83,8 +87,14 @@ export function compileSemanticOpsToBoardOps(
     return [];
   };
   const reserveId = (id: string, path: string): SemanticIrProblem[] => {
-    if (usedElementIds.has(id)) return [problem(path, `renderer element id ${id} is already in use` )];
+    if (usedRendererIds.has(id)) return [problem(path, `renderer id ${id} is already in use` )];
+    usedRendererIds.add(id);
     usedElementIds.add(id);
+    return [];
+  };
+  const reserveEdgeId = (id: string, path: string): SemanticIrProblem[] => {
+    if (usedRendererIds.has(id)) return [problem(path, `renderer id ${id} is already in use` )];
+    usedRendererIds.add(id);
     return [];
   };
   const bindings = (conceptId: string, claimIds: string[]) => ({ conceptIds: [conceptId], claimIds: [...new Set(claimIds)] });
@@ -186,6 +196,29 @@ export function compileSemanticOpsToBoardOps(
         const focusProblems = add({ op: 'highlight', ...base, opId: `${op.eventId}.focus.${entityIndex + 1}`, target: entityId }, `${path}/boardOps/focus/${entityIndex}`);
         if (focusProblems.length) return { ok: false, problems: focusProblems };
       }
+      continue;
+    }
+
+    if (op.type === 'cause') {
+      const source = replay.state.entities.find((entity) => entity.id === op.relation.fromEntityId);
+      const target = replay.state.entities.find((entity) => entity.id === op.relation.toEntityId);
+      if (!source || !target) return { ok: false, problems: [problem(`${path}/relation`, 'causal relation endpoints must resolve to semantic entities')] };
+      if ((!introduced.has(source.id) && !context.existingElementIds?.has(source.id))
+        || (!introduced.has(target.id) && !context.existingElementIds?.has(target.id))) {
+        return { ok: false, problems: [problem(`${path}/relation`, 'causal relation endpoints must have live renderer entities')] };
+      }
+      const edgeId = `edge_${createHash('sha256').update(`${op.eventId}\0${op.relation.id}`, 'utf8').digest('hex').slice(0, 20)}`;
+      const idProblems = reserveEdgeId(edgeId, `${path}/relation/id`);
+      if (idProblems.length) return { ok: false, problems: idProblems };
+      if (op.relation.weight !== undefined && (typeof op.relation.weight !== 'number' || op.relation.weight < 0 || op.relation.weight > 1)) {
+        return { ok: false, problems: [problem(`${path}/relation/weight`, 'causal edge weight must be a number from 0 through 1')] };
+      }
+      const edgeProblems = add({
+        op: 'connect', ...base, id: edgeId, from: source.id, to: target.id, relation: op.relation.type,
+        ...(typeof op.relation.weight === 'number' ? { weight: op.relation.weight } : {}),
+        bindings: { conceptIds: [...new Set([source.conceptId, target.conceptId])], claimIds: [...op.relation.claimIds] },
+      }, `${path}/boardOps/causal-edge`);
+      if (edgeProblems.length) return { ok: false, problems: edgeProblems };
       continue;
     }
 

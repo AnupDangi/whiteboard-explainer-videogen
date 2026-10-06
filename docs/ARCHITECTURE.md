@@ -158,7 +158,8 @@ separation outputs from the pinned beat reveal order, and replays its output
 before returning it. Merge and other transition kinds remain unsupported.
 
 `src/teaching/semantic-ir/toBoardOps.ts` currently lowers introduction,
-transformation, separation, focus/selection, and finalization to deterministic BoardOps.
+transformation, separation, focus/selection, finalization, and claim-bound cause
+relations to deterministic BoardOps.
 For introductions it requires canonical concept labels and emits an entity
 element bound to the beat's claims. If S3b selected a library icon, the lowerer
 preserves its exact entry id and validates the entity type; the existing V2
@@ -167,6 +168,13 @@ the source's exact visible state, removes its old state value, emits a
 deterministic split into canonically bound result entities, and preserves their
 concept bindings for icon resolution. Unknown mechanisms, missing visible
 state, mismatched values, or overlong state text fail closed.
+A semantic `cause` relation lowers to a directed `connect` edge with a
+deterministic renderer id and the exact relation claim and endpoint concept
+bindings. The compiler checks that both semantic endpoints have renderer
+entities and reserves edge ids against existing element and edge ids. This is
+an edge representation only; it does not prove the underlying dynamic causal
+mechanism, and the active V2 state-transition provider does not yet emit cause
+operations.
 After layout, V2 audits selected icon IDs against drawable renderer output. An
 icon selected for a concept used by a visual beat must resolve to that exact
 pictorial asset; missing or label-only output blocks encoding, and lock replay
