@@ -10,6 +10,7 @@ import {
 
 const beat = {
   beatId: 'scene.b1',
+  claimIds: ['claim_a'],
   requiredSemanticChanges: [{ kind: 'transform', entityId: 'entity_a' }],
 } as unknown as TeachingBeat;
 
@@ -25,6 +26,7 @@ function testProvider(options: { mechanisms?: boolean; suitability?: number } = 
       eventId: semanticEventId(context.beatId, index),
       kind: change.kind,
       entityIds: [change.entityId],
+      claimIds: change.claimIds ?? context.claimIds,
       description: 'The visible state changes from the declared before state to the declared after state.',
     })),
     compile: (model) => [`transition:${model.step}`],

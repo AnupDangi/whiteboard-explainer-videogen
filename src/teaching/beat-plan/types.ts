@@ -34,6 +34,8 @@ export const RequiredSemanticChangeSchema = z.object({
   /** References EntityRefSchema.identityKey, never a renderer object or coordinate. */
   identityKey: id(),
   kind: z.enum(SEMANTIC_CHANGE_KINDS),
+  /** Exact canonical claims supported by this event; omitted only for a single-claim beat. */
+  claimIds: z.array(id()).min(1).max(3).refine((ids) => new Set(ids).size === ids.length, 'semantic change claim ids must be unique').optional(),
   fromState: z.string().trim().min(1).max(120).optional(),
   toState: z.string().trim().min(1).max(120),
 }).strict();

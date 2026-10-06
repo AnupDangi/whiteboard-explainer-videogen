@@ -270,7 +270,7 @@ const stringArray = (value: unknown): string[] | undefined => Array.isArray(valu
 export function lessonHierarchyProblems(contextBytes: Buffer, scenes: Array<{ sceneId: string; startMs: number; endMs: number }>, alignmentBytes?: Buffer, inputBytes?: Buffer): string[] {
   let context: JsonRecord;
   try { context = recordOf(JSON.parse(contextBytes.toString('utf8'))) ?? {}; } catch { return []; }
-  const contextVersion = context.schemaVersion === 'lesson-context/v9' ? 'v9' : context.schemaVersion === 'lesson-context/v8' ? 'v8' : undefined;
+  const contextVersion = context.schemaVersion === 'lesson-context/v10' ? 'v10' : context.schemaVersion === 'lesson-context/v9' ? 'v9' : context.schemaVersion === 'lesson-context/v8' ? 'v8' : undefined;
   if (!contextVersion) return [];
   if (!Object.hasOwn(context, 'lessonHierarchy')) return [`lesson context ${contextVersion} has no lessonHierarchy field`];
   if (context.lessonHierarchy === null) return [`lesson context ${contextVersion} must carry a non-null structural hierarchy`];

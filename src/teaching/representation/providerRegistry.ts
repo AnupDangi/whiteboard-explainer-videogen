@@ -5,6 +5,7 @@ export const MechanismRequirementSchema = z.object({
   eventId: z.string().min(1).max(80).regex(/^[a-z0-9_.]+$/),
   kind: z.enum(SEMANTIC_CHANGE_KINDS),
   entityIds: z.array(z.string().min(1).max(80)).min(1).max(12),
+  claimIds: z.array(z.string().min(1).max(40)).min(1).max(3).refine((ids) => new Set(ids).size === ids.length, 'mechanism claim ids must be unique'),
   description: z.string().trim().min(1).max(240),
 }).strict();
 
@@ -18,6 +19,7 @@ export interface MechanismRequirement {
   eventId: string;
   kind: SemanticChangeKind;
   entityIds: string[];
+  claimIds: string[];
   description: string;
 }
 
@@ -83,6 +85,7 @@ function requiredMechanismProblems(beat: TeachingBeat, mechanisms: MechanismRequ
     eventId: semanticEventId(beat.beatId, index),
     kind: change.kind,
     entityId: change.entityId,
+    claimIds: change.claimIds ?? beat.claimIds,
   }));
   const problems: RepresentationProblem[] = [];
   const declaredEventIds = new Set<string>();
@@ -98,8 +101,9 @@ function requiredMechanismProblems(beat: TeachingBeat, mechanisms: MechanismRequ
       problems.push({ path: '/mechanisms', message: `required ${change.kind} change ${change.eventId} has no declared visible mechanism` });
       continue;
     }
-    if (matching.kind !== change.kind || !matching.entityIds.includes(change.entityId)) {
-      problems.push({ path: '/mechanisms', message: `mechanism ${change.eventId} must preserve kind ${change.kind} and entity ${change.entityId}` });
+    if (matching.kind !== change.kind || !matching.entityIds.includes(change.entityId)
+      || JSON.stringify(matching.claimIds) !== JSON.stringify(change.claimIds)) {
+      problems.push({ path: '/mechanisms', message: `mechanism ${change.eventId} must preserve kind ${change.kind}, entity ${change.entityId}, and exact claim bindings` });
     }
   }
   for (const requirement of mechanisms) {

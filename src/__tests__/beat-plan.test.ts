@@ -53,6 +53,25 @@ test('a complete plan that covers every claim is valid', () => {
   assert.deepEqual(validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }], beatType: 'transform', cognitiveOperation: 'transform', learnerDelta: 'The learner sees returning remove the top frame.' })]), ctx), []);
 });
 
+test('semantic events in multi-claim beats require explicit exact claim bindings', () => {
+  const ambiguous = validateBeatPlan(draft([beat({ claimIds: ['c1', 'c2'] })]), ctx);
+  assert.ok(ambiguous.some((problem) => /multi-claim beat must name the exact claim ids/u.test((problem as { message: string }).message)));
+
+  const specificallyBound = beat({
+    claimIds: ['c1', 'c2'],
+    requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', claimIds: ['c1'], toState: 'One frame sits on the stack.' }],
+  });
+  const validProblems = validateBeatPlan(draft([specificallyBound]), ctx);
+  assert.ok(!validProblems.some((problem) => /semantic change claim ids/u.test((problem as { message: string }).message)), validProblems.map((problem) => (problem as { message: string }).message).join('\n'));
+
+  const outsideBeat = beat({
+    claimIds: ['c2'], relationships: [],
+    requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'introduce', claimIds: ['c1'], toState: 'One frame sits on the stack.' }],
+  });
+  const outsideProblems = validateBeatPlan(draft([outsideBeat]), ctx);
+  assert.ok(outsideProblems.some((problem) => /semantic change claim c1 is not listed by this beat/u.test((problem as { message: string }).message)));
+});
+
 test('learner state transitions and persistent semantic entities resolve only to earlier stable beat ids', () => {
   const planned = draft([beat(), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }], dependsOnOrders: [1] })]);
   assert.deepEqual(validateBeatPlan(planned, ctx), []);

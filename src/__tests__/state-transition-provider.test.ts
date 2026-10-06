@@ -6,7 +6,7 @@ import type { SemanticSceneState } from '../teaching/semantic-ir/types.js';
 import { REPRESENTATION_PROVIDER_REGISTRY } from '../teaching/representation/registry.js';
 import { deriveStateTransitionModel } from '../teaching/representation/stateTransition.js';
 
-function beatFor(change: { kind: 'introduce' | 'transform' | 'move' | 'separate'; entityId: string; fromState?: string; toState: string }, extra: Partial<TeachingBeat> = {}): TeachingBeat {
+function beatFor(change: { kind: 'introduce' | 'transform' | 'move' | 'separate'; entityId: string; fromState?: string; toState: string; claimIds?: string[] }, extra: Partial<TeachingBeat> = {}): TeachingBeat {
   return {
     beatId: 'scene.b1', sceneId: 'scene', order: 1, claimIds: ['claim_a'], learnerDelta: 'The learner sees the state change.',
     learningQuestion: 'How does the state change?', learnerBefore: 'The entity is closed.', learnerAfter: 'The entity is open.', dependsOnOrders: [], dependsOnBeatIds: [],
@@ -54,6 +54,18 @@ test('state-transition provider enforces exact prior and resulting states before
   if (!rejected.ok) assert.match(rejected.problems[0]!.message, /prior state must match/);
 });
 
+test('semantic operations and declared mechanisms preserve exact per-change claim bindings', () => {
+  const beat = beatFor({ kind: 'introduce', entityId: 'se_cell', toState: 'cell exists', claimIds: ['claim_a'] }, {
+    claimIds: ['claim_a', 'claim_b'],
+  });
+  const compiled = REPRESENTATION_PROVIDER_REGISTRY.compileFallback('state_transition', emptyState(), beat);
+  assert.equal(compiled.ok, true);
+  if (compiled.ok) {
+    assert.deepEqual(compiled.operations[0]!.claimIds, ['claim_a']);
+    assert.deepEqual(compiled.mechanisms[0]!.claimIds, ['claim_a']);
+  }
+});
+
 test('state-transition fallback is explicit and unsupported semantic changes remain unavailable', () => {
   const introduce = beatFor({ kind: 'introduce', entityId: 'se_cell', toState: 'cell exists' });
   const fallback = REPRESENTATION_PROVIDER_REGISTRY.compileFallback('state_transition', emptyState(), introduce);
@@ -82,7 +94,7 @@ test('state-transition provider compiles a declared separation into ordered sema
   const compiled = REPRESENTATION_PROVIDER_REGISTRY.compileFallback('state_transition', initial, beat);
   assert.equal(compiled.ok, true);
   if (compiled.ok) {
-    assert.equal(compiled.providerVersion, 'state-transition/v2');
+    assert.equal(compiled.providerVersion, 'state-transition/v3');
     assert.equal(compiled.operations[0]!.type, 'separate');
     const replay = applySemanticProgram(initial, compiled.operations);
     assert.equal(replay.ok, true);

@@ -131,6 +131,22 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
       const path = `${at}/requiredSemanticChanges/${changeIndex}`;
       if (!beatEntityKeys.has(change.identityKey)) problems.push({ path: `${path}/identityKey`, message: `semantic change references entity ${change.identityKey} which is not declared by this beat` });
       if (statefulChanges.has(change.kind) && !change.fromState?.trim()) problems.push({ path: `${path}/fromState`, message: `${change.kind} requires a fromState so the expected state transition is explicit` });
+      if (beat.claimIds.length > 1 && !change.claimIds) problems.push({ path: `${path}/claimIds`, message: 'a semantic change in a multi-claim beat must name the exact claim ids it supports' });
+      const eventClaimIds = change.claimIds ?? (beat.claimIds.length === 1 ? beat.claimIds : []);
+      if (!eventClaimIds.length) problems.push({ path: `${path}/claimIds`, message: 'a semantic change must be bound to at least one canonical claim' });
+      if (new Set(eventClaimIds).size !== eventClaimIds.length) problems.push({ path: `${path}/claimIds`, message: 'semantic change claim ids must be unique' });
+      const entity = beat.entities.find((candidate) => candidate.identityKey === change.identityKey);
+      for (const [claimIndex, claimId] of eventClaimIds.entries()) {
+        if (!beat.claimIds.includes(claimId)) {
+          problems.push({ path: `${path}/claimIds/${claimIndex}`, message: `semantic change claim ${claimId} is not listed by this beat` });
+          continue;
+        }
+        const claim = claimsById.get(claimId);
+        if (!claim) continue;
+        if (entity && !claim.conceptIds.includes(entity.conceptId)) {
+          problems.push({ path: `${path}/claimIds/${claimIndex}`, message: `claim ${claimId} does not include the changed entity concept ${entity.conceptId}` });
+        }
+      }
     });
     if (beat.narrationOnly && beat.requiredSemanticChanges.length) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a narration-only beat cannot require visual semantic changes' });
     if (beat.narrationOnly && beat.semanticRevealOrder.length) problems.push({ path: `${at}/semanticRevealOrder`, message: 'a narration-only beat cannot reveal visual entities' });

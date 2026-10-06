@@ -5,6 +5,8 @@ import { applySemanticProgram } from '../teaching/semantic-ir/program.js';
 import { compileSemanticOpsToBoardOps } from '../teaching/semantic-ir/toBoardOps.js';
 import type { SemanticOp, SemanticSceneState } from '../teaching/semantic-ir/types.js';
 import { stateTransitionProvider } from '../teaching/representation/stateTransition.js';
+import type { MechanismRequirement } from '../teaching/representation/providerRegistry.js';
+import type { ClaimCoverageReport } from './claimCoverage.js';
 import type { BeatTiming } from '../visual-v2/timeline/compile.js';
 import type { BoardOp, SceneTransition } from '../visual-v2/board-ops/types.js';
 import { startScene } from '../visual-v2/board-state/reducer.js';
@@ -12,7 +14,7 @@ import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
 import type { RenderedEntityAssetEvidence } from './renderedEntityAssets.js';
 
 export interface RepresentationExecutionRecord {
-  schemaVersion: 'v2-representation-execution/v2';
+  schemaVersion: 'v2-representation-execution/v3';
   sceneId: string;
   mode: 'typed-semantic' | 'legacy-boardops-preview';
   providerVersion?: string;
@@ -25,6 +27,8 @@ export interface RepresentationExecutionRecord {
     problem?: string;
   }>;
   semanticOperations: SemanticOp[];
+  mechanismRequirements: MechanismRequirement[];
+  claimCoverage?: ClaimCoverageReport;
   cueByEventId: Record<string, number>;
   selectedAssetIds: Record<string, string>;
   renderedEntityAssets: RenderedEntityAssetEvidence[];
@@ -93,8 +97,8 @@ export function executeSemanticScene(input: {
     return {
       status: 'legacy-preview',
       record: {
-        schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId,
-        mode: 'legacy-boardops-preview', beats, semanticOperations: [], cueByEventId: {}, selectedAssetIds: icons,
+        schemaVersion: 'v2-representation-execution/v3', sceneId: context.sceneId,
+        mode: 'legacy-boardops-preview', beats, semanticOperations: [], mechanismRequirements: [], cueByEventId: {}, selectedAssetIds: icons,
         renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
       },
     };
@@ -102,6 +106,7 @@ export function executeSemanticScene(input: {
 
   let semanticState = emptySemanticState(context.sceneId);
   const allSemanticOperations: SemanticOp[] = [];
+  const allMechanismRequirements: MechanismRequirement[] = [];
   const boardOperations: BoardOp[] = [];
   const startingBoard = startScene(context.initial, { mode: 'clean' }, context.sceneId);
   const usedElementIds = new Set(Object.keys(startingBoard.elements));
@@ -121,9 +126,9 @@ export function executeSemanticScene(input: {
       return {
         status: 'failed',
         record: {
-          schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId, mode: 'typed-semantic',
+          schemaVersion: 'v2-representation-execution/v3', sceneId: context.sceneId, mode: 'typed-semantic',
           providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
-          semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
+          semanticOperations: allSemanticOperations, mechanismRequirements: allMechanismRequirements, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
         },
         problems: beatRecords.map((item) => `${item.beatId}: ${item.problem ?? 'provider failed'}`),
       };
@@ -139,13 +144,14 @@ export function executeSemanticScene(input: {
       return {
         status: 'failed',
         record: {
-          schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId, mode: 'typed-semantic',
+          schemaVersion: 'v2-representation-execution/v3', sceneId: context.sceneId, mode: 'typed-semantic',
           providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
-          semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
+          semanticOperations: allSemanticOperations, mechanismRequirements: allMechanismRequirements, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
         },
         problems: beatRecords.map((item) => `${item.beatId}: ${item.problem ?? 'lowering failed'}`),
       };
     }
+    allMechanismRequirements.push(...provider.mechanisms);
     semanticState = lowered.resultingSemanticState;
     allSemanticOperations.push(...provider.operations);
     boardOperations.push(...lowered.operations);
@@ -165,17 +171,17 @@ export function executeSemanticScene(input: {
     return {
       status: 'failed',
       record: {
-        schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId, mode: 'typed-semantic',
+        schemaVersion: 'v2-representation-execution/v3', sceneId: context.sceneId, mode: 'typed-semantic',
         providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
-        semanticOperations: allSemanticOperations, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
+        semanticOperations: allSemanticOperations, mechanismRequirements: allMechanismRequirements, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
       },
       problems: semanticReplay.problems.map((problem) => `${problem.path}: ${problem.message}`),
     };
   }
   const record: RepresentationExecutionRecord = {
-    schemaVersion: 'v2-representation-execution/v2', sceneId: context.sceneId,
+    schemaVersion: 'v2-representation-execution/v3', sceneId: context.sceneId,
     mode: 'typed-semantic', providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback',
-    beats: beatRecords, semanticOperations: allSemanticOperations,
+    beats: beatRecords, semanticOperations: allSemanticOperations, mechanismRequirements: allMechanismRequirements,
     cueByEventId: cuesFromNarration(narration), selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
   };
   // The timing-derived cue map and source-text-derived cue map must agree before compiling a board.

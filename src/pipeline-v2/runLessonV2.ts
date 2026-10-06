@@ -44,6 +44,7 @@ import { claimVerificationStatusFor, createEvidenceLedgerFromClaims, epistemicCl
 import { buildLessonHierarchy, lessonHierarchyInputArtifact } from './lessonHierarchy.js';
 import { executeSemanticScene, type RepresentationExecutionRecord } from './semanticExecution.js';
 import { auditRenderedEntityAssets, requiredSelectedIconConceptIds, requiredSelectedIconProblems, selectedIconVisibilityProblems, unrenderedSelectedConceptIds } from './renderedEntityAssets.js';
+import { scoreClaimCoverage } from './claimCoverage.js';
 import { canonicalHash } from '../harness/replayDeterminism.js';
 import type { SceneBoardDraft } from '../visual-v2/ops-plan/types.js';
 
@@ -482,6 +483,17 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       renderedEntityAssets: renderedAssetAudit.evidence,
       unrenderedSelectedConceptIds: selectedWithoutEntity,
       boardOpsHash: canonicalHash(timeline.ops.map((scheduled) => scheduled.op)),
+      claimCoverage: scoreClaimCoverage({
+        claims: (section.contract?.essentialClaims ?? []).map(({ id, epistemicType, verificationStatus, conceptIds, relations }) => ({
+          id, ...(epistemicType ? { epistemicType } : {}), ...(verificationStatus ? { verificationStatus } : {}), conceptIds, relations,
+        })),
+        beats,
+        semanticOperations: semanticExecution.record.semanticOperations,
+        mechanismRequirements: semanticExecution.record.mechanismRequirements,
+        boardOps: timeline.ops.map((scheduled) => scheduled.op),
+        states: timeline.states,
+        renderedEntityAssets: renderedAssetAudit.evidence,
+      }),
     };
     representationExecutions.push(representationExecution);
     await dump(`scene.${section.id}.json`, { transition: boardDraft.transition, ops: boardDraft.ops, beats, narration, beatTimings, representationExecution, schedule: timeline.ops.map((s) => ({ opId: s.op.opId, t0: Math.round(s.t0), t1: Math.round(s.t1), late: s.late })), timelineHash: timeline.hash });
@@ -536,13 +548,22 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     'v2.visibleSelectedIcons': representationExecutions.flatMap((execution) => execution.renderedEntityAssets).filter((entity) => entity.selectedAssetId !== null && entity.selectedAssetId === entity.resolvedAssetId && entity.depictionFamily === 'pictorial' && entity.meaningful && entity.pathCount + entity.fillCount + entity.embedCount > 0).length,
     'v2.selectedIconsWithoutVisual': representationExecutions.reduce((count, execution) => count + execution.unrenderedSelectedConceptIds.length + selectedIconVisibilityProblems(execution.renderedEntityAssets).length, 0),
   });
+  const coverageReports = representationExecutions.flatMap((execution) => execution.claimCoverage ? [execution.claimCoverage] : []);
+  const claimCoverageWeightEarned = coverageReports.reduce((sum, report) => sum + report.weightedEarned, 0);
+  const claimCoverageWeightPossible = coverageReports.reduce((sum, report) => sum + report.weightedPossible, 0);
+  Object.assign(metrics, {
+    'v2.claimCoverageWeightEarned': claimCoverageWeightEarned,
+    'v2.claimCoverageWeightPossible': claimCoverageWeightPossible,
+    'v2.claimWeightedCoverage': claimCoverageWeightPossible === 0 ? 0 : claimCoverageWeightEarned / claimCoverageWeightPossible,
+    'v2.dynamicMechanismMissingClaims': coverageReports.reduce((sum, report) => sum + report.dynamicMechanismMissingClaimIds.length, 0),
+  });
 
   // 4. Master audio, video and captions.
   const masterAudio = path.join(outputDir, 'audio.wav');
   await concatSceneAudio(wavPaths, gap, trailing, masterAudio);
   const cues = compiled.flatMap((scene, i) => timings[i]!.flatMap((beat) => { const narration = narrations[scene.sceneId]!; const span = narration.beatSpans.find((b) => b.beatId === beat.beatId)!; return span.sentenceSpans.map((s, j) => ({ startMs: placements[i]!.startMs + beat.sentences[j]!.startMs, endMs: placements[i]!.startMs + beat.sentences[j]!.endMs, text: narration.text.slice(s.charStart, s.charEnd) })); }));
   await writeFile(path.join(outputDir, 'captions.vtt'), `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${vttTime(c.startMs)} --> ${vttTime(c.endMs)}\n${c.text}\n`).join('\n')}`, 'utf8');
-  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v9', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'beat-narration/v3-canonical-relations-coupled-anchors' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, representationExecution: { schemaVersion: 'v2-representation-execution/v2', scenes: representationExecutions }, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
+  await dump('lesson-context.json', { schemaVersion: 'lesson-context/v10', groundingMode: prepared.groundingMode ?? 'STRICT_SOURCE', evidenceLedger, promptVersions: { boardOps: BOARD_OPS_PROMPT_VERSION, beatNarration: 'beat-narration/v3-canonical-relations-coupled-anchors' }, sourceDoc: prepared.sourceDoc, plan, graph, beatPlans: prepared.beatPlans, beatNarrations: narrations, visualVocabularies: prepared.visualVocabularies ?? {}, representationExecution: { schemaVersion: 'v2-representation-execution/v3', scenes: representationExecutions }, validatedByConcept: prepared.validatedByConcept ?? {}, lessonHierarchy });
   let videoPath: string | undefined;
   if (!failures.some((f) => f.hard)) {
     await writeLessonLockV2({ outputDir, lessonId: input.lessonId, scenes: compiled.map((scene, i) => ({ scene, startMs: placements[i]!.startMs, endMs: placements[i]!.endMs })), durationMs: totalMs, audioPath: masterAudio, fps: input.fps ?? 30 });

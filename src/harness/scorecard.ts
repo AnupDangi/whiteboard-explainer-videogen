@@ -37,6 +37,7 @@ export function buildScorecard(input: ScorecardInput): Scorecard {
   if (metrics.silentSemanticCoercions > 0) blockers.push('silent-semantic-coercion');
   if (Number(input.coverageMetrics['semantic.r10OnlyMajorClaims'] ?? 0) > 0) blockers.push('major-claim-r10-only');
   if (input.replay && !input.replay.identical) blockers.push('deterministic-replay-mismatch');
+  if (Number(input.coverageMetrics['v2.dynamicMechanismMissingClaims'] ?? 0) > 0) blockers.push('dynamic-mechanism-coverage-incomplete');
   const measured = new Set(input.measured ?? []);
   if (input.replay) measured.add('deterministic-replay');
   const unmeasured = REQUIRED_MEASUREMENTS.filter((name) => !measured.has(name));

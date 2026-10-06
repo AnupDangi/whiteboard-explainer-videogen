@@ -83,11 +83,12 @@ function validateStateTransitionModel(model: StateTransitionModel, beat: Teachin
   return problems;
 }
 
-function mechanismRequirements(model: StateTransitionModel, _beat: TeachingBeat) {
-  return model.events.map((event) => ({
+function mechanismRequirements(model: StateTransitionModel, beat: TeachingBeat) {
+  return model.events.map((event, index) => ({
     eventId: event.eventId,
     kind: event.kind,
     entityIds: event.kind === 'separate' ? [event.entityId, ...event.resultEntityIds] : [event.entityId],
+    claimIds: beat.requiredSemanticChanges[index]?.claimIds ?? beat.claimIds,
     description: event.kind === 'introduce'
       ? `Show ${event.entityId} entering the scene in state: ${event.state}.`
       : event.kind === 'separate'
@@ -98,21 +99,22 @@ function mechanismRequirements(model: StateTransitionModel, _beat: TeachingBeat)
 
 function compileStateTransition(model: StateTransitionModel, state: SemanticSceneState, beat: TeachingBeat): SemanticOp[] {
   const operations: SemanticOp[] = model.events.map((event, index) => {
+    const claimIds = beat.requiredSemanticChanges[index]?.claimIds ?? beat.claimIds;
     const common = {
       eventId: event.eventId,
       beatId: beat.beatId,
-      claimIds: beat.claimIds,
+      claimIds,
       dependsOnEventIds: model.events.slice(0, index).map((prior) => prior.eventId),
     };
     if (event.kind === 'introduce') return {
       type: 'introduce', ...common,
-      entity: { id: event.entityId, conceptId: event.conceptId, claimIds: beat.claimIds, state: event.state, lifecycle: 'active' },
+      entity: { id: event.entityId, conceptId: event.conceptId, claimIds, state: event.state, lifecycle: 'active' },
     };
     if (event.kind === 'transform') return { type: 'transform', ...common, entityId: event.entityId, fromState: event.fromState, toState: event.toState };
     const results = event.resultEntityIds.map((entityId) => {
       const entity = beat.entities.find((candidate) => candidate.entityId === entityId);
       if (!entity) throw new Error(`separation result ${entityId} has no declared beat entity`);
-      return { id: entity.entityId, conceptId: entity.conceptId, claimIds: beat.claimIds, ...(entity.state ? { state: entity.state } : {}), lifecycle: 'active' as const };
+      return { id: entity.entityId, conceptId: entity.conceptId, claimIds, ...(entity.state ? { state: entity.state } : {}), lifecycle: 'active' as const };
     });
     return { type: 'separate', ...common, sourceEntityId: event.entityId, fromState: event.fromState, results };
   }).map((candidate) => SemanticOpSchema.parse(candidate));
@@ -123,7 +125,7 @@ function compileStateTransition(model: StateTransitionModel, state: SemanticScen
 
 export const stateTransitionProvider = defineRepresentationProvider({
   family: 'state_transition',
-  version: 'state-transition/v2',
+  version: 'state-transition/v3',
   supportedChangeKinds: ['introduce', 'transform', 'separate'],
   modelSchema: StateTransitionModelSchema,
   suitability: (beat) => beat.representationFamily === 'state_transition'

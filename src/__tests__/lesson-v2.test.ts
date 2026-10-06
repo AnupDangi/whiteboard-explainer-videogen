@@ -120,7 +120,7 @@ test('V2 semantic execution compiles supported state changes and carries the exa
   const result = executeSemanticScene({ context: sourceContext, narration: sceneNarration, beatTimings: [beatTiming] });
   assert.equal(result.status, 'compiled');
   if (result.status !== 'compiled') return;
-  assert.equal(result.record.providerVersion, 'state-transition/v2');
+  assert.equal(result.record.providerVersion, 'state-transition/v3');
   assert.equal(result.record.semanticOperations.length, 2);
   assert.equal(result.operations.length, 4, 'each introduced entity has a live entity plus a visible state value');
   assert.deepEqual(result.record.selectedAssetIds, { frame: 'iconify-lucide:frame' });
@@ -243,7 +243,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       validatedByConcept: Record<string, string>;
       evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v9');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v10');
     assert.deepEqual(lessonContext.validatedByConcept, { frame: 'iconify-lucide:frame' });
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
@@ -509,12 +509,12 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     const out = await fixtureRun(dir, false, true);
     assert.deepEqual(await verifyLessonLockV2(out), []);
     const context = JSON.parse(await readFile(path.join(out, 'v2', 'lesson-context.json'), 'utf8')) as {
-      representationExecution: { schemaVersion: string; scenes: Array<{ sceneId: string; mode: string; providerVersion?: string; semanticOperations: unknown[]; selectedAssetIds: Record<string, string>; renderedEntityAssets: Array<{ elementId: string; conceptId: string; selectedAssetId: string | null; resolvedAssetId: string | null; depictionFamily: string; meaningful: boolean; pathCount: number; fillCount: number; embedCount: number }>; unrenderedSelectedConceptIds: string[] }> };
+      representationExecution: { schemaVersion: string; scenes: Array<{ sceneId: string; mode: string; providerVersion?: string; semanticOperations: unknown[]; selectedAssetIds: Record<string, string>; claimCoverage: { rows: unknown[]; weightedPossible: number }; renderedEntityAssets: Array<{ elementId: string; conceptId: string; selectedAssetId: string | null; resolvedAssetId: string | null; depictionFamily: string; meaningful: boolean; pathCount: number; fillCount: number; embedCount: number }>; unrenderedSelectedConceptIds: string[] }> };
     };
     const scenes = context.representationExecution.scenes;
-    assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v2');
+    assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v3');
     assert.equal(scenes.length, 2);
-    assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v2'));
+    assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v3'));
     assert.ok(scenes.every((scene) => scene.semanticOperations.length === 2));
     assert.ok(scenes.every((scene) => scene.selectedAssetIds.frame === 'iconify-lucide:frame'));
     const frameDepiction = scenes[0]!.renderedEntityAssets.find((entity) => entity.conceptId === 'frame');
@@ -525,19 +525,22 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     assert.equal(frameDepiction.meaningful, true);
     assert.ok(frameDepiction.pathCount + frameDepiction.fillCount + frameDepiction.embedCount > 0, 'the exact icon resolves to drawable SVG content');
     assert.deepEqual(scenes[0]!.unrenderedSelectedConceptIds, []);
+    assert.ok(scenes.every((scene) => scene.claimCoverage.rows.length > 0 && scene.claimCoverage.weightedPossible > 0));
 
     const lockPath = path.join(out, 'lesson.lock.v2.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { contentHash: string; context: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string }> };
     const contextPath = path.join(out, lock.context.file);
     const sceneLock = lock.scenes.find((scene) => scene.sceneId === 'one')!;
     const scenePath = path.join(out, sceneLock.file);
-    type ExecutionScene = { sceneId: string; semanticOperations: Array<{ type: string; entity?: { state?: string } }>; renderedEntityAssets: Array<{ conceptId: string; resolvedAssetId: string | null }> };
+    type ExecutionScene = { sceneId: string; semanticOperations: Array<{ type: string; entity?: { state?: string } }>; renderedEntityAssets: Array<{ conceptId: string; resolvedAssetId: string | null }>; claimCoverage: { rows: Array<{ rationale: string }> } };
     const contextValue = JSON.parse(await readFile(contextPath, 'utf8')) as { representationExecution: { scenes: ExecutionScene[] } };
     const sceneValue = JSON.parse(await readFile(scenePath, 'utf8')) as { representationExecution: ExecutionScene };
     contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.semanticOperations[0]!.entity!.state = 'forged state';
     contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.renderedEntityAssets.find((entity) => entity.conceptId === 'frame')!.resolvedAssetId = 'iconify-tabler:frame';
+    contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.claimCoverage.rows[0]!.rationale = 'forged coverage';
     sceneValue.representationExecution.semanticOperations[0]!.entity!.state = 'forged state';
     sceneValue.representationExecution.renderedEntityAssets.find((entity) => entity.conceptId === 'frame')!.resolvedAssetId = 'iconify-tabler:frame';
+    sceneValue.representationExecution.claimCoverage.rows[0]!.rationale = 'forged coverage';
     const contextBytes = `${JSON.stringify(contextValue, null, 2)}\n`;
     const sceneBytes = `${JSON.stringify(sceneValue, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -552,6 +555,74 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     const tampered = await verifyLessonLockV2(out);
     assert.ok(tampered.some((problem) => /typed semantic operations do not derive from the pinned beat changes/.test(problem)), tampered.join('\n'));
     assert.ok(tampered.some((problem) => /rendered entity asset evidence differs from deterministic depiction resolution/.test(problem)), tampered.join('\n'));
+    assert.ok(tampered.some((problem) => /claim coverage report differs from deterministic replay/u.test(problem)), tampered.join('\n'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('v9 lesson contexts with v2 representation records remain replayable after the v10 upgrade', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v9-lock-compat-'));
+  try {
+    const out = await fixtureRun(dir, false, true);
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as {
+      contentHash: string; context: { file: string; hash: string };
+      scenes: Array<{ sceneId: string; file: string; fileHash: string }>;
+    };
+    type LegacyExecution = { schemaVersion: string; providerVersion?: string; beats: Array<{ providerVersion?: string }>; mechanismRequirements?: unknown; claimCoverage?: unknown };
+    type LessonContext = { schemaVersion: string; representationExecution: { schemaVersion: string; scenes: LegacyExecution[] } };
+    type SceneRecord = { representationExecution: LegacyExecution };
+    const downgrade = (execution: LegacyExecution) => {
+      execution.schemaVersion = 'v2-representation-execution/v2';
+      execution.providerVersion = 'state-transition/v2';
+      for (const beat of execution.beats) beat.providerVersion = 'state-transition/v2';
+      delete execution.mechanismRequirements;
+      delete execution.claimCoverage;
+    };
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8')) as LessonContext;
+    context.schemaVersion = 'lesson-context/v9';
+    context.representationExecution.schemaVersion = 'v2-representation-execution/v2';
+    for (const execution of context.representationExecution.scenes) downgrade(execution);
+    const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    lock.context.hash = sha256(contextBytes);
+    for (const scene of lock.scenes) {
+      const scenePath = path.join(out, scene.file);
+      const sceneRecord = JSON.parse(await readFile(scenePath, 'utf8')) as SceneRecord;
+      downgrade(sceneRecord.representationExecution);
+      const sceneBytes = `${JSON.stringify(sceneRecord, null, 2)}\n`;
+      await writeFile(scenePath, sceneBytes);
+      scene.fileHash = sha256(sceneBytes);
+    }
+    const { contentHash: _oldHash, ...body } = lock;
+    lock.contentHash = canonicalHash(body);
+    const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, lockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+    assert.deepEqual(await verifyLessonLockV2(out), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('a rehashed v10 lock cannot omit its mandatory representation replay record', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v10-representation-required-'));
+  try {
+    const out = await fixtureRun(dir, false, true);
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { contentHash: string; context: { file: string; hash: string } };
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8')) as Record<string, unknown>;
+    assert.equal(context.schemaVersion, 'lesson-context/v10');
+    delete context.representationExecution;
+    const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    lock.context.hash = sha256(contextBytes);
+    const { contentHash: _oldHash, ...body } = lock;
+    lock.contentHash = canonicalHash(body);
+    const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, lockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+    const problems = await verifyLessonLockV2(out);
+    assert.ok(problems.some((problem) => /lesson-context\/v10 is missing the required representationExecution record/u.test(problem)), problems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -764,7 +835,7 @@ test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject r
       schemaVersion: string;
       lessonHierarchy: { mode: string; chapters: Array<{ chapterId: string; sceneIds: string[]; scenes: Array<{ sceneId: string }>; plannedBudgetMs: number; evidenceSpanIds: string[]; recallOfChapterIds: string[]; checkpoint: { cumulativeClaimIds: string[] } }> };
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v9');
+    assert.equal(context.schemaVersion, 'lesson-context/v10');
     assert.equal(context.lessonHierarchy.mode, 'syllabus');
     assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.sceneIds), [['one'], ['two']]);
     assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.scenes.map((scene) => scene.sceneId)), [['one'], ['two']]);
@@ -807,7 +878,7 @@ test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject r
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v9', async () => {
+test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v10', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
@@ -820,7 +891,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
       beatPlans: Record<string, Array<Record<string, unknown>>>;
       validatedByConcept: Record<string, string>;
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v9');
+    assert.equal(context.schemaVersion, 'lesson-context/v10');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -871,7 +942,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
     await writeFile(lockPath, visualLockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), visualLockBytes);
     const visualProblems = await verifyLessonLockV2(out);
-    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v9 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
+    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v10 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
 
     context.plan.sections[0]!.contract.essentialClaims[0]!.verificationStatus = 'source_cited';
     context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType = 'direct_source';

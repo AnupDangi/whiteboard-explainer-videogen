@@ -36,3 +36,9 @@ test('the scorecard carries the structured-harness metrics, gates and the compil
   assert.equal(card.coverage['semantic.meaningfulClaimCoverage'], 0.5);
   assert.equal(card.schemaVersion, 'scorecard/v1');
 });
+
+test('incomplete measured dynamic mechanism coverage blocks a release candidate', () => {
+  const card = buildScorecard({ compilerVersion: 'v2', reports: [report()], coverageMetrics: { 'v2.dynamicMechanismMissingClaims': 1 } });
+  assert.ok(card.blockers.includes('dynamic-mechanism-coverage-incomplete'));
+  assert.equal(card.releaseCandidate, false);
+});

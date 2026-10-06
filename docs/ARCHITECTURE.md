@@ -117,7 +117,7 @@ compilation, and an explicit family fallback. Its availability inventory lists
 all 19 planned families; a missing provider returns `provider_unavailable`
 instead of generating a generic BoardOps substitute.
 
-The registry currently activates only `state_transition` v2, for `introduce`,
+The registry currently activates only `state_transition` v3, for `introduce`,
 `transform`, and `separate` changes; merge and other change kinds and the other
 18 families stay unavailable. V2 routes a scene through that provider only
 when every visual beat in the scene selects `state_transition` and all required
@@ -172,9 +172,50 @@ icon selected for a concept used by a visual beat must resolve to that exact
 pictorial asset; missing or label-only output blocks encoding, and lock replay
 recomputes the same requirement from the pinned beat plan and captured states.
 The scene record and pinned lesson context store provider version, semantic
-operations, phrase-derived sentence cues, exact selected asset ids, and a hash
-of the emitted BoardOps. Lock verification re-derives the state-transition
-operations and lowering and compares them with the captured timeline.
+operations, exact per-event claim bindings, provider mechanism requirements,
+phrase-derived sentence cues, exact selected asset ids, rendered asset evidence,
+claim coverage, and a hash of the emitted BoardOps. Lock verification re-derives
+the state-transition operations and mechanism requirements, repeats coverage
+scoring from captured states/assets, and compares the lowering with the
+captured timeline.
+
+## Per-claim mechanism and visual coverage
+
+For a beat that cites multiple canonical claims, every required semantic change
+must name the exact claim IDs it supports, and each named claim must contain the
+changed entity concept. Single-claim beats may omit this field because code
+binds their event to the sole claim. The provider copies these bindings into
+both `SemanticOp` and its declared `MechanismRequirement`; the provider registry
+rejects drift between the beat, operation, and requirement.
+
+`src/pipeline-v2/claimCoverage.ts` scores each canonical claim as `none`,
+`label_only`, `partial`, or `mechanism_visible`. Its current deterministic
+weights are 3 for a canonical dynamic relation (`causes`, `feeds`, `transforms`,
+`produces`, `branches`, `precedes`, or `requires`), a dynamic semantic change,
+or sole-claim misconception correction; 2 for other canonical relations; and 1
+for an example, analogy, or supporting detail. Levels contribute 0, 1/3, 2/3,
+or all of that weight. These
+are explicit code-owned classifications, not judgments extracted from model
+prose. V2 records the rows and aggregates in the representation record and run
+metrics. An incomplete required dynamic mechanism adds a scorecard blocker.
+
+The current `mechanism_visible` proof is deliberately narrow: a separation must
+match its typed event and provider requirement, remove the exact source-state
+value, capture the expected split, and leave every result as a live, claim-bound
+drawable entity. Static relation coverage requires the directed edge and both
+drawable entity endpoints to coexist in one captured state. A changed value,
+selected icon, or planner intent alone does not prove a dynamic mechanism. Other
+dynamic operation kinds currently remain partial even when the board shows a
+value change. The lock verifies the v3 report by recalculating it from canonical
+claims, pinned beats, re-derived semantic operations and mechanism requirements,
+captured BoardOps/states, and deterministic rendered-asset evidence. Editing
+both copies and recomputing file hashes does not authenticate a false score.
+
+The weighted aggregate is reported as `v2.claimWeightedCoverage` with earned
+and possible weights, but its release cutoff is not set yet. The user has been
+asked to choose that cutoff. Full support for other dynamic mechanism proofs,
+independent semantic QA, muted-comprehension review, and rights review remain
+open.
 
 ## Ownership and trust boundaries
 
@@ -265,7 +306,7 @@ Before audio generation, V2 projects canonical claims into
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v9`; v8 locks retain
+concatenated bundle hash. New runs write `lesson-context/v10`; v9 and earlier locks retain
 their historical compatibility contract. Lock verification
 requires each claim's explicit type and derived verification status, checks
 its source refs against the claim's cited spans, verifies the beat learner
@@ -275,7 +316,7 @@ scene. It also validates compiled entities and semantic changes against strict
 schemas, recomputes scene-scoped ids from stable identity keys, and checks
 within-scene concept continuity, first-reveal order, declared persistence ids,
 and each beat's exact evidence-span union from its cited canonical claims.
-For hierarchical lessons, v8/v9 also lock Lesson → Chapter → Scene → Beat
+For hierarchical lessons, v8/v9/v10 also lock Lesson → Chapter → Scene → Beat
 membership, chapter budgets, measured scene speech/window timings, and
 end-of-chapter cumulative concept/claim/terminology checkpoints. Lock
 verification recomputes the chapter partition and those projections from the
@@ -284,12 +325,12 @@ also pins `v2/lesson-hierarchy-input.json` separately and checks hierarchy mode
 and chapter metadata against that projection of the syllabus and prepared
 modules. Flat synthetic or compatibility runs carry one explicit
 compatibility chapter. These checkpoints record structural coverage, not
-learner mastery. Semantic changes are not yet
-checked against rendered BoardOps, and scene-local identity does not establish
-cross-scene continuity; those remain later semantic compiler work.
+learner mastery. Only supported separation and static relation evidence receive
+mechanism-visible coverage; general semantic realization and cross-scene
+learner/entity continuity remain later semantic compiler work.
 The separate input artifact provides cross-file consistency, not a signature
 authenticating original model output if every artifact and hash is rewritten.
-`lesson-context/v2` through `/v7` remain readable through compatibility paths.
+`lesson-context/v2` through `/v9` remain readable through compatibility paths.
 The CLI carries grounding mode through request and run
 identity. `STRICT_SOURCE` and `SOURCE_PLUS_BACKGROUND` are accepted:
 direct-source and derived-relation claims require primary-only citations;
@@ -406,7 +447,7 @@ uses the exact scene-vocabulary entry for eligible entity rendering, subject to
 the existing semantic-type, exact/curated selection, domain and licensing
 gates. The locked concept metadata captures the selected asset and scene style,
 and replay uses the pinned selection. New runs write
-`lesson-context/v9`; historical contexts remain readable. The diagnostic
+`lesson-context/v10`; v9 and earlier contexts remain readable. The diagnostic
 `v2/scene-icon-families.json` records each scene's family.
 
 An icon being present in a local catalog is not evidence that it is cleared for
