@@ -2818,3 +2818,10 @@ Report status, hard failures, cost and `SourceDoc.intake` warnings as-is.
 
 - **Top investigator finding:** missing bindings cause 32/63 hard failures. Fix (compiler aid, not prompt/schema change): `completeBindings` fills claimIds for single-claim beats, conceptIds from entity fields, and connect bindings from endpoints — only when unambiguous, never overwriting. Raw output retained; ambiguous gaps still fail for model repair.
 - **Verification:** bindings-complete 4/4 new; ops-plan 20, lesson-v2 8, board-semantics 5, visual-model 4; typecheck clean.
+
+## Continuation — simi-phys 3 attempts closed (wt/stcc/charter)
+
+- **a1:** S4 repair merged instead of splitting → repair direction message fixed.
+- **a2:** bindings completion built from investigator census; audio 59.8s vs 90s.
+- **a3:** audio 60.2s vs 90s (30s under — syllabus planned short, S1b scope) + symbolic equation unverifiable. MISSING stands.
+- **Next:** simi-bio.
