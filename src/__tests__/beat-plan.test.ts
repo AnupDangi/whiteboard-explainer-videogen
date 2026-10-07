@@ -277,6 +277,76 @@ test('beat count follows scene duration and stays bounded', () => {
   assert.ok(tooFew.some((p) => /at least 6 beats/.test((p as { message: string }).message)));
 });
 
+test('a beat may require at most 4 semantic changes total; a recap claim that needs more must split across beats citing it (topic-independent: water cycle, not photosynthesis)', () => {
+  // A recap/synthesis scene with ONE claim synthesizing a 6-stage cycle (not the photosynthesis case from the live run).
+  const waterCycleCtx: BeatContext = {
+    sceneId: 'water_cycle_recap',
+    conceptIds: ['sun_heat', 'evaporation', 'condensation', 'cloud_formation', 'precipitation', 'runoff'],
+    claims: [{
+      id: 'recap_full_cycle',
+      statement: 'The complete water cycle moves from solar heating through evaporation, condensation, cloud formation, precipitation, and runoff back to the surface.',
+      conceptIds: ['sun_heat', 'evaporation', 'condensation', 'cloud_formation', 'precipitation', 'runoff'],
+      relations: [], evidenceSpanIds: ['s1'],
+    }],
+    relations: [], misconceptionIds: [], durationSec: 8, // beatCountRange(8) = { min: 1, max: 2 }
+  };
+  const stageEntity = (identityKey: string, conceptId: string) => ({ identityKey, conceptId, role: 'stage' });
+  const stageChange = (identityKey: string, toState: string) => ({ identityKey, kind: 'introduce' as const, toState });
+  const allStages: Array<[string, string, string]> = [
+    ['stage_sun', 'sun_heat', 'The sun is heating the surface.'],
+    ['stage_evap', 'evaporation', 'Water is evaporating into vapor.'],
+    ['stage_cond', 'condensation', 'Vapor is condensing.'],
+    ['stage_cloud', 'cloud_formation', 'Clouds have formed.'],
+    ['stage_precip', 'precipitation', 'Precipitation is falling.'],
+    ['stage_runoff', 'runoff', 'Water is running off back to the surface.'],
+  ];
+
+  // Fixture A: all 6 changes packed into ONE beat -> must trigger the new cap problem.
+  const overCapBeat = beat({
+    claimIds: ['recap_full_cycle'], relationships: [],
+    entities: allStages.map(([identityKey, conceptId]) => stageEntity(identityKey, conceptId)),
+    semanticRevealOrder: allStages.map(([identityKey]) => identityKey),
+    requiredSemanticChanges: allStages.map(([identityKey, , toState]) => stageChange(identityKey, toState)),
+    learningQuestion: 'How does the complete water cycle connect every stage?',
+    learnerBefore: 'The learner knows each stage of the water cycle separately.',
+    learnerAfter: 'The learner sees how every stage connects into one continuous cycle.',
+    visualInvariant: 'All six stages are visible as one connected cycle.',
+    mutedMeaning: 'Six stages connect into a loop.',
+  });
+  const overCapProblems = validateBeatPlan(draft([overCapBeat]), waterCycleCtx);
+  assert.ok(
+    overCapProblems.some((problem) => (problem as { path: string }).path === '/beats/0/requiredSemanticChanges' && /at most 4 semantic changes/.test((problem as { message: string }).message)),
+    overCapProblems.map((problem) => (problem as { message: string }).message).join('\n'),
+  );
+
+  // Fixture B: the same 6 changes split 3+3 across two beats that both cite the same claim -> no new problems from this rule, and the plan is fully valid.
+  const firstHalf = beat({
+    claimIds: ['recap_full_cycle'], relationships: [],
+    entities: allStages.slice(0, 3).map(([identityKey, conceptId]) => stageEntity(identityKey, conceptId)),
+    semanticRevealOrder: allStages.slice(0, 3).map(([identityKey]) => identityKey),
+    requiredSemanticChanges: allStages.slice(0, 3).map(([identityKey, , toState]) => stageChange(identityKey, toState)),
+    learningQuestion: 'How does the cycle begin?',
+    learnerBefore: 'The learner knows each stage separately.',
+    learnerAfter: 'The learner sees heating lead to evaporation and condensation.',
+    visualInvariant: 'The first three stages are visible in sequence.',
+    mutedMeaning: 'Heat leads to vapor, then condensation.',
+  });
+  const secondHalf = beat({
+    claimIds: ['recap_full_cycle'], relationships: [],
+    entities: allStages.slice(3).map(([identityKey, conceptId]) => stageEntity(identityKey, conceptId)),
+    semanticRevealOrder: allStages.slice(3).map(([identityKey]) => identityKey),
+    requiredSemanticChanges: allStages.slice(3).map(([identityKey, , toState]) => stageChange(identityKey, toState)),
+    learningQuestion: 'How does the cycle complete and repeat?',
+    learnerBefore: 'The learner sees heating lead to evaporation and condensation.',
+    learnerAfter: 'The learner sees clouds form, precipitation fall, and runoff return to the surface.',
+    visualInvariant: 'All six stages are visible as one connected cycle.',
+    mutedMeaning: 'Clouds, rain, and runoff complete the loop.',
+    dependsOnOrders: [1],
+  });
+  const splitProblems = validateBeatPlan(draft([firstHalf, secondHalf]), waterCycleCtx);
+  assert.deepEqual(splitProblems, [], splitProblems.map((problem) => (problem as { message: string }).message).join('\n'));
+});
+
 test('compile assigns stable beat ids in order and derives evidence spans from the claims, never from the model', () => {
   const beats = compileBeatPlan(draft([beat(), beat({ claimIds: ['c2'] }), beat({ claimIds: ['c1', 'c2'] })]), ctx);
   assert.deepEqual(beats.map((b) => b.beatId), ['stack_scene.b1', 'stack_scene.b2', 'stack_scene.b3']);
@@ -316,6 +386,8 @@ test('the prompt states the scene contract, claim ids, misconception ids and the
   assert.match(system, /learningQuestion for its cognitiveOperation/);
   assert.match(system, /Never branch on.*topic names, source names, case IDs, or benchmark labels/);
   assert.match(system, /separate change introduces its two to six newly revealed result entities/);
+  assert.match(system, /at most 4 semantic changes/);
+  assert.match(system, /cover it across two or more beats that all cite that claim/);
 });
 
 test('the beat prompt makes unverified explanations visibly isolated and non-visual', () => {

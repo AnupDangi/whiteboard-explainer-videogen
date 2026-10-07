@@ -29,6 +29,9 @@ export function beatCountRange(durationSec: number): { min: number; max: number 
 
 const relationKey = (r: { from: string; to: string; type: string }): string => `${r.from}|${r.type}|${r.to}`;
 
+/** A beat is one spoken thought: beyond this many semantic-change events (any kind combined) a single beat cannot carry distinct non-overlapping narration anchors for all of them. Split the excess into another beat that cites the same claim(s); beatCountRange already allows several beats per claim. */
+export const MAX_SEMANTIC_CHANGES_PER_BEAT = 4;
+
 export function beatContextFor(section: { id: string; conceptIds: string[]; budgetSec: number; contract?: SceneContract }, graph: ConceptGraph, visualVocabulary?: VisualVocabulary): BeatContext {
   const contract = section.contract;
   if (!contract) throw new Error(`section ${section.id} has no scene contract; beats are planned from the S3 contract`);
@@ -82,6 +85,7 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
     const newlySeenEntityKeys = new Set<string>();
     const separateChanges = beat.requiredSemanticChanges.filter((change) => change.kind === 'separate');
     const mergeChanges = beat.requiredSemanticChanges.filter((change) => change.kind === 'merge');
+    if (beat.requiredSemanticChanges.length > MAX_SEMANTIC_CHANGES_PER_BEAT) problems.push({ path: `${at}/requiredSemanticChanges`, message: `a beat may require at most ${MAX_SEMANTIC_CHANGES_PER_BEAT} semantic changes (any kind combined), got ${beat.requiredSemanticChanges.length}; move the excess changes into an additional beat that cites the same claim(s) (${beat.claimIds.join(', ') || 'none'}) instead of packing them all into one spoken beat` });
     if (separateChanges.length > 1) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a state-transition beat may contain at most one separate change until multi-separation composition is implemented' });
     if (mergeChanges.length > 1) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a state-transition beat may contain at most one merge change until multi-merge composition is implemented' });
     if (separateChanges.length && mergeChanges.length) problems.push({ path: `${at}/requiredSemanticChanges`, message: 'a state-transition beat cannot combine separate and merge changes yet' });
