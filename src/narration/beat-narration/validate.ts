@@ -123,15 +123,40 @@ export function validateSceneNarration(draft: SceneNarrationDraft, ctx: Narratio
       if (!expectedId || j >= expectedChanges.length || anchor.semanticEventId !== expectedId) problems.push({ path: `${path}/semanticEventId`, message: `semantic event ${j + 1} must be ${expectedId ?? 'from a planned beat'}, got ${anchor.semanticEventId}` });
       const sentence = narration.sentences[anchor.sentenceIndex];
       if (!sentence) { problems.push({ path: `${path}/sentenceIndex`, message: `sentenceIndex ${anchor.sentenceIndex} is outside this beat's ${narration.sentences.length} sentences` }); return; }
-      if (!anchor.phrase.trim() || anchor.phrase !== anchor.phrase.trim()) problems.push({ path: `${path}/phrase`, message: 'phrase must be nonempty and have no leading or trailing whitespace' });
-      else if (sentence.indexOf(anchor.phrase) < 0) problems.push({ path: `${path}/phrase`, message: 'phrase must be copied exactly from the nominated sentence' });
-      else if (sentence.indexOf(anchor.phrase) !== sentence.lastIndexOf(anchor.phrase)) problems.push({ path: `${path}/phrase`, message: 'phrase must occur exactly once in the nominated sentence' });
+      const knownSemanticEvent = expectedId !== undefined && j < expectedChanges.length && anchor.semanticEventId === expectedId;
+      const rejectPhrase = (message: string, sentenceRewriteRequired = false): void => {
+        problems.push({ path: `${path}/phrase`, message });
+        if (!sentenceRewriteRequired || !knownSemanticEvent) return;
+        const sentencePath = `${at}/sentences/${anchor.sentenceIndex}`;
+        if (!problems.some((problem) => typeof problem !== 'string' && problem.path === sentencePath)) problems.push({
+          path: sentencePath,
+          message: `rewrite this sentence so semantic event ${j + 1} can be anchored in required-change order; update every semantic phrase copied from this sentence in the same repair`,
+        });
+      };
+      if (!anchor.phrase.trim() || anchor.phrase !== anchor.phrase.trim()) rejectPhrase('phrase must be nonempty and have no leading or trailing whitespace');
+      else if (sentence.indexOf(anchor.phrase) < 0) {
+        const matchingSentenceIndexes = narration.sentences.flatMap((candidate, sentenceIndex) =>
+          sentenceIndex !== anchor.sentenceIndex && candidate.indexOf(anchor.phrase) >= 0 && candidate.indexOf(anchor.phrase) === candidate.lastIndexOf(anchor.phrase)
+            ? [sentenceIndex]
+            : [],
+        );
+        if (knownSemanticEvent && matchingSentenceIndexes.length === 1) {
+          problems.push({ path: `${path}/phrase`, message: 'phrase must be copied exactly from the nominated sentence' });
+          problems.push({ path: `${path}/sentenceIndex`, message: `phrase appears exactly once in sentence ${matchingSentenceIndexes[0]}; nominate that existing sentence if it states this planned meaning change` });
+        } else rejectPhrase('phrase must be copied exactly from the nominated sentence', true);
+      }
+      else if (sentence.indexOf(anchor.phrase) !== sentence.lastIndexOf(anchor.phrase)) rejectPhrase('phrase must occur exactly once in the nominated sentence', true);
       else {
         const charStart = sentence.indexOf(anchor.phrase);
         const charEnd = charStart + anchor.phrase.length;
-        if (previousSemanticPosition && (anchor.sentenceIndex < previousSemanticPosition.sentenceIndex
-          || (anchor.sentenceIndex === previousSemanticPosition.sentenceIndex && charStart < previousSemanticPosition.charEnd))) {
+        if (previousSemanticPosition && anchor.sentenceIndex < previousSemanticPosition.sentenceIndex) {
           problems.push({ path: `${path}/phrase`, message: 'semantic phrase anchors must point to distinct, non-overlapping spans in required-change order' });
+          if (knownSemanticEvent) problems.push({
+            path: `${path}/sentenceIndex`,
+            message: `this event is nominated before an earlier required change; nominate a later existing sentence and keep its phrase copied exactly`,
+          });
+        } else if (previousSemanticPosition && anchor.sentenceIndex === previousSemanticPosition.sentenceIndex && charStart < previousSemanticPosition.charEnd) {
+          rejectPhrase('semantic phrase anchors must point to distinct, non-overlapping spans in required-change order', true);
         }
         previousSemanticPosition = { sentenceIndex: anchor.sentenceIndex, charEnd };
       }

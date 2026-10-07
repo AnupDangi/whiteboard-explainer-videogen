@@ -69,9 +69,15 @@ Beat narration makes sequential provider calls, one for each planned beat. Each
 call receives only that beat's contract, the earlier beats' accepted speech,
 and the next beat's teaching goal. Schema checks, claim semantics, number and
 screen-reference checks, phrase-anchor validation, and pointer-scoped repairs
-run against that beat object. A repair cannot change a later beat or another
-field that has not failed; if a sentence repair invalidates its phrase anchor,
-the anchor is repaired in a later bounded call. Reports, usage, repair traces,
+run against that beat object. Repairs preserve the complete rejected JSON
+pointer, so one invalid sentence cannot authorize rewriting its valid siblings.
+For a known planned event, an invalid exact/unique phrase or same-sentence event
+order also exposes the nominated sentence and its dependent anchors for a
+coherent repair. A uniquely matching phrase in another sentence or a reversed
+sentence order exposes that event's sentenceIndex instead. Whitespace-only or
+wrong-event failures do not widen sentence scope. Every patch is fully
+revalidated against canonical claims, exact copied phrases and event order.
+Array-wide errors such as a word budget still expose that array. Reports, usage, repair traces,
 and raw responses are aggregated for the scene. The complete scene is checked
 again before compilation. The compiler allocates the scene's word-time budget
 by the larger of each beat's claim count and required semantic-change count,

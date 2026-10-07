@@ -98,8 +98,9 @@ export async function writeBeatNarration(input: { ctx: NarrationContext; scene: 
         return { value: fixed.value.beats[0]!, entries: fixed.entries.map((entry) => ({ ...entry, path: entry.path.replace(/^\/beats\/0/, '') })) };
       },
       repairScope: (pointer) => {
-        const local = pointer.replace(/^\/beats\/0(?=\/|$)/, '');
-        return local.replace(/^\/([^/]+).*$/, '/$1');
+        // Related sentence/anchor fields are named explicitly by validation. Keep each full pointer so a failed
+        // sentence cannot authorize rewriting its valid siblings (array-wide errors still target the whole array).
+        return pointer.replace(/^\/beats\/0(?=\/|$)/, '');
       },
     });
     results.push(result);

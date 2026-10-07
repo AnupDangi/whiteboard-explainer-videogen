@@ -342,6 +342,145 @@ test('a screen reference is repaired by patching that one sentence', async () =>
   assert.doesNotMatch(requests[1]!.user, /scene\.b2/, 'the repair is scoped to the current beat');
 });
 
+test('an out-of-order semantic phrase repair can rewrite its sentence and all related anchors together', async () => {
+  const firstPlan = beats[0]!;
+  const coordinatedBeat: TeachingBeat = {
+    ...firstPlan,
+    requiredSemanticChanges: [
+      { ...firstPlan.requiredSemanticChanges[0]!, toState: 'Gamma becomes active.' },
+      { ...firstPlan.requiredSemanticChanges[0]!, kind: 'focus', toState: 'Alpha causes Beta.' },
+    ],
+  };
+  const graphConcepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
+  const claim = { statement: 'Alpha causes Beta.', conceptIds: ['alpha', 'beta'], relations: [{ from: 'alpha', to: 'beta', type: 'causes' as const }] };
+  const repairCtx: NarrationContext = {
+    ...ctx,
+    beats: [coordinatedBeat, beats[1]!],
+    canonicalClaims: { c1: { statement: claim.statement, identity: deriveClaimIdentity(claim, graphConcepts) } },
+  };
+  const first = {
+    beatId: 'scene.b1',
+    sentences: ['Alpha causes Beta, and Gamma activates.', 'The unrelated sentence stays exactly as written.'],
+    claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }],
+    semanticAnchors: [
+      { semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'Gamma activates' },
+      { semanticEventId: 'scene.b1.e2', sentenceIndex: 0, phrase: 'Alpha causes Beta' },
+    ],
+    emphasisTerms: [],
+  };
+  const unknownEvent = SceneNarrationDraftSchema.parse({ beats: [{
+    ...first,
+    sentences: ['Alpha causes Beta.'],
+    semanticAnchors: [
+      { semanticEventId: 'scene.b1.e99', sentenceIndex: 0, phrase: 'not in the sentence' },
+    ],
+  }] });
+  const unknownEventProblems = validateSceneNarration(unknownEvent, { ...repairCtx, beats: [firstPlan] }) as Array<{ path: string; message: string }>;
+  assert.ok(unknownEventProblems.some((problem) => problem.path === '/beats/0/semanticAnchors/0/semanticEventId'));
+  assert.ok(unknownEventProblems.some((problem) => problem.path === '/beats/0/semanticAnchors/0/phrase' && /copied exactly/.test(problem.message)));
+  assert.ok(!unknownEventProblems.some((problem) => problem.path === '/beats/0/sentences/0'), JSON.stringify(unknownEventProblems));
+  const existingLaterSentence = SceneNarrationDraftSchema.parse({ beats: [{
+    ...first,
+    sentences: ['Alpha causes Beta.', 'Gamma activates, and Alpha causes Beta.'],
+    claimSentences: [{ claimId: 'c1', sentenceIndex: 1 }],
+    semanticAnchors: [
+      { semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'Gamma activates' },
+      first.semanticAnchors[1],
+    ],
+  }] });
+  const existingLaterProblems = validateSceneNarration(existingLaterSentence, { ...repairCtx, beats: [coordinatedBeat] }) as Array<{ path: string; message: string }>;
+  assert.ok(existingLaterProblems.some((problem) => problem.path === '/beats/0/semanticAnchors/0/sentenceIndex' && /appears exactly once in sentence 1/.test(problem.message)));
+  assert.ok(!existingLaterProblems.some((problem) => problem.path === '/beats/0/sentences/0'), JSON.stringify(existingLaterProblems));
+  const crossSentenceOrder = SceneNarrationDraftSchema.parse({ beats: [{
+    ...first,
+    sentences: ['Alpha causes Beta.', 'Gamma activates, and Alpha causes Beta.'],
+    semanticAnchors: [
+      { semanticEventId: 'scene.b1.e1', sentenceIndex: 1, phrase: 'Gamma activates' },
+      { semanticEventId: 'scene.b1.e2', sentenceIndex: 0, phrase: 'Alpha causes Beta' },
+    ],
+  }] });
+  const crossSentenceProblems = validateSceneNarration(crossSentenceOrder, { ...repairCtx, beats: [coordinatedBeat] }) as Array<{ path: string; message: string }>;
+  assert.ok(crossSentenceProblems.some((problem) => problem.path === '/beats/0/semanticAnchors/1/sentenceIndex' && /nominate a later existing sentence/.test(problem.message)));
+  assert.ok(!crossSentenceProblems.some((problem) => problem.path === '/beats/0/sentences/0'), JSON.stringify(crossSentenceProblems));
+  const crossSentenceCorrected = SceneNarrationDraftSchema.parse({ beats: [{
+    ...crossSentenceOrder.beats[0]!,
+    semanticAnchors: [crossSentenceOrder.beats[0]!.semanticAnchors[0]!, { ...crossSentenceOrder.beats[0]!.semanticAnchors[1]!, sentenceIndex: 1 }],
+  }] });
+  assert.deepEqual(validateSceneNarration(crossSentenceCorrected, { ...repairCtx, beats: [coordinatedBeat] }), []);
+  const repairedSentence = 'Gamma activates, and Alpha causes Beta.';
+  const unauthorizedSiblingPatch = JSON.stringify({ patches: [
+    { op: 'replace', path: '/sentences/0', valueJson: JSON.stringify(repairedSentence) },
+    { op: 'replace', path: '/semanticAnchors/0/phrase', valueJson: JSON.stringify('Gamma activates') },
+    { op: 'replace', path: '/semanticAnchors/1/phrase', valueJson: JSON.stringify('Alpha causes Beta') },
+    { op: 'replace', path: '/sentences/1', valueJson: JSON.stringify('An unrelated sentence was changed.') },
+  ] });
+  const repairedAnchors = [
+    { op: 'replace', path: '/semanticAnchors/0/phrase', valueJson: JSON.stringify('Gamma activates') },
+    { op: 'replace', path: '/semanticAnchors/1/phrase', valueJson: JSON.stringify('Alpha causes Beta') },
+  ];
+  const coherentPatch = JSON.stringify({ patches: [
+    { op: 'replace', path: '/sentences/0', valueJson: JSON.stringify(repairedSentence) },
+    ...repairedAnchors,
+  ] });
+  const { client, requests } = scripted([JSON.stringify(first), unauthorizedSiblingPatch, coherentPatch, goodJson[1]!]);
+  const result = await writeBeatNarration({ ctx: repairCtx, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+
+  assert.ok(result.value, JSON.stringify(result.failures));
+  assert.equal(result.value.text, `${repairedSentence} The unrelated sentence stays exactly as written. When a call returns, its frame is popped off the top.`);
+  assert.equal(requests[1]!.schemaName, 'json_patch');
+  assert.match(requests[1]!.user, /\/sentences\/0/);
+  assert.match(requests[1]!.user, /\/semanticAnchors\/0\/phrase/);
+  assert.match(requests[1]!.user, /\/semanticAnchors\/1\/phrase/);
+  assert.doesNotMatch(requests[1]!.user, /\/sentences\/1/);
+  assert.doesNotMatch(requests[1]!.user, /scene\.b2/, 'the beat-local repair cannot address another beat');
+  assert.equal(requests[2]!.schemaName, 'json_patch');
+  assert.equal(requests[3]!.schemaName, 'beat_narration');
+});
+
+test('semantic sentence repair still rejects a changed canonical claim', async () => {
+  const firstPlan = beats[0]!;
+  const coordinatedBeat: TeachingBeat = {
+    ...firstPlan,
+    requiredSemanticChanges: [
+      { ...firstPlan.requiredSemanticChanges[0]!, toState: 'Gamma becomes active.' },
+      { ...firstPlan.requiredSemanticChanges[0]!, kind: 'focus', toState: 'Alpha causes Beta.' },
+    ],
+  };
+  const graphConcepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
+  const claim = { statement: 'Alpha causes Beta.', conceptIds: ['alpha', 'beta'], relations: [{ from: 'alpha', to: 'beta', type: 'causes' as const }] };
+  const repairCtx: NarrationContext = {
+    ...ctx,
+    beats: [coordinatedBeat, beats[1]!],
+    canonicalClaims: { c1: { statement: claim.statement, identity: deriveClaimIdentity(claim, graphConcepts) } },
+  };
+  const first = {
+    beatId: 'scene.b1',
+    sentences: ['Alpha causes Beta, and Gamma activates.', 'The unrelated sentence stays exactly as written.'],
+    claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }],
+    semanticAnchors: [
+      { semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'Gamma activates' },
+      { semanticEventId: 'scene.b1.e2', sentenceIndex: 0, phrase: 'Alpha causes Beta' },
+    ],
+    emphasisTerms: [],
+  };
+  const invalidClaimSentence = 'Gamma activates, and Alpha supports Beta.';
+  const invalidClaimPatch = JSON.stringify({ patches: [
+    { op: 'replace', path: '/sentences/0', valueJson: JSON.stringify(invalidClaimSentence) },
+    { op: 'replace', path: '/semanticAnchors/0/phrase', valueJson: JSON.stringify('Gamma activates') },
+    { op: 'replace', path: '/semanticAnchors/1/phrase', valueJson: JSON.stringify('Alpha supports Beta') },
+  ] });
+  const repeatInvalidSentence = JSON.stringify({ patches: [
+    { op: 'replace', path: '/sentences/0', valueJson: JSON.stringify(invalidClaimSentence) },
+  ] });
+  const { client, requests } = scripted([JSON.stringify(first), invalidClaimPatch, repeatInvalidSentence]);
+  const result = await writeBeatNarration({ ctx: repairCtx, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+
+  assert.equal(result.value, undefined);
+  assert.equal(requests[1]!.schemaName, 'json_patch');
+  assert.equal(requests[2]!.schemaName, 'json_patch');
+  assert.ok(result.failures.some((failure) => failure.hard && /predicate changed from causes to supports/.test(failure.message)), JSON.stringify(result.failures));
+});
+
 test('Greek text is allowed while mathematical operators remain a pointer problem', () => {
   const greek = draft([{ sentences: ['The time constant tau equals R times C, written τ.'] }]);
   assert.equal(validateSceneNarration(greek, ctx).some((p) => /cannot be spoken or aligned/.test((p as { message: string }).message)), false);
