@@ -244,8 +244,11 @@ test('the narration prompt carries the beat plan and the teaching rules and no t
   assert.match(user, /scene\.b1\.e1/);
   assert.match(user, /A frame is on the stack/);
   assert.match(system, /semanticAnchors/);
-  assert.match(system, /give each event its own sentence when needed to keep anchors ordered and unique/i);
+  assert.match(system, /give each event its own sentences array item when needed/i);
   assert.match(system, /reserve the full endpoint-and-predicate wording for the relation sentence/i);
+  assert.match(system, /each event its own sentences array item/i);
+  assert.match(system, /omit optional scope commentary/i);
+  assert.match(system, /Use before\/after\/during only when the canonical claim or source explicitly asserts that temporal relation/i);
   assert.match(user, /SOURCE EXCERPT/);
 
   const graphConcepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
@@ -255,7 +258,7 @@ test('the narration prompt carries the beat plan and the teaching rules and no t
   assert.match(relationPrompt.user, /requiredRelations.*Alpha.*causes.*Beta/);
   assert.match(relationPrompt.user, /explicitlyNames.*Alpha.*Beta/);
   assert.match(relationPrompt.user, /requiredMeaning.*polarity.*positive/);
-  assert.match(relationPrompt.system, /Do not append a new negative contrast to a positive claim sentence/);
+  assert.match(relationPrompt.system, /Keep a positive claim sentence limited to its positive claim/);
   const qualified = buildNarrationPrompt({ ...ctx, canonicalClaims: { c1: { statement: 'Alpha changes during 2 stages.' } } }, { title: 'T', goal: 'G' }, 'SOURCE EXCERPT');
   const qualifiedClaims = JSON.parse(/claims (.+?); semantic events/.exec(qualified.user)![1]!);
   assert.deepEqual(qualifiedClaims[0].requiredMeaning, { polarity: 'positive', temporal: { relation: 'during' }, quantities: [{ value: 2 }] });
