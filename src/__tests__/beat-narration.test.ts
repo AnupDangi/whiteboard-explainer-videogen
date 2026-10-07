@@ -244,6 +244,8 @@ test('the narration prompt carries the beat plan and the teaching rules and no t
   assert.match(user, /scene\.b1\.e1/);
   assert.match(user, /A frame is on the stack/);
   assert.match(system, /semanticAnchors/);
+  assert.match(system, /give each event its own sentence when needed to keep anchors ordered and unique/i);
+  assert.match(system, /reserve the full endpoint-and-predicate wording for the relation sentence/i);
   assert.match(user, /SOURCE EXCERPT/);
 
   const graphConcepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
