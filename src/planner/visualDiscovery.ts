@@ -124,7 +124,7 @@ export async function discoverVisualVocabulary(args: DiscoveryArgs): Promise<Dis
       // A vision model looks at each chosen picture beside its label; pictures it rejects fall back to a labelled box.
       let rejectedByEye = new Set<string>();
       if (args.visionModel && selected.picks.size) {
-        const checked = await (args.visualCheck ?? checkPicturesVisually)({ pictures: [...selected.picks].map(([referent, pick]) => ({ referent, label: referent, entryId: pick.entryId })), model: args.visionModel, apiKey: args.apiKey, ...(args.fetcher ? { fetcher: args.fetcher } : {}) });
+        const checked = await (args.visualCheck ?? checkPicturesVisually)({ pictures: [...selected.picks].map(([referent, pick]) => ({ referent, label: referent, entryId: pick.entryId })), model: args.visionModel, apiKey: args.apiKey, remainingBudgetUsd: Math.max(0, args.remainingBudgetUsd - selected.usage.costUsd), ...(args.budgetLedger ? { budgetLedger: args.budgetLedger } : {}), ...(args.fetcher ? { fetcher: args.fetcher } : {}) });
         usage.calls += checked.usage.calls; usage.promptTokens += checked.usage.promptTokens; usage.completionTokens += checked.usage.completionTokens; usage.cachedTokens += checked.usage.cachedTokens; usage.costUsd += checked.usage.costUsd;
         failures.push(...checked.failures);
         rejectedByEye = checked.rejected;

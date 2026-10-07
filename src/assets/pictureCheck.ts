@@ -6,6 +6,7 @@ import { renderSVG } from '../render/renderScene.js';
 import { rasterizePng } from '../export/videoEncode.js';
 import { chatVision } from '../llm/openrouter.js';
 import { emptyUsage, type CallUsage } from '../llm/structuredCall.js';
+import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 
 /**
  * Visual verification of picture choices (Simi benchmark §6: a wrong icon is worse than no icon). The text judge sees only
@@ -48,6 +49,8 @@ export async function checkPicturesVisually(args: {
   pictures: ReadonlyArray<PictureToCheck>;
   model: string;
   apiKey: string;
+  budgetLedger?: PersistentBudgetLedger;
+  remainingBudgetUsd?: number;
   fetcher?: typeof fetch;
   /** Injected in tests. */
   render?: typeof renderPictureSheet;
@@ -61,7 +64,19 @@ export async function checkPicturesVisually(args: {
   try {
     const png = (args.render ?? renderPictureSheet)(pictures);
     const prompt = `You check picture choices for a whiteboard explainer. The image shows ${pictures.length} small pictures, each with a number and a label under it. For every number decide: keep=true only if the picture is a recognisable, standard way to illustrate the label's meaning (the thing itself, or a well-known symbol for it); keep=false if it shows something else, is decorative, ambiguous, or would mislead a learner. A labelled box is the fallback, so reject when unsure. Return JSON only: {"verdicts":[{"n":1,"keep":true}]} with one entry per number.`;
-    const result = await (args.chat ?? chatVision)(args.apiKey, { model: args.model, prompt, imagesPng: [png], maxTokens: 600 }, args.fetcher);
+    const invoke = () => (args.chat ?? chatVision)(args.apiKey, { model: args.model, prompt, imagesPng: [png], maxTokens: 600 }, args.fetcher);
+    let result: Awaited<ReturnType<typeof chatVision>>;
+    if (args.budgetLedger) {
+      const accounted = await args.budgetLedger.call(args.remainingBudgetUsd ?? 0, async () => {
+        const value = await invoke();
+        return { value, costUsd: value.usage.costUsd };
+      });
+      if (!accounted.allowed) {
+        failures.push({ code: 'picture-check-budget-skipped', stage: 'discovery', message: 'vision picture check skipped because the remaining run budget is exhausted; the text judge verdict stands', hard: false });
+        return { rejected, usage, failures };
+      }
+      result = accounted.value;
+    } else result = await invoke();
     usage.calls += 1; usage.promptTokens += result.usage.promptTokens; usage.completionTokens += result.usage.completionTokens; usage.cachedTokens += result.usage.cachedTokens; usage.costUsd += result.usage.costUsd;
     const verdicts = parseVerdicts(result.content, pictures.length);
     if (!verdicts) { failures.push({ code: 'picture-check-unparseable', stage: 'discovery', message: 'vision picture check returned no usable verdicts; the text judge verdict stands', hard: false }); return { rejected, usage, failures }; }
