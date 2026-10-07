@@ -43,6 +43,15 @@ test('S1 label instruction matches the schema word limit', () => {
   assert.match(syllabusSystemPrompt([60, 300]), /at most 4 words/i);
 });
 
+test('S1 prompt keeps source-backed mechanism participants distinct from the process', () => {
+  const prompt = syllabusSystemPrompt([60]);
+  assert.match(prompt, /source-backed physical participant/i);
+  assert.match(prompt, /material or substrate, input, and product\/output/i);
+  assert.match(prompt, /as its own stable concept with its source term and evidence/i);
+  assert.match(prompt, /Preserve the process\/action as a separate concept/i);
+  assert.match(prompt, /do not .* infer objects, inputs, or products not supported by evidence/i);
+});
+
 test('S1 source payload contains exact text once with citation-relevant span locations and no duplicated retrieval payload', () => {
   const source = '# Optics\n\nLight reflects inside the drop and exits toward the observer.\n\nThe angle of reflection equals the angle of incidence.';
   const doc = sourceDocFromText(source, 'pdf', [{ startChar: 0, endChar: source.length, sourceLocation: { kind: 'pdf-page', page: 12 } }]);

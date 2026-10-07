@@ -18,8 +18,15 @@ export interface SemanticBoardLoweringContext extends SemanticProgramContext {
   cueByEventId?: Readonly<Record<string, number>>;
 }
 
+/** Compiler-owned correspondence between one semantic event and all of its emitted renderer operations. */
+export interface SemanticEventBoardBinding {
+  semanticEventId: string;
+  beatId: string;
+  boardOpIds: string[];
+}
+
 export type SemanticBoardLoweringResult =
-  | { ok: true; operations: BoardOp[]; resultingSemanticState: SemanticSceneState; selectedAssetIds: Record<string, string> }
+  | { ok: true; operations: BoardOp[]; resultingSemanticState: SemanticSceneState; selectedAssetIds: Record<string, string>; semanticEventBindings: SemanticEventBoardBinding[] }
   | { ok: false; problems: SemanticIrProblem[] };
 
 const problem = (path: string, message: string): SemanticIrProblem => ({ path, message });
@@ -76,18 +83,13 @@ export function compileSemanticOpsToBoardOps(
   }
 
   const operations: BoardOp[] = [];
+  const semanticEventBindings: SemanticEventBoardBinding[] = [];
   const usedElementIds = new Set(context.existingElementIds ?? []);
   const usedRendererIds = new Set([...usedElementIds, ...(context.existingEdgeIds ?? [])]);
   const stateValues = new Map(Object.entries(context.existingStateValues ?? {}));
   // Only entities emitted during this lowering are known to have renderer
   // elements. Initial semantic entities must be backed by existingElementIds.
   const introduced = new Set<string>();
-  const add = (op: unknown, path: string): SemanticIrProblem[] => {
-    const parsed = BoardOpSchema.safeParse(op);
-    if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: `${path}/${issue.path.map(String).join('/')}`, message: issue.message }));
-    operations.push(parsed.data);
-    return [];
-  };
   const reserveId = (id: string, path: string): SemanticIrProblem[] => {
     if (usedRendererIds.has(id)) return [problem(path, `renderer id ${id} is already in use` )];
     usedRendererIds.add(id);
@@ -103,6 +105,15 @@ export function compileSemanticOpsToBoardOps(
 
   for (const [index, op] of parsedOps.entries()) {
     const path = `/operations/${index}`;
+    const eventBinding: SemanticEventBoardBinding = { semanticEventId: op.eventId, beatId: op.beatId, boardOpIds: [] };
+    semanticEventBindings.push(eventBinding);
+    const add = (candidate: unknown, at: string): SemanticIrProblem[] => {
+      const parsed = BoardOpSchema.safeParse(candidate);
+      if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: `${at}/${issue.path.map(String).join('/')}`, message: issue.message }));
+      operations.push(parsed.data);
+      eventBinding.boardOpIds.push(parsed.data.opId);
+      return [];
+    };
     const cue = context.cueByEventId?.[op.eventId];
     if (cue !== undefined && (!Number.isInteger(cue) || cue < 0 || cue > 3)) return { ok: false, problems: [problem(`/cueByEventId/${op.eventId}`, 'sentence cue must be an integer from 0 through 3')] };
     const base = { opId: `${op.eventId}.board`, beatId: op.beatId, ...(cue !== undefined ? { cue } : {}) };
@@ -301,5 +312,5 @@ export function compileSemanticOpsToBoardOps(
     return { ok: false, problems: [problem(`${path}/type`, `semantic operation ${op.type} has no verified BoardOps compiler yet; no generic visual substitute is allowed`)] };
   }
 
-  return { ok: true, operations, resultingSemanticState: replay.state, selectedAssetIds };
+  return { ok: true, operations, resultingSemanticState: replay.state, selectedAssetIds, semanticEventBindings };
 }

@@ -49,6 +49,110 @@ test('an op for a beat with no timing is an error, not a guess', () => {
   assert.throws(() => compileSceneTimeline({ ops, initial: emptyBoardState(), beats: beats.slice(1) }), /has no timing/);
 });
 
+test('semantic events late in the same sentence draw at their own aligned phrases, rather than together at the sentence start', () => {
+  const board = [add('a', tok('alpha'), { region: 'left' }, 'b0', 0), add('b', tok('beta'), { region: 'right' }, 'b0', 0)];
+  const beat: BeatTiming = {
+    beatId: 'b0', startMs: 0, endMs: 8000, sentences: [{ startMs: 0, endMs: 8000 }],
+    semanticAnchors: [
+      { semanticEventId: 'evA', phrase: 'introduce alpha', startMs: 2000, endMs: 2400 },
+      { semanticEventId: 'evB', phrase: 'introduce beta', startMs: 5000, endMs: 5400 },
+    ],
+  };
+  const bindings = [
+    { semanticEventId: 'evA', beatId: 'b0', boardOpIds: [board[0]!.opId] },
+    { semanticEventId: 'evB', beatId: 'b0', boardOpIds: [board[1]!.opId] },
+  ];
+  const input = { ops: board, initial: emptyBoardState(), beats: [beat], semanticEventBindings: bindings };
+  const timeline = compileSceneTimeline(input);
+  assert.deepEqual(timeline.ops.map((op) => [op.anchorMs, op.t0, op.deadlineMs]), [[1850, 1850, 2750], [4850, 4850, 5750]]);
+  assert.deepEqual(timeline.lateOps, []);
+  assert.equal(timeline.hash, compileSceneTimeline(input).hash, 'phrase scheduling replays deterministically');
+  const legacy = compileSceneTimeline({ ...input, semanticEventBindings: undefined });
+  assert.deepEqual(legacy.ops.map((op) => [op.anchorMs, op.t0, op.deadlineMs]), [[-150, 0, 8350], [-150, 0, 8000]]);
+  assert.deepEqual(legacy, compileSceneTimeline({ ops: board, initial: emptyBoardState(), beats: [{ ...beat, semanticAnchors: undefined }] }),
+    'omitting bindings preserves sentence scheduling even when phrase anchors exist');
+});
+
+test('multiple board ops for one phrase retain dependencies and expose lateness instead of shifting the phrase deadline', () => {
+  const board = [
+    add('k', { type: 'kit', kit: 'stack', paramsJson: '{}', provenance: 'metaphorical' }, { region: 'center' }, 'b0'),
+    add('c', tok('child'), { region: 'center', container: 'k', slot: 'top' }, 'b0'),
+    BoardOpSchema.parse({ op: 'highlight', opId: 'b0.h', beatId: 'b0', target: 'c' }),
+  ];
+  const beat: BeatTiming = {
+    beatId: 'b0', startMs: 0, endMs: 6000, sentences: [{ startMs: 0, endMs: 6000 }],
+    semanticAnchors: [{ semanticEventId: 'ev', phrase: 'build and highlight', startMs: 2000, endMs: 2050 }],
+  };
+  const timeline = compileSceneTimeline({ ops: board, initial: emptyBoardState(), beats: [beat],
+    semanticEventBindings: [{ semanticEventId: 'ev', beatId: 'b0', boardOpIds: board.map((op) => op.opId) }] });
+  assert.deepEqual(timeline.ops.map((op) => [op.anchorMs, op.deadlineMs]), [[1850, 2400], [1850, 2400], [1850, 2400]]);
+  assert.ok(timeline.ops[1]!.t0 >= timeline.ops[0]!.t1, 'child waits for its container');
+  assert.ok(timeline.ops[2]!.t0 >= timeline.ops[1]!.t1, 'highlight waits for its target');
+  assert.deepEqual(timeline.lateOps, ['b0.c', 'b0.h']);
+  assert.ok(timeline.ops[1]!.t1 - timeline.ops[1]!.t0 >= 450 * 0.4, 'late ops still respect the minimum draw duration');
+});
+
+test('phrase scheduling preserves the final beat pause and permits unused narration-only anchors', () => {
+  const board = [add('a', tok('alpha'), { region: 'left' }, 'b0')];
+  const beat: BeatTiming = {
+    beatId: 'b0', startMs: 0, endMs: 4000, pauseIntent: 'think', sentences: [{ startMs: 0, endMs: 4000 }],
+    semanticAnchors: [
+      { semanticEventId: 'ev', phrase: 'introduce alpha', startMs: 3200, endMs: 3700 },
+      { semanticEventId: 'spoken', phrase: 'observe it', startMs: 3800, endMs: 3900 },
+    ],
+  };
+  const timeline = compileSceneTimeline({ ops: board, initial: emptyBoardState(), beats: [beat],
+    semanticEventBindings: [{ semanticEventId: 'ev', beatId: 'b0', boardOpIds: [board[0]!.opId] }] });
+  assert.equal(timeline.ops[0]!.anchorMs, 3050);
+  assert.equal(timeline.ops[0]!.deadlineMs, 4000 - PAUSE_MS.think);
+  assert.ok(timeline.ops[0]!.t1 <= timeline.ops[0]!.deadlineMs);
+  assert.deepEqual(compileSceneTimeline({ ops: [], initial: emptyBoardState(), beats: [beat], semanticEventBindings: [] }).ops, []);
+});
+
+test('a phrase inside the reserved think pause reports lateness instead of extending the typed deadline to fit the minimum draw duration', () => {
+  const board = [add('a', tok('alpha'), { region: 'left' }, 'b0', 1)];
+  const beat: BeatTiming = {
+    beatId: 'b0', startMs: 0, endMs: 4000, pauseIntent: 'think',
+    sentences: [{ startMs: 0, endMs: 3800 }, { startMs: 3800, endMs: 3900 }],
+    semanticAnchors: [{ semanticEventId: 'ev', phrase: 'introduce alpha', startMs: 3800, endMs: 3900 }],
+  };
+  const input = { ops: board, initial: emptyBoardState(), beats: [beat] };
+  const typed = compileSceneTimeline({ ...input, semanticEventBindings: [
+    { semanticEventId: 'ev', beatId: 'b0', boardOpIds: [board[0]!.opId] },
+  ] });
+  assert.equal(typed.ops[0]!.anchorMs, 3650);
+  assert.equal(typed.ops[0]!.deadlineMs, 3450, 'the full 550ms think pause remains reserved');
+  assert.equal(typed.ops[0]!.t1 - typed.ops[0]!.t0, 450 * 0.4, 'the draw still respects minimum speed');
+  assert.deepEqual(typed.lateOps, ['b0.a']);
+  const legacy = compileSceneTimeline(input);
+  assert.equal(legacy.ops[0]!.deadlineMs, 3830, 'the legacy sentence-cue contract is preserved for old locks');
+  assert.deepEqual(legacy.lateOps, []);
+});
+
+test('semantic scheduling rejects incomplete, duplicated, unknown and cross-beat bindings without guessing from op ids', () => {
+  const board = [add('a', tok('alpha'), { region: 'left' }, 'b0')];
+  const beat: BeatTiming = { beatId: 'b0', startMs: 0, endMs: 4000, sentences: [{ startMs: 0, endMs: 4000 }],
+    semanticAnchors: [{ semanticEventId: 'ev', phrase: 'alpha', startMs: 2000, endMs: 2400 }] };
+  const binding = { semanticEventId: 'ev', beatId: 'b0', boardOpIds: [board[0]!.opId] };
+  const run = (bindings: typeof binding[], timedBeats: BeatTiming[] = [beat], boardOps: BoardOp[] = board) =>
+    compileSceneTimeline({ ops: boardOps, initial: emptyBoardState(), beats: timedBeats, semanticEventBindings: bindings });
+  assert.throws(() => run([]), /has no semantic event binding/);
+  assert.throws(() => run([{ ...binding, boardOpIds: [] }]), /binding has no board ops/);
+  assert.throws(() => run([{ ...binding, semanticEventId: 'unknown' }]), /has no aligned phrase anchor/);
+  assert.throws(() => run([{ ...binding, boardOpIds: ['unknown'] }]), /binds unknown op/);
+  assert.throws(() => run([binding, binding]), /duplicate semantic event binding/);
+  assert.throws(() => run([{ ...binding, boardOpIds: [board[0]!.opId, board[0]!.opId] }]), /duplicate semantic event bindings/);
+  assert.throws(() => run([binding], [{ ...beat, semanticAnchors: [] }]), /has no aligned phrase anchor/);
+  assert.throws(() => run([binding], [{ ...beat, semanticAnchors: [beat.semanticAnchors![0]!, beat.semanticAnchors![0]!] }]), /duplicate semantic anchor/);
+  assert.throws(() => run([binding], [beat, beat]), /duplicate timing/);
+  assert.throws(() => run([binding], [beat], [board[0]!, board[0]!]), /duplicate op id/);
+  assert.throws(() => run([binding], [{ ...beat, semanticAnchors: [{ ...beat.semanticAnchors![0]!, startMs: -1 }] }]), /no valid aligned phrase interval/);
+  assert.throws(() => run([binding], [{ ...beat, semanticAnchors: [{ ...beat.semanticAnchors![0]!, endMs: 4001 }] }]), /no valid aligned phrase interval/);
+  const next: BeatTiming = { ...beat, beatId: 'b1', startMs: 4000, endMs: 8000, sentences: [{ startMs: 4000, endMs: 8000 }], semanticAnchors: [] };
+  assert.throws(() => run([{ ...binding, beatId: 'b1' }], [beat, next]), /anchor belongs to beat b0, not b1/);
+  assert.throws(() => run([binding], [beat, next], [{ ...board[0]!, beatId: 'b1' }]), /binds op .* from beat b1/);
+});
+
 test('frames follow the board: empty, drawing in, stack grown, stack shrunk', () => {
   const scene = compileScene('s1', 'Calls stack up', compileSceneTimeline({ ops, initial: emptyBoardState(), beats }));
   const at = (ms: number) => renderSceneSvg(scene, ms);

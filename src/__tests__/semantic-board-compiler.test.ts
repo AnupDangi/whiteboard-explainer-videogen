@@ -31,7 +31,13 @@ test('semantic introduction lowers to a canonically bound entity and preserves t
     knownBeatIds: new Set(['scene.b1']), knownClaimIds: new Set(['claim_a']),
   });
   assert.equal(repeated.ok, true);
-  if (repeated.ok) assert.deepEqual(repeated.operations, result.operations);
+  if (repeated.ok) {
+    assert.deepEqual(repeated.operations, result.operations);
+    assert.deepEqual(repeated.semanticEventBindings, result.semanticEventBindings);
+  }
+  assert.deepEqual(result.semanticEventBindings, [{
+    semanticEventId: 'scene.b1.e1', beatId: 'scene.b1', boardOpIds: ['scene.b1.e1.board', 'scene.b1.e1.state'],
+  }]);
   assert.deepEqual(result.selectedAssetIds, { cell_nuclei: 'iconify-healthicons:cell-nuclei-outline' });
   const libraryAsset = loadCatalogLibraries().entries.find((entry) => entry.id === 'iconify-healthicons:cell-nuclei-outline');
   assert.ok(libraryAsset, 'the selected icon id must exist in the vendored library catalog');
@@ -100,6 +106,11 @@ test('separation lowers to a state-checked split and preserves library-icon bind
   if (!result.ok) return;
   assert.deepEqual(result.selectedAssetIds, { cell_nuclei: 'iconify-healthicons:cell-nuclei-outline' });
   assert.deepEqual(result.operations.map((op) => op.op), ['remove', 'split', 'add', 'add']);
+  assert.deepEqual(result.semanticEventBindings, [{
+    semanticEventId: 'scene.b2.e1', beatId: 'scene.b2', boardOpIds: [
+      'scene.b2.e1.state-remove', 'scene.b2.e1.split', 'scene.b2.e1.result-1-state', 'scene.b2.e1.result-2-state',
+    ],
+  }]);
   const split = result.operations[1]!;
   assert.equal(split.op, 'split');
   if (split.op === 'split') {
@@ -144,6 +155,11 @@ test('merge removes verified source states, preserves the selected result icon, 
   if (repeated.ok) assert.deepEqual(repeated.operations, result.operations);
   assert.deepEqual(result.selectedAssetIds, { cell_nuclei: 'iconify-healthicons:cell-nuclei-outline' });
   assert.deepEqual(result.operations.map((op) => op.op), ['remove', 'remove', 'merge', 'add']);
+  assert.deepEqual(result.semanticEventBindings, [{
+    semanticEventId: 'scene.b2.e1', beatId: 'scene.b2', boardOpIds: [
+      'scene.b2.e1.state-remove-1', 'scene.b2.e1.state-remove-2', 'scene.b2.e1.merge', 'scene.b2.e1.result-state',
+    ],
+  }]);
   const boardMerge = result.operations[2]!;
   assert.equal(boardMerge.op, 'merge');
   if (boardMerge.op === 'merge') {
@@ -203,6 +219,65 @@ test('semantic merge refuses more inputs than the renderer can display', () => {
   });
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.problems[0]!.message, /two through six source entities/);
+});
+
+test('event bindings partition every emitted BoardOp across a multi-event semantic program', () => {
+  const result = compileSemanticOpsToBoardOps(emptyState(), [
+    intro('intact'),
+    {
+      type: 'separate', eventId: 'scene.b2.e1', beatId: 'scene.b2', claimIds: ['claim_a'], dependsOnEventIds: ['scene.b1.e1'],
+      sourceEntityId: 'se_cell_nuclei', fromState: 'intact',
+      results: [
+        { id: 'se_left', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'left fragment', lifecycle: 'active' },
+        { id: 'se_right', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'right fragment', lifecycle: 'active' },
+      ],
+    },
+    {
+      type: 'merge', eventId: 'scene.b3.e1', beatId: 'scene.b3', claimIds: ['claim_a'], dependsOnEventIds: ['scene.b2.e1'],
+      entityIds: ['se_left', 'se_right'],
+      result: { id: 'se_combined', conceptId: 'cell_nuclei', claimIds: ['claim_a'], state: 'combined', lifecycle: 'active' },
+    },
+    {
+      type: 'focus', eventId: 'scene.b3.e2', beatId: 'scene.b3', claimIds: ['claim_a'], dependsOnEventIds: ['scene.b3.e1'],
+      entityIds: ['se_combined'],
+    },
+    {
+      type: 'select', eventId: 'scene.b3.e3', beatId: 'scene.b3', claimIds: ['claim_a'], dependsOnEventIds: ['scene.b3.e2'],
+      entityId: 'se_combined', reason: 'Inspect the combined result',
+    },
+    {
+      type: 'finalize', eventId: 'scene.b3.e4', beatId: 'scene.b3', claimIds: ['claim_a'], dependsOnEventIds: ['scene.b3.e3'],
+      entityId: 'se_combined',
+    },
+  ], {
+    concepts, knownBeatIds: new Set(['scene.b1', 'scene.b2', 'scene.b3']), knownClaimIds: new Set(['claim_a']),
+  });
+  assert.equal(result.ok, true, result.ok ? 'the complete semantic program must lower successfully' : JSON.stringify(result.problems));
+  if (!result.ok) return;
+  assert.deepEqual(result.semanticEventBindings, [
+    { semanticEventId: 'scene.b1.e1', beatId: 'scene.b1', boardOpIds: ['scene.b1.e1.board', 'scene.b1.e1.state'] },
+    {
+      semanticEventId: 'scene.b2.e1', beatId: 'scene.b2', boardOpIds: [
+        'scene.b2.e1.state-remove', 'scene.b2.e1.split', 'scene.b2.e1.result-1-state', 'scene.b2.e1.result-2-state',
+      ],
+    },
+    {
+      semanticEventId: 'scene.b3.e1', beatId: 'scene.b3', boardOpIds: [
+        'scene.b3.e1.state-remove-1', 'scene.b3.e1.state-remove-2', 'scene.b3.e1.merge', 'scene.b3.e1.result-state',
+      ],
+    },
+    { semanticEventId: 'scene.b3.e2', beatId: 'scene.b3', boardOpIds: ['scene.b3.e2.focus.1'] },
+    { semanticEventId: 'scene.b3.e3', beatId: 'scene.b3', boardOpIds: ['scene.b3.e3.focus.1'] },
+    { semanticEventId: 'scene.b3.e4', beatId: 'scene.b3', boardOpIds: ['scene.b3.e4.board'] },
+  ]);
+  const boundOpIds = result.semanticEventBindings.flatMap((binding) => binding.boardOpIds);
+  assert.deepEqual(boundOpIds, result.operations.map((op) => op.opId));
+  assert.equal(new Set(boundOpIds).size, result.operations.length, 'every emitted operation has exactly one event owner');
+  for (const binding of result.semanticEventBindings) {
+    for (const op of result.operations) {
+      if (binding.boardOpIds.includes(op.opId)) assert.equal(op.beatId, binding.beatId);
+    }
+  }
 });
 
 test('causal semantic relations lower to deterministic directed edges with exact claim and concept bindings', () => {

@@ -263,7 +263,7 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
 
   for (const beat of ctx.beats) if (!beat.narrationOnly && !lastOpOfBeat.has(beat.beatId)) problems.push({ path: '/ops', message: `beat ${beat.beatId} shows a change (${beat.visualInvariant}), so it needs at least one op` });
 
-  // Every concept a beat names must be on the board by the end of that beat (an element that shows it or carries its label).
+  // Every concept must be visible at beat end, or as the exact live input immediately before its declared consumption.
   const states: BoardState[] = [initial];
   draft.ops.forEach((op, i) => {
     const before = states[states.length - 1]!;
@@ -287,10 +287,24 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
     const live = Object.values(state.elements).filter((el) => el.lifecycle.removedAtBeat === undefined);
     for (const entity of beat.entities) {
       const label = labelOf.get(entity.conceptId);
-      const shown = live.some((el) => (el.spec.type === 'entity' && el.spec.conceptId === entity.conceptId)
+      const consumedAt = draft.ops.findIndex((op) => op.beatId === beat.beatId && (beat.requiredSemanticChanges ?? []).some((change) => {
+        if (op.op === 'merge' && change.kind === 'merge') {
+          const inputIds = change.mergeInputEntityIds ?? [];
+          return op.into.id === change.entityId && inputIds.includes(entity.entityId)
+            && op.targets.length === inputIds.length && op.targets.every((id, index) => id === inputIds[index]);
+        }
+        if (op.op === 'split' && change.kind === 'separate' && change.entityId === entity.entityId && op.target === entity.entityId) {
+          const resultIds = beat.semanticRevealOrder.filter((id) => id !== entity.entityId);
+          return op.into.length === resultIds.length && op.into.every((result, index) => result.id === resultIds[index]);
+        }
+        return false;
+      }));
+      const consumed = consumedAt < 0 ? undefined : states[consumedAt]?.elements[entity.entityId];
+      const shownBeforeConsumption = consumed?.lifecycle.removedAtBeat === undefined && consumed?.spec.type === 'entity' && consumed.spec.conceptId === entity.conceptId;
+      const shown = shownBeforeConsumption || live.some((el) => (el.spec.type === 'entity' && el.spec.conceptId === entity.conceptId)
         || (el.spec.bindings?.conceptIds.includes(entity.conceptId) ?? false));
       if (!shown) problems.push({ path: `/ops/${at + 1}`, message: `concept ${entity.conceptId}${label ? ` (${label})` : ''} is not bound to a live visual by the end of beat ${beat.beatId}; add a bound element with conceptIds:["${entity.conceptId}"] and its supporting claimIds` });
-      if (iconConcepts.has(entity.conceptId) && !live.some((el) => el.spec.type === 'entity' && el.spec.conceptId === entity.conceptId)) {
+      if (iconConcepts.has(entity.conceptId) && !shownBeforeConsumption && !live.some((el) => el.spec.type === 'entity' && el.spec.conceptId === entity.conceptId)) {
         problems.push({ path: `/ops/${at + 1}`, message: `S3b selected a library icon for ${entity.conceptId}${label ? ` (${label})` : ''}; a live entity element bound to that concept is required by the end of beat ${beat.beatId}` });
       }
     }

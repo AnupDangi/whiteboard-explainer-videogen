@@ -24,6 +24,7 @@ import { resolveSourceEvidence, sourceDocFromText } from '../intake/sourceDoc.js
 import { executeSemanticScene } from '../pipeline-v2/semanticExecution.js';
 import { emptyBoardState } from '../visual-v2/board-state/reducer.js';
 import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
+import { compileSceneTimeline } from '../visual-v2/timeline/compile.js';
 
 // A contract test for the V2 runner with injected model and aligner. The lesson content is synthetic test data, not a generated lesson.
 const sentences: Record<string, string[]> = { one: ['Each call pushes a frame onto the stack.', 'The newest frame sits on top.'], two: ['A return pops the top frame.', 'The stack shrinks again.'] };
@@ -304,7 +305,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       validatedByConcept: Record<string, string>;
       evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v10');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v11');
     assert.deepEqual(lessonContext.validatedByConcept, { frame: 'iconify-lucide:frame' });
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
@@ -573,7 +574,7 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
       representationExecution: { schemaVersion: string; scenes: Array<{ sceneId: string; mode: string; providerVersion?: string; semanticOperations: unknown[]; selectedAssetIds: Record<string, string>; claimCoverage: { rows: unknown[]; weightedPossible: number }; renderedEntityAssets: Array<{ elementId: string; conceptId: string; selectedAssetId: string | null; resolvedAssetId: string | null; depictionFamily: string; meaningful: boolean; pathCount: number; fillCount: number; embedCount: number }>; unrenderedSelectedConceptIds: string[] }> };
     };
     const scenes = context.representationExecution.scenes;
-    assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v3');
+    assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v4');
     assert.equal(scenes.length, 2);
     assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v4'));
     assert.ok(scenes.every((scene) => scene.semanticOperations.length === 2));
@@ -643,7 +644,64 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('v9 lesson contexts with v2 representation records remain replayable after the v10 upgrade', async () => {
+test('a rehashed v11 lock rejects changed semantic event groups and changed captured schedule anchors', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v11-event-replay-'));
+  try {
+    const out = await fixtureRun(dir, false, true);
+    const lockPath = path.join(out, 'lesson.lock.v2.json');
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { contentHash: string; context: { file: string; hash: string }; scenes: Array<{ sceneId: string; file: string; fileHash: string; timelineHash: string; captured: { file: string; hash: string } }> };
+    const sceneRef = lock.scenes.find((scene) => scene.sceneId === 'one')!;
+    const contextPath = path.join(out, lock.context.file);
+    const scenePath = path.join(out, sceneRef.file);
+    const capturePath = path.join(out, sceneRef.captured.file);
+    const originalContextBytes = await readFile(contextPath, 'utf8');
+    const originalSceneBytes = await readFile(scenePath, 'utf8');
+    const originalCaptureBytes = await readFile(capturePath, 'utf8');
+    const persist = async (contextBytes: string, sceneBytes: string, captureBytes: string) => {
+      await writeFile(contextPath, contextBytes); await writeFile(scenePath, sceneBytes); await writeFile(capturePath, captureBytes);
+      lock.context.hash = sha256(contextBytes); sceneRef.fileHash = sha256(sceneBytes); sceneRef.captured.hash = sha256(captureBytes);
+      sceneRef.timelineHash = JSON.parse(captureBytes).timeline.hash;
+      const { contentHash: _old, ...body } = lock;
+      lock.contentHash = canonicalHash(body);
+      const bytes = `${JSON.stringify(lock, null, 2)}\n`;
+      await writeFile(lockPath, bytes); await writeFile(path.join(out, 'lesson.lock.json'), bytes);
+    };
+    const context = JSON.parse(originalContextBytes);
+    const scene = JSON.parse(originalSceneBytes);
+    for (const execution of [context.representationExecution.scenes.find((item: { sceneId: string }) => item.sceneId === 'one'), scene.representationExecution]) {
+      execution.semanticEventBindings[0].boardOpIds.push('forged-unowned-op');
+    }
+    await persist(`${JSON.stringify(context, null, 2)}\n`, `${JSON.stringify(scene, null, 2)}\n`, originalCaptureBytes);
+    const bindingProblems = await verifyLessonLockV2(out);
+    assert.ok(bindingProblems.some((problem) => /semantic event bindings do not derive from deterministic lowering/.test(problem)), bindingProblems.join('\n'));
+
+    const capture = JSON.parse(originalCaptureBytes);
+    capture.timeline.ops[0].anchorMs += 25;
+    await persist(originalContextBytes, originalSceneBytes, `${JSON.stringify(capture, null, 2)}\n`);
+    const scheduleProblems = await verifyLessonLockV2(out);
+    assert.ok(scheduleProblems.some((problem) => /captured timeline does not reproduce deterministic event scheduling/.test(problem)), scheduleProblems.join('\n'));
+
+    // A coherently rehashed schedule is still false if its phrase clock moved away from the aligned audio.
+    const shiftedScene = JSON.parse(originalSceneBytes);
+    const shiftedCapture = JSON.parse(originalCaptureBytes);
+    shiftedScene.beatTimings[0].semanticAnchors[0].startMs += 25;
+    shiftedScene.beatTimings[0].semanticAnchors[0].endMs += 25;
+    shiftedCapture.timeline = compileSceneTimeline({ ops: shiftedScene.ops, initial: shiftedCapture.timeline.states[0],
+      beats: shiftedScene.beatTimings, semanticEventBindings: shiftedScene.representationExecution.semanticEventBindings });
+    shiftedScene.timelineHash = shiftedCapture.timeline.hash;
+    shiftedScene.schedule = shiftedCapture.timeline.ops.map((scheduled: { op: { opId: string }; t0: number; t1: number; late: boolean }) => ({
+      opId: scheduled.op.opId, t0: Math.round(scheduled.t0), t1: Math.round(scheduled.t1), late: scheduled.late,
+    }));
+    await persist(originalContextBytes, `${JSON.stringify(shiftedScene, null, 2)}\n`, `${JSON.stringify(shiftedCapture, null, 2)}\n`);
+    const clockProblems = await verifyLessonLockV2(out);
+    assert.ok(clockProblems.some((problem) => /captured beat and phrase clocks differ from final narration and aligned word times/.test(problem)), clockProblems.join('\n'));
+
+    await persist(originalContextBytes, originalSceneBytes, originalCaptureBytes);
+    assert.deepEqual(await verifyLessonLockV2(out), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('v9 lesson contexts with v2 representation records remain replayable after the v11 upgrade', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v9-lock-compat-'));
   try {
     const out = await fixtureRun(dir, false, true);
@@ -656,6 +714,7 @@ test('v9 lesson contexts with v2 representation records remain replayable after 
     type LessonContext = { schemaVersion: string; representationExecution: { schemaVersion: string; scenes: LegacyExecution[] } };
     type SceneRecord = { representationExecution: LegacyExecution };
     const downgrade = (execution: LegacyExecution) => {
+      delete (execution as unknown as { semanticEventBindings?: unknown }).semanticEventBindings;
       execution.schemaVersion = 'v2-representation-execution/v2';
       execution.providerVersion = 'state-transition/v2';
       for (const beat of execution.beats) beat.providerVersion = 'state-transition/v2';
@@ -687,15 +746,15 @@ test('v9 lesson contexts with v2 representation records remain replayable after 
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('a rehashed v10 lock cannot omit its mandatory representation replay record', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v10-representation-required-'));
+test('a rehashed v11 lock cannot omit its mandatory representation replay record', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v11-representation-required-'));
   try {
     const out = await fixtureRun(dir, false, true);
     const lockPath = path.join(out, 'lesson.lock.v2.json');
     const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { contentHash: string; context: { file: string; hash: string } };
     const contextPath = path.join(out, lock.context.file);
     const context = JSON.parse(await readFile(contextPath, 'utf8')) as Record<string, unknown>;
-    assert.equal(context.schemaVersion, 'lesson-context/v10');
+    assert.equal(context.schemaVersion, 'lesson-context/v11');
     delete context.representationExecution;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -706,7 +765,7 @@ test('a rehashed v10 lock cannot omit its mandatory representation replay record
     await writeFile(lockPath, lockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
     const problems = await verifyLessonLockV2(out);
-    assert.ok(problems.some((problem) => /lesson-context\/v10 is missing the required representationExecution record/u.test(problem)), problems.join('\n'));
+    assert.ok(problems.some((problem) => /lesson-context\/v11 is missing the required representationExecution record/u.test(problem)), problems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -919,7 +978,7 @@ test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject r
       schemaVersion: string;
       lessonHierarchy: { mode: string; chapters: Array<{ chapterId: string; sceneIds: string[]; scenes: Array<{ sceneId: string }>; plannedBudgetMs: number; evidenceSpanIds: string[]; recallOfChapterIds: string[]; checkpoint: { cumulativeClaimIds: string[] } }> };
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v10');
+    assert.equal(context.schemaVersion, 'lesson-context/v11');
     assert.equal(context.lessonHierarchy.mode, 'syllabus');
     assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.sceneIds), [['one'], ['two']]);
     assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.scenes.map((scene) => scene.sceneId)), [['one'], ['two']]);
@@ -962,7 +1021,7 @@ test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject r
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v10', async () => {
+test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v11', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
@@ -975,7 +1034,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
       beatPlans: Record<string, Array<Record<string, unknown>>>;
       validatedByConcept: Record<string, string>;
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v10');
+    assert.equal(context.schemaVersion, 'lesson-context/v11');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -1026,7 +1085,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
     await writeFile(lockPath, visualLockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), visualLockBytes);
     const visualProblems = await verifyLessonLockV2(out);
-    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v10 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
+    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v11 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
 
     context.plan.sections[0]!.contract.essentialClaims[0]!.verificationStatus = 'source_cited';
     context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType = 'direct_source';
@@ -1140,12 +1199,12 @@ test('replaying a V2 lock twenty times gives identical ops, geometry, events, as
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('V2 lock v5 remains readable when an earlier capture has no lifecycle event field', async () => {
+test('V2 lock v5 retains pre-v11 lifecycle compatibility without weakening v11 schedule replay', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-legacy-lock-'));
   try {
     const out = await fixtureRun(dir);
     const lockPath = path.join(out, 'lesson.lock.v2.json');
-    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { scenes: Array<{ captured: { file: string; hash: string }; timelineHash: string }>; contentHash: string };
+    const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { context: { file: string; hash: string }; scenes: Array<{ file: string; fileHash: string; captured: { file: string; hash: string }; timelineHash: string }>; contentHash: string };
     const scene = lock.scenes[0]!;
     const capturedPath = path.join(out, scene.captured.file);
     const captured = JSON.parse(await readFile(capturedPath, 'utf8')) as { timeline: { ops: Array<{ op: { opId: string }; t0: number; t1: number }>; lifecycleEvents?: unknown[]; hash: string } };
@@ -1163,6 +1222,35 @@ test('V2 lock v5 remains readable when an earlier capture has no lifecycle event
     const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
     await writeFile(lockPath, lockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
+    const currentProblems = await verifyLessonLockV2(out);
+    assert.ok(currentProblems.some((problem) => /captured timeline does not reproduce deterministic event scheduling/.test(problem)), currentProblems.join('\n'));
+
+    // Explicitly pin the earlier context and execution schemas that predate mandatory schedule replay.
+    const contextPath = path.join(out, lock.context.file);
+    const context = JSON.parse(await readFile(contextPath, 'utf8'));
+    context.schemaVersion = 'lesson-context/v10';
+    context.representationExecution.schemaVersion = 'v2-representation-execution/v3';
+    for (const execution of context.representationExecution.scenes) {
+      execution.schemaVersion = 'v2-representation-execution/v3';
+      delete execution.semanticEventBindings;
+    }
+    const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
+    await writeFile(contextPath, contextBytes);
+    lock.context.hash = sha256(contextBytes);
+    for (const sceneRef of lock.scenes) {
+      const scenePath = path.join(out, sceneRef.file);
+      const sceneValue = JSON.parse(await readFile(scenePath, 'utf8'));
+      sceneValue.representationExecution.schemaVersion = 'v2-representation-execution/v3';
+      delete sceneValue.representationExecution.semanticEventBindings;
+      const sceneBytes = `${JSON.stringify(sceneValue, null, 2)}\n`;
+      await writeFile(scenePath, sceneBytes);
+      sceneRef.fileHash = sha256(sceneBytes);
+    }
+    const { contentHash: _currentHash, ...legacyBody } = lock;
+    lock.contentHash = canonicalHash(legacyBody);
+    const legacyLockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+    await writeFile(lockPath, legacyLockBytes);
+    await writeFile(path.join(out, 'lesson.lock.json'), legacyLockBytes);
     assert.deepEqual(await verifyLessonLockV2(out), []);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

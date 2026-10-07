@@ -91,10 +91,16 @@ After final TTS and word alignment, `v2-alignment/v2` stores the language and
 the first/last aligned word times for each phrase. Lock verification recomputes
 those times from the pinned narration character spans and aligned words, so a
 rehash cannot silently move an event anchor. Beat timing artifacts carry the
-resolved phrase intervals for downstream scheduling. The current timeline
-scheduler still schedules BoardOps from sentence cues; it does not yet schedule
-meaning changes directly from event phrases. Independent semantic-realization
-review remains separate work.
+resolved phrase intervals for downstream scheduling. Typed lowering records each
+semantic event's exact BoardOp IDs; the timeline schedules those groups from the
+final aligned phrase start/end, respecting operation order, dependencies,
+concurrency and reserved pauses. An action that cannot fit remains explicitly
+late and blocks typed lock publication/encoding. Legacy previews retain sentence-cue scheduling. New `lesson-context/v11`
+and representation execution v4 locks rederive both event groups and the full
+timeline, and compare scene beat/phrase clocks to final narration and aligned
+words. Older schemas retain their historical replay contract. This is clock
+integrity, not proof that a phrase or drawing expresses the claimed mechanism;
+independent semantic-realization review remains separate work.
 
 ## Representation selection
 
@@ -117,8 +123,8 @@ compilation, and an explicit family fallback. Its availability inventory lists
 all 19 planned families; a missing provider returns `provider_unavailable`
 instead of generating a generic BoardOps substitute.
 
-The registry currently activates only `state_transition` v3, for `introduce`,
-`transform`, and `separate` changes; merge and other change kinds and the other
+The registry currently activates only `state_transition` v4, for `introduce`,
+`transform`, `separate`, and `merge` changes; other change kinds and the other
 18 families stay unavailable. V2 routes a scene through that provider only
 when every visual beat in the scene selects `state_transition` and all required
 changes are supported. It derives the family model from pinned beat changes,
@@ -152,10 +158,14 @@ state-transition route uses this replay before lowering, and V2 locks pin the
 provider record with the beat plan and captured operations.
 
 The state-transition provider in `src/teaching/representation/stateTransition.ts`
-maps beat-bound introduction, transformation, and separation changes to
+maps beat-bound introduction, transformation, separation, and merge changes to
 semantic operations. It checks exact entity and state identity, derives
 separation outputs from the pinned beat reveal order, and replays its output
-before returning it. Merge and other transition kinds remain unsupported.
+before returning it. A merge names two through six ordered input identities,
+checks each input's active state, and creates a new result identity. It has no
+shared `fromState`: input states are declared separately. Earlier same-beat
+events are replayed before checking separation/merge preconditions. Other
+transition kinds remain unsupported.
 
 `src/teaching/semantic-ir/toBoardOps.ts` currently lowers introduction,
 transformation, separation, merge, focus/selection, finalization, and
@@ -190,7 +200,7 @@ pictorial asset; missing or label-only output blocks encoding, and lock replay
 recomputes the same requirement from the pinned beat plan and captured states.
 The scene record and pinned lesson context store provider version, semantic
 operations, exact per-event claim bindings, provider mechanism requirements,
-phrase-derived sentence cues, exact selected asset ids, rendered asset evidence,
+phrase-derived sentence cues, exact semantic-event BoardOp groups, selected asset ids, rendered asset evidence,
 claim coverage, and a hash of the emitted BoardOps. Lock verification re-derives
 the state-transition operations and mechanism requirements, repeats coverage
 scoring from captured states/assets, and compares the lowering with the
@@ -323,7 +333,7 @@ Before audio generation, V2 projects canonical claims into
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v10`; v9 and earlier locks retain
+concatenated bundle hash. New runs write `lesson-context/v11`; v10 and earlier locks retain
 their historical compatibility contract. Lock verification
 requires each claim's explicit type and derived verification status, checks
 its source refs against the claim's cited spans, verifies the beat learner
@@ -333,7 +343,7 @@ scene. It also validates compiled entities and semantic changes against strict
 schemas, recomputes scene-scoped ids from stable identity keys, and checks
 within-scene concept continuity, first-reveal order, declared persistence ids,
 and each beat's exact evidence-span union from its cited canonical claims.
-For hierarchical lessons, v8/v9/v10 also lock Lesson → Chapter → Scene → Beat
+For hierarchical lessons, v8/v9/v10/v11 also lock Lesson → Chapter → Scene → Beat
 membership, chapter budgets, measured scene speech/window timings, and
 end-of-chapter cumulative concept/claim/terminology checkpoints. Lock
 verification recomputes the chapter partition and those projections from the
@@ -455,7 +465,10 @@ strategies, without exposing catalog IDs or coordinates. The
 S6 prompt receives concept kind and depiction guidance without catalog IDs.
 When S3b selected an icon for a
 canonical `entity`, BoardOps validation requires a live bound `entity` element
-by the end of each beat that names it; tokens, labels and kit bindings cannot
+by the end of each beat that names it, or immediately before the exact
+merge/separation declared by that beat consumes it. This exception requires
+matching ordered source/result IDs and a live entity with the same canonical
+concept; generic removal cannot satisfy it. Tokens, labels and kit bindings cannot
 stand in for that picture. Non-entity kinds keep their selected structure or
 label lane.
 
@@ -468,7 +481,7 @@ uses the exact scene-vocabulary entry for eligible entity rendering, subject to
 the existing semantic-type, exact/curated selection, domain and licensing
 gates. The locked concept metadata captures the selected asset and scene style,
 and replay uses the pinned selection. New runs write
-`lesson-context/v10`; v9 and earlier contexts remain readable. Current-pipeline
+`lesson-context/v11`; v10 and earlier contexts remain readable. Current-pipeline
 locks require the current typed provider version. Older state-transition/v3
 records are accepted only on an explicitly requested raster replay with a
 different pinned pipeline digest, and cannot claim merge support. The diagnostic

@@ -14,7 +14,7 @@ My engineering judgment is **4/10 overall against the promised product**: useful
 2. Nineteen representation families are selectable, but only `state_transition` has an active typed provider. If one visual beat needs an unavailable family, the entire mixed scene uses legacy model-authored S6 BoardOps preview. Weighted graphs, circuits, waves and material flow are not implemented typed providers.
 3. S6 asks for mechanisms, yet a failed plan/repair can fall back to a concept-only board. Fallback adds or highlights labels and is explicitly draft-only. That can preserve an MP4 while losing the explanation the speaker gives.
 4. Before this continuation, selected depictions reached execution but did not reach beat-mode planning/narration. That missing handoff is now fixed; fresh output is still needed.
-5. Phrase timestamps exist, but execution turns events into sentence cues. Current scheduling is near sentence starts, not necessarily the exact phrase where a change is explained.
+5. The audited historical execution turns events into sentence cues, so actions cluster near sentence starts. The pending implementation now schedules typed event groups from their final aligned phrase clocks and checks the derivation against audio alignment. Legacy previews retain sentence cues; live alignment/quality acceptance is still missing.
 
 Concrete scene evidence:
 
@@ -29,6 +29,24 @@ The sampled Simi photosynthesis scene progressively builds a recognizable leaf, 
 
 ## Pipeline phase by phase
 
+```mermaid
+flowchart TD
+  A[Source spans and evidence hashes] --> B[Syllabus and concept graph]
+  B --> C[Scene claims and teaching contracts]
+  C --> D[Visual discovery and exact asset selection]
+  D --> E[Teaching beats and semantic changes]
+  E --> F[Beat narration and exact phrase anchors]
+  F --> G[TTS and final word alignment]
+  G --> H{Typed family available for every visual beat?}
+  H -->|Yes| I[Provider → SemanticOps → deterministic BoardOps]
+  H -->|No| J[Legacy S6 preview with draft status]
+  I --> K[Phrase event schedule, state, layout and gates]
+  J --> K
+  K --> L[Verified lock, render, clips and MP4]
+  L --> M[Independent teaching, sync and reference review]
+  K -->|Hard failure| N[Failed run with retained evidence]
+```
+
 | Phase | What happens and who owns it | Determinism / current limitation |
 |---|---|---|
 | S1 intake | Code parses files/URLs, retains spans, source identities/hashes and optional RAG evidence | Pinned source projection is replayable; URL content and retrieval can change before pinning |
@@ -42,7 +60,7 @@ The sampled Simi photosynthesis scene progressively builds a recognizable leaf, 
 | Representation dispatch | Supported state-transition scenes compile through provider → SemanticOps → BoardOps; mixed/unsupported scenes use draft legacy preview | Typed replay/lowering is deterministic; legacy S6 planning is model-dependent |
 | Board/state | Shared reducer applies operations and preserves declared board identity across scenes | Deterministic for pinned operations; broader learner/semantic continuity is incomplete |
 | Layout | Code measures text, allocates regions, routes edges, checks collisions/readability | Deterministic for pinned fonts/assets/configuration; gate failures remain failures |
-| Timeline | Code schedules actions using measured sentence/beat clocks, lead time, dependency/concurrency and pause rules | Deterministic; exact phrase-driven semantic scheduling remains unimplemented |
+| Timeline | Typed event groups use final aligned phrase clocks, lead time, dependency/concurrency and reserved pauses; legacy preview uses sentence cues | Deterministic implementation; fresh generated-video alignment and independent meaning-based QA remain unmeasured |
 | Lock/replay | Code pins context, audio, operations, assets, geometry, tool/source digest and representative render samples | Tamper-evident hashes and deterministic replay, not a signed provenance certificate |
 | Render/export | Seeded SVG rendering, bounded raster workers and encoding produce scenes/clips/MP4/captions | Pinned SVG/sample replay is checked; cold provider generation is outside this guarantee |
 | Evaluation | Automatic gates, scorecard/certification and review-bundle tooling expose failure/draft states | Full independent G1–G12 semantic QA, human review and benchmark acceptance remain open |
@@ -92,7 +110,7 @@ The work has made validation and reproducibility stronger while product-critical
 
 1. Produce a fresh current-code public-source photosynthesis diagnostic; retain stage timing, model IDs, costs, repairs, selected/rendered icons, draft/failure flags and MP4. Review against tagged Simi scenes with the same topic.
 2. Implement typed causal/material-flow and mixed-family composition, then weighted graph, quantity/plot, wave and circuit mechanisms. Do not force all ideas into state_transition merely to stay on the typed path.
-3. Schedule typed events from final aligned phrase intervals and replay that derivation in the lock. Test phrases late inside a sentence plus dependency conflicts; lateness must remain visible.
+3. Complete verification of the pending phrase-event scheduler and v11 lock replay, then measure it in a fresh generated video. Typed groups now use final aligned intervals; late events remain visible. Broader event rules and independent alignment calibration remain open.
 4. Prove each spoken mechanism visually, with independent evidence/narration/representation/mechanism/sync/layout/muted-comprehension QA. Icons alone are not mechanism coverage. Set acceptance thresholds through reviewed benchmark evidence.
 5. Improve generation latency after semantic correctness is demonstrated: reduce repair churn, use appropriate stage routing, progressively publish verified scenes and measure actual first-audible playback.
 6. Finish cross-scene learner/entity state continuity, the context-provider snapshot interface, long-lesson acceptance and typed family fallbacks.
@@ -105,3 +123,15 @@ Implementation and tests are separate from `passed` quality. The authoritative f
 Final commands, commit identity and any new run are appended after execution. Fresh runs are kept under `.data/`; the untracked historical gallery is preserved and excluded from commits.
 
 Final verification before source generation: `pnpm run typecheck:hypothesis` passed; `pnpm run test:hypothesis` passed with local loopback permission: 1,453/1,453 Node tests, 2/2 retained-board audit tests, 28/28 alignment Python tests and 12/12 RAG Python tests. `git diff --check` passed. Independent re-review found no remaining introduced defect in the bounded merge/vocabulary/provenance changes. Raster-only legacy replay retains a digest-only provenance limitation and is not a signed certification.
+
+Public-source diagnostic after commit `ba5115b`: [OpenStax Biology 2e, overview of photosynthesis](https://openstax.org/books/biology-2e/pages/8-1-overview-of-photosynthesis), cold cache, Luna content/beat/S6 models, local TTS requested, $0.10 cap. Run `2026-10-06T18-56-47-237Z-a9e16a7c-0a19-463d-bfb2-8ca7099f584d` failed during preparation after 158.6s with 4 hard failures and $0.016631313 measured model spend. Syllabus, concepts, teaching plan and depiction selection completed. Beat/narration made 19 calls and 10 repairs. No speech, BoardOps or MP4 was produced. Trace and summary remain under `.data/hypothesis-runs/claude/public-diagnostics`; this is a failed diagnostic, not a benchmark pass.
+
+Observed blockers: family/operation pairs absent from prompt guidance; long entity states; attempts to repair a claim/entity mismatch by changing the canonical concept behind a persistent identity; non-exact/overlapping phrase anchors; and whole-sentence polarity checking of a positive assertion with an added negative qualification. The second prompt slice exposes existing qualifier/identity requirements, registered operation pairs and text limits; preserves source-backed physical referents upstream; and versions cache identities. No validation threshold, source input, expected output or baseline was weakened. Live efficacy remains unmeasured until another fresh run.
+
+Follow-up review found gaps missed by the provider-only merge tests: the lock demanded an impossible shared merge before-state and an extra introduction for created results, and the board validator demanded that a consumed cross-concept input remain visible after merging. Full runner/lock synthetic regressions now cover valid merge/separation, exact declared consumption, and rejection of infeasible final phrase clocks. The fixes preserve the input's required visible entity immediately before the declared operation. They do not waive visibility for an ordinary removal.
+
+The phrase scheduler now has compiler-owned event-to-BoardOp groups, hard reserved-pause deadlines, and v11/v4 replay. The verifier checks scene beat/sentence/phrase intervals against the final narration and aligned words, not just against a self-consistent scene schedule. A coherent rehashed clock/schedule tamper is rejected. Late typed events block lock publication and encoding. Legacy previews retain their prior sentence-cue behavior. Focused scheduler/runner/compiler tests passed 57/57; full merge/separation/board-validation tests passed 33/33. Current full-suite verification and a new generated-video acceptance run are still required.
+
+Test changes are explicit: new regressions were added; version assertions changed with v11/v4; an old-lock lifecycle test now actually pins its pre-v11 schemas and also asserts that a new v11 lock cannot omit lifecycle data. A newly written prompt assertion used the wrong semantic-field name and was corrected to the existing schema; no product validator changed for that correction. Frozen benchmark inputs and expected media remain untouched.
+
+Final follow-up verification: typecheck and the full project suite passed, **1,464/1,464 Node + 2/2 retained-board audit + 28/28 alignment Python + 12/12 RAG Python**. The first attempt caught a missing-field legacy audit regression; it was fixed by retaining no consumption exemption for older beats. Independent review found no further introduced defect. Frozen benchmark verification remains intact. An earlier automatic approval-review usage failure prevented one execution; the same approval path later succeeded after available usage was confirmed. The current-code video and Simi acceptance claims are still unmeasured.

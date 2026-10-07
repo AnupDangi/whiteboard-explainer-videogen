@@ -3,12 +3,13 @@ import { createdBy, dependenciesOf } from '../board-ops/deps.js';
 import { applyOpAfter, endBeat } from '../board-state/reducer.js';
 import type { BoardEffect, BoardState } from '../board-state/types.js';
 import { canonicalHash } from '../../harness/replayDeterminism.js';
+import type { SemanticEventBoardBinding } from '../../teaching/semantic-ir/toBoardOps.js';
 
 /**
- * Semantic timeline (V2 plan Phase 10). The writer gives each op a beat and a sentence cue, never a time. This compiler turns
- * the aligned audio (beat and sentence intervals, the master clock) into exact milliseconds: an op starts a little before the
- * sentence it belongs to, runs for a duration set by what it does, may overlap at most one other op, and must finish by the
- * end of its sentence. An op that cannot is reported as late, never silently moved.
+ * Semantic timeline (V2 plan Phase 10). The writer never supplies a time. Typed semantic execution binds compiler-generated
+ * ops to exact phrases in the final aligned narration; older previews retain sentence cues. Each op starts a little before
+ * its phrase or sentence, runs for a duration set by what it does, and may overlap at most one other op. An op that cannot
+ * meet its aligned deadline is reported as late, never silently moved.
  */
 export type PausePolicy = 'none' | 'micro' | 'think' | 'scene_close';
 export interface BeatTiming {
@@ -64,7 +65,62 @@ function naturalDuration(op: BoardOp, effects: BoardEffect[]): number {
   return Math.max(120, ...effects.map((effect) => DURATION_MS[effect.kind]));
 }
 
-export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: BoardState; beats: readonly BeatTiming[]; sceneStartMs?: number; tailMs?: number }): SceneTimeline {
+type SemanticAnchor = NonNullable<BeatTiming['semanticAnchors']>[number];
+
+/** Resolve compiler-owned bindings without guessing event identity from renderer ids or sentence position. */
+function semanticAnchorsByOp(
+  ops: readonly BoardOp[],
+  beats: readonly BeatTiming[],
+  bindings: readonly SemanticEventBoardBinding[],
+): Map<string, SemanticAnchor> {
+  const beatById = new Map<string, BeatTiming>();
+  const anchorByEvent = new Map<string, { beatId: string; anchor: SemanticAnchor }>();
+  for (const beat of beats) {
+    if (beatById.has(beat.beatId)) throw new Error(`duplicate timing for beat ${beat.beatId}`);
+    beatById.set(beat.beatId, beat);
+    for (const anchor of beat.semanticAnchors ?? []) {
+      if (anchorByEvent.has(anchor.semanticEventId)) throw new Error(`duplicate semantic anchor ${anchor.semanticEventId}`);
+      if (!anchor.semanticEventId.trim() || !anchor.phrase.trim() || !Number.isFinite(anchor.startMs) || !Number.isFinite(anchor.endMs)
+        || anchor.startMs < beat.startMs || anchor.endMs > beat.endMs || anchor.endMs <= anchor.startMs) {
+        throw new Error(`semantic anchor ${anchor.semanticEventId} has no valid aligned phrase interval in beat ${beat.beatId}`);
+      }
+      anchorByEvent.set(anchor.semanticEventId, { beatId: beat.beatId, anchor });
+    }
+  }
+  const opById = new Map<string, BoardOp>();
+  for (const op of ops) {
+    if (opById.has(op.opId)) throw new Error(`duplicate op id ${op.opId} in semantic timeline`);
+    if (!beatById.has(op.beatId)) throw new Error(`op ${op.opId} names beat ${op.beatId}, which has no timing`);
+    opById.set(op.opId, op);
+  }
+  const seenEvents = new Set<string>();
+  const result = new Map<string, SemanticAnchor>();
+  for (const binding of bindings) {
+    if (seenEvents.has(binding.semanticEventId)) throw new Error(`duplicate semantic event binding ${binding.semanticEventId}`);
+    seenEvents.add(binding.semanticEventId);
+    if (!binding.boardOpIds.length) throw new Error(`semantic event ${binding.semanticEventId} binding has no board ops`);
+    if (!beatById.has(binding.beatId)) throw new Error(`semantic event ${binding.semanticEventId} names beat ${binding.beatId}, which has no timing`);
+    const aligned = anchorByEvent.get(binding.semanticEventId);
+    if (!aligned) throw new Error(`semantic event ${binding.semanticEventId} has no aligned phrase anchor`);
+    if (aligned.beatId !== binding.beatId) throw new Error(`semantic event ${binding.semanticEventId} anchor belongs to beat ${aligned.beatId}, not ${binding.beatId}`);
+    for (const opId of binding.boardOpIds) {
+      const op = opById.get(opId);
+      if (!op) throw new Error(`semantic event ${binding.semanticEventId} binds unknown op ${opId}`);
+      if (result.has(opId)) throw new Error(`op ${opId} has duplicate semantic event bindings`);
+      if (op.beatId !== binding.beatId) throw new Error(`semantic event ${binding.semanticEventId} in beat ${binding.beatId} binds op ${opId} from beat ${op.beatId}`);
+      result.set(opId, aligned.anchor);
+    }
+  }
+  for (const op of ops) if (!result.has(op.opId)) throw new Error(`op ${op.opId} has no semantic event binding`);
+  return result;
+}
+
+export function compileSceneTimeline(input: {
+  ops: readonly BoardOp[]; initial: BoardState; beats: readonly BeatTiming[]; sceneStartMs?: number; tailMs?: number;
+  /** Explicit compiler output; omitted only for legacy sentence-cue scheduling. */
+  semanticEventBindings?: readonly SemanticEventBoardBinding[];
+}): SceneTimeline {
+  const eventAnchors = input.semanticEventBindings === undefined ? undefined : semanticAnchorsByOp(input.ops, input.beats, input.semanticEventBindings);
   const beatById = new Map(input.beats.map((beat) => [beat.beatId, beat]));
   const countByBeat = new Map<string, number>();
   for (const op of input.ops) countByBeat.set(op.beatId, (countByBeat.get(op.beatId) ?? 0) + 1);
@@ -86,7 +142,8 @@ export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: 
     const sentenceCount = Math.max(1, beat.sentences.length);
     const cue = Math.min(sentenceCount - 1, op.cue ?? Math.floor((i * sentenceCount) / n));
     const sentence = beat.sentences[cue] ?? { startMs: beat.startMs, endMs: beat.endMs };
-    const anchorMs = Math.max(beat.startMs - SCHEDULE.beatLeadMs, sentence.startMs - SCHEDULE.leadMs);
+    const interval = eventAnchors === undefined ? sentence : eventAnchors.get(op.opId)!;
+    const anchorMs = Math.max(beat.startMs - SCHEDULE.beatLeadMs, interval.startMs - SCHEDULE.leadMs);
     const natural = naturalDuration(op, result.effects);
     // Ops keep their written order; at most `maxConcurrent` run at once.
     // An op that touches an element waits for the op that drew it, so a change never starts on something not yet there.
@@ -94,10 +151,13 @@ export function compileSceneTimeline(input: { ops: readonly BoardOp[]; initial: 
     const running = active.filter((a) => a.t1 > Math.max(anchorMs, lastStart, needs));
     let start = Math.max(anchorMs, lastStart, needs);
     if (running.length >= SCHEDULE.maxConcurrent) start = Math.max(start, running.map((a) => a.t1).sort((a, b) => a - b)[running.length - SCHEDULE.maxConcurrent]!);
-    // The beat's last op must leave the board settled for the beat's pause; earlier ops keep the sentence deadline.
+    // The beat's last op must leave the board settled for the beat's pause; earlier ops keep the aligned interval deadline.
     const lastOfBeat = i === n - 1;
     const settleBy = lastOfBeat ? beat.endMs - PAUSE_MS[beat.pauseIntent ?? 'none'] : Infinity;
-    const deadlineMs = Math.min(sentence.endMs + SCHEDULE.graceMs, Math.max(settleBy, anchorMs + natural * SCHEDULE.minSpeed));
+    // Typed execution cannot consume a reserved pause to hide an infeasible minimum draw duration. Keep the original
+    // sentence-cue formula for legacy locks, and report a typed op that cannot settle on time as late below.
+    const settleDeadline = eventAnchors === undefined ? Math.max(settleBy, anchorMs + natural * SCHEDULE.minSpeed) : settleBy;
+    const deadlineMs = Math.min(interval.endMs + SCHEDULE.graceMs, settleDeadline);
     let duration = natural;
     if (start + duration > deadlineMs) duration = Math.max(natural * SCHEDULE.minSpeed, deadlineMs - start);
     // Completion order follows op order so "every op before k is done" is well defined.

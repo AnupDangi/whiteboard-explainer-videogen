@@ -251,6 +251,13 @@ test('the narration prompt carries the beat plan and the teaching rules and no t
   const relationPrompt = buildNarrationPrompt({ ...ctx, canonicalClaims: { c1: { statement: canonicalClaim.statement, identity: deriveClaimIdentity(canonicalClaim, graphConcepts) } } }, { title: 'T', goal: 'g' }, 'SOURCE EXCERPT');
   assert.match(relationPrompt.system, /state that directed relation explicitly with its correct predicate/);
   assert.match(relationPrompt.user, /requiredRelations.*Alpha.*causes.*Beta/);
+  assert.match(relationPrompt.user, /explicitlyNames.*Alpha.*Beta/);
+  assert.match(relationPrompt.user, /requiredMeaning.*polarity.*positive/);
+  assert.match(relationPrompt.system, /Do not append a new negative contrast to a positive claim sentence/);
+  const qualified = buildNarrationPrompt({ ...ctx, canonicalClaims: { c1: { statement: 'Alpha changes during 2 stages.' } } }, { title: 'T', goal: 'G' }, 'SOURCE EXCERPT');
+  const qualifiedClaims = JSON.parse(/claims (.+?); semantic events/.exec(qualified.user)![1]!);
+  assert.deepEqual(qualifiedClaims[0].requiredMeaning, { polarity: 'positive', temporal: { relation: 'during' }, quantities: [{ value: 2 }] });
+
 });
 
 const usage = { promptTokens: 1, completionTokens: 1, cachedTokens: 0, costUsd: 0.0002 };

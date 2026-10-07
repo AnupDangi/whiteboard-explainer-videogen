@@ -241,6 +241,7 @@ test('model prompts print each span\'s text under its id with no character offse
 test('module S2 checks relation evidence but not the concept quotes the syllabus replaces', async () => {
   const doc = sourceDocFromText('# Notes\n\nThe pump moves water uphill.', 'markdown');
   const span = doc.spans.find((item) => item.kind === 'paragraph')!;
+  let system = '';
   let user = '';
   const graph = (relationQuote: string) => ({
     concepts: [
@@ -253,11 +254,19 @@ test('module S2 checks relation evidence but not the concept quotes the syllabus
   const bodies = [graph('pumps shift fluids'), graph('The pump moves water uphill')];
   const result = await buildConceptGraph({ source: doc.text, sourceDoc: doc, targetDurationSec: 60, conceptScope: [{ id: 'pump', label: 'Pump', definition: 'x' }, { id: 'water', label: 'Water', definition: 'x' }] }, {
     model: 'test/model', apiKey: 'test-only', remainingBudgetUsd: 0.05,
-    fetcher: async (_url, init) => { user ||= JSON.parse(String(init?.body)).messages[1].content; return response(bodies.shift()); },
+    fetcher: async (_url, init) => {
+      const messages = JSON.parse(String(init?.body)).messages;
+      system ||= messages[0].content;
+      user ||= messages[1].content;
+      return response(bodies.shift());
+    },
   });
   assert.equal(result.usage.repairs, 1, 'the invented relation quote costs the repair');
   assert.deepEqual(result.value?.concepts.map((concept) => concept.evidence.length), [0, 0], 'concept evidence comes from the syllabus later');
   assert.equal(result.value?.relations[0].evidence[0].quote, 'The pump moves water uphill');
+  assert.match(system, /entity is a source-named object.*identity distinct from the action/i);
+  assert.match(system, /process or event names the action, change, transformation, or occurrence/i);
+  assert.match(system, /use every supplied syllabus concept exactly once.*keeping each exact id and label unchanged; do not add concepts outside this scope/i);
   assert.match(user, /"excerpts"/);
   assert.doesNotMatch(user, /startChar/);
 });

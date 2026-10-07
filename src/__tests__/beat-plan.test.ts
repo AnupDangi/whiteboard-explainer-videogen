@@ -47,6 +47,11 @@ test('representation selection is topic-independent, registered, and checked aga
   const mismatch = validateBeatPlan(draft([beat({ representationFamily: 'literal_object' }), beat({ claimIds: ['c2'], relationships: [], semanticRevealOrder: [], requiredSemanticChanges: [{ identityKey: 'frame_main', kind: 'transform', fromState: 'The frame is on top.', toState: 'The top frame has been removed.' }] })]), ctx);
   assert.ok(mismatch.some((problem) => (problem as { path: string }).path === '/beats/0/representationFamily' && /literal_object is not registered for trace/.test((problem as { message: string }).message)));
   assert.ok(representationSelectionProblems({ learningQuestion: 'What changes?', cognitiveOperation: 'trace', representationFamily: 'topic_specific_board' }).some((message) => /unknown representation family/.test(message)));
+  const prompt = buildBeatPrompt(ctx, { title: 'T', goal: 'G', learningDelta: 'D', misconceptionRisk: [], priorKnowledge: [] }, []);
+  for (const [family, spec] of Object.entries(REPRESENTATION_REGISTRY)) assert.ok(prompt.user.includes(`- ${family}: ${spec.suitableOperations.join(', ')}`));
+  assert.match(prompt.system, /entity.state within 80 characters/);
+  assert.match(prompt.system, /omit an irrelevant retained entity instead of changing its conceptId/);
+
 });
 
 test('a complete plan that covers every claim is valid', () => {
