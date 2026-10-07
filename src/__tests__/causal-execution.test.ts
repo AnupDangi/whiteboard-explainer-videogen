@@ -48,6 +48,10 @@ test('beat validator binds a causal event to the exact claim asserting its direc
   const wrongClaim = structuredClone(valid);
   wrongClaim.beats[1]!.requiredSemanticChanges[0]!.claimIds = ['context_claim'];
   assert.ok(validateBeatPlan(wrongClaim, ctx).some((problem) => typeof problem !== 'string' && /does not assert the cause event's exact directed relation/.test(problem.message)));
+  const wrongSource = structuredClone(valid);
+  wrongSource.beats[1]!.requiredSemanticChanges[0]!.identityKey = 'beta';
+  const sourceProblem = validateBeatPlan(wrongSource, ctx).find((problem) => typeof problem !== 'string' && /exactly one outgoing causes relation/.test(problem.message));
+  assert.equal(sourceProblem && typeof sourceProblem !== 'string' ? sourceProblem.path : undefined, '/beats/1/requiredSemanticChanges/0', 'a cause source/kind correction is limited to the one event record');
 });
 
 test('mixed state-transition and causal-chain beats dispatch and replay with per-beat provider identity', () => {

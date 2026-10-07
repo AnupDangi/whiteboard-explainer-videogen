@@ -196,7 +196,7 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
       const entity = beat.entities.find((candidate) => candidate.identityKey === change.identityKey);
       if (change.kind === 'cause') {
         const candidates = beat.relationships.filter((relation) => relation.type === 'causes' && relation.from === entity?.conceptId);
-        if (candidates.length !== 1) problems.push({ path: `${path}/identityKey`, message: 'a cause change must resolve to exactly one outgoing causes relation from its declared entity' });
+        if (candidates.length !== 1) problems.push({ path, message: 'a cause change must resolve to exactly one outgoing causes relation from its declared entity; repair only this semantic-change record so its kind and source identity agree with the pinned edge' });
         else {
           const relation = candidates[0]!;
           for (const conceptId of [relation.from, relation.to]) {
