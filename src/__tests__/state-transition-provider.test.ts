@@ -20,7 +20,7 @@ function beatFor(change: { kind: 'introduce' | 'transform' | 'move' | 'separate'
 const emptyState = (): SemanticSceneState => ({ sceneId: 'scene', entities: [], relations: [], selectedEntityIds: [], plots: [], feedbackLoops: [], annotations: [] });
 const activeEntity = (id: string, state: string): SemanticSceneState['entities'][number] => ({ id, conceptId: 'cell', claimIds: ['claim_a'], state, lifecycle: 'active' });
 
-test('state-transition provider is the only active family and derives a generic representation from beat semantics', () => {
+test('state-transition provider derives its generic representation from pinned beat semantics', () => {
   const beat = beatFor({ kind: 'introduce', entityId: 'se_cell', toState: 'cell exists before division' });
   const model = deriveStateTransitionModel(beat);
   assert.deepEqual(model.events, [{ kind: 'introduce', eventId: semanticEventId(beat.beatId, 0), entityId: 'se_cell', conceptId: 'cell', state: 'cell exists before division' }]);

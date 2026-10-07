@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTRACT_CODES, teachingContractFindings, teachingContractProblems } from '../plan/contracts.js';
-import { SceneContractSchema, type ConceptGraph, type SceneContract, type TeachingPlan } from '../plan/schemas.js';
+import { CONTRACT_CODES, claimRelationContractProblems, teachingContractFindings, teachingContractProblems } from '../plan/contracts.js';
+import { RELATION_TYPES, SceneContractSchema, type ConceptGraph, type SceneContract, type TeachingPlan } from '../plan/schemas.js';
 import { epistemicClaimProblems } from '../evidence/ledger.js';
+import { CANONICAL_RELATION_WORDING, claimIdentityMismatch, deriveClaimIdentity } from '../evidence/claimIdentity.js';
 
 const heatRef = { sourceId: 'source_a', spanId: 'span_heat', startChar: 0, endChar: 11, startLine: 1, endLine: 1, quote: 'heat enters' };
 const pressureRef = { sourceId: 'source_a', spanId: 'span_pressure', startChar: 12, endChar: 26, startLine: 2, endLine: 2, quote: 'pressure rises' };
@@ -136,4 +137,41 @@ test('relation claims are atomic, explicitly directed, and do not borrow a predi
   }, clauses).filter((finding) => finding.code === CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION_IDENTITY);
   assert.ok(identityProblems.some((finding) => /must explicitly state the directed precedes relation/.test(finding.message)));
   assert.equal(identityProblems.some((finding) => /expresses forward produces/.test(finding.message)), false);
+});
+
+test('every canonical prompt wording is already recognized with the declared forward identity', () => {
+  const concepts = [{ id: 'alpha', label: 'Alpha component' }, { id: 'beta', label: 'Beta component' }];
+  assert.deepEqual(Object.keys(CANONICAL_RELATION_WORDING).sort(), [...RELATION_TYPES].sort());
+  for (const type of RELATION_TYPES) {
+    const statement = `Alpha component ${CANONICAL_RELATION_WORDING[type]} Beta component.`;
+    const identity = deriveClaimIdentity({ statement, conceptIds: ['alpha', 'beta'], relations: [{ from: 'alpha', to: 'beta', type }] }, concepts);
+    assert.equal(identity.relations[0]!.lexicallyExpressed, true, type);
+    assert.equal(identity.relations[0]!.canonicalPredicateType, type, type);
+    assert.equal(identity.relations[0]!.canonicalDirection, 'forward', type);
+    assert.deepEqual(claimIdentityMismatch(identity, statement), [], type);
+  }
+});
+
+test('relation wording guidance does not accept endpoint aliases, changed predicates, reversed direction, or cross-clause borrowing', () => {
+  const identityGraph: ConceptGraph = {
+    concepts: [
+      { ...graph.concepts[0]!, id: 'alpha', label: 'Alpha component' },
+      { ...graph.concepts[1]!, id: 'beta', label: 'Beta output' },
+    ],
+    relations: [{ from: 'alpha', to: 'beta', type: 'produces', evidence: [relationRef] }],
+    prerequisites: [],
+  };
+  const claim: SceneContract['essentialClaims'][number] = {
+    id: 'alpha_output', statement: 'Alpha component produces Beta output.', epistemicType: 'derived_relation',
+    conceptIds: ['alpha', 'beta'], relations: [{ from: 'alpha', to: 'beta', type: 'produces' }], evidenceSpanIds: ['span_relation'],
+  };
+  assert.deepEqual(claimRelationContractProblems('one', claim, identityGraph), []);
+  for (const statement of [
+    'Alpha component produces the result.',
+    'Alpha component produces Beta.',
+    'Beta output produces Alpha component.',
+    'Alpha component supports Beta output.',
+    'Alpha component produces a result; Beta output is stored.',
+    'Alpha component produces a result, and Beta output is stored.',
+  ]) assert.ok(claimRelationContractProblems('one', { ...claim, statement }, identityGraph).some((finding) => finding.code === CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION_IDENTITY), statement);
 });

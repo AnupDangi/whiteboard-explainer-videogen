@@ -2,11 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveTeachingPlan, teachingContractFindings } from '../plan/contracts.js';
 import { TeachingPlanDraftSchema, TeachingPlanSchema, type ConceptGraph, type TeachingPlan, type TeachingPlanDraft } from '../plan/schemas.js';
-import { buildConceptGraph, buildTeachingPlan, writeScript, validateSceneText, materializeClaimSpans } from '../plan/stages.js';
+import { buildConceptGraph, buildTeachingPlan, writeScript, validateSceneText, materializeClaimSpans, PLAN_PROMPT_VARIANTS } from '../plan/stages.js';
 import { buildNarrationScene } from '../narration/markers.js';
 import { resolveSourceEvidence, sourceDocFromText, spanExcerptPrompt } from '../intake/sourceDoc.js';
+import { CANONICAL_RELATION_WORDING } from '../evidence/claimIdentity.js';
 
 const response = (payload: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.0001 } }), { status: 200 });
+
+test('S3 v6 exposes exact endpoint and parser wording constraints without treating wording as evidence', () => {
+  const graph: ConceptGraph = { concepts: [], relations: [], prerequisites: [] };
+  const { system } = PLAN_PROMPT_VARIANTS['v6-derived-contracts']({
+    scenes: 1,
+    req: { source: 'Source text.', targetDurationSec: 18 },
+    graph,
+    conceptIdChecklist: '',
+  });
+  assert.match(system, /at most one directed graph relation/i);
+  assert.match(system, /BOTH exact canonical endpoint labels.*ONE directed clause/);
+  assert.match(system, /Do not replace an endpoint with a synonym or omit words from its canonical label/i);
+  assert.match(system, /do not borrow a predicate across separate clauses/i);
+  for (const [type, wording] of Object.entries(CANONICAL_RELATION_WORDING)) {
+    assert.ok(system.includes(`${type}: ${wording}`), `S3 teaches parser-accepted ${type} wording`);
+  }
+  assert.match(system, /wording choices for a source-supported fact, not evidence that an edge is true/i);
+  assert.match(system, /do not manufacture a claim, substitute a product for an action, rename an ID, or change the relation/i);
+  assert.match(system, /an inconsistent required contract must remain a validation failure/i);
+});
 
 // Two unrelated synthetic vocabularies through the same derivation (topic-swap rule).
 for (const words of [{ a: 'heat', b: 'pressure', c: 'volume' }, { a: 'tariff', b: 'price', c: 'demand' }]) {
@@ -267,6 +288,11 @@ test('module S2 checks relation evidence but not the concept quotes the syllabus
   assert.match(system, /entity is a source-named object.*identity distinct from the action/i);
   assert.match(system, /process or event names the action, change, transformation, or occurrence/i);
   assert.match(system, /use every supplied syllabus concept exactly once.*keeping each exact id and label unchanged; do not add concepts outside this scope/i);
+  assert.match(system, /exact participants, predicate, and direction, not merely a quote that mentions related terms/i);
+  assert.match(system, /same source-described referent changes identity or state into the target, not merely supplies energy or material/i);
+  assert.match(system, /actual output named by the evidence, not a substitute concept naming its production or release action/i);
+  assert.match(system, /do not clip away the subject or cite an unresolved pronoun as its only identity/i);
+  assert.match(system, /do not change IDs, rename a participant, or invent a claim to rescue it/i);
   assert.match(user, /"excerpts"/);
   assert.doesNotMatch(user, /startChar/);
 });

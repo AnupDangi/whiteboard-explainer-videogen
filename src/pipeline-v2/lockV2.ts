@@ -31,6 +31,8 @@ import { applySemanticProgram } from '../teaching/semantic-ir/program.js';
 import { compileSceneTimeline, type BeatTiming } from '../visual-v2/timeline/compile.js';
 import { compileSemanticOpsToBoardOps } from '../teaching/semantic-ir/toBoardOps.js';
 import { stateTransitionProvider } from '../teaching/representation/stateTransition.js';
+import { REPRESENTATION_PROVIDER_REGISTRY } from '../teaching/representation/registry.js';
+import { semanticRelationClaimProblems } from '../teaching/representation/claimBindings.js';
 import type { TeachingBeat } from '../teaching/beat-plan/types.js';
 import type { VisualVocabulary } from '../planner/visualDiscovery.js';
 import { auditRenderedEntityAssets, requiredSelectedIconConceptIds, requiredSelectedIconProblems } from './renderedEntityAssets.js';
@@ -124,13 +126,22 @@ const RepresentationExecutionV4Schema = RepresentationExecutionV3Schema.extend({
     semanticEventId: z.string().min(1), beatId: z.string().min(1), boardOpIds: z.array(z.string().min(1)).min(1),
   }).strict()),
 }).strict();
+const RepresentationExecutionV5Schema = RepresentationExecutionV4Schema.extend({
+  schemaVersion: z.literal('v2-representation-execution/v5'),
+  beats: z.array(z.object({
+    beatId: z.string().min(1), family: z.string().min(1),
+    status: z.enum(['compiled', 'provider-unavailable']),
+    providerVersion: z.string().min(1).optional(), providerSource: z.literal('family-fallback').optional(),
+    problem: z.string().min(1).optional(),
+  }).strict()),
+}).strict();
 const ReplayBeatTimingSchema = z.object({
   beatId: z.string().min(1), startMs: z.number().finite().nonnegative(), endMs: z.number().finite().nonnegative(),
   sentences: z.array(z.object({ startMs: z.number().finite().nonnegative(), endMs: z.number().finite().nonnegative() }).strict()),
   semanticAnchors: z.array(z.object({ semanticEventId: z.string().min(1), phrase: z.string().min(1), startMs: z.number().finite().nonnegative(), endMs: z.number().finite().nonnegative() }).strict()).optional(),
   pauseIntent: z.enum(['none', 'micro', 'think', 'scene_close']).optional(),
 }).strict();
-const RepresentationExecutionSchema = z.discriminatedUnion('schemaVersion', [RepresentationExecutionV1Schema, RepresentationExecutionV2Schema, RepresentationExecutionV3Schema, RepresentationExecutionV4Schema]);
+const RepresentationExecutionSchema = z.discriminatedUnion('schemaVersion', [RepresentationExecutionV1Schema, RepresentationExecutionV2Schema, RepresentationExecutionV3Schema, RepresentationExecutionV4Schema, RepresentationExecutionV5Schema]);
 
 function emptySemanticSceneState(sceneId: string): SemanticSceneState {
   return { sceneId, entities: [], relations: [], selectedEntityIds: [], plots: [], feedbackLoops: [], annotations: [] };
@@ -148,7 +159,7 @@ function expectedIconSelection(context: JsonRecord, sceneId: string): Record<str
 }
 
 function claimCoverageReplayProblems(
-  execution: z.infer<typeof RepresentationExecutionV3Schema> | z.infer<typeof RepresentationExecutionV4Schema>,
+  execution: z.infer<typeof RepresentationExecutionV3Schema> | z.infer<typeof RepresentationExecutionV4Schema> | z.infer<typeof RepresentationExecutionV5Schema>,
   context: JsonRecord,
   beats: TeachingBeat[],
   semanticOperations: SemanticOp[],
@@ -187,7 +198,7 @@ function claimCoverageReplayProblems(
   return problems;
 }
 
-function timelineReplayProblems(execution: z.infer<typeof RepresentationExecutionV4Schema>, sceneRecord: JsonRecord | undefined, captured: CapturedScene | undefined, capturedOps: unknown[], planBeats: unknown[], sceneId: string): string[] {
+function timelineReplayProblems(execution: z.infer<typeof RepresentationExecutionV4Schema> | z.infer<typeof RepresentationExecutionV5Schema>, sceneRecord: JsonRecord | undefined, captured: CapturedScene | undefined, capturedOps: unknown[], planBeats: unknown[], sceneId: string): string[] {
   const problems: string[] = [];
   const parsedTimings = z.array(ReplayBeatTimingSchema).safeParse(arrayOf(sceneRecord?.beatTimings));
   if (!parsedTimings.success || !captured) return [`scene ${sceneId} timeline replay inputs are missing or malformed`];
@@ -211,7 +222,7 @@ function timelineReplayProblems(execution: z.infer<typeof RepresentationExecutio
 function representationExecutionProblems(sceneRecord: JsonRecord | undefined, context: JsonRecord, planBeats: unknown[], capturedOps: unknown[], captured: CapturedScene | undefined, sceneId: string, allowLegacyProviderVersion = false): string[] {
   const problems: string[] = [];
   const topLevel = recordOf(context.representationExecution);
-  if (!topLevel) return context.schemaVersion === 'lesson-context/v10' || context.schemaVersion === 'lesson-context/v11'
+  if (!topLevel) return context.schemaVersion === 'lesson-context/v10' || context.schemaVersion === 'lesson-context/v11' || context.schemaVersion === 'lesson-context/v12'
     ? [`${String(context.schemaVersion)} is missing the required representationExecution record for scene ${sceneId}`] : [];
   const topScenes = arrayOf(topLevel.scenes) ?? [];
   const topScene = topScenes.map(recordOf).find((item) => item?.sceneId === sceneId);
@@ -233,8 +244,10 @@ function representationExecutionProblems(sceneRecord: JsonRecord | undefined, co
   if (execution.boardOpsHash !== canonicalHash(capturedOps)) problems.push(`scene ${sceneId} representation execution BoardOps hash differs from captured timeline`);
   if (context.schemaVersion === 'lesson-context/v10' && execution.schemaVersion !== 'v2-representation-execution/v3') problems.push(`scene ${sceneId} v10 lesson context requires replayable v3 representation evidence`);
   if (context.schemaVersion === 'lesson-context/v11' && execution.schemaVersion !== 'v2-representation-execution/v4') problems.push(`scene ${sceneId} v11 lesson context requires replayable v4 representation evidence`);
+  if (context.schemaVersion === 'lesson-context/v12' && execution.schemaVersion !== 'v2-representation-execution/v5') problems.push(`scene ${sceneId} v12 lesson context requires replayable v5 representation evidence`);
+  const providerStatuses = new Map(REPRESENTATION_PROVIDER_REGISTRY.statuses.map((status) => [String(status.family), status]));
   let deterministicRenderedEntityAssets: z.infer<typeof RenderedEntityAssetSchema>[] | undefined;
-  if (execution.schemaVersion === 'v2-representation-execution/v2' || execution.schemaVersion === 'v2-representation-execution/v3' || execution.schemaVersion === 'v2-representation-execution/v4') {
+  if ('renderedEntityAssets' in execution) {
     if (!captured) problems.push(`scene ${sceneId} has no captured board to verify rendered entity asset evidence`);
     else {
       const rendered = auditRenderedEntityAssets(captured.timeline.states, captured.geometry.states, captured.concepts);
@@ -254,14 +267,18 @@ function representationExecutionProblems(sceneRecord: JsonRecord | undefined, co
     }
   }
 
-  if (execution.schemaVersion === 'v2-representation-execution/v4') problems.push(...timelineReplayProblems(execution, sceneRecord, captured, capturedOps, planBeats, sceneId));
+  if ('semanticEventBindings' in execution) problems.push(...timelineReplayProblems(execution, sceneRecord, captured, capturedOps, planBeats, sceneId));
 
   if (execution.mode === 'legacy-boardops-preview') {
     if (execution.semanticOperations.length || execution.providerVersion || execution.providerSource) problems.push(`scene ${sceneId} legacy preview falsely claims typed semantic provider output`);
-    if (execution.schemaVersion === 'v2-representation-execution/v4' && execution.semanticEventBindings.length) problems.push(`scene ${sceneId} legacy preview falsely claims semantic event bindings`);
+    if ('semanticEventBindings' in execution && execution.semanticEventBindings.length) problems.push(`scene ${sceneId} legacy preview falsely claims semantic event bindings`);
     if (execution.beats.some((beat) => beat.status !== 'provider-unavailable' || !beat.problem)) problems.push(`scene ${sceneId} legacy preview must identify every visual beat's unavailable provider`);
     if (expectedBeats.length && !execution.beats.length) problems.push(`scene ${sceneId} legacy preview omits provider status for visual beats`);
-    if (execution.schemaVersion === 'v2-representation-execution/v3' || execution.schemaVersion === 'v2-representation-execution/v4') {
+    if (execution.schemaVersion === 'v2-representation-execution/v5') {
+      if (visualBeats.length && visualBeats.every((beat) => providerStatuses.get(String(beat.representationFamily))?.status === 'implemented')) problems.push(`scene ${sceneId} legacy preview bypasses implemented typed providers`);
+      if (execution.beats.some((beat) => beat.providerVersion || beat.providerSource)) problems.push(`scene ${sceneId} legacy preview falsely claims per-beat provider identity`);
+    }
+    if ('mechanismRequirements' in execution) {
       if (execution.mechanismRequirements.length) problems.push(`scene ${sceneId} legacy preview falsely claims typed mechanism requirements`);
       problems.push(...claimCoverageReplayProblems(execution, context, planBeats as TeachingBeat[], [], [], captured, deterministicRenderedEntityAssets, sceneId));
     }
@@ -276,20 +293,39 @@ function representationExecutionProblems(sceneRecord: JsonRecord | undefined, co
   if (execution.schemaVersion === 'v2-representation-execution/v3' && execution.providerVersion === 'state-transition/v3' && pinnedMerge) {
     problems.push(`scene ${sceneId} legacy state-transition/v3 cannot claim support for merge changes`);
   }
-  if (execution.providerVersion !== expectedProviderVersion || execution.providerSource !== 'family-fallback') problems.push(`scene ${sceneId} typed semantic provider identity is not recognized`);
-  if (!visualBeats.length || visualBeats.some((beat) => beat.representationFamily !== 'state_transition')) problems.push(`scene ${sceneId} typed semantic provider is incompatible with its pinned representation families`);
-  if (execution.beats.some((beat) => beat.status !== 'compiled' || beat.providerVersion !== expectedProviderVersion)) problems.push(`scene ${sceneId} typed semantic beat provider statuses are incomplete`);
+  if (execution.schemaVersion === 'v2-representation-execution/v5') {
+    const versions = [...new Set(visualBeats.flatMap((beat) => providerStatuses.get(String(beat.representationFamily))?.version ?? []))];
+    const summaryVersion = versions.length === 1 ? versions[0] : undefined;
+    if (execution.providerVersion !== summaryVersion || execution.providerSource !== 'family-fallback') problems.push(`scene ${sceneId} typed semantic provider summary differs from per-beat providers`);
+    if (!visualBeats.length || visualBeats.some((beat) => providerStatuses.get(String(beat.representationFamily))?.status !== 'implemented')) problems.push(`scene ${sceneId} typed semantic provider is incompatible with its pinned representation families`);
+    if (execution.beats.some((beat) => beat.status !== 'compiled' || beat.providerVersion !== providerStatuses.get(beat.family)?.version || beat.providerSource !== 'family-fallback')) problems.push(`scene ${sceneId} typed semantic beat provider identity is not recognized`);
+  } else {
+    if (execution.providerVersion !== expectedProviderVersion || execution.providerSource !== 'family-fallback') problems.push(`scene ${sceneId} typed semantic provider identity is not recognized`);
+    if (!visualBeats.length || visualBeats.some((beat) => beat.representationFamily !== 'state_transition')) problems.push(`scene ${sceneId} typed semantic provider is incompatible with its pinned representation families`);
+    if (execution.beats.some((beat) => beat.status !== 'compiled' || beat.providerVersion !== expectedProviderVersion)) problems.push(`scene ${sceneId} typed semantic beat provider statuses are incomplete`);
+  }
 
   const beats = visualBeats as unknown as TeachingBeat[];
   let state = emptySemanticSceneState(sceneId);
   const expectedOperations: SemanticOp[] = [];
   const expectedMechanismRequirements: MechanismRequirement[] = [];
+  const section = (arrayOf(recordOf(context.plan)?.sections) ?? []).map(recordOf).find((item) => item?.id === sceneId);
+  const canonicalClaims = (arrayOf(recordOf(section?.contract)?.essentialClaims) ?? []).map(recordOf).flatMap((claim) => {
+    if (typeof claim?.id !== 'string') return [];
+    const conceptIds = (arrayOf(claim.conceptIds) ?? []).filter((id): id is string => typeof id === 'string');
+    const relations = (arrayOf(claim.relations) ?? []).map(recordOf).flatMap((relation) => typeof relation?.from === 'string' && typeof relation.to === 'string' && typeof relation.type === 'string'
+      ? [{ from: relation.from, to: relation.to, type: relation.type }] : []);
+    return [{ id: claim.id, conceptIds, relations }];
+  });
   for (const beat of beats) {
-    const result = stateTransitionProvider.compileFallback(state, beat);
+    const result = execution.schemaVersion === 'v2-representation-execution/v5'
+      ? REPRESENTATION_PROVIDER_REGISTRY.compileFallback(beat.representationFamily, state, beat)
+      : stateTransitionProvider.compileFallback(state, beat);
     if (!result.ok) {
-      problems.push(`scene ${sceneId} state-transition fallback cannot replay ${beat.beatId}: ${result.problems.map((item) => item.message).join('; ')}`);
+      problems.push(`scene ${sceneId} ${beat.representationFamily} fallback cannot replay ${beat.beatId}: ${result.problems.map((item) => item.message).join('; ')}`);
       break;
     }
+    if (execution.schemaVersion === 'v2-representation-execution/v5') problems.push(...semanticRelationClaimProblems(result.operations, beat, canonicalClaims).map((problem) => `scene ${sceneId} ${beat.beatId}: ${problem.message}`));
     expectedOperations.push(...result.operations);
     expectedMechanismRequirements.push(...result.mechanisms);
     const replay = applySemanticProgram(state, result.operations, { knownBeatIds: new Set(visualBeats.map((item) => String(item.beatId))), knownClaimIds: new Set(visualBeats.flatMap((item) => arrayOf(item.claimIds)?.filter((id): id is string => typeof id === 'string') ?? [])) });
@@ -297,7 +333,7 @@ function representationExecutionProblems(sceneRecord: JsonRecord | undefined, co
     state = replay.state;
   }
   if (canonicalHash(expectedOperations) !== canonicalHash(execution.semanticOperations)) problems.push(`scene ${sceneId} typed semantic operations do not derive from the pinned beat changes`);
-  if ((execution.schemaVersion === 'v2-representation-execution/v3' || execution.schemaVersion === 'v2-representation-execution/v4')
+  if ('mechanismRequirements' in execution
     && canonicalHash(expectedMechanismRequirements) !== canonicalHash(execution.mechanismRequirements)) problems.push(`scene ${sceneId} mechanism requirements do not derive from the pinned beat changes`);
 
   const timings = arrayOf(sceneRecord?.beatTimings) ?? [];
@@ -327,9 +363,9 @@ function representationExecutionProblems(sceneRecord: JsonRecord | undefined, co
   });
   if (!lowered.ok) problems.push(`scene ${sceneId} typed semantic operations cannot be lowered: ${lowered.problems.map((item) => item.message).join('; ')}`);
   else if (canonicalHash(lowered.operations) !== canonicalHash(sceneRecord?.ops as unknown[])) problems.push(`scene ${sceneId} typed semantic BoardOps do not reproduce the recorded BoardOps`);
-  if (execution.schemaVersion === 'v2-representation-execution/v4' && lowered.ok && canonicalHash(lowered.semanticEventBindings) !== canonicalHash(execution.semanticEventBindings)) problems.push(`scene ${sceneId} semantic event bindings do not derive from deterministic lowering`);
+  if ('semanticEventBindings' in execution && lowered.ok && canonicalHash(lowered.semanticEventBindings) !== canonicalHash(execution.semanticEventBindings)) problems.push(`scene ${sceneId} semantic event bindings do not derive from deterministic lowering`);
 
-  if (execution.schemaVersion === 'v2-representation-execution/v3' || execution.schemaVersion === 'v2-representation-execution/v4') {
+  if ('mechanismRequirements' in execution) {
     problems.push(...claimCoverageReplayProblems(execution, context, planBeats as TeachingBeat[], expectedOperations, expectedMechanismRequirements, captured, deterministicRenderedEntityAssets, sceneId));
   }
   return problems;
@@ -378,8 +414,9 @@ function alignmentProblems(bytes: Buffer, scenes: Array<{ sceneId: string; start
     if (!narration.success) { problems.push(`alignment scene ${scene.sceneId} needs locked narration text`); return; }
     const language = aligned.language ?? 'und';
     const sceneRecord = recordOf(semantic[index]);
-    const requiresPhraseClockReplay = recordOf(sceneRecord?.representationExecution)?.schemaVersion === 'v2-representation-execution/v4';
-    if (requiresPhraseClockReplay && !isAlignmentV2) problems.push(`alignment scene ${scene.sceneId} needs v2 final phrase clocks for representation execution v4`);
+    const executionVersion = recordOf(sceneRecord?.representationExecution)?.schemaVersion;
+    const requiresPhraseClockReplay = executionVersion === 'v2-representation-execution/v4' || executionVersion === 'v2-representation-execution/v5';
+    if (requiresPhraseClockReplay && !isAlignmentV2) problems.push(`alignment scene ${scene.sceneId} needs v2 final phrase clocks for representation execution ${String(executionVersion)}`);
     const expected = tokenizeWords(narration.data.narration.text, language);
     const actual = aligned.words.flatMap((word) => tokenizeWords(word.word, language));
     if (actual.length !== expected.length || actual.some((word, wordIndex) => word !== expected[wordIndex])) problems.push(`alignment scene ${scene.sceneId} words do not match narration token sequence`);
@@ -442,12 +479,13 @@ function teachingIdentityProblems(contextBytes: Buffer, scenes: LessonLockV2['sc
   const contextV4 = context.schemaVersion === 'lesson-context/v4';
   const contextV5 = context.schemaVersion === 'lesson-context/v5';
   const contextV6 = context.schemaVersion === 'lesson-context/v6';
-  const contextV11 = context.schemaVersion === 'lesson-context/v11';
+  const contextV12 = context.schemaVersion === 'lesson-context/v12';
+  const contextV11 = context.schemaVersion === 'lesson-context/v11' || contextV12;
   const contextV10 = context.schemaVersion === 'lesson-context/v10' || contextV11;
   const contextV9 = context.schemaVersion === 'lesson-context/v9' || contextV10;
   const contextV8 = context.schemaVersion === 'lesson-context/v8' || contextV9;
   const contextV7 = context.schemaVersion === 'lesson-context/v7' || contextV8;
-  const contextVersion = contextV11 ? 'v11' : contextV10 ? 'v10' : contextV9 ? 'v9' : contextV8 ? 'v8' : contextV7 ? 'v7' : contextV6 ? 'v6' : contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : contextV2 ? 'v2' : 'legacy';
+  const contextVersion = contextV12 ? 'v12' : contextV11 ? 'v11' : contextV10 ? 'v10' : contextV9 ? 'v9' : contextV8 ? 'v8' : contextV7 ? 'v7' : contextV6 ? 'v6' : contextV5 ? 'v5' : contextV4 ? 'v4' : contextV3 ? 'v3' : contextV2 ? 'v2' : 'legacy';
   if (context.schemaVersion !== undefined && !contextV2 && !contextV3 && !contextV4 && !contextV5 && !contextV6 && !contextV7 && !contextV9 && !contextV10) return [`unsupported lesson context schema version: ${String(context.schemaVersion)}`];
   // Older synthetic and cached V2 locks predate the claim graph / beat identity contract.
   if (!sections?.some((section) => recordOf(section.contract))) {

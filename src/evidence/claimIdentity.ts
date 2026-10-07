@@ -40,6 +40,26 @@ interface PredicateForms {
   passive: readonly RegExp[];
 }
 
+/**
+ * One finite active wording per relation for planning prompts. Every wording
+ * is already accepted by PREDICATES below; this is no source-entailment claim
+ * and must never be used to manufacture a factual statement from a graph edge.
+ */
+export const CANONICAL_RELATION_WORDING: Readonly<Record<RelationType, string>> = Object.freeze({
+  causes: 'causes',
+  feeds: 'feeds',
+  contains: 'contains',
+  compares: 'compares with',
+  transforms: 'transforms into',
+  requires: 'requires',
+  produces: 'produces',
+  opposes: 'opposes',
+  supports: 'supports',
+  excepts: 'excludes',
+  branches: 'branches into',
+  precedes: 'precedes',
+});
+
 /*
  * Deliberately finite aliases. Active forms link the preceding concept to the
  * following one; passive forms link the following concept to the preceding

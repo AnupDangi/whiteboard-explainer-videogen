@@ -32,8 +32,8 @@ S5 speech + word alignment + duration fit
        │
        ▼
 scene representation dispatch
-       ├── all visual beats use supported state_transition → typed SemanticOps → deterministic BoardOps
-       └── unsupported or mixed families → S6 legacy BoardOps preview (draft only)
+       ├── each visual beat dispatches to its registered typed provider → SemanticOps → deterministic BoardOps
+       └── any unavailable family keeps the full scene on the S6 legacy BoardOps preview (draft only)
        │
        ▼
           BoardOps + persistent board state
@@ -101,8 +101,8 @@ resolved phrase intervals for downstream scheduling. Typed lowering records each
 semantic event's exact BoardOp IDs; the timeline schedules those groups from the
 final aligned phrase start/end, respecting operation order, dependencies,
 concurrency and reserved pauses. An action that cannot fit remains explicitly
-late and blocks typed lock publication/encoding. Legacy previews retain sentence-cue scheduling. New `lesson-context/v11`
-and representation execution v4 locks rederive both event groups and the full
+late and blocks typed lock publication/encoding. Legacy previews retain sentence-cue scheduling. New `lesson-context/v12`
+and representation execution v5 locks rederive per-beat provider identities, event groups and the full
 timeline, and compare scene beat/phrase clocks to final narration and aligned
 words. Older schemas retain their historical replay contract. This is clock
 integrity, not proof that a phrase or drawing expresses the claimed mechanism;
@@ -129,11 +129,13 @@ compilation, and an explicit family fallback. Its availability inventory lists
 all 19 planned families; a missing provider returns `provider_unavailable`
 instead of generating a generic BoardOps substitute.
 
-The registry currently activates only `state_transition` v4, for `introduce`,
-`transform`, `separate`, and `merge` changes; other change kinds and the other
-18 families stay unavailable. V2 routes a scene through that provider only
-when every visual beat in the scene selects `state_transition` and all required
-changes are supported. It derives the family model from pinned beat changes,
+The registry currently activates `state_transition` v4 for `introduce`,
+`transform`, `separate`, and `merge`, plus `causal_chain` v1 for `introduce`,
+`focus`, and exact directed `causes` edges; the other 17 families and unsupported
+change kinds remain unavailable. V2 dispatches each beat by its registered family
+and carries the semantic scene state between providers. If any visual beat has
+no provider, the scene stays on the legacy preview route. It derives each family
+model from pinned beat changes,
 compiles and replays `SemanticOp`s, then lowers them to BoardOps. A separation
 names one source and uses the beat's ordered first-reveal entities as its two
 to six results; a newly revealed source must first be introduced in that beat.
@@ -339,7 +341,7 @@ Before audio generation, V2 projects canonical claims into
 digest and policy, then joins each hash-pinned reference back to exact resolved
 graph evidence and the source document. For bundled inputs, each source span
 retains its original document digest and offsets rather than inheriting the
-concatenated bundle hash. New runs write `lesson-context/v11`; v10 and earlier locks retain
+concatenated bundle hash. New runs write `lesson-context/v12` and representation execution v5; v11/v4 and earlier locks retain
 their historical compatibility contract. Lock verification
 requires each claim's explicit type and derived verification status, checks
 its source refs against the claim's cited spans, verifies the beat learner
@@ -487,7 +489,7 @@ uses the exact scene-vocabulary entry for eligible entity rendering, subject to
 the existing semantic-type, exact/curated selection, domain and licensing
 gates. The locked concept metadata captures the selected asset and scene style,
 and replay uses the pinned selection. New runs write
-`lesson-context/v11`; v10 and earlier contexts remain readable. Current-pipeline
+`lesson-context/v12`; v11 and earlier contexts remain readable. Current-pipeline
 locks require the current typed provider version. Older state-transition/v3
 records are accepted only on an explicitly requested raster replay with a
 different pinned pipeline digest, and cannot claim merge support. The diagnostic

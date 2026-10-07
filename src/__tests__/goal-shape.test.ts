@@ -26,6 +26,7 @@ test('S2, syllabus, and S3 prompts preserve supported components without decompo
   assert.match(SYLLABUS_COMPONENT_GUIDANCE, /physical participant.*component.*material or substrate.*input.*product\/output/i);
   assert.match(SYLLABUS_COMPONENT_GUIDANCE, /own stable concept.*source term and evidence/i);
   assert.match(SYLLABUS_COMPONENT_GUIDANCE, /do not use its label as a substitute.*or infer.*not supported by evidence/i);
+  assert.match(SYLLABUS_COMPONENT_GUIDANCE, /source noun for that thing.*do not append its production, release, or transformation action/i);
   assert.match(CONCEPT_STRUCTURE_GUIDANCE, /entity is a source-named object.*identity distinct from the action/i);
   assert.match(CONCEPT_STRUCTURE_GUIDANCE, /process or event names the action, change, transformation, or occurrence/i);
   assert.match(CONCEPT_STRUCTURE_GUIDANCE, /never classify an action or process label as an entity just to make it drawable/i);

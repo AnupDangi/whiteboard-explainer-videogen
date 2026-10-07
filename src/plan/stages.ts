@@ -11,6 +11,7 @@ import { SCENE_SEC, WORDS_PER_SEC, analyzeTeachingPlan, sceneCountFor } from './
 import type { StageRunRecord } from '../shared/contracts.js';
 import { createEvidenceLedgerFromClaims, type GroundingMode } from '../evidence/ledger.js';
 import { sourceDocFromText, spanExcerptPrompt, type SourceDoc, type SourceBundle } from '../intake/sourceDoc.js';
+import { CANONICAL_RELATION_WORDING } from '../evidence/claimIdentity.js';
 import { anchorQuote, type AnchorMatch } from './evidenceAnchor.js';
 import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import { canonicalizePlanClaims, continuityProblems, deriveTeachingPlan, teachingContractProblems, teachingDirectorProblems } from './contracts.js';
@@ -65,8 +66,8 @@ export type LessonSourceInput =
 const S2_SOURCE_MAX_CHARS = 60_000;
 const S2_RELATION_GUIDANCE: Record<(typeof RELATION_TYPES)[number], string> = {
   causes: 'one concept brings about another', feeds: 'one concept supplies or feeds another', contains: 'one concept contains another',
-  compares: 'the source explicitly compares the concepts', transforms: 'one concept changes into another', requires: 'one concept depends on another',
-  produces: 'one concept produces another', opposes: 'the source states an opposition', supports: 'the cited evidence supports the claim concept',
+  compares: 'the source explicitly compares the concepts', transforms: 'the same source-described referent changes identity or state into the target, not merely supplies energy or material used to make it', requires: 'one concept depends on another',
+  produces: 'the source participant or process makes the actual output named by the evidence, not a substitute concept naming its production or release action', opposes: 'the source states an opposition', supports: 'the cited evidence supports the claim concept',
   excepts: 'one rule explicitly has the other concept as its exception', branches: 'a decision explicitly branches on the target condition',
   precedes: 'the source explicitly states that the first event occurs before the second',
 };
@@ -91,6 +92,7 @@ Return ONE JSON object: { "concepts": [...], "relations": [...], "prerequisites"
 - ${CONCEPT_STRUCTURE_GUIDANCE}
 - For mathematical ideas give "latex" (valid TeX, no $ signs) when there is a formula, and set "level": "multi-step" when understanding it takes several dependent steps (e.g. a derivation, an algorithm, a rule applied repeatedly), otherwise "one-step".
 - relations: at most ${maxRelations} directed links between concept ids. Allowed types and meaning: ${RELATION_TYPES.map((type) => `${type} = ${S2_RELATION_GUIDANCE[type]}`).join('; ')}. Choose a specialized type only when the source evidence explicitly supports that meaning. Keep only the most important source-stated teaching relations; include 1-3 exact evidence references for each. Do not create summary/model nodes to collect several facts.
+- A relation needs evidence for its exact participants, predicate, and direction, not merely a quote that mentions related terms. Prefer a self-contained source clause naming those participants and the asserted relationship; do not clip away the subject or cite an unresolved pronoun as its only identity. Match the endpoints to their canonical definitions as well as their labels. Energy or material supplied to a process is not by itself evidence that the supplier transforms into the product. Keep the actual output distinct from its production or release action. If the fixed concept scope cannot truthfully express a relation, do not change IDs, rename a participant, or invent a claim to rescue it; include only relationships supported for the existing concept identities.
 - prerequisites: at most ${maxPrerequisites} { concept, needs } links, only when a concept cannot be understood without another one.
 - Never invent facts that are not in the source. Keep it to what fits the requested duration (about one concept per 10-15 seconds).${scopeRule}`;
   const user = `Target duration: ${req.targetDurationSec} seconds.${req.audience ? `\nAudience: ${req.audience}.` : ''}${req.instruction ? `\nLearner request: ${req.instruction}` : ''}
@@ -338,6 +340,7 @@ Rules:
  - A concept may appear again in a later section (to build on it or recap it); it keeps its graph label everywhere.
  - teachingSkill: one of ${TEACHING_SKILLS.join(', ')}. candidateMechanisms: 1-3 of ${VISUAL_MECHANISMS.join(', ')} — ways the board could show this scene.
  - essentialClaims: 1-8 atomic claims this scene must teach; visualize only source-backed claims. Each is {"id","statement","epistemicType","conceptIds","relations","evidenceSpanIds"}; epistemicType is direct_source|derived_relation|pedagogical_bridge|illustrative_example|analogy|unverified_explanation. A derived_relation must list a graph relation; a direct_source must not. Examples and analogies need explicit wording in the statement and remain visibly nonfactual. An unverified_explanation is allowed only in OPEN_EXPLANATION, has no graph relation or evidenceSpanIds, is isolated to a narration-only beat later, and says it is “not verified by the supplied source.” Use a unique lowercase id across the whole lesson. Link only this section's concept IDs and graph relations between them. Cite span IDs from the linked concepts or relations; never cite an unrelated span. Do not list every graph node as a separate claim. Pick the essential statements that teach this scene's goal.
+ - A relation-bearing claim lists at most one directed graph relation. Its statement must contain BOTH exact canonical endpoint labels and an explicit matching predicate in ONE directed clause. Do not replace an endpoint with a synonym or omit words from its canonical label, and do not borrow a predicate across separate clauses. Canonical active wording already accepted by the identity parser: ${RELATION_TYPES.map((type) => `${type}: ${CANONICAL_RELATION_WORDING[type]}`).join('; ')}. These are wording choices for a source-supported fact, not evidence that an edge is true. Keep the same participants, meaning, and direction as the cited source. If a graph edge conflicts with the canonical definitions or evidence, do not manufacture a claim, substitute a product for an action, rename an ID, or change the relation just to satisfy it; an inconsistent required contract must remain a validation failure.
 - title: at most ${SECTION_TITLE_MAX_WORDS} words. Do not put a number (digits or a word like "three") in a title unless the source evidence for that section's concepts states it.
 - ${PLAN_COMPONENT_GUIDANCE}
 - Order by prerequisites: a concept is never taught before what it needs.

@@ -50,6 +50,9 @@ test('S1 prompt keeps source-backed mechanism participants distinct from the pro
   assert.match(prompt, /as its own stable concept with its source term and evidence/i);
   assert.match(prompt, /Preserve the process\/action as a separate concept/i);
   assert.match(prompt, /do not .* infer objects, inputs, or products not supported by evidence/i);
+  assert.match(prompt, /Name a material input or output with the source noun for that thing/i);
+  assert.match(prompt, /do not append its production, release, or transformation action to the product name/i);
+  assert.match(prompt, /never shorten a fixed concept label, reclassify an action as an object, or infer a new referent/i);
 });
 
 test('S1 source payload contains exact text once with citation-relevant span locations and no duplicated retrieval payload', () => {

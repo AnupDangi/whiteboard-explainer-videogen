@@ -305,7 +305,7 @@ test('the V2 runner turns beats and narration into a retained-board video with r
       validatedByConcept: Record<string, string>;
       evidenceLedger: { groundingMode: string; claims: Array<{ id: string; epistemicType: string; verificationStatus?: string; sourceRefs: Array<Record<string, unknown>> }> };
     };
-    assert.equal(lessonContext.schemaVersion, 'lesson-context/v11');
+    assert.equal(lessonContext.schemaVersion, 'lesson-context/v12');
     assert.deepEqual(lessonContext.validatedByConcept, { frame: 'iconify-lucide:frame' });
     assert.equal(lessonContext.groundingMode, 'SOURCE_PLUS_BACKGROUND');
     assert.equal(lessonContext.evidenceLedger.groundingMode, 'SOURCE_PLUS_BACKGROUND');
@@ -574,7 +574,7 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
       representationExecution: { schemaVersion: string; scenes: Array<{ sceneId: string; mode: string; providerVersion?: string; semanticOperations: unknown[]; selectedAssetIds: Record<string, string>; claimCoverage: { rows: unknown[]; weightedPossible: number }; renderedEntityAssets: Array<{ elementId: string; conceptId: string; selectedAssetId: string | null; resolvedAssetId: string | null; depictionFamily: string; meaningful: boolean; pathCount: number; fillCount: number; embedCount: number }>; unrenderedSelectedConceptIds: string[] }> };
     };
     const scenes = context.representationExecution.scenes;
-    assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v4');
+    assert.equal(context.representationExecution.schemaVersion, 'v2-representation-execution/v5');
     assert.equal(scenes.length, 2);
     assert.ok(scenes.every((scene) => scene.mode === 'typed-semantic' && scene.providerVersion === 'state-transition/v4'));
     assert.ok(scenes.every((scene) => scene.semanticOperations.length === 2));
@@ -597,7 +597,7 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     type ExecutionScene = { sceneId: string; semanticOperations: Array<{ type: string; entity?: { state?: string } }>; renderedEntityAssets: Array<{ conceptId: string; resolvedAssetId: string | null }>; claimCoverage: { rows: Array<{ rationale: string }> } };
     const contextValue = JSON.parse(await readFile(contextPath, 'utf8')) as { representationExecution: { scenes: ExecutionScene[] } };
     const sceneValue = JSON.parse(await readFile(scenePath, 'utf8')) as { representationExecution: ExecutionScene };
-    // A current-pipeline lock cannot relabel its v4 provider as v3, even when no merge occurs.
+    // A current-pipeline lock cannot relabel its v5 provider as v3, even when no merge occurs.
     const originalContextBytes = await readFile(contextPath, 'utf8');
     const originalSceneBytes = await readFile(scenePath, 'utf8');
     const providerContext = JSON.parse(originalContextBytes);
@@ -617,7 +617,7 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
     const providerLockBytes = `${JSON.stringify(lock, null, 2)}\n`;
     await writeFile(lockPath, providerLockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), providerLockBytes);
-    assert.ok((await verifyLessonLockV2(out)).some((problem) => /typed semantic provider identity is not recognized/.test(problem)));
+    assert.ok((await verifyLessonLockV2(out)).some((problem) => /typed semantic beat provider identity is not recognized/.test(problem)));
     await writeFile(contextPath, originalContextBytes);
     await writeFile(scenePath, originalSceneBytes);
     contextValue.representationExecution.scenes.find((scene) => scene.sceneId === 'one')!.semanticOperations[0]!.entity!.state = 'forged state';
@@ -644,7 +644,7 @@ test('V2 routes supported state-transition scenes through typed semantics and lo
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('a rehashed v11 lock rejects changed semantic event groups and changed captured schedule anchors', async () => {
+test('a rehashed v12 lock rejects changed semantic event groups and changed captured schedule anchors', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v11-event-replay-'));
   try {
     const out = await fixtureRun(dir, false, true);
@@ -710,14 +710,14 @@ test('v9 lesson contexts with v2 representation records remain replayable after 
       contentHash: string; context: { file: string; hash: string };
       scenes: Array<{ sceneId: string; file: string; fileHash: string }>;
     };
-    type LegacyExecution = { schemaVersion: string; providerVersion?: string; beats: Array<{ providerVersion?: string }>; mechanismRequirements?: unknown; claimCoverage?: unknown };
+    type LegacyExecution = { schemaVersion: string; providerVersion?: string; beats: Array<{ providerVersion?: string; providerSource?: string }>; mechanismRequirements?: unknown; claimCoverage?: unknown };
     type LessonContext = { schemaVersion: string; representationExecution: { schemaVersion: string; scenes: LegacyExecution[] } };
     type SceneRecord = { representationExecution: LegacyExecution };
     const downgrade = (execution: LegacyExecution) => {
       delete (execution as unknown as { semanticEventBindings?: unknown }).semanticEventBindings;
       execution.schemaVersion = 'v2-representation-execution/v2';
       execution.providerVersion = 'state-transition/v2';
-      for (const beat of execution.beats) beat.providerVersion = 'state-transition/v2';
+      for (const beat of execution.beats) { beat.providerVersion = 'state-transition/v2'; delete beat.providerSource; }
       delete execution.mechanismRequirements;
       delete execution.claimCoverage;
     };
@@ -746,7 +746,7 @@ test('v9 lesson contexts with v2 representation records remain replayable after 
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('a rehashed v11 lock cannot omit its mandatory representation replay record', async () => {
+test('a rehashed v12 lock cannot omit its mandatory representation replay record', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v11-representation-required-'));
   try {
     const out = await fixtureRun(dir, false, true);
@@ -754,7 +754,7 @@ test('a rehashed v11 lock cannot omit its mandatory representation replay record
     const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { contentHash: string; context: { file: string; hash: string } };
     const contextPath = path.join(out, lock.context.file);
     const context = JSON.parse(await readFile(contextPath, 'utf8')) as Record<string, unknown>;
-    assert.equal(context.schemaVersion, 'lesson-context/v11');
+    assert.equal(context.schemaVersion, 'lesson-context/v12');
     delete context.representationExecution;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -765,7 +765,7 @@ test('a rehashed v11 lock cannot omit its mandatory representation replay record
     await writeFile(lockPath, lockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), lockBytes);
     const problems = await verifyLessonLockV2(out);
-    assert.ok(problems.some((problem) => /lesson-context\/v11 is missing the required representationExecution record/u.test(problem)), problems.join('\n'));
+    assert.ok(problems.some((problem) => /lesson-context\/v12 is missing the required representationExecution record/u.test(problem)), problems.join('\n'));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -978,7 +978,7 @@ test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject r
       schemaVersion: string;
       lessonHierarchy: { mode: string; chapters: Array<{ chapterId: string; sceneIds: string[]; scenes: Array<{ sceneId: string }>; plannedBudgetMs: number; evidenceSpanIds: string[]; recallOfChapterIds: string[]; checkpoint: { cumulativeClaimIds: string[] } }> };
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v11');
+    assert.equal(context.schemaVersion, 'lesson-context/v12');
     assert.equal(context.lessonHierarchy.mode, 'syllabus');
     assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.sceneIds), [['one'], ['two']]);
     assert.deepEqual(context.lessonHierarchy.chapters.map((chapter) => chapter.scenes.map((scene) => scene.sceneId)), [['one'], ['two']]);
@@ -1021,7 +1021,7 @@ test('V2 lesson hierarchy checkpoints bind chapters to final scenes and reject r
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v11', async () => {
+test('the V2 lock rejects untyped claims, invalid learner dependencies, and semantic identity drift in rehashed lesson-context/v12', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-lock-v3-epistemic-'));
   try {
     const out = await fixtureRun(dir);
@@ -1034,7 +1034,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
       beatPlans: Record<string, Array<Record<string, unknown>>>;
       validatedByConcept: Record<string, string>;
     };
-    assert.equal(context.schemaVersion, 'lesson-context/v11');
+    assert.equal(context.schemaVersion, 'lesson-context/v12');
     delete context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType;
     const contextBytes = `${JSON.stringify(context, null, 2)}\n`;
     await writeFile(contextPath, contextBytes);
@@ -1085,7 +1085,7 @@ test('the V2 lock rejects untyped claims, invalid learner dependencies, and sema
     await writeFile(lockPath, visualLockBytes);
     await writeFile(path.join(out, 'lesson.lock.json'), visualLockBytes);
     const visualProblems = await verifyLessonLockV2(out);
-    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v11 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
+    assert.ok(visualProblems.some((problem) => /visual asset does not match lesson-context\/v12 Visual Discovery/u.test(problem)), visualProblems.join('\n'));
 
     context.plan.sections[0]!.contract.essentialClaims[0]!.verificationStatus = 'source_cited';
     context.plan.sections[0]!.contract.essentialClaims[0]!.epistemicType = 'direct_source';
@@ -1199,7 +1199,7 @@ test('replaying a V2 lock twenty times gives identical ops, geometry, events, as
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('V2 lock v5 retains pre-v11 lifecycle compatibility without weakening v11 schedule replay', async () => {
+test('V2 lock v5 retains pre-v11 lifecycle compatibility without weakening v12 schedule replay', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'hyp-v2-legacy-lock-'));
   try {
     const out = await fixtureRun(dir);

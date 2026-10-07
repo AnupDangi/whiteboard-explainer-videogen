@@ -4,7 +4,8 @@ import type { TeachingBeat } from '../teaching/beat-plan/types.js';
 import { applySemanticProgram } from '../teaching/semantic-ir/program.js';
 import { compileSemanticOpsToBoardOps, type SemanticEventBoardBinding } from '../teaching/semantic-ir/toBoardOps.js';
 import type { SemanticOp, SemanticSceneState } from '../teaching/semantic-ir/types.js';
-import { stateTransitionProvider } from '../teaching/representation/stateTransition.js';
+import { REPRESENTATION_PROVIDER_REGISTRY } from '../teaching/representation/registry.js';
+import { semanticRelationClaimProblems } from '../teaching/representation/claimBindings.js';
 import type { MechanismRequirement } from '../teaching/representation/providerRegistry.js';
 import type { ClaimCoverageReport } from './claimCoverage.js';
 import type { BeatTiming } from '../visual-v2/timeline/compile.js';
@@ -14,7 +15,7 @@ import type { BoardContext } from '../visual-v2/ops-plan/validate.js';
 import type { RenderedEntityAssetEvidence } from './renderedEntityAssets.js';
 
 export interface RepresentationExecutionRecord {
-  schemaVersion: 'v2-representation-execution/v4';
+  schemaVersion: 'v2-representation-execution/v5';
   sceneId: string;
   mode: 'typed-semantic' | 'legacy-boardops-preview';
   providerVersion?: string;
@@ -24,6 +25,7 @@ export interface RepresentationExecutionRecord {
     family: string;
     status: 'compiled' | 'provider-unavailable';
     providerVersion?: string;
+    providerSource?: 'family-fallback';
     problem?: string;
   }>;
   semanticOperations: SemanticOp[];
@@ -76,8 +78,8 @@ function cuesFromNarration(narration: CompiledSceneNarration): Record<string, nu
 }
 
 /**
- * Execute the one implemented typed family in V2. Unsupported families are left on the existing S6 preview route and
- * are explicitly marked unavailable; a state-transition contract failure never falls through to generic BoardOps.
+ * Dispatch implemented families against one scene semantic state. Unsupported families leave the scene on the
+ * S6 preview route; a registered provider's contract failure never falls through to generic BoardOps.
  */
 export function executeSemanticScene(input: {
   context: BoardContext;
@@ -87,19 +89,26 @@ export function executeSemanticScene(input: {
   const { context, narration, beatTimings } = input;
   const visualBeats = context.beats.filter((beat) => !beat.narrationOnly);
   const icons = selectedIcons(context);
-  if (!visualBeats.length || visualBeats.some((beat) => beat.representationFamily !== 'state_transition')) {
+  const statuses = new Map(REPRESENTATION_PROVIDER_REGISTRY.statuses.map((status) => [status.family, status]));
+  const unavailableFamilies = [...new Set(visualBeats.filter((beat) => statuses.get(beat.representationFamily)?.status !== 'implemented').map((beat) => beat.representationFamily))];
+  const versions = [...new Set(visualBeats.flatMap((beat) => statuses.get(beat.representationFamily)?.version ?? []))];
+  const providerIdentity = {
+    ...(versions.length === 1 ? { providerVersion: versions[0] } : {}),
+    providerSource: 'family-fallback' as const,
+  };
+  if (!visualBeats.length || unavailableFamilies.length) {
     const beats = visualBeats.map((beat) => ({
       beatId: beat.beatId,
       family: beat.representationFamily,
       status: 'provider-unavailable' as const,
-      problem: beat.representationFamily === 'state_transition'
-        ? 'scene has mixed representation families; typed composition is not implemented'
+      problem: statuses.get(beat.representationFamily)?.status === 'implemented'
+        ? `scene contains unavailable providers (${unavailableFamilies.join(', ')}); typed execution was not attempted`
         : `typed semantic provider for ${beat.representationFamily} is not implemented`,
     }));
     return {
       status: 'legacy-preview',
       record: {
-        schemaVersion: 'v2-representation-execution/v4', sceneId: context.sceneId,
+        schemaVersion: 'v2-representation-execution/v5', sceneId: context.sceneId,
         mode: 'legacy-boardops-preview', beats, semanticOperations: [], semanticEventBindings: [], mechanismRequirements: [], cueByEventId: {}, selectedAssetIds: icons,
         renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
       },
@@ -124,18 +133,28 @@ export function executeSemanticScene(input: {
   const usedEdgeIds = new Set(Object.keys(startingBoard.edges));
 
   for (const beat of visualBeats) {
-    const provider = stateTransitionProvider.compileFallback(semanticState, beat);
+    const provider = REPRESENTATION_PROVIDER_REGISTRY.compileFallback(beat.representationFamily, semanticState, beat);
     if (!provider.ok) {
       beatRecords.push({ beatId: beat.beatId, family: beat.representationFamily, status: 'provider-unavailable', problem: `${provider.code}: ${provider.problems.map((problem) => problem.message).join('; ')}` });
       return {
         status: 'failed',
         record: {
-          schemaVersion: 'v2-representation-execution/v4', sceneId: context.sceneId, mode: 'typed-semantic',
-          providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
+          schemaVersion: 'v2-representation-execution/v5', sceneId: context.sceneId, mode: 'typed-semantic',
+          ...providerIdentity, beats: beatRecords,
           semanticOperations: allSemanticOperations, semanticEventBindings, mechanismRequirements: allMechanismRequirements, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
         },
         problems: beatRecords.map((item) => `${item.beatId}: ${item.problem ?? 'provider failed'}`),
       };
+    }
+    const claimProblems = semanticRelationClaimProblems(provider.operations, beat, context.claims ?? []);
+    if (claimProblems.length) {
+      beatRecords.push({ beatId: beat.beatId, family: beat.representationFamily, status: 'provider-unavailable', problem: claimProblems.map((problem) => problem.message).join('; ') });
+      return { status: 'failed', record: {
+        schemaVersion: 'v2-representation-execution/v5', sceneId: context.sceneId, mode: 'typed-semantic',
+        ...providerIdentity, beats: beatRecords, semanticOperations: allSemanticOperations, semanticEventBindings,
+        mechanismRequirements: allMechanismRequirements, cueByEventId, selectedAssetIds: icons,
+        renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
+      }, problems: claimProblems.map((problem) => `${beat.beatId}: ${problem.path}: ${problem.message}`) };
     }
     const lowered = compileSemanticOpsToBoardOps(semanticState, provider.operations, {
       concepts: context.concepts.map(({ id, label, kind }) => ({ id, label, ...(kind ? { kind } : {}) })),
@@ -148,8 +167,8 @@ export function executeSemanticScene(input: {
       return {
         status: 'failed',
         record: {
-          schemaVersion: 'v2-representation-execution/v4', sceneId: context.sceneId, mode: 'typed-semantic',
-          providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
+          schemaVersion: 'v2-representation-execution/v5', sceneId: context.sceneId, mode: 'typed-semantic',
+          ...providerIdentity, beats: beatRecords,
           semanticOperations: allSemanticOperations, semanticEventBindings, mechanismRequirements: allMechanismRequirements, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
         },
         problems: beatRecords.map((item) => `${item.beatId}: ${item.problem ?? 'lowering failed'}`),
@@ -170,7 +189,7 @@ export function executeSemanticScene(input: {
       else if (op.op === 'merge') usedElementIds.add(op.into.id);
       else if (op.op === 'connect') usedEdgeIds.add(op.id);
     }
-    beatRecords.push({ beatId: beat.beatId, family: beat.representationFamily, status: 'compiled', providerVersion: provider.providerVersion });
+    beatRecords.push({ beatId: beat.beatId, family: beat.representationFamily, status: 'compiled', providerVersion: provider.providerVersion, providerSource: 'family-fallback' });
   }
 
   const semanticReplay = applySemanticProgram(emptySemanticState(context.sceneId), allSemanticOperations, { knownBeatIds, knownClaimIds });
@@ -178,16 +197,16 @@ export function executeSemanticScene(input: {
     return {
       status: 'failed',
       record: {
-        schemaVersion: 'v2-representation-execution/v4', sceneId: context.sceneId, mode: 'typed-semantic',
-        providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback', beats: beatRecords,
+        schemaVersion: 'v2-representation-execution/v5', sceneId: context.sceneId, mode: 'typed-semantic',
+        ...providerIdentity, beats: beatRecords,
         semanticOperations: allSemanticOperations, semanticEventBindings, mechanismRequirements: allMechanismRequirements, cueByEventId, selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
       },
       problems: semanticReplay.problems.map((problem) => `${problem.path}: ${problem.message}`),
     };
   }
   const record: RepresentationExecutionRecord = {
-    schemaVersion: 'v2-representation-execution/v4', sceneId: context.sceneId,
-    mode: 'typed-semantic', providerVersion: stateTransitionProvider.version, providerSource: 'family-fallback',
+    schemaVersion: 'v2-representation-execution/v5', sceneId: context.sceneId,
+    mode: 'typed-semantic', ...providerIdentity,
     beats: beatRecords, semanticOperations: allSemanticOperations, semanticEventBindings, mechanismRequirements: allMechanismRequirements,
     cueByEventId: cuesFromNarration(narration), selectedAssetIds: icons, renderedEntityAssets: [], unrenderedSelectedConceptIds: Object.keys(icons).sort(),
   };

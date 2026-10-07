@@ -1,5 +1,14 @@
 # HANDOFF — Claude hypothesis track
 
+## Current Codex continuation — 2026-10-07
+
+- **Provider execution:** registered `causal_chain/v1` for exact directed `causes` relations and per-beat family dispatch alongside `state_transition/v4`. A mixed family scene now carries semantic state across providers and records version/source for each beat. Unsupported families still hold the scene on the draft preview path.
+- **Claim binding:** each causal event resolves one outgoing canonical edge, requires unique declared endpoint entities, and binds to claims that assert that exact directed relation. Ambiguous endpoints/edges and arbitrary event claim IDs fail closed.
+- **Lock version:** new output writes lesson-context v12 and representation-execution v5. Lock replay dispatches the registered fallback per beat and rechecks provider identity, relation/claim binding, operations, icon/render evidence, phrase clocks and schedule. v1–v4 representation records and older contexts retain their existing readers. Added a v12 hierarchy verifier branch after the full test suite exposed that hierarchy verification skipped v12.
+- **Prompt contract:** S1 keeps output nouns distinct from release/production actions; S2 asks for relation evidence with exact participants, predicate and direction; S3 requires exact endpoint labels and a parser-accepted predicate in one directed clause. Parser wording/identity acceptance and evidence gates did not change. This does not prove that an anchored S2 quote entails a relation; a structured relation witness remains open work.
+- **Verification:** full suite passed **1,481/1,481 Node + 2/2 retained-board audit + 28/28 alignment + 12/12 RAG**. The default sandbox denied the preview server's loopback bind (`EPERM 127.0.0.1`); the same suite passed when rerun with local-loopback permission. `git diff --check` and `node scripts/v2-benchmark.mjs verify cold-v2` pass. New tests are synthetic contract checks; they do not prove source lesson quality or Simi parity.
+- **Evidence boundary:** the S1–S3 prompt changes do not prove that an anchored relation quote entails its edge; an exact structured relation witness remains missing. No fresh public-source MP4 has yet been generated for this continuation. Historical retained clips remain unchanged and are not evidence for the new provider.
+
 ## V3 compiler-refactor roadmap — 2026-10-05
 
 Scope follows the user's pasted 45-point architecture proposal. This is an implementation roadmap, not a claim that V3 is complete. Preserve V2 runs, sources, and frozen baselines as evidence; keep the prototype isolated from production. A phase is complete only when its stated contract is implemented, tested, and its live acceptance evidence is recorded separately.

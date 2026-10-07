@@ -194,6 +194,21 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
       if (!eventClaimIds.length) problems.push({ path: `${path}/claimIds`, message: 'a semantic change must be bound to at least one canonical claim' });
       if (new Set(eventClaimIds).size !== eventClaimIds.length) problems.push({ path: `${path}/claimIds`, message: 'semantic change claim ids must be unique' });
       const entity = beat.entities.find((candidate) => candidate.identityKey === change.identityKey);
+      if (change.kind === 'cause') {
+        const candidates = beat.relationships.filter((relation) => relation.type === 'causes' && relation.from === entity?.conceptId);
+        if (candidates.length !== 1) problems.push({ path: `${path}/identityKey`, message: 'a cause change must resolve to exactly one outgoing causes relation from its declared entity' });
+        else {
+          const relation = candidates[0]!;
+          for (const conceptId of [relation.from, relation.to]) {
+            if (beat.entities.filter((candidate) => candidate.conceptId === conceptId).length !== 1) problems.push({ path: `${at}/entities`, message: `cause endpoint ${conceptId} must resolve to exactly one declared entity` });
+          }
+          for (const [claimIndex, claimId] of eventClaimIds.entries()) {
+            if (!claimsById.get(claimId)?.relations.some((candidate) => relationKey(candidate) === relationKey(relation))) {
+              problems.push({ path: `${path}/claimIds/${claimIndex}`, message: `claim ${claimId} does not assert the cause event's exact directed relation` });
+            }
+          }
+        }
+      }
       if (change.kind === 'introduce') {
         activeIdentityKeys.add(change.identityKey);
         currentSemanticStates.set(change.identityKey, change.toState);
