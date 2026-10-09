@@ -45,6 +45,7 @@ import { buildLessonHierarchy, lessonHierarchyInputArtifact } from './lessonHier
 import { executeSemanticScene, type RepresentationExecutionRecord } from './semanticExecution.js';
 import { auditRenderedEntityAssets, requiredSelectedIconConceptIds, requiredSelectedIconProblems, selectedIconVisibilityProblems, unrenderedSelectedConceptIds } from './renderedEntityAssets.js';
 import { scoreClaimCoverage } from './claimCoverage.js';
+import { badgeRightsEvidence } from './badgeProvenance.js';
 import { canonicalHash } from '../harness/replayDeterminism.js';
 import type { SceneBoardDraft } from '../visual-v2/ops-plan/types.js';
 
@@ -453,7 +454,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
       const concept = request.concept ? sceneConceptIndex.get(request.concept.id) : undefined;
       depictionRequests.set(`${key}\0${houseFamily ?? ''}`, { ...request, ...(concept ? { concept } : {}) });
     }
-    const scene = compileScene(section.id, section.title, timeline, input.lessonId, sceneConceptIndex, prior);
+    const scene = compileScene(section.id, section.title, timeline, input.lessonId, sceneConceptIndex, prior, { composition: 'icon-cards' });
     const renderedAssetAudit = auditRenderedEntityAssets(
       scene.timeline.states,
       scene.timeline.states.map((state) => Object.keys(state.elements).flatMap((id) => {
@@ -515,7 +516,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
   const entityDepictions = [...depictionRequests.values()].map(({ concept, label }) => depictEntity(concept, label, { x: 0, y: 0, w: 240, h: 210 }));
   const sceneIconFamilies = compiled.map((scene) => ({
     sceneId: scene.sceneId,
-    houseFamily: [...(scene.concepts?.values() ?? [])].find((concept) => concept.houseFamily)?.houseFamily ?? null,
+    houseFamily: [...(scene.concepts?.values() ?? [])].find((concept) => concept.houseFamily)?.houseFamily ?? scene.badgeFamily ?? null,
   }));
   await dump('scene-icon-families.json', { schemaVersion: 'v2-scene-icon-families/v1', scenes: sceneIconFamilies });
   const catalogueAssets = new Map([...CATALOG, ...loadCatalogLibraries().entries].map((entry) => [entry.id, entry]));
@@ -526,13 +527,14 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     const sourceAsset = entry ? bridgeRecordForCatalogEntry(entry, bridge.assets) : undefined;
     return [buildAssetRightsEvidence({ assetId: d.assetId, license: d.license, releaseClean: d.releaseClean, attributionRequired: d.attributionRequired, ownerApproved: d.ownerApproved }, entry, sourceAsset)];
   });
-  await dump('asset-provenance.json', { schemaVersion: 'v2-asset-provenance/v2', assets: pictures });
-  const credits = [...new Set(pictures.filter((p) => p.attribution.required).map((p) => p.attribution.text ? `${p.attribution.text} [${p.license.identifier}; ${p.assetId}]` : `[MISSING ATTRIBUTION] ${p.assetId} (${p.license.identifier})`))].sort();
+  const drawnAssets = [...pictures, ...badgeRightsEvidence(compiled, catalogueAssets, bridge.assets)];
+  await dump('asset-provenance.json', { schemaVersion: 'v2-asset-provenance/v2', assets: drawnAssets });
+  const credits = [...new Set(drawnAssets.filter((p) => p.attribution.required).map((p) => p.attribution.text ? `${p.attribution.text} [${p.license.identifier}; ${p.assetId}]` : `[MISSING ATTRIBUTION] ${p.assetId} (${p.license.identifier})`))].sort();
   if (credits.length) await writeFile(path.join(outputDir, 'attribution.txt'), `Picture credits required by licence:\n${credits.map((c) => `- ${c}`).join('\n')}\n`, 'utf8');
-  for (const picture of pictures) { const failure = rightsEvidenceFailure(picture); if (failure) failures.push(failure); }
+  for (const picture of drawnAssets) { const failure = rightsEvidenceFailure(picture); if (failure) failures.push(failure); }
   Object.assign(metrics, {
-    'v2.assetsNeedingReview': pictures.filter((p) => !p.releaseEligible).length,
-    'v2.assetsNeedingAttribution': pictures.filter((p) => p.attribution.required).length,
+    'v2.assetsNeedingReview': drawnAssets.filter((p) => !p.releaseEligible).length,
+    'v2.assetsNeedingAttribution': drawnAssets.filter((p) => p.attribution.required).length,
     'v2.scenes': compiled.length,
     'v2.scenesWithIconFamily': sceneIconFamilies.filter((scene) => scene.houseFamily !== null).length,
     'v2.ops': allOps.length,
@@ -541,6 +543,7 @@ export async function runLessonV2(input: RunLessonV2Input): Promise<RunLessonV2R
     'v2.kitElements': allOps.filter((o) => o.op === 'add' && o.element.type === 'kit').length,
     'v2.visualBeatCoverage': visualBeats.length ? visualBeats.filter((b) => beatsWithOps.has(b.beatId)).length / visualBeats.length : 1,
     'v2.pictorialEntities': entityDepictions.filter((d) => d.meaningful).length,
+    'v2.iconBadges': compiled.reduce((n, s) => n + (s.badges?.size ?? 0), 0),
     'v2.labelledEntities': entityDepictions.filter((d) => !d.meaningful).length,
     'v2.retainedMoved': compiled.reduce((n, s) => n + s.geometry.moved.length, 0),
     'v2.lateOps': compiled.reduce((n, s) => n + s.timeline.lateOps.length, 0),

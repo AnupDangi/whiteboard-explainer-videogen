@@ -63,6 +63,8 @@ const EvidenceReferenceSchema = z.object({
   quote: z.string().min(1).max(600),
   documentSha256: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   quoteSha256: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  /** Matches shared EvidenceReference.sourceRole in contracts.ts: planner evidence carries it onto board citations. */
+  sourceRole: z.enum(['primary', 'background']).optional(),
   sourceLocation: NativeSourceLocationSchema.optional(),
 }).strict().refine((ref) => ref.endChar > ref.startChar && ref.endLine >= ref.startLine, 'invalid source evidence range');
 const evidenceRefs = z.array(EvidenceReferenceSchema).min(1).max(6).optional();

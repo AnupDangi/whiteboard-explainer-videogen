@@ -31,3 +31,12 @@ test('S6 semaphore bounds planner work across concurrent live runs in one proces
   assert.deepEqual([...first, ...second], [1, 2, 3, 4, 5, 6]);
   assert.ok(peak <= DEFAULT_SCENE_PLANNER_CONCURRENCY, `observed ${peak} active planner calls`);
 });
+
+test('default host concurrency uses the available cores: S6 covers a typical scene count, TTS/alignment and raster are not capped at 2', async () => {
+  const { DEFAULT_HOST_RASTER_CONCURRENCY, DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY, DEFAULT_SCENE_CONCURRENCY } = await import('../run/runLive.js');
+  if (process.env.HYPOTHESIS_S6_CONCURRENCY || process.env.HYPOTHESIS_RASTER_CONCURRENCY || process.env.HYPOTHESIS_TTS_ALIGNMENT_CONCURRENCY || process.env.HYPOTHESIS_SCENE_CONCURRENCY) return;
+  assert.ok(DEFAULT_SCENE_PLANNER_CONCURRENCY >= 6, `S6 ${DEFAULT_SCENE_PLANNER_CONCURRENCY}`);
+  assert.ok(DEFAULT_SCENE_CONCURRENCY >= 6, `scenes ${DEFAULT_SCENE_CONCURRENCY}`);
+  assert.ok(DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY >= 3, `tts ${DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY}`);
+  assert.ok(DEFAULT_HOST_RASTER_CONCURRENCY >= 4, `raster ${DEFAULT_HOST_RASTER_CONCURRENCY}`);
+});

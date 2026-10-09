@@ -186,3 +186,15 @@ test('structural: duplicate element ids are rejected', () => {
   const issues = validateSceneSpecStructure(parsed.data);
   assert.ok(issues.some((i) => i.code === 'duplicate-element-id'));
 });
+
+test('schema: a scene citing planner evidence keeps its sourceRole (primary or background) and rejects other roles', () => {
+  const evidence = { sourceId: 'src_a', spanId: 'span_1', startChar: 0, endChar: 13, startLine: 1, endLine: 1, quote: 'Cash flows in', sourceRole: 'primary' as const };
+  const spec = baseSpec({ titleEvidenceRefs: [evidence], elements: [{ id: 'a', anchor: 'sceneStart', prim: 'box', text: 'CASH', evidenceRefs: [evidence] }], edges: [] });
+  assert.equal(safeParseSceneSpec(spec).success, true);
+  const background = structuredClone(spec);
+  background.elements[0].evidenceRefs![0].sourceRole = 'background';
+  assert.equal(safeParseSceneSpec(background).success, true);
+  const invalid = structuredClone(spec) as unknown as { elements: Array<{ evidenceRefs: Array<Record<string, unknown>> }> };
+  invalid.elements[0].evidenceRefs[0].sourceRole = 'rumour';
+  assert.equal(safeParseSceneSpec(invalid).success, false);
+});

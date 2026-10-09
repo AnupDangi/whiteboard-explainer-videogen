@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "v2-richness/v1",
+  "composition": "icon-cards",
+  "runs": [
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/rich-visuals/2026-10-live/cmp-bio01/runs/2026-10-08T19-56-36-925Z-712e3abb-87b0-44ca-a858-d47b8d88fc40",
+      "lessonId": "cmp-bio01",
+      "complete": false,
+      "status": "unavailable",
+      "reason": "missing or unreadable v2/scene.membrane_selectivity.json",
+      "hardFailures": 1,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 0,
+        "iconBearingShare": null,
+        "labelOnlyEntityRatio": null,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 0,
+        "meanWordsOnBoard": 0,
+        "meanElementVariety": 0
+      },
+      "scenes": [],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/rich-visuals/2026-10-live/cmp-bio01/runs/2026-10-08T19-59-29-325Z-69dae17e-3a10-411a-9507-eb983301e346",
+      "lessonId": "2026-10-08T19-59-29-325Z-69dae17e-3a10-411a-9507-eb983301e346",
+      "complete": false,
+      "status": "unavailable",
+      "reason": "lesson-prep.json has no plan.sections",
+      "hardFailures": 1,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 0,
+        "iconBearingShare": null,
+        "labelOnlyEntityRatio": null,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 0,
+        "meanWordsOnBoard": 0,
+        "meanElementVariety": 0
+      },
+      "scenes": [],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/rich-visuals/2026-10-live/cmp-cs01/runs/2026-10-08T20-00-41-969Z-9943bab3-c02a-4d5e-8a6e-3b2f1fa6cab7",
+      "lessonId": "cmp-cs01",
+      "complete": false,
+      "status": "unavailable",
+      "reason": "missing or unreadable v2/scene.01-module_1_sorted_middle.json",
+      "hardFailures": 5,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 0,
+        "iconBearingShare": null,
+        "labelOnlyEntityRatio": null,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 0,
+        "meanWordsOnBoard": 0,
+        "meanElementVariety": 0
+      },
+      "scenes": [],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/rich-visuals/2026-10-live/cmp-math01/runs/2026-10-08T20-06-36-393Z-aa6e2e30-98de-40f5-a625-ad356c620752",
+      "lessonId": "cmp-math01",
+      "complete": false,
+      "status": "unavailable",
+      "reason": "missing or unreadable v2/scene.fraction_parts.json",
+      "hardFailures": 1,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 0,
+        "iconBearingShare": null,
+        "labelOnlyEntityRatio": null,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 0,
+        "meanWordsOnBoard": 0,
+        "meanElementVariety": 0
+      },
+      "scenes": [],
+      "icons": []
+    }
+  ],
+  "pooled": {
+    "scenes": 0,
+    "iconBearingShare": null,
+    "labelOnlyEntityRatio": null,
+    "distinctAssetIds": 0,
+    "familyMixScenes": 0,
+    "assetReuseConflicts": 0,
+    "minIconSidePx": null,
+    "meanTextChars": 0,
+    "meanWordsOnBoard": 0,
+    "meanElementVariety": 0
+  }
+}

@@ -39,11 +39,29 @@ export function valueAtPointer(doc: unknown, pointer: string): unknown {
   return node;
 }
 
+/**
+ * Consecutive `remove` patches on one array name positions in the document the model saw. Applying them in listed order would
+ * shift later indices, so each run is applied from the highest index down (same final document, no false "does not resolve").
+ */
+function removalsHighestIndexFirst(patches: readonly RepairPatch[]): RepairPatch[] {
+  const out: RepairPatch[] = [];
+  for (let i = 0; i < patches.length;) {
+    const parentOf = (patch: RepairPatch): string | undefined => (patch.op === 'remove' && /\/(0|[1-9]\d*)$/.test(patch.path) ? patch.path.slice(0, patch.path.lastIndexOf('/')) : undefined);
+    const parent = parentOf(patches[i]!);
+    if (parent === undefined) { out.push(patches[i]!); i++; continue; }
+    let end = i;
+    while (end < patches.length && parentOf(patches[end]!) === parent) end++;
+    out.push(...patches.slice(i, end).sort((a, b) => Number(b.path.slice(b.path.lastIndexOf('/') + 1)) - Number(a.path.slice(a.path.lastIndexOf('/') + 1))));
+    i = end;
+  }
+  return out;
+}
+
 /** Apply patches to a deep copy. `replace` and `remove` need an existing target; `add` needs an existing parent (`/-` appends to an array). */
 export function applyPatches(doc: unknown, patches: readonly RepairPatch[]): unknown {
   const root = structuredClone(doc);
   const holder: { v: unknown } = { v: root };
-  for (const patch of patches) {
+  for (const patch of removalsHighestIndexFirst(patches)) {
     const segments = segmentsOf(patch.path);
     if (segments.length === 0) { if (patch.op === 'remove') throw new Error('cannot remove the document root'); holder.v = patch.value; continue; }
     const parentPointer = `/${segments.slice(0, -1).map(escapeSegment).join('/')}`.replace(/^\/$/, '');

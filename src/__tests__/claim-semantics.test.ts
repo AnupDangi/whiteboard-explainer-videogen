@@ -112,3 +112,9 @@ test('claim semantics catches numeric notation, unit, and qualifier mutations', 
   assert.match(claimSemanticsMismatch('The value is less than 5 and greater than 2.', 'The value is less than 5 and less than 2.').join('; '), /comparison/);
   assert.match(claimSemanticsMismatch('A happens.', 'A happens after B.').join('; '), /unsupported temporal relation/);
 });
+
+test('an unsupported quantity scope names the words that trigger it', () => {
+  const message = claimSemanticsMismatch('Doubling keeps the search small.', 'Doubling keeps each search small.').join('; ');
+  assert.match(message, /unsupported quantity scope all/);
+  assert.match(message, /each/);
+});

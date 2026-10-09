@@ -33,6 +33,8 @@ export interface StageModel {
   fetcher?: typeof fetch;
   /** Visual Discovery output per section id (discovery/visualDiscovery.ts); narration is written around it. */
   visualVocabulary?: Readonly<Record<string, VisualVocabulary>>;
+  /** Called as soon as one scene's final narration exists (S4 writes scenes in parallel), so speech synthesis can start while slower scenes are still being written. Never affects the result. */
+  onSceneScript?: (scene: { sectionId: string; text: string; plainText: string }) => void;
 }
 
 export interface LessonRequest {
@@ -692,7 +694,10 @@ ${sectionSourcePrompt(sourceDoc, section, graph)}`;
         // Checked in spoken form: that is what TTS reads (digits expand to words) and what the script stores.
         validate: (v) => { const done = finalizeScene(v); return validateSceneText(done.text, section, done.claimSpans); }, budgetLedger: m.budgetLedger, fetcher: m.fetcher,
       }).then((result) => {
-        if (result.value) return { section, result, startedAtMs, completedAtMs: Date.now() };
+        if (result.value) {
+          try { const done = finalizeScene(result.value); m.onSceneScript?.({ sectionId: section.id, text: done.text, plainText: parseMarkers(done.text).plainText }); } catch { /* an observer must never change S4 */ }
+          return { section, result, startedAtMs, completedAtMs: Date.now() };
+        }
         // Audio is the master clock: a draft that is only longer than its budget (still inside the pacing ceiling, markers and
         // claims valid) is a pacing warning, not a missing script. Used when the model's repairs could not shorten it.
         for (const attempt of result.rawResponses) {

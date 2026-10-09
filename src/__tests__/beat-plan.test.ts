@@ -435,3 +435,17 @@ test('an uncovered claim is repaired by a patch that adds the missing beat, not 
   assert.equal(requests[1]!.schemaName, 'json_patch');
   assert.equal(result.trace.repairs[0]!.mode, 'patch');
 });
+
+test('a beat that does not cite a claim for its entity may also be repaired by citing another scene claim, and a persistent identity change names its first use', () => {
+  const unlinked = validateBeatPlan(draft([beat({ claimIds: ['c2'], relationships: [], entities: [{ identityKey: 'frame_main', conceptId: 'call', role: 'new item', count: 1 }] })]), ctx) as Array<{ path: string; message: string }>;
+  assert.ok(unlinked.some((problem) => /is not linked to any cited claim/.test(problem.message)));
+  assert.ok(unlinked.some((problem) => problem.path === '/beats/0/claimIds'), 'claimIds is in repair scope');
+  const changed = validateBeatPlan(draft([beat(), beat({ claimIds: ['c2'], relationships: [], entities: [{ identityKey: 'frame_main', conceptId: 'stack', role: 'old', count: 1 }] })]), ctx) as Array<{ path: string; message: string }>;
+  assert.ok(changed.some((problem) => /changes concept/.test(problem.message)));
+  assert.ok(changed.some((problem) => problem.path === '/beats/0/entities/0/conceptId'), 'the first use of the identity is in repair scope');
+});
+
+test('the beat prompt says a relationship must come from a cited claim', () => {
+  const prompt = buildBeatPrompt(ctx, { title: 'T', goal: 'G', learningDelta: 'D', misconceptionRisk: [], priorKnowledge: [] }, []);
+  assert.match(`${prompt.system}\n${prompt.user}`, /relationship.{0,80}cited claim's relations/is);
+});

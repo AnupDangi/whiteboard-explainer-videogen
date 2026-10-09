@@ -352,7 +352,10 @@ export function claimSemanticsMismatch(canonicalText: string, realization: strin
   }
   for (const signal of unmatchedSignals) {
     const countZeroEquivalent = signal.family === 'quantity_scope' && signal.value === 'none' && noneCountEquivalent;
-    if (!countZeroEquivalent) problems.push(`must not introduce unsupported ${signal.family.replaceAll('_', ' ')} ${signal.value}`);
+    if (!countZeroEquivalent) {
+      const triggers = claimSignalPatterns.filter((entry) => entry.family === signal.family && entry.value === signal.value).flatMap((entry) => [...realization.matchAll(new RegExp(entry.pattern.source, entry.pattern.flags))].map((match) => match[0].toLowerCase()));
+      problems.push(`must not introduce unsupported ${signal.family.replaceAll('_', ' ')} ${signal.value}${triggers.length ? ` (caused by "${[...new Set(triggers)].join('", "')}")` : ''}`);
+    }
   }
   const expectedQuantities = semantics.quantities ?? [];
   const isCountZero = (quantity: { value: number; unit?: string }) => noneCountEquivalent && quantity.value === 0 && quantity.unit === undefined;

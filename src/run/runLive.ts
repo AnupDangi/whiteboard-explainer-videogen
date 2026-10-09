@@ -188,11 +188,11 @@ export interface HypothesisLiveRunResult {
 }
 
 /** Scenes processed at once in S5 (TTS + alignment sidecars). HYPOTHESIS_SCENE_CONCURRENCY overrides. */
-export const DEFAULT_SCENE_CONCURRENCY = configuredConcurrency('HYPOTHESIS_SCENE_CONCURRENCY', 4);
+export const DEFAULT_SCENE_CONCURRENCY = configuredConcurrency('HYPOTHESIS_SCENE_CONCURRENCY', 6);
 /** Scene Planner calls share provider and budget resources, so keep their run-wide fanout bounded. */
-export const DEFAULT_SCENE_PLANNER_CONCURRENCY = configuredConcurrency('HYPOTHESIS_S6_CONCURRENCY', 4);
+export const DEFAULT_SCENE_PLANNER_CONCURRENCY = configuredConcurrency('HYPOTHESIS_S6_CONCURRENCY', 6);
 export { DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY } from '../audio/sceneAudio.js';
-export const DEFAULT_HOST_RASTER_CONCURRENCY = configuredConcurrency('HYPOTHESIS_RASTER_CONCURRENCY', 2, 8);
+export const DEFAULT_HOST_RASTER_CONCURRENCY = configuredConcurrency('HYPOTHESIS_RASTER_CONCURRENCY', 4, 8);
 
 /** Runs S6 planning with at most DEFAULT_SCENE_PLANNER_CONCURRENCY scenes in flight. */
 export const withScenePlannerSlot = createLimiter(DEFAULT_SCENE_PLANNER_CONCURRENCY);

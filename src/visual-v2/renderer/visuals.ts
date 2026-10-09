@@ -5,7 +5,8 @@ import { fitFont, fitText, lineBaselines } from '../layout/textFit.js';
 import { typesetTex } from '../../render/math.js';
 import type { BoardEdge, BoardElement } from '../board-state/types.js';
 import { routeEdge, type EdgeRoute, type SceneGeometry } from '../layout/sceneLayout.js';
-import { boxPath, emptyVisual, fillOf, linePath, textRun, upper, type Rect } from '../kits/geometry.js';
+import { boxPath, emptyVisual, fillOf, linePath, shiftVisual, textRun, upper, type Rect } from '../kits/geometry.js';
+import type { PlacedBadge } from '../resolver/referentBadge.js';
 import { canonicalHash } from '../../harness/replayDeterminism.js';
 import { depictEntity, type ConceptInfo, type EntityResolver } from '../resolver/typeGate.js';
 
@@ -30,18 +31,54 @@ function labelledBox(rect: Rect, label: string, fill: string): PrimitiveVisual {
   return { paths: [path], fills: [fillOf(path, fill)], texts: fittedRuns(rect, label, rect.w - 16) };
 }
 
+/** Smallest icon side drawn on the 1920x1080 board; below it the badge is dropped, never shrunk into a smudge. */
+export const BADGE_MIN_SIDE_PX = 56;
+const BADGE_MAX_SIDE_PX = 120;
+const BADGE_PAD_PX = 10;
+const BADGE_GAP_PX = 16;
+export const badgeSide = (rect: Rect): number => Math.floor(Math.min(rect.h - 16, rect.w * 0.4, BADGE_MAX_SIDE_PX));
+const cardTextRect = (rect: Rect, side: number): Rect => ({ x: rect.x + BADGE_PAD_PX + side + BADGE_GAP_PX, y: rect.y, w: rect.w - (BADGE_PAD_PX + side + BADGE_GAP_PX), h: rect.h });
+
+/**
+ * Largest icon side (>= BADGE_MIN_SIDE_PX, stepping down 4 px from badgeSide) for which the label still fits beside the icon
+ * at a readable size; null when none does. The icon gives way to the label first, never below the minimum.
+ */
+export function iconCardSide(rect: Rect, label: string): number | null {
+  for (let side = badgeSide(rect); side >= BADGE_MIN_SIDE_PX; side -= 4) {
+    const text = cardTextRect(rect, side);
+    if (fitText(label, text.w - 16, text.h - 8).fits) return side;
+  }
+  return null;
+}
+export const iconCardFits = (rect: Rect, label: string): boolean => iconCardSide(rect, label) !== null;
+
+/** A labelled box with an icon at its left. The label always stays; without room the box is drawn exactly as before. */
+export function iconCard(rect: Rect, label: string, fill: string, badge?: Pick<PlacedBadge, 'draw'>): PrimitiveVisual {
+  const side = badge ? iconCardSide(rect, label) : null;
+  if (!badge || side === null) return labelledBox(rect, label, fill);
+  const box = boxPath(rect, 18);
+  const icon = shiftVisual(badge.draw(side), rect.x + BADGE_PAD_PX, rect.y + (rect.h - side) / 2);
+  const text = cardTextRect(rect, side);
+  return {
+    paths: [box, ...icon.paths],
+    fills: [fillOf(box, fill), ...icon.fills],
+    texts: [...icon.texts, ...fittedRuns(text, label, text.w - 16)],
+    ...(icon.embeds?.length ? { embeds: icon.embeds } : {}),
+  };
+}
+
 /** An element's drawing at full reveal, in canvas coordinates. Pictures for entities come from the resolver; this is the typed fallback. */
 export type ConceptIndex = ReadonlyMap<string, ConceptInfo>;
 
-export function elementVisual(el: BoardElement, rect: Rect, geometry: SceneGeometry, concepts?: ConceptIndex, resolver?: EntityResolver): PrimitiveVisual {
+export function elementVisual(el: BoardElement, rect: Rect, geometry: SceneGeometry, concepts?: ConceptIndex, resolver?: EntityResolver, badge?: Pick<PlacedBadge, 'draw'>): PrimitiveVisual {
   const spec = el.spec;
   switch (spec.type) {
     case 'kit': return geometry.kitGeometry(el.id)?.frame ?? emptyVisual();
-    case 'token': return labelledBox(rect, spec.text, toneOf(el, PROVENANCE_FILL[spec.provenance] ?? STYLE.palette.grey));
+    case 'token': return iconCard(rect, spec.text, toneOf(el, PROVENANCE_FILL[spec.provenance] ?? STYLE.palette.grey), badge);
     case 'entity': {
-      // Type first: only a concrete entity with an exact approved picture is drawn as a picture; everything else is a labelled box.
+      // Type first: only a concrete entity with an exact approved picture is drawn as a picture; everything else is a labelled box, optionally with an exact-name badge.
       const depiction = depictEntity(concepts?.get(spec.conceptId), spec.label, rect, resolver);
-      return depiction.meaningful ? depiction.visual : labelledBox(rect, spec.label, toneOf(el, entityFill(spec.conceptId)));
+      return depiction.meaningful ? depiction.visual : iconCard(rect, spec.label, toneOf(el, entityFill(spec.conceptId)), badge);
     }
     case 'value': {
       const path = boxPath(rect, rect.h / 2);

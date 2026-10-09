@@ -8,8 +8,13 @@ import { canonicalHash } from '../../harness/replayDeterminism.js';
 import type { BoardEdge, BoardElement, BoardState } from '../board-state/types.js';
 import { layoutScene, moveRectAt, moveRoutesFor, type PriorLayout, type SceneGeometry } from '../layout/sceneLayout.js';
 import type { SceneTimeline } from '../timeline/compile.js';
-import type { Rect } from '../kits/geometry.js';
-import { edgeVisual, elementVisual, ringVisual, strikeVisual, type ConceptIndex } from './visuals.js';
+import { shiftVisual, type Rect } from '../kits/geometry.js';
+import type { CatalogEntry } from '../../assets/catalog.js';
+import type { BadgeReview } from '../../assets/badgeReview.js';
+import { referentOf } from '../../assets/referent.js';
+import { depictEntity } from '../resolver/typeGate.js';
+import { planSceneBadges, placeBadges, type BadgeRequest, type PlacedBadge, type ReferentBadge, type SceneBadgePlan } from '../resolver/referentBadge.js';
+import { edgeVisual, elementVisual, iconCardFits, ringVisual, strikeVisual, type ConceptIndex } from './visuals.js';
 
 export interface CompiledScene {
   sceneId: string;
@@ -20,10 +25,70 @@ export interface CompiledScene {
   seedBase: string;
   /** Concept kinds, so entities are depicted by type (V2 plan Phase 7). */
   concepts?: ConceptIndex;
+  /** Element id -> exact-name icon badge (composition 'icon-cards' only). Render-only: layout never sees it. */
+  badges?: ReadonlyMap<string, PlacedBadge>;
+  badgeFamily?: string;
+  /** Exact-name matches that fit their card but have no human verdict yet: listed for review, never drawn. */
+  pendingBadges?: readonly ReferentBadge[];
 }
 
-export function compileScene(sceneId: string, title: string, timeline: SceneTimeline, lessonId = 'lesson', concepts?: ConceptIndex, prior?: PriorLayout): CompiledScene {
-  return { sceneId, title, timeline, geometry: layoutScene(timeline.states, prior), seedBase: `${lessonId}|${sceneId}|visual-v2`, ...(concepts ? { concepts } : {}) };
+export interface CompileSceneOptions {
+  /** 'labels' is the board as it was before icon cards; 'icon-cards' adds exact-name badges to labelled boxes. */
+  composition?: 'labels' | 'icon-cards';
+  catalog?: readonly CatalogEntry[];
+  review?: BadgeReview;
+}
+
+/** Same rule the renderer applies: the last settled rectangle of the element must hold a >=56 px icon and its label. */
+function settledBadgeFits(scene: CompiledScene, elementId: string): boolean {
+  const states = scene.timeline.states;
+  let rect: Rect | undefined;
+  for (let i = states.length - 1; i >= 0 && !rect; i--) rect = scene.geometry.rectFor(states[i]!, elementId);
+  let label = '';
+  for (const state of states) {
+    const spec = state.elements[elementId]?.spec;
+    if (spec?.type === 'token') { label = spec.text; break; }
+    if (spec?.type === 'entity') { label = spec.label; break; }
+  }
+  return !!rect && !!label && iconCardFits(rect, label);
+}
+
+function sceneBadgePlan(timeline: SceneTimeline, concepts: ConceptIndex | undefined, options: CompileSceneOptions): SceneBadgePlan {
+  const requests: BadgeRequest[] = [];
+  const extraFamilies: Array<string | undefined> = [];
+  const reservedAssets = new Map<string, string>();
+  const seen = new Set<string>();
+  for (const state of timeline.states) {
+    for (const el of Object.values(state.elements).sort((a, b) => a.seq - b.seq)) {
+      if (seen.has(el.id) || el.lifecycle.removedAtBeat !== undefined) continue;
+      seen.add(el.id);
+      if (el.spec.type === 'token') {
+        // A token naming a non-entity concept of this lesson keeps the concept's type rule (no noun picture for a process/event/quantity).
+        const named = referentOf(el.spec.text);
+        const concept = named ? [...(concepts?.values() ?? [])].find((candidate) => referentOf(candidate.label) === named) : undefined;
+        requests.push({ elementId: el.id, label: el.spec.text, ...(concept ? { concept } : {}) });
+      }
+      else if (el.spec.type === 'entity') {
+        const concept = concepts?.get(el.spec.conceptId);
+        const depiction = depictEntity(concept, el.spec.label, { x: 0, y: 0, w: 240, h: 210 });
+        if (depiction.meaningful && depiction.assetId) { reservedAssets.set(depiction.assetId, referentOf(el.spec.label)); extraFamilies.push(concept?.houseFamily); }
+        else if (!depiction.meaningful) requests.push({ elementId: el.id, label: el.spec.label, ...(concept ? { concept } : {}) });
+      }
+    }
+  }
+  const lessonDomain = [...(concepts?.values() ?? [])].find((concept) => concept.domain)?.domain;
+  return planSceneBadges(requests, { ...(lessonDomain ? { lessonDomain } : {}), ...(options.catalog ? { catalog: options.catalog } : {}), ...(options.review ? { review: options.review } : {}), extraFamilies, reservedAssets });
+}
+
+export function compileScene(sceneId: string, title: string, timeline: SceneTimeline, lessonId = 'lesson', concepts?: ConceptIndex, prior?: PriorLayout, options: CompileSceneOptions = {}): CompiledScene {
+  const scene: CompiledScene = { sceneId, title, timeline, geometry: layoutScene(timeline.states, prior), seedBase: `${lessonId}|${sceneId}|visual-v2`, ...(concepts ? { concepts } : {}) };
+  if (options.composition !== 'icon-cards') return scene;
+  const plan = sceneBadgePlan(timeline, concepts, options);
+  // Only human-accepted badges that the settled card can actually hold are drawn (a wrong picture is worse than a label).
+  const drawable = plan.badges.filter((badge) => badge.review === 'accepted' && settledBadgeFits(scene, badge.elementId));
+  const badges = placeBadges({ ...plan, badges: drawable }, options.catalog);
+  const pending = plan.badges.filter((badge) => badge.review !== 'accepted' && settledBadgeFits(scene, badge.elementId));
+  return { ...scene, ...(pending.length ? { pendingBadges: pending } : {}), ...(badges.size ? { badges } : {}), ...(badges.size && plan.family ? { badgeFamily: plan.family } : {}) };
 }
 
 const TITLE_WIPE_MS = 700;
@@ -68,6 +133,21 @@ function titleSvg(title: string, tMs: number): string {
   if (p >= 1) return text;
   const w = Math.min(width, measureTextWidth(title, size));
   return `<clipPath id="title_clip"><rect x="${STYLE.canvas.w / 2 - w / 2 - 20}" y="0" width="${(w + 40) * p}" height="190"/></clipPath><g clip-path="url(#title_clip)">${text}</g>`;
+}
+
+const CONTEXT_ICON_SIDE = 84;
+/** The scene's first badge, faint, left of the settled title: a context cue, never a new fact. */
+function contextIconSvg(scene: CompiledScene, tMs: number): string {
+  const first = scene.badges ? [...scene.badges.values()][0] : undefined;
+  if (!first || !scene.title || tMs < TITLE_WIPE_MS) return '';
+  const width = STYLE.canvas.w - 2 * STYLE.canvas.safe;
+  const natural = Math.max(1, measureTextWidth(scene.title, STYLE.font.sceneTitle));
+  const size = Math.min(STYLE.font.sceneTitle, (width / natural) * STYLE.font.sceneTitle);
+  const titleW = Math.min(width, measureTextWidth(scene.title, size));
+  const x = STYLE.canvas.w / 2 - titleW / 2 - 24 - CONTEXT_ICON_SIDE;
+  if (x < STYLE.canvas.safe) return '';
+  const rect: Rect = { x, y: 150 - CONTEXT_ICON_SIDE + 12, w: CONTEXT_ICON_SIDE, h: CONTEXT_ICON_SIDE };
+  return `<g data-role="context-icon">${drawVisual(shiftVisual(first.draw(CONTEXT_ICON_SIDE), rect.x, rect.y), rect, FULL, scene.seedBase, 'title.icon', 0.55)}</g>`;
 }
 
 interface Override { rect?: Rect; opacity?: number; ring?: number; strike?: number; scale?: number; fade?: { from: BoardElement; to: BoardElement; p: number } }
@@ -143,7 +223,7 @@ export function renderSceneBody(scene: CompiledScene, tMs: number): string {
     }
   }
 
-  const out: string[] = [titleSvg(scene.title, tMs)];
+  const out: string[] = [titleSvg(scene.title, tMs), contextIconSvg(scene, tMs)];
   const live = (el: BoardElement) => el.lifecycle.removedAtBeat === undefined;
   const elements = Object.values(base.elements).filter(live).sort((a, b) => a.seq - b.seq);
   const drawElement = (el: BoardElement, state: BoardState, rect: Rect, reveal: Reveal, ov: Override | undefined): string => {
@@ -153,8 +233,9 @@ export function renderSceneBody(scene: CompiledScene, tMs: number): string {
     const place = (visual: PrimitiveVisual, key: string, vis: Reveal, alpha: number): string => home
       ? drawVisual(visual, home, vis, scene.seedBase, key, alpha, mapTransform(home, rect))
       : drawVisual(visual, rect, vis, scene.seedBase, key, alpha);
-    let svg = place(elementVisual(el, rect, geometry, scene.concepts), el.id, reveal, opacity);
-    if (ov?.fade) svg += place(elementVisual(ov.fade.to, rect, geometry, scene.concepts), `${el.id}.next`, FULL, ease(ov.fade.p));
+    const badge = scene.badges?.get(el.id);
+    let svg = place(elementVisual(el, rect, geometry, scene.concepts, undefined, badge), el.id, reveal, opacity);
+    if (ov?.fade) svg += place(elementVisual(ov.fade.to, rect, geometry, scene.concepts, undefined, badge), `${el.id}.next`, FULL, ease(ov.fade.p));
     if (el.emphasis === 'highlight' || (ov?.ring ?? 0) > 0) svg += drawVisual(ringVisual(rect), rect, { stroke: ov?.ring !== undefined ? ease(ov.ring) : 1, fill: 1, text: 1 }, scene.seedBase, `${el.id}.ring`);
     if (el.emphasis === 'struck' || (ov?.strike ?? 0) > 0) svg += drawVisual(strikeVisual(rect), rect, { stroke: ov?.strike !== undefined ? ease(ov.strike) : 1, fill: 1, text: 1 }, scene.seedBase, `${el.id}.strike`);
     return svg;

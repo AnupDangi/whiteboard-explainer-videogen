@@ -28,7 +28,7 @@ export interface NarrationContext {
   /** Lesson-wide canonical terminology; explanations remain in the spoken language. */
   terminology?: ReadonlyArray<{ term: string; nativeExplanation?: string }>;
   /** Present for beat-local S4 calls so transitions stay coherent without rewriting adjacent beats. */
-  beatFlow?: { index: number; count: number; previousSentences?: string[]; nextGoal?: string };
+  beatFlow?: { index: number; count: number; previousSentences?: string[]; /** Claims of this beat that an earlier beat of the scene already cited. */ restatedClaimIds?: string[]; nextGoal?: string };
   /**
    * Set when the measured audio of an earlier draft missed the lesson's runtime: rewrite this scene to a word budget derived from the
    * real speaking rate. The claims and beats stay exactly as planned; only the amount of speech changes.

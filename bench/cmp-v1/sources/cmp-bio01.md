@@ -1,0 +1,1 @@
+[S1] A semipermeable membrane lets water pass but blocks most solutes. [S2] Net water flow goes toward the side with higher solute (lower water) concentration. [S3] Flow stops changing volume when concentrations equalize or pressure balances it. [S4] Example: a cell in pure water gains water and swells.

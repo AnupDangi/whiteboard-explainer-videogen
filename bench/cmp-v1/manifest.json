@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "cmp-v1/v1",
+  "note": "Paths under retained are relative to --cmp-root. Videos are evidence only and never committed.",
+  "cases": [
+    {
+      "id": "cmp-bio01",
+      "instruction": "Explain and predict water movement across a semipermeable membrane.",
+      "durationSec": 60,
+      "source": "bench/cmp-v1/sources/cmp-bio01.md",
+      "sourceSha256": "db75af9d26f21a5843a911268e662bd47e54de7cccc4736056f8ccd2e5bd1474",
+      "retained": {
+        "v0.3.0": {
+          "video": "v0.3.0/output/cmp-BIO-01/S1-A-semipermeable-membrane-lets-water-pass-but-blocks-most--1min.mp4",
+          "sourceEvidence": "output file name matches the first-sentence slug"
+        },
+        "v1.0.0": {
+          "run": "v1.0.0/.data/cmp/cmp-bio01/runs/2026-10-08T06-48-45-934Z-3aae3ec6-c44c-4576-a51f-4ffc38397f14",
+          "video": null,
+          "sourceEvidence": "lesson-prep.json request.source sha256 == sourceDoc.contentSha256"
+        }
+      }
+    },
+    {
+      "id": "cmp-cs01",
+      "instruction": "Explain why sorted order allows repeated elimination of half the search space.",
+      "durationSec": 60,
+      "source": "bench/cmp-v1/sources/cmp-cs01.md",
+      "sourceSha256": "270d3abe4a9ccc1bf3cd1b070ac0fc941c26d827908f6606ac2bf2b05278c425",
+      "retained": {
+        "v0.3.0": {
+          "video": "v0.3.0/output/cmp-CS-01/S1-Binary-search-needs-a-sorted-array-it-inspects-the-middle-1min.mp4",
+          "sourceEvidence": "output file name matches the first-sentence slug"
+        },
+        "v1.0.0": {
+          "run": "v1.0.0/.data/cmp-CS-01/cmp-cs01/runs/2026-10-08T14-17-12-250Z-376ebc6b-b50a-4069-be1e-9be58b6bf6dd",
+          "video": null,
+          "sourceEvidence": "lesson-prep.json request.source sha256 == sourceDoc.contentSha256"
+        }
+      }
+    },
+    {
+      "id": "cmp-math01",
+      "instruction": "Explain why changing numerator and denominator together can preserve the same quantity.",
+      "durationSec": 60,
+      "source": "bench/cmp-v1/sources/cmp-math01.md",
+      "sourceSha256": "a0c52e89e36de8a23cb2136fe2fc29ed8f38ec4c41a5e3bb83b6df9131ac28ea",
+      "retained": {
+        "v0.3.0": {
+          "video": "v0.3.0/output/cmp-MATH-01/S1-A-fraction-names-equal-parts-of-a-whole-the-denominator-c-1min.mp4",
+          "sourceEvidence": "output file name matches the first-sentence slug"
+        },
+        "v1.0.0": {
+          "run": "v1.0.0/.data/cmp-MATH-01/cmp-math01/runs/2026-10-08T14-13-46-999Z-8c76693f-3aad-4ff6-acc5-54feeab2448b",
+          "video": "v1.0.0/.data/cmp-MATH-01/cmp-math01/runs/2026-10-08T14-13-46-999Z-8c76693f-3aad-4ff6-acc5-54feeab2448b/video.mp4",
+          "sourceEvidence": "lesson-prep.json request.source sha256 == sourceDoc.contentSha256"
+        }
+      }
+    }
+  ]
+}

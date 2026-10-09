@@ -19,7 +19,7 @@ ${scene.mentalModel ? `Mental model: ${scene.mentalModel}\n` : ''}${scene.priorK
 Concepts: ${JSON.stringify(concepts.filter((c) => ctx.conceptIds.includes(c.id)).map(({ id, label, kind, definition }) => ({ id, label, kind, definition })))}
 Allowed representation family → cognitive operations (choose an exact compatible pair; these are selection rules, not proof of renderer support):
 ${compatibleFamilies}
-Graph relations you may use: ${JSON.stringify(ctx.relations)}
+Graph relations you may use (a beat's relationship must be one a cited claim's relations lists; a cited claim whose relations is [] means relationships: []): ${JSON.stringify(ctx.relations)}
 Scene claims (cover every one; keep examples, analogies, and unverified explanations explicitly framed): ${JSON.stringify(ctx.claims.map(({ id, statement, epistemicType, conceptIds, relations }) => ({ id, statement, ...(epistemicType ? { epistemicType } : {}), conceptIds, relations })))}
 ${vocabularyPromptBlock(ctx.visualVocabulary)}
 Plan ${range.min}-${range.max} beats.`;

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "icon-gold/v1",
+  "note": "Hand-authored offline test inputs. expectNoBadge and expectSynonymRefusal are expected refusals; reviewCandidates only resolve to an exact primary-name asset and still need a HUMAN verdict in src/assets/data/badge-review.v1.json before they count as correct.",
+  "expectNoBadge": ["compound interest", "prophase", "energy", "interest"],
+  "expectSynonymRefusal": [{ "label": "source", "primaryName": "book" }],
+  "reviewCandidates": ["cell", "battery", "resistor", "coin", "money", "water", "ambulance", "graph", "array", "thermometer", "time", "dna", "heart", "clock", "bank"]
+}

@@ -160,3 +160,9 @@ test('a remove patch may carry a null valueJson (strict providers send every key
   assert.deepEqual(patches, [{ op: 'remove', path: '/items/0' }]);
   assert.throws(() => decodePatchResponse(JSON.stringify({ patches: [{ op: 'replace', path: '/title', valueJson: null }] })), /valueJson is required/);
 });
+
+test('removing several items from one array works in any listed order', () => {
+  const doc = { relationships: ['a', 'b', 'c'] };
+  assert.deepEqual(applyPatches(doc, [{ op: 'remove', path: '/relationships/0' }, { op: 'remove', path: '/relationships/1' }]), { relationships: ['c'] }, 'indices name positions in the document the model saw');
+  assert.deepEqual(applyPatches(doc, [{ op: 'remove', path: '/relationships/1' }, { op: 'remove', path: '/relationships/0' }]), { relationships: ['c'] });
+});

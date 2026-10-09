@@ -307,13 +307,29 @@ async function sendChat(body: unknown, apiKey: string, fetcher: typeof fetch, op
   return response;
 }
 
+/**
+ * Anthropic's grammar compiler can still reject a schema that passes the optional-parameter heuristic (observed 2026-10-09:
+ * HTTP 400 "The compiled grammar is too large" for S3 plan). Nothing ran, so retry once without response_format: the stage's
+ * prompt carries the JSON contract and the caller validates the full schema and repairs, exactly as for oversized schemas above.
+ */
 export async function chatStructured(apiKey: string, req: ChatRequest, fetcher: typeof fetch = fetch): Promise<ChatResult> {
+  try {
+    return await chatStructuredOnce(apiKey, req, fetcher, false);
+  } catch (error) {
+    if (error instanceof ProviderNotDispatchedError && error.status === 400 && req.model.startsWith('anthropic/') && /compiled grammar is too large/i.test(error.message)) {
+      return chatStructuredOnce(apiKey, req, fetcher, true);
+    }
+    throw error;
+  }
+}
+
+async function chatStructuredOnce(apiKey: string, req: ChatRequest, fetcher: typeof fetch, forceUnconstrained: boolean): Promise<ChatResult> {
   const reasoningModel = HIDDEN_REASONING.some((p) => req.model.startsWith(p));
   const anthropic = req.model.startsWith('anthropic/');
   const anthropicSchema = anthropic ? toAnthropicSchema(req.schema) : undefined;
   // Too large for Anthropic's grammar compiler: fall back to the prompt's JSON contract; the caller
   // still validates the full zod schema and gets its one repair, so nothing is accepted unchecked.
-  const constrained = !anthropic || countOptional(anthropicSchema) <= ANTHROPIC_MAX_OPTIONAL;
+  const constrained = !forceUnconstrained && (!anthropic || countOptional(anthropicSchema) <= ANTHROPIC_MAX_OPTIONAL);
   const strict = req.strictSchema === true || !STRICT_NEEDS_ALL_REQUIRED.some((prefix) => req.model.startsWith(prefix));
   const limits = strict && !req.limitSchema ? [] : schemaLimitLines(req.limitSchema ?? req.schema);
   const system = limits.length ? `${req.system}\n\nField limits (validated; a response that breaks one is rejected):\n${limits.map((line) => `- ${line}`).join('\n')}` : req.system;

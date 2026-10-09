@@ -23,3 +23,6 @@ export function referentKeys(phrase: string): string[] {
   for (let start = 0; start < base.length && keys.length < 4; start++) keys.push(base.slice(start).join(' '));
   return [...new Set(keys)];
 }
+
+/** The full normalised referent of a label (determiners stripped, last word singular): the key icons and verdicts use. */
+export const referentOf = (label: string): string => referentKeys(label)[0] ?? '';

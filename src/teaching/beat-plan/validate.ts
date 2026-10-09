@@ -58,6 +58,7 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
   const covered = new Set<string>();
   const beatCountByClaim = new Map<string, number>();
   const conceptByIdentityKey = new Map<string, string>();
+  const firstEntityPath = new Map<string, string>();
   const seenIdentityKeys = new Set<string>();
   const activeIdentityKeys = new Set<string>();
   const currentSemanticStates = new Map<string, string>();
@@ -101,8 +102,12 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
       if (beatEntityKeys.has(entity.identityKey)) problems.push({ path: `${path}/identityKey`, message: `identity key ${entity.identityKey} is repeated in one beat` });
       beatEntityKeys.add(entity.identityKey);
       const priorConceptId = conceptByIdentityKey.get(entity.identityKey);
-      if (priorConceptId && priorConceptId !== entity.conceptId) problems.push({ path: `${path}/conceptId`, message: `persistent identity ${entity.identityKey} changes concept from ${priorConceptId} to ${entity.conceptId}` });
-      else conceptByIdentityKey.set(entity.identityKey, entity.conceptId);
+      if (priorConceptId && priorConceptId !== entity.conceptId) {
+        problems.push({ path: `${path}/conceptId`, message: `persistent identity ${entity.identityKey} changes concept from ${priorConceptId} to ${entity.conceptId}` });
+        // The first use is part of the same identity: name it so one repair may change both uses together instead of being stranded.
+        const first = firstEntityPath.get(entity.identityKey);
+        if (first) problems.push({ path: `${first}/conceptId`, message: `${entity.identityKey} was first introduced here with concept ${priorConceptId}; keep one concept for this identity in every beat` });
+      } else { conceptByIdentityKey.set(entity.identityKey, entity.conceptId); if (!firstEntityPath.has(entity.identityKey)) firstEntityPath.set(entity.identityKey, path); }
       if (!seenIdentityKeys.has(entity.identityKey)) newlySeenEntityKeys.add(entity.identityKey);
       if (!concepts.has(entity.conceptId)) {
         problems.push({ path: `${path}/conceptId`, message: `${entity.conceptId} is not a concept of this scene; use one of: ${ctx.conceptIds.join(', ')}` });
@@ -110,6 +115,7 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
       }
       if (!citedClaims.some((claim) => claim.conceptIds.includes(entity.conceptId))) {
         problems.push({ path: `${path}/conceptId`, message: `${entity.conceptId} is not linked to any cited claim (${beat.claimIds.join(', ')}); cite a claim containing this concept or remove the entity` });
+        if (!problems.some((problem) => typeof problem !== 'string' && problem.path === `${at}/claimIds`)) problems.push({ path: `${at}/claimIds`, message: `to keep this entity, also cite another scene claim that contains ${entity.conceptId} (${ctx.claims.filter((claim) => claim.conceptIds.includes(entity.conceptId)).map((claim) => claim.id).join(', ') || 'none do'})` });
       }
     });
     const revealKeys = new Set<string>();
@@ -274,7 +280,7 @@ export function validateBeatPlan(plan: BeatPlanDraft, ctx: BeatContext): Validat
     if (beat.narrationOnly && beat.semanticRevealOrder.length) problems.push({ path: `${at}/semanticRevealOrder`, message: 'a narration-only beat cannot reveal visual entities' });
     beat.relationships.forEach((relation, j) => {
       if (!citedClaims.some((claim) => claim.relations.some((claimedRelation) => relationKey(claimedRelation) === relationKey(relation)))) {
-        problems.push({ path: `${at}/relationships/${j}`, message: `${relation.from} -[${relation.type}]-> ${relation.to} is not asserted by any cited claim (${beat.claimIds.join(', ')}); cite a claim that lists this directed relation or remove/revise it` });
+        problems.push({ path: `${at}/relationships/${j}`, message: `${relation.from} -[${relation.type}]-> ${relation.to} is not asserted by any cited claim (${beat.claimIds.join(', ')}); cite a claim that lists this directed relation, or delete the relationship with op remove (never set it to null)` });
       }
     });
     beat.misconceptionIds.forEach((misconceptionId, j) => { if (!misconceptions.has(misconceptionId)) problems.push({ path: `${at}/misconceptionIds/${j}`, message: `unknown misconception ${misconceptionId}; use one of: ${ctx.misconceptionIds.join(', ') || '(none: leave the list empty)'}` }); });

@@ -1,4 +1,4 @@
-import { addUsage, emptyUsage, structuredCall, type StructuredCallResult } from '../../llm/structuredCall.js';
+import { addUsage, emptyUsage, structuredCall, type StructuredCallResult, type ValidatorProblem } from '../../llm/structuredCall.js';
 import type { BeatStageModel } from '../../teaching/beat-plan/plan.js';
 import type { StageFailure } from '../../shared/types.js';
 import { mergeTraces, type StructuredTrace } from '../../structured/trace.js';
@@ -13,11 +13,25 @@ function wordCount(sentences: readonly string[], language?: string): number {
 }
 
 /** Allocate the scene's spoken-time budget by structural obligations, not by equal beat count. */
+/** A beat that carries one claim sentence cannot be spoken in under a few seconds; the floor keeps its word budget realistic. */
+const MIN_BEAT_SEC = 6;
+
 function beatDurationBudgets(ctx: NarrationContext): number[] {
   if (!ctx.beats.length) return [];
   const weights = ctx.beats.map((beat) => Math.max(1, beat.claimIds.length, beat.requiredSemanticChanges.length));
-  const total = weights.reduce((sum, weight) => sum + weight, 0);
-  return weights.map((weight) => ctx.durationSec * weight / total);
+  const count = weights.length;
+  // A scene too short for the floor splits evenly. Otherwise beats below the floor are pinned to it and the rest share what remains,
+  // so the scene total is preserved (later pacing revisions still fit the audio to the lesson length).
+  if (MIN_BEAT_SEC * count >= ctx.durationSec) return weights.map(() => ctx.durationSec / count);
+  const pinned = new Set<number>();
+  for (;;) {
+    const free = weights.map((_, index) => index).filter((index) => !pinned.has(index));
+    const remaining = ctx.durationSec - MIN_BEAT_SEC * pinned.size;
+    const freeWeight = free.reduce((sum, index) => sum + weights[index]!, 0);
+    const below = free.filter((index) => remaining * weights[index]! / freeWeight < MIN_BEAT_SEC);
+    if (!below.length) return weights.map((weight, index) => (pinned.has(index) ? MIN_BEAT_SEC : remaining * weight / freeWeight));
+    for (const index of below) pinned.add(index);
+  }
 }
 
 /** Allocate a scene revision target across beats, weighted by their previous spoken length. */
@@ -41,6 +55,7 @@ function revisionTargets(ctx: NarrationContext): number[] | undefined {
 
 function contextForBeat(ctx: NarrationContext, index: number, previousSentences: string[], durationSec: number, targetWords?: number): NarrationContext {
   const beat = ctx.beats[index]!;
+  const restatedClaimIds = beat.claimIds.filter((id) => ctx.beats.slice(0, index).some((earlier) => earlier.claimIds.includes(id)));
   const priorVersion = ctx.revision?.previous.find((item) => item.beatId === beat.beatId);
   const canonicalClaims = ctx.canonicalClaims
     ? Object.fromEntries(beat.claimIds.flatMap((id) => ctx.canonicalClaims?.[id] ? [[id, ctx.canonicalClaims[id]!] as const] : []))
@@ -54,6 +69,7 @@ function contextForBeat(ctx: NarrationContext, index: number, previousSentences:
       index,
       count: ctx.beats.length,
       ...(previousSentences.length ? { previousSentences } : {}),
+      ...(restatedClaimIds.length ? { restatedClaimIds } : {}),
       ...(ctx.beats[index + 1] ? { nextGoal: ctx.beats[index + 1]!.narrationGoal } : {}),
     },
     ...(ctx.revision ? {
@@ -85,12 +101,35 @@ export async function writeBeatNarration(input: { ctx: NarrationContext; scene: 
       schema: BeatNarrationDraftSchema, schemaName: 'beat_narration', maxTokens: 1800, effort: 'low', maxRepairs: 2,
       remainingBudgetUsd: m.remainingBudgetUsd / Math.max(1, ctx.beats.length),
       ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.client ? { client: m.client } : {}),
-      validate: (draft) => validateSceneNarration({ beats: [draft] }, beatCtx).map((problem) => {
-        if (typeof problem === 'string') return problem;
+      validate: (draft) => validateSceneNarration({ beats: [draft] }, beatCtx).flatMap((problem): ValidatorProblem[] => {
+        if (typeof problem === 'string') return [problem];
         // Validation runs through the scene-shaped contract, but this call's schema is a beat at the root.
-        // Make repair pointers address that root object. Scene-level word-budget errors can only be fixed in sentences.
-        const path = problem.path.replace(/^\/beats\/0(?=\/|$)/, '');
-        return { ...problem, path: path || (problem.path === '/beats' ? '/sentences' : '') };
+        // Make repair pointers address that root object.
+        // A bare '/beats' (the word-budget error) has no beat-local root: its fix is to shorten the sentences, and every field
+        // that points into them (phrase anchors, claim sentence indices) is named so the same repair may update it.
+        if (problem.path === '/beats') {
+          const shorten = 'sentences are being shortened; update this field in the same repair so it still points at the final sentences and keeps the planned meaning change';
+          return [
+            { ...problem, path: '/sentences' },
+            ...draft.semanticAnchors.flatMap((_, j) => [{ path: `/semanticAnchors/${j}/phrase`, message: shorten }, { path: `/semanticAnchors/${j}/sentenceIndex`, message: shorten }]),
+            ...draft.claimSentences.map((_, k) => ({ path: `/claimSentences/${k}/sentenceIndex`, message: shorten })),
+          ];
+        }
+        const local = { ...problem, path: problem.path.replace(/^\/beats\/0(?=\/|$)/, '') };
+        // A claim whose wording a sentence cannot carry may be repaired by splitting that sentence so each claim has its own:
+        // the array and the indices that point into it are named so the same repair may update them.
+        const mismatch = /^\/sentences\/(\d+)$/.exec(local.path);
+        if (mismatch && /^claim /u.test(local.message)) {
+          const at = Number(mismatch[1]);
+          const note = 'you may split this sentence or add sentences so each claim has its own sentence; update every index that points into the sentences';
+          return [
+            local,
+            { path: '/sentences', message: note },
+            ...draft.claimSentences.flatMap((entry, k) => (entry.sentenceIndex === at ? [{ path: `/claimSentences/${k}/sentenceIndex`, message: note }] : [])),
+            ...draft.semanticAnchors.flatMap((anchor, j) => (anchor.sentenceIndex === at ? [{ path: `/semanticAnchors/${j}/sentenceIndex`, message: note }] : [])),
+          ];
+        }
+        return [local];
       }),
       salvage: (draft) => {
         const fixed = clampClaimAnchors({ beats: [draft] }, beatCtx);

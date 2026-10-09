@@ -87,3 +87,26 @@ test('audio cache identity includes language policy and canonical lesson termino
     assert.equal(calls, 3);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('concurrent requests for the same scene audio share one synthesis (a prewarm and the later S5 call never both run TTS)', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'scene-audio-coalesce-'));
+  const audioPath = path.join(root, 'fake.wav');
+  await writeFile(audioPath, Buffer.from('offline synthetic audio'));
+  const previousProvider = process.env.TTS_PROVIDER;
+  delete process.env.TTS_PROVIDER;
+  try {
+    const store = new ContentAddressedArtifactStore(path.join(root, 'cache'), 'cold');
+    let calls = 0;
+    const slow: NonNullable<SceneAudioDeps['aligner']> = async () => { calls++; await new Promise((resolve) => setTimeout(resolve, 30)); return { durationMs: 1000, words: [{ word: 'osmosis', startMs: 0, endMs: 500 }], aligner: 'stable-ts', repairedWordIndexes: [], audioPath }; };
+    const request = { sceneId: 's1', text: 'osmosis', language: 'en' };
+    const [first, second] = await Promise.all([synthesizeSceneAudio(request, { aligner: slow, artifactStore: store }), synthesizeSceneAudio(request, { aligner: slow, artifactStore: store })]);
+    assert.equal(calls, 1);
+    assert.equal(first.durationMs, second.durationMs);
+    const later = await synthesizeSceneAudio(request, { aligner: slow, artifactStore: store });
+    assert.equal(calls, 1, 'a later call in the same run reuses the finished artifact');
+    assert.equal(later.cacheHit, true);
+  } finally {
+    if (previousProvider === undefined) delete process.env.TTS_PROVIDER; else process.env.TTS_PROVIDER = previousProvider;
+    await rm(root, { recursive: true, force: true });
+  }
+});

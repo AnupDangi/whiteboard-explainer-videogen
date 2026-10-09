@@ -7,7 +7,7 @@ import { configuredConcurrency } from '../run/limiter.js';
 import { S5_MODEL_ID, S5_STAGE_VERSION } from '../run/versions.js';
 
 /** TTS + forced-alignment processes running at once on this host (all runs share it). */
-export const DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY = configuredConcurrency('HYPOTHESIS_TTS_ALIGNMENT_CONCURRENCY', 2);
+export const DEFAULT_HOST_TTS_ALIGNMENT_CONCURRENCY = configuredConcurrency('HYPOTHESIS_TTS_ALIGNMENT_CONCURRENCY', 3);
 
 /** Load TTS routing from the same env file as OpenRouter for CLI runs; explicit process/CLI settings win. */
 export function applyTtsConfigFromEnvFile(): void {
@@ -52,6 +52,17 @@ export interface SceneAudioDeps {
   aligner?: typeof synthesizeAndAlign;
   artifactStore?: ContentAddressedArtifactStore;
   onElevenLabsUsage?: (event: ElevenLabsUsageEvent) => void;
+}
+
+const inFlightSynthesis = new WeakMap<object, Map<string, Promise<unknown>>>();
+function coalesceSynthesis<T>(store: object, key: string, start: () => Promise<T>): Promise<T> {
+  let byKey = inFlightSynthesis.get(store);
+  if (!byKey) { byKey = new Map(); inFlightSynthesis.set(store, byKey); }
+  const running = byKey.get(key);
+  if (running) return running as Promise<T>;
+  const promise = start().finally(() => { byKey!.delete(key); });
+  byKey.set(key, promise);
+  return promise;
 }
 
 const ARTIFACT_META = { schemaVersion: 'claude-aligned-scene/v1', stageVersion: S5_STAGE_VERSION, modelId: S5_MODEL_ID } as const;
@@ -105,7 +116,9 @@ export async function synthesizeSceneAudio(request: SceneAudioRequest, deps: Sce
   if (tts === 'local') {
     if (!deps.artifactStore) return deliver(await run('local'), false);
     const stage = sceneAudioStage(request.sceneId);
-    const cached = await deps.artifactStore.run(stage, cacheInputFor('local'), ARTIFACT_META, () => run('local'));
+    const store = deps.artifactStore;
+    // Identical requests in flight (an early prewarm and the later S5 call) share one synthesis: TTS runs once per scene text.
+    const cached = await coalesceSynthesis(store, `${stage}\0${JSON.stringify(cacheInputFor('local'))}`, () => store.run(stage, cacheInputFor('local'), ARTIFACT_META, () => run('local')));
     deps.artifactStore.reuseWithinRun(stage, cacheInputFor('local'), ARTIFACT_META, cached.artifact);
     return deliver(cached.artifact.payload, cached.cacheHit, { key: cached.key, contentHash: cached.artifact.contentHash, cacheHit: cached.cacheHit });
   }

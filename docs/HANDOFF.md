@@ -3307,3 +3307,116 @@ Observed blockers: family/operation pairs absent from prompt guidance; long enti
 - **Actual rejection:** the first plan omitted required graph relations and used out-of-scene concepts/evidence. Its repair still did not explicitly realize the graph's `Sunlight energy → transforms → Sugar products` and `Photosynthesis → produces → Oxygen release` relations under the canonical label/predicate contract. This is a graph/plan consistency failure. It does not independently prove that the graph relation itself is a faithful source entailment; upstream semantic and referent-kind QA remain open. The newly fixed S4 repair was not exercised in this run.
 - **Result boundary:** all three fresh diagnostics in this audit failed before speech/video. Their total measured model spend is **$0.046195622**. No new video, current-code throughput improvement, narration/visual quality, Simi parity or release acceptance can be claimed. Different cold model plans prevent treating their failure counts or shorter failed-run times as a controlled improvement.
 - **Next bounded implementation:** validate source-grounded graph relations and concrete referents before forcing them into S3 claims; address observed graph/claim realization contracts; then exercise coherent S4 repair in a complete generated lesson. Continue causal/material providers and registry-based execution/lock replay, independent mechanism/sync/muted/rights review, and the one-digest cold/heldout matrix. Preserve all failed records. The active user goal remains incomplete.
+
+## Rich visuals Task 1 — offline V2 richness baseline — 2026-10-09
+
+Plan: `docs/superpowers/plans/2026-10-08-rich-visuals-recovery.md` (Task 1 of 7). `agent-master` unavailable (not on PATH; no `.master/`); continued per plan. No commit made (CLAUDE.md: commit only on explicit user request).
+
+- **Implemented:** `referentOf` (`src/assets/referent.ts`); `src/harness/{v2Richness,retainedV2Run,v2RichnessReport,v2RichnessCli}.ts`; `pnpm run richness:v2`. Replays retained source-generated V2 runs through the current reducer/timeline/layout; no provider call, no write to run dirs.
+- **Command:** `node dist/src/harness/v2RichnessCli.js --json=harness/reports/rich-visuals/baseline.labels.json $(ls -d .data/benchmark-v2/cold-v2/2026-10-04-final*/*/*/runs/*/)`
+- **Baseline (POOLED, labels):** `POOLED(labels) scenes=25 iconShare=0.000 labelOnlyEntities=1.000 assets=0 familyMixScenes=0 conflicts=0 minIconPx=n/a textChars=67.9 words=10.1 variety=3.24`.
+- **Unavailable runs (reported, excluded from POOLED, no video.mp4):** dijkstra (missing `v2/scene.01-module_1_initialize.json`), mitosis (missing `v2/scene.01-module_1_daughter_nuclei.json`), ohms-law-series (missing `v2/scene.01-module_1_predict_current.json`). Their per-run rows show only the scenes that replayed before the gap.
+- **Verification:** `pnpm run typecheck` pass; `pnpm run test:hypothesis` pass (1,488 Node + 2 retained-board audit + 28 alignment + 12 RAG). New file `src/__tests__/v2-richness.test.ts`: 5 tests (plan text said 6; the file defines 5).
+- **Status:** richness tool `implemented, tested`; baseline `passed` (offline, as expected 0 icons); wrong-icon rate `unmeasured`.
+- **Next bounded task:** Task 2 — exact-name icon badges with scene family lock (`src/visual-v2/resolver/referentBadge.ts`).
+
+## Rich visuals Task 2 — exact-name icon badge resolver with scene family lock — 2026-10-09
+
+- **Implemented:** `src/assets/badgeReview.ts` + `src/assets/data/badge-review.v1.json` (empty verdict data; verdicts only from a reviewer's recorded decision), `src/visual-v2/resolver/referentBadge.ts` (`planSceneBadges`, `placeBadges`, `badgeEligibility`). Accepts only `exact`/`curated` ladder results whose referent equals the asset's primary name; one family per scene via existing `chooseSceneFamily`; reserved-asset reuse guard; reviewed `reject` blocks. No runtime path calls it yet (wired in Task 3).
+- **Verification:** `src/__tests__/referent-badge.test.ts` 8/8; `pnpm run typecheck` pass; `pnpm run test:hypothesis` pass (1,496 Node + 2 + 28 + 12). No commit made.
+- **Status:** badge resolver `implemented, tested`; not yet rendered (`unmeasured`); wrong-icon rate `unmeasured`.
+- **Next bounded task:** Task 3 — icon-card composition in renderer, runtime wiring, rights evidence, contact sheets.
+
+## Rich visuals Task 3 — icon cards, runtime wiring, rights evidence, contact sheets — 2026-10-09
+
+- **Implemented:** `iconCard`/`iconCardFits`/`badgeSide`/`BADGE_MIN_SIDE_PX` (`renderer/visuals.ts`); `CompileSceneOptions`, `CompiledScene.badges/badgeFamily`, context icon (`renderer/frame.ts`); `src/pipeline-v2/badgeProvenance.ts`; `runLessonV2.ts` now compiles with `composition: 'icon-cards'`, writes badge assets into `asset-provenance.json`/attribution/rights gate, emits `v2.iconBadges`; `--composition` flag on `richness:v2`; `scripts/v2-contact-sheet.mjs`. Default composition for direct `compileScene` callers stays `labels`.
+- **Verification:** `src/__tests__/icon-cards.test.ts` 6/6; V2 lesson/lock/render suites pass; `pnpm run typecheck` pass; `pnpm run test:hypothesis` pass (1,502 Node + 2 + 28 + 12). No commit made.
+- **Offline projection (retained complete runs):** `POOLED(icon-cards) scenes=25 iconShare=0.000 labelOnlyEntities=1.000 assets=0 familyMixScenes=0 conflicts=0 minIconPx=n/a` — identical to baseline; sheets `output/rich-visuals/<lesson>/{labels,icon-cards}.png` are byte-identical (checked for mitosis). The acceptance text "iconShare >= baseline" holds only trivially (0 >= 0). **This is not a visible gain.**
+- **Why zero:** 11 badges are planned across the five complete runs but none fits. Planned: "Balance" (compound-interest, card 192x192), "Component" (ohms-law-series, 203x150), "select" and "repeat" (dijkstra, 140x140). `iconCardFits` rejects them (label would not fit beside a >=56 px icon, or side < 56). The retained boards label cards with abstract/process wording ("original amount", "interest already added", "longer time"), so only these few labels hit an exact catalog primary name.
+- **Quality risk found:** three of the four matched words are UI/verb or off-meaning pictures ("select" -> `iconify-tabler:select`, "repeat" -> `iconify-lucide:repeat`, "Component" -> `iconify-lucide:component`; "Balance" -> a balance-scale icon for an account balance). These pass the exact-primary-name rule but are not teaching pictures. Unreviewed badges are drawn by design; the wrong-icon rate is `unmeasured` until Task 4 verdicts exist.
+- **Implication for the plan:** the visible gain cannot come from re-skinning old boards. It needs the planner (S3b/S6) to label cards with concrete nouns (Task 7 live run) and/or a larger fit budget; do not loosen `iconCardFits` below 56 px or add head-noun fallback to hit a number.
+- **Status:** icon-card renderer, wiring, rights evidence, tools `implemented, tested`; visible gain `failed` (offline) / live visibility `unmeasured`.
+- **Shell note:** the plan's `RUNS=$(ls -d ...)` / `$RUNS` snippets need bash word splitting; zsh does not split an unquoted `$RUNS`. Run them via `bash -c`.
+- **Next bounded task:** Task 4 — wrong-icon gold set, human review sheet, scoring and acceptance rules.
+
+## Rich visuals Task 4 — wrong-icon gold set, review sheet, acceptance rules — 2026-10-09
+
+- **Implemented:** `src/__tests__/fixtures/icon-gold.v1.json` (fixture, hand-authored; not a generated result), `src/harness/wrongIcon.ts`, `src/harness/richnessAcceptance.ts` (`ACCEPTANCE` constants + `evaluateRichnessAcceptance`), `--review`/`--accept` on `richness:v2`, `scripts/badge-review-sheet.mjs`.
+- **Verification:** `icon-gold.test.ts` 5/5 + `richness-acceptance.test.ts` 2/2 (plan said 7 total: matches); `pnpm run typecheck` pass; `pnpm run test:hypothesis` pass (1,509 Node + 2 + 28 + 12). No commit made.
+- **Review sheet:** `output/badge-review/2026-10-gold/sheet.png` + `candidates.json`: 15 numbered (asset, referent) pairs, all `unreviewed` (ambulance, bank, battery, clock, coin, heart, money, thermometer, resistor, array, time, dna, water, cell, graph). The sheet was shown to the user; **no verdict has been given yet**. `src/assets/data/badge-review.v1.json` is unchanged (empty).
+- **Status:** gold tests / scoring / acceptance rules `implemented, tested`; Step 9 human verdicts `pending user`; wrong-icon rate `unmeasured`; acceptance on live run `unmeasured`.
+- **Next bounded task:** Task 5 — reproducible v0.3.0 / v1.0.0 / V2 comparison (offline).
+
+## Rich visuals Task 5 — reproducible v0.3.0 / v1.0.0 / V2 comparison — 2026-10-09
+
+- **Implemented:** `scripts/cmp-v1.mjs` (`extract`, `sheets`), `scripts/cmp-v1.test.mjs` (3 tests, wired into `test:hypothesis`), `bench/cmp-v1/manifest.json` + `bench/cmp-v1/sources/{cmp-bio01,cmp-cs01,cmp-math01}.md` (verbatim recorded sources; sha256 verified against `sourceDoc.contentSha256`).
+- **Commands:** `node scripts/cmp-v1.mjs extract --cmp-root=/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/cmp-worktrees` then `... sheets --cmp-root=...`.
+- **Output:** v0.3.0 has a video for all three cases; v1.0.0 only for `cmp-math01`; V2 has none yet (`--v2=<case>=<mp4>` once Task 7 produces them). Sheets: `output/cmp-v1/cmp-{bio01,cs01,math01}/v0.3.0.png`, `output/cmp-v1/cmp-math01/v1.0.0.png`.
+- **Why not v0.3.0 (decision: no rollback):** frame inspection of its cmp-BIO-01 video found overlapping text/icon, a hallucinated attention table in an osmosis lesson and a subtitle bar covering content; its scenes are `engine-estimated` with `audio: null`; it predates the V2 lock, provenance, rights evidence and type gate. Useful v0.3.0 ideas (per-scene SVGs, subtitles) already exist in V2 (`svgAssets`, `captions.vtt`).
+- **Verification:** `pnpm run typecheck` pass; `pnpm run test:hypothesis` pass (1,509 Node + 2 + 3 cmp + 28 + 12); `node scripts/v2-benchmark.mjs verify cold-v2` → `benchmark intact`. No commit made.
+- **Status:** comparison tooling `implemented, tested`; V2 side `unmeasured`.
+- **Next bounded task:** Task 6 — stage cost/latency report and model-routing proposal (offline).
+
+## Rich visuals Task 6 — stage cost/latency report and model-routing proposal — 2026-10-09
+
+- **Implemented:** `src/harness/stageCost.ts`, `src/harness/stageCostCli.ts`, `pnpm run stage-cost`, `src/__tests__/stage-cost.test.ts` (2 tests). Offline; reads retained run files only.
+- **Command:** `node dist/src/harness/stageCostCli.js $(ls -d .data/benchmark-v2/cold-v2/2026-10-04-final*/*/*/runs/*/)` (8 retained final-batch runs, including the 3 without video).
+- **Measured (retained runs, all prep stages on `openai/gpt-6-luna`):**
+
+| Stage | Model | Runs | Failed | Cost USD | Mean latency | Share of itemised prep cost |
+|---|---|---|---|---|---|---|
+| S3b-beats | openai/gpt-6-luna | 8 | 0 | 0.039035 | 31.5 s | 57% |
+| S3-teaching-plan | openai/gpt-6-luna | 8 | 0 | 0.014741 | 19.5 s | 22% |
+| S2-concepts | openai/gpt-6-luna | 8 | 0 | 0.008749 | 14.4 s | 13% |
+| S1-syllabus | openai/gpt-6-luna | 8 | 0 | 0.006305 | 11.6 s | 9% |
+| S4+S6 (derived) | — | 8 | — | 0.100391 | — | — |
+| TOTAL | — | 8 | — | 0.169221 | — | — |
+
+  First-try valid structured calls: S3 45/48, S4 111/136, S6 6/32.
+- **Routing proposal (unchanged defaults; evidence-based, not yet bake-off tested):** keep S3 plan + S3b Visual Discovery (`OPENROUTER_PLAN_MODEL`), S4 (`OPENROUTER_SCENE_MODEL`) and S6 (`--s6-planner`) on `openai/gpt-6-luna`: earlier HANDOFF entries record cheaper models failing these stages and S6 first-try is already only 6/32. Candidate cheap route only for S1 (`OPENROUTER_SYLLABUS_MODEL`) and S2 (`OPENROUTER_CONCEPTS_MODEL`): short schema-constrained stages, ~26 s of mean prep latency; cost saving is small (S1+S2 = $0.015 over 8 runs), so the goal is latency. S3b is the biggest cost and latency stage but the riskiest to downgrade because it chooses the pictures this plan depends on.
+- **Not done (needs the user):** Step 7 (one free GET to `https://openrouter.ai/api/v1/models` to pick `CHEAP_MODEL`; not asked yet) and Step 8 (PAID routing bake-off, ≤ $0.20; not approved). Routing is `unchanged`; bake-off `unmeasured`.
+- **Verification:** see gate result below. No commit made.
+
+## Rich visuals Tasks 4 (verdicts), 6 (bake-off) and 7 (live run) — 2026-10-09
+
+- **User approval (verbatim, 2026-10-09):** "the api is already there in .env and it should work … complete complete all the tasks … i approve the icon use and complete and give result … i have given full access go on". Treated as: accept all 15 icons on `output/badge-review/2026-10-gold/sheet.png`; approve the paid routing check and the live verification. **Not** treated as commit approval; nothing is committed.
+- **Task 4 Step 9:** `src/assets/data/badge-review.v1.json` now holds 15 `accept` verdicts (reviewer `anup`, 2026-10-09; ambulance, bank, battery, clock, coin, heart, money, thermometer, resistor, array, time, dna, water, cell, graph). Icon/gold/referent tests pass with it. The four words matched in retained runs (select, repeat, Component, Balance) have **no** verdict.
+- **Task 6 Step 7:** one free GET to `https://openrouter.ai/api/v1/models` (needed the sandbox disabled; the shell sandbox resets that connection). `CHEAP_MODEL` ruling: `anthropic/claude-haiku-5.5` (same listed price as `openai/gpt-6-luna`: $0.0000001 in / $0.0000005 out per token).
+- **Task 6 Step 8 (PAID, batch `2026-10-09-rv-baseline`, case `mitosis`, local TTS):** baseline arm **hard failed in preparation**: `beat-narration/beat-narration-repair-failed` (scene `copy_before_mitosis` beat `.b1`: claim `dna_feeds_copying` polarity mismatch after 2 repairs). Spend $0.0201, 27 calls, 4 m 50 s. Per the approval (stop on first hard failure) the cheap arm was not run. **Routing unchanged.**
+- **Task 7 Step 3 (PAID, `.data/rich-visuals/2026-10-live/`, luna everywhere, local TTS, cold cache, same env flags as `scripts/v2-benchmark.mjs`):**
+
+| Case | Result | Hard failure | Spend | Wall |
+|---|---|---|---|---|
+| cmp-bio01 | failed in prep | `beat-narration-repair-failed`: scene `direction_recap` `.b1`, semantic phrase anchors not distinct/ordered | $0.0155 (23 calls) | 2 m 15 s |
+| cmp-cs01 | failed in prep | `beat-narration-repair-failed`: `repeat_and_shrink.b2` "must not introduce unsupported quantity scope all"; `work_example.b2` "needs explicit example framing" | see stage-cost | ~6 min for cs01+math01 |
+| cmp-math01 | failed in prep | `beats-repair-failed`: `half_quarters_example` separate-change needs 2–6 revealed result entities, got 1 | see stage-cost | |
+
+  Extra experiment: `OPENROUTER_PLAN_MODEL=anthropic/claude-haiku-5.5` on cmp-bio01 failed at S3 with OpenRouter HTTP 400 "The compiled grammar is too large" (strict JSON schema unsupported by that model); ~$0. Haiku is not viable for S3/S3b as configured. Total live spend this session about $0.056 (stage-cost TOTAL $0.034963 for the 4 live runs + $0.0201 bake-off). No MP4 was produced, so there is nothing to render, review or compare.
+- **Task 7 Steps 4–6 (free):** `v2RichnessCli ... --accept` → `ACCEPTANCE FAILED`: complete live runs 0 (FAIL), icon-bearing share n/a (FAIL), wrong-icon rate n/a (FAIL), review coverage n/a (FAIL), smallest icon n/a (FAIL); hard-failures, family-mix, reuse-conflicts and text-growth rows PASS vacuously on zero complete runs. Stage cost for the 4 live runs: S3b-beats $0.0376 mean 68 s (2 of 3 failed), S3 $0.0097 (1 of 4 failed), S1 $0.0067, S2 $0.0052; first-try valid S3 9/17, S4 16/34.
+- **Status:** icon verdicts `passed` (15/15 accept); live richness `failed` (no complete run); wrong-icon rate `unmeasured`; routing `unchanged`.
+- **Cause and owner:** the current V2 tip cannot complete a cold lesson on these sources. The blocker is S3b beat planning plus S4 beat-narration repair (`src/narration/beat-narration/*`, `src/teaching/beats/*`): validators reject the model's phrase anchors, claim wording and separate-change entity counts after 2 repairs. This matches the HANDOFF Oct 7 entry (four failed cold attempts) and the 0/15 cold grid. It is not caused by the icon-card changes (failures occur before any scene is compiled).
+- **Next bounded task (not in this plan):** make one cold lesson complete at this digest (S3b/S4 repair) before any further icon work; icon cards stay at 0 drawn icons until planner labels name concrete nouns that fit a >=56 px badge.
+
+## Rich visuals final review and fix pass — 2026-10-09
+
+An independent Opus review of the uncommitted branch found 2 critical, 6 important, 7 minor issues. **Correction to the Task 3 entry:** icon-card sheets were *not* all byte-identical to the label sheets (only mitosis had been compared); compound-interest, dijkstra and ohms-law-series showed an unreviewed context icon beside the title, with no metric seeing it.
+
+- **Fixed (each with a test that failed first; suite 1,518/1,518):**
+  - Badges are drawn only when human-accepted (`review === 'accepted'`) and their settled card holds them; the title context icon is therefore never an unreviewed or non-fitting picture. Unreviewed fitting matches are listed as `CompiledScene.pendingBadges` / `RichnessRunReport.pendingReview` and appear on the review sheet instead of on screen.
+  - A token whose text names a non-entity concept of the lesson keeps the concept's type rule (no badge).
+  - Pictures already in the scene fix its family; badges never outvote them (`planSceneBadges`).
+  - Acceptance now counts every attempted live run (all must be complete, hard failures summed over all, unknown = failure) and fails on replay mismatch/unreplayable complete runs (new check `replay matches recorded timeline`).
+  - Card fit steps the icon down from `badgeSide` toward 56 px before giving up (`iconCardSide`); previously even a 250x130 card with the word "beaker" could not hold an icon.
+  - `v2.iconBadges`/`badgeFamily` now reflect drawn badges only (side effect of the pruning).
+- **Not fixed (rulings):** (1) lock capture omits badge records and the review-file hash (`lockV2.ts captureScene`): changing it versions the lock and touches many tests; cost if wrong: a resumed run with a changed verdict file keeps stale frames. (2) `iconUsesFor` fit check uses the settled rectangle without `props.scale`/kit mapping; cost: rare miscount of drawn badges in scaled or moved kits. (3) Minors deferred: context icon measured on mixed-case title; per-frame fit during animations; catalog id collision check; `familyMix` ignores generated assets; `badge-review-sheet` skips unknown ids (done); cmp-v1 v1.0.0 video paired with latest run, not the verified one.
+- **Re-measured offline projection (retained complete runs):** `POOLED(icon-cards)` still `iconShare=0.000 conflicts=0 familyMixScenes=0`; all five icon-card sheets are byte-identical to the label sheets, i.e. no wrong picture is on screen and no icon is drawn because no retained label matches an accepted word at a fitting card size.
+
+## Rich visuals — V1 videos and blockers — 2026-10-09
+
+- **User direction (verbatim):** "reviewer use sonnet5.5 … bigger tasks use sonnet5.5 for small use haiku … you already have openrouter api key … complete all the tasks and come back to me with the result videos inside …/output".
+- **V2 with Sonnet 5.5 (S3/S3b/S4) + Haiku 5.5 (S1/S2), `LESSON_COST_CAP_USD=1.0`:** two cmp-bio01 attempts, $0.29 each, both failed in S3b/S4 on different validators (word budget; claim identity "semipermeable membrane feeds net water flow"; repeated sentence; concept not linked to a cited claim). V2 stays blocked; stopped at about $0.57.
+- **Fixes (each RED→GREEN):** (1) `chatStructured` retries once without `response_format` on Anthropic "compiled grammar is too large" (`openrouter.test.ts`). (2) S4 word-budget repair used the scene-level `/beats` pointer, so the model's valid shortened beat was rejected as `Unrecognized key "beats"`; now maps to `/sentences` and authorizes dependent anchor/claim indices (`beat-narration.test.ts`). (3) `src/shared/schema.ts` evidence refs lacked `sourceRole` (already in `shared/contracts.ts`), so every V1 board rejected planner citations (26 hard failures on half-life); added the optional enum, regenerated `src/shared/MANIFEST.sha256` (`schema.test.ts`). **The shared dir is byte-synced across track worktrees: apply the same change there.**
+- **V1 live lessons (cold, local TTS, luna, `--allow-partial-video`):** half-life draft 6/6 scenes 0 hard $0.0238 179 s; vaccination draft 4/4 scenes 0 hard 2 planner fallbacks $0.0235 184 s. Then OpenRouter returned HTTP 403 "Key limit exceeded (total limit)" for osmosis, cmp-bio01, cmp-math01, cmp-cs01, thermostat, spaced-repetition (0 spend). Videos copied to `output/videos/` (sheets and README there).
+- **Gates:** `pnpm run typecheck` pass; `pnpm run test:hypothesis` pass (1,521 Node + 2 + 3 + 28 + 12); `benchmark intact`. Nothing committed.
+- **Status:** V1 icon videos `tested` (2 drafts); V2 icon-card live verification `failed` (V2 cannot complete a cold lesson); remaining 6 lessons `unmeasured` (key limit).
+- **Next bounded task:** raise the OpenRouter key limit, rerun `.superpowers/sdd/2026-10-08-rich-visuals-recovery/batch-v1.sh`; separately fix V2 S3b/S4 validator/model mismatch before any V2 icon verification.

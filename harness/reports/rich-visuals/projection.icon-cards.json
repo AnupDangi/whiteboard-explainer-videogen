@@ -1,0 +1,844 @@
+{
+  "schemaVersion": "v2-richness/v1",
+  "composition": "icon-cards",
+  "runs": [
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/benchmark-v2/cold-v2/2026-10-04-final-compound-interest/compound-interest-t1/compound-interest/runs/2026-10-03T22-06-31-942Z-86f32ee2-0f10-481f-855e-cf4785e4c03f",
+      "lessonId": "compound-interest",
+      "complete": true,
+      "status": "loaded",
+      "hardFailures": 0,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 5,
+        "iconBearingShare": 0,
+        "labelOnlyEntityRatio": null,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 53.2,
+        "meanWordsOnBoard": 8.6,
+        "meanElementVariety": 2.6
+      },
+      "scenes": [
+        {
+          "sceneId": "01-module_1_compound_growth",
+          "elementCount": 6,
+          "entityCount": 0,
+          "tokenCount": 5,
+          "edgeCount": 0,
+          "depictableCount": 5,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 58,
+          "wordsOnBoard": 8,
+          "elementVariety": [
+            "kit:array",
+            "token"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_simple_comparison",
+          "elementCount": 4,
+          "entityCount": 0,
+          "tokenCount": 2,
+          "edgeCount": 0,
+          "depictableCount": 2,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 34,
+          "wordsOnBoard": 6,
+          "elementVariety": [
+            "kit:comparison",
+            "token",
+            "value"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_time_gap",
+          "elementCount": 7,
+          "entityCount": 0,
+          "tokenCount": 5,
+          "edgeCount": 0,
+          "depictableCount": 5,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 62,
+          "wordsOnBoard": 12,
+          "elementVariety": [
+            "kit:comparison",
+            "token",
+            "value"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_frequency_effect",
+          "elementCount": 3,
+          "entityCount": 0,
+          "tokenCount": 2,
+          "edgeCount": 0,
+          "depictableCount": 2,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 22,
+          "wordsOnBoard": 3,
+          "elementVariety": [
+            "kit:comparison",
+            "token"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_growth_recap",
+          "elementCount": 9,
+          "entityCount": 0,
+          "tokenCount": 7,
+          "edgeCount": 0,
+          "depictableCount": 7,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 90,
+          "wordsOnBoard": 14,
+          "elementVariety": [
+            "kit:comparison",
+            "kit:stack",
+            "token"
+          ]
+        }
+      ],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/benchmark-v2/cold-v2/2026-10-04-final-dijkstra/dijkstra-t1/dijkstra/runs/2026-10-03T22-01-40-864Z-5ea8a83b-84c1-4490-8e63-21345a14f72c",
+      "lessonId": "dijkstra",
+      "complete": false,
+      "status": "unavailable",
+      "reason": "missing or unreadable v2/scene.01-module_1_initialize.json",
+      "hardFailures": 2,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 1,
+        "iconBearingShare": 0,
+        "labelOnlyEntityRatio": null,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 55,
+        "meanWordsOnBoard": 10,
+        "meanElementVariety": 2
+      },
+      "scenes": [
+        {
+          "sceneId": "01-module_1_scope",
+          "elementCount": 4,
+          "entityCount": 0,
+          "tokenCount": 3,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 55,
+          "wordsOnBoard": 10,
+          "elementVariety": [
+            "kit:graph",
+            "token"
+          ]
+        }
+      ],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/benchmark-v2/cold-v2/2026-10-04-final-doppler-effect/doppler-effect-t1/doppler-effect/runs/2026-10-03T21-54-52-960Z-15f005ad-b4c6-4249-bf08-e4258a083cbb",
+      "lessonId": "doppler-effect",
+      "complete": true,
+      "status": "loaded",
+      "hardFailures": 0,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 4,
+        "iconBearingShare": 0,
+        "labelOnlyEntityRatio": 1,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 83.5,
+        "meanWordsOnBoard": 12,
+        "meanElementVariety": 3.25
+      },
+      "scenes": [
+        {
+          "sceneId": "01-module_1_define_doppler_effect",
+          "elementCount": 4,
+          "entityCount": 1,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 1,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 1,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 75,
+          "wordsOnBoard": 10,
+          "elementVariety": [
+            "entity",
+            "text"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_compare_motion_directions",
+          "elementCount": 4,
+          "entityCount": 0,
+          "tokenCount": 2,
+          "edgeCount": 0,
+          "depictableCount": 2,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 44,
+          "wordsOnBoard": 7,
+          "elementVariety": [
+            "kit:comparison",
+            "text",
+            "token"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_examples_in_sound_and_light",
+          "elementCount": 9,
+          "entityCount": 2,
+          "tokenCount": 5,
+          "edgeCount": 0,
+          "depictableCount": 7,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 2,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 95,
+          "wordsOnBoard": 14,
+          "elementVariety": [
+            "entity",
+            "kit:comparison",
+            "text",
+            "token"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_recap_frequency_pattern",
+          "elementCount": 11,
+          "entityCount": 2,
+          "tokenCount": 7,
+          "edgeCount": 0,
+          "depictableCount": 9,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 2,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 120,
+          "wordsOnBoard": 17,
+          "elementVariety": [
+            "entity",
+            "kit:comparison",
+            "text",
+            "token"
+          ]
+        }
+      ],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/benchmark-v2/cold-v2/2026-10-04-final-mitosis/mitosis-t1/mitosis/runs/2026-10-03T21-57-54-883Z-ff228a71-dc01-4bc9-b22a-f7883cbc4837",
+      "lessonId": "mitosis",
+      "complete": false,
+      "status": "unavailable",
+      "reason": "missing or unreadable v2/scene.01-module_1_daughter_nuclei.json",
+      "hardFailures": 2,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 3,
+        "iconBearingShare": 0,
+        "labelOnlyEntityRatio": 1,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 63.666666666666664,
+        "meanWordsOnBoard": 7.333333333333333,
+        "meanElementVariety": 2
+      },
+      "scenes": [
+        {
+          "sceneId": "01-module_1_dna_preparation",
+          "elementCount": 6,
+          "entityCount": 0,
+          "tokenCount": 5,
+          "edgeCount": 0,
+          "depictableCount": 5,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 59,
+          "wordsOnBoard": 7,
+          "elementVariety": [
+            "kit:queue",
+            "token"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_early_mitosis",
+          "elementCount": 6,
+          "entityCount": 6,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 6,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 6,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 68,
+          "wordsOnBoard": 8,
+          "elementVariety": [
+            "entity"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_alignment_and_separation",
+          "elementCount": 7,
+          "entityCount": 3,
+          "tokenCount": 3,
+          "edgeCount": 0,
+          "depictableCount": 6,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 64,
+          "wordsOnBoard": 7,
+          "elementVariety": [
+            "entity",
+            "kit:compartment",
+            "token"
+          ]
+        }
+      ],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/benchmark-v2/cold-v2/2026-10-04-final-ohms-law-series/ohms-law-series-t1/ohms-law-series/runs/2026-10-03T22-10-19-407Z-d21aa897-adb8-498a-82c7-0fa3c5d5016b",
+      "lessonId": "ohms-law-series",
+      "complete": false,
+      "status": "unavailable",
+      "reason": "missing or unreadable v2/scene.01-module_1_predict_current.json",
+      "hardFailures": 2,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 0,
+        "iconBearingShare": null,
+        "labelOnlyEntityRatio": null,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 0,
+        "meanWordsOnBoard": 0,
+        "meanElementVariety": 0
+      },
+      "scenes": [],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/benchmark-v2/cold-v2/2026-10-04-final2-dijkstra/dijkstra-t1/dijkstra/runs/2026-10-03T22-22-53-707Z-0b4e1556-83f3-46fe-84d0-8020cc52dbc0",
+      "lessonId": "dijkstra",
+      "complete": true,
+      "status": "loaded",
+      "hardFailures": 0,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 5,
+        "iconBearingShare": 0,
+        "labelOnlyEntityRatio": 1,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 83.6,
+        "meanWordsOnBoard": 13,
+        "meanElementVariety": 3.8
+      },
+      "scenes": [
+        {
+          "sceneId": "01-module_1_shortest_path_goal",
+          "elementCount": 5,
+          "entityCount": 3,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 37,
+          "wordsOnBoard": 7,
+          "elementVariety": [
+            "entity",
+            "kit:graph",
+            "text"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_initial_distances",
+          "elementCount": 9,
+          "entityCount": 3,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 90,
+          "wordsOnBoard": 16,
+          "elementVariety": [
+            "entity",
+            "kit:array",
+            "kit:graph",
+            "text",
+            "value"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_select_nearest",
+          "elementCount": 11,
+          "entityCount": 3,
+          "tokenCount": 1,
+          "edgeCount": 0,
+          "depictableCount": 4,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 103,
+          "wordsOnBoard": 18,
+          "elementVariety": [
+            "entity",
+            "kit:array",
+            "kit:graph",
+            "text",
+            "token",
+            "value"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_relax_neighbours",
+          "elementCount": 3,
+          "entityCount": 3,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 60,
+          "wordsOnBoard": 6,
+          "elementVariety": [
+            "entity"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_stop_and_recap",
+          "elementCount": 9,
+          "entityCount": 3,
+          "tokenCount": 3,
+          "edgeCount": 0,
+          "depictableCount": 6,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 128,
+          "wordsOnBoard": 18,
+          "elementVariety": [
+            "entity",
+            "kit:cycle",
+            "text",
+            "token"
+          ]
+        }
+      ],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/benchmark-v2/cold-v2/2026-10-04-final2-mitosis/mitosis-t1/mitosis/runs/2026-10-03T22-17-18-161Z-eefd027f-689d-46b7-89fc-13b0462b8244",
+      "lessonId": "mitosis",
+      "complete": true,
+      "status": "loaded",
+      "hardFailures": 0,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 6,
+        "iconBearingShare": 0,
+        "labelOnlyEntityRatio": 1,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 60.5,
+        "meanWordsOnBoard": 7.666666666666667,
+        "meanElementVariety": 2.6666666666666665
+      },
+      "scenes": [
+        {
+          "sceneId": "01-module_1_prepare_and_begin",
+          "elementCount": 5,
+          "entityCount": 3,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 51,
+          "wordsOnBoard": 6,
+          "elementVariety": [
+            "entity",
+            "kit:comparison",
+            "text"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_attach_and_align",
+          "elementCount": 10,
+          "entityCount": 5,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 5,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 5,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 104,
+          "wordsOnBoard": 12,
+          "elementVariety": [
+            "entity",
+            "kit:comparison",
+            "text"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_separate_chromatids",
+          "elementCount": 3,
+          "entityCount": 3,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 24,
+          "wordsOnBoard": 3,
+          "elementVariety": [
+            "entity"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_form_two_nuclei",
+          "elementCount": 9,
+          "entityCount": 4,
+          "tokenCount": 4,
+          "edgeCount": 0,
+          "depictableCount": 8,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 4,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 71,
+          "wordsOnBoard": 10,
+          "elementVariety": [
+            "entity",
+            "kit:compartment",
+            "token"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_divide_cytoplasm",
+          "elementCount": 5,
+          "entityCount": 1,
+          "tokenCount": 2,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 1,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 32,
+          "wordsOnBoard": 5,
+          "elementVariety": [
+            "entity",
+            "kit:comparison",
+            "text",
+            "token"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_recap_full_sequence",
+          "elementCount": 8,
+          "entityCount": 0,
+          "tokenCount": 7,
+          "edgeCount": 0,
+          "depictableCount": 7,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 81,
+          "wordsOnBoard": 10,
+          "elementVariety": [
+            "kit:array",
+            "token"
+          ]
+        }
+      ],
+      "icons": []
+    },
+    {
+      "runDir": "/Users/anupdangi/Desktop/AnupAI/Research/lamina-labs-clone/hypothesis_claude/.claude/worktrees/v2b/.data/benchmark-v2/cold-v2/2026-10-04-final2-ohms-law-series/ohms-law-series-t1/ohms-law-series/runs/2026-10-03T22-27-05-915Z-18a071d0-7b95-4da9-9b27-2ae13da0436d",
+      "lessonId": "ohms-law-series",
+      "complete": true,
+      "status": "loaded",
+      "hardFailures": 0,
+      "timelineReplayMismatches": 0,
+      "summary": {
+        "scenes": 5,
+        "iconBearingShare": 0,
+        "labelOnlyEntityRatio": 1,
+        "distinctAssetIds": 0,
+        "familyMixScenes": 0,
+        "assetReuseConflicts": 0,
+        "minIconSidePx": null,
+        "meanTextChars": 63.2,
+        "meanWordsOnBoard": 10.2,
+        "meanElementVariety": 4
+      },
+      "scenes": [
+        {
+          "sceneId": "01-module_1_ohms_law",
+          "elementCount": 8,
+          "entityCount": 0,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 0,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 68,
+          "wordsOnBoard": 12,
+          "elementVariety": [
+            "equation",
+            "kit:comparison",
+            "value"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_series_circuit",
+          "elementCount": 10,
+          "entityCount": 0,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 0,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 0,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 96,
+          "wordsOnBoard": 16,
+          "elementVariety": [
+            "equation",
+            "kit:comparison",
+            "text",
+            "value"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_component_voltage",
+          "elementCount": 5,
+          "entityCount": 2,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 2,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 2,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 18,
+          "wordsOnBoard": 2,
+          "elementVariety": [
+            "entity",
+            "equation",
+            "kit:graph"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_drops_add_up",
+          "elementCount": 8,
+          "entityCount": 3,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 65,
+          "wordsOnBoard": 10,
+          "elementVariety": [
+            "entity",
+            "equation",
+            "kit:graph",
+            "text",
+            "value"
+          ]
+        },
+        {
+          "sceneId": "01-module_1_series_recap",
+          "elementCount": 11,
+          "entityCount": 3,
+          "tokenCount": 0,
+          "edgeCount": 0,
+          "depictableCount": 3,
+          "iconBearingCount": 0,
+          "labelOnlyEntityCount": 3,
+          "distinctAssetIds": [],
+          "iconFamilies": [],
+          "familyMix": false,
+          "assetReuseConflicts": 0,
+          "minIconSidePx": null,
+          "textChars": 69,
+          "wordsOnBoard": 11,
+          "elementVariety": [
+            "entity",
+            "equation",
+            "kit:graph",
+            "text",
+            "value"
+          ]
+        }
+      ],
+      "icons": []
+    }
+  ],
+  "pooled": {
+    "scenes": 25,
+    "iconBearingShare": 0,
+    "labelOnlyEntityRatio": 1,
+    "distinctAssetIds": 0,
+    "familyMixScenes": 0,
+    "assetReuseConflicts": 0,
+    "minIconSidePx": null,
+    "meanTextChars": 67.88,
+    "meanWordsOnBoard": 10.12,
+    "meanElementVariety": 3.24
+  }
+}

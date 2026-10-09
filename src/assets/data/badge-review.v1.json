@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "badge-review/v1",
+  "note": "Human verdicts on (asset, referent) pairs, keyed by referentOf(label). Add an entry only from a reviewer's recorded decision (quote the dated chat approval in docs/HANDOFF.md). Never infer a verdict.",
+  "entries": [
+    {
+      "assetId": "assetlab-sketchy-downshift:svg-ambulance-sketchy-downshift-ambulance-svg",
+      "referent": "ambulance",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "assetlab-sketchy-downshift:svg-bank-sketchy-downshift-bank-svg",
+      "referent": "bank",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "assetlab-sketchy-downshift:svg-battery-sketchy-downshift-battery-svg",
+      "referent": "battery",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "assetlab-sketchy-downshift:svg-clock-sketchy-downshift-clock-svg",
+      "referent": "clock",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "assetlab-sketchy-downshift:svg-coin-sketchy-downshift-coin-svg",
+      "referent": "coin",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "assetlab-sketchy-downshift:svg-heart-sketchy-downshift-heart-svg",
+      "referent": "heart",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "assetlab-sketchy-downshift:svg-money-sketchy-downshift-money-svg",
+      "referent": "money",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "assetlab-sketchy-downshift:svg-thermometer-sketchy-downshift-thermometer-svg",
+      "referent": "thermometer",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "bridge-iconify:resistor-iconify-tabler-circuit-resistor",
+      "referent": "resistor",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "iconify-carbon:array",
+      "referent": "array",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "iconify-carbon:time",
+      "referent": "time",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "iconify-lucide:dna",
+      "referent": "dna",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "iconify-mdi:water",
+      "referent": "water",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "iconify-tabler:cell",
+      "referent": "cell",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    },
+    {
+      "assetId": "iconify-tabler:graph",
+      "referent": "graph",
+      "verdict": "accept",
+      "reviewer": "anup",
+      "date": "2026-10-09",
+      "note": "user approved icon use in chat 2026-10-09: \"i approve the icon use\" (all 15 sheet candidates)"
+    }
+  ]
+}

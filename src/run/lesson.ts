@@ -8,7 +8,7 @@ import { catalogVersion as enabledCatalogVersion } from '../assets/registry.js';
 import { sha256, stableJson } from '../shared/artifacts.js';
 import type { synthesizeAndAlign } from '../shared/alignment/align.js';
 import { isSupportedLessonDuration, PIPELINE } from './config.js';
-import { sceneAudioStage, synthesizeSceneAudio } from '../audio/sceneAudio.js';
+import { sceneAudioStage, synthesizeSceneAudio, ttsProvider } from '../audio/sceneAudio.js';
 import type { StageFailure } from '../shared/types.js';
 import { addUsage, emptyUsage, type CallUsage, type StructuredCallAttemptRecord } from '../llm/structuredCall.js';
 import { analyzeTeachingPlan, type PlanAnalysis } from '../plan/analyze.js';
@@ -95,6 +95,18 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
   const budget = () => Math.max(0, effectiveBudgetUsd - usage.costUsd);
   const modelFor = (stage: ContentStage): string => m.stageModels?.[stage] ?? m.model;
   const modelForStage = (stageName: string): string => modelFor(CONTENT_STAGE_FOR.find(([prefix]) => stageName.startsWith(prefix))?.[1] ?? 'concepts');
+  /**
+   * Speech does not wait for the slowest scene script: each scene's audio starts as soon as that scene's narration is final. Local TTS only
+   * (a paid provider must never speak text that a later revision may replace). The S5 call coalesces with this one or hits the artifact it
+   * stored; a revised narration simply produces a different cache key. HYPOTHESIS_PREWARM_AUDIO=0 turns it off.
+   */
+  const prewarmAudio = (sectionPrefix: string): ((scene: { sectionId: string; plainText: string }) => void) | undefined => {
+    if (!m.artifactStore || m.speechAligner || m.beats || ttsProvider() !== 'local' || process.env.HYPOTHESIS_PREWARM_AUDIO === '0') return undefined;
+    const artifactStore = m.artifactStore;
+    return (scene) => {
+      void synthesizeSceneAudio({ sceneId: `${sectionPrefix}${scene.sectionId}`, text: scene.plainText, language: m.speechLanguage ?? 'en', voice: m.speechVoice, calibrationMedianErrorMs: m.alignmentCalibrationMedianErrorMs }, { artifactStore }).catch(() => undefined);
+    };
+  };
   const runCached = async <T extends { usage: CallUsage; failures: StageFailure[] }>(stage: string, input: unknown, schemaVersion: string, stageVersion: string, produce: () => Promise<T>, promptVersion = `${stage}-prompt-v1`) => {
     const startedAtMs = Date.now();
     try {
@@ -237,7 +249,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       // Keep S3b in beat mode: it fixes approved library pictures before S4, and V2 locks those selections with scene concepts.
       const moduleVocabulary = await discoverFor(`:${moduleTag}`, graph, modulePlan, sectionPrefix);
       const beatRun = m.beats ? await runCached(`S3b-beats:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, terminology: lessonTerminology, vocabulary: moduleVocabulary }, 'claude-beats/v10', 'S3b-beats-v20-source-scope-and-anchor-items', () => runBeatStages({ plan: modulePlan, graph, sourceDoc: scopedSource, terminology: lessonTerminology, visualVocabulary: moduleVocabulary }, { ...(m.speechLanguage ? { language: m.speechLanguage } : {}), model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}), ...(m.beatClient ? { client: m.beatClient } : {}) })) : undefined;
-      const scriptRun = beatRun ? { result: { value: beatRun.result.value?.script, usage: beatRun.result.usage, failures: beatRun.result.failures, rawResponses: beatRun.result.rawResponses } } : await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, vocabulary: moduleVocabulary }, 'claude-script/v1', 'S4-module-script-v10-claim-semantics', () => writeScript(moduleRequest, graph, modulePlan, { visualVocabulary: moduleVocabulary, model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const scriptRun = beatRun ? { result: { value: beatRun.result.value?.script, usage: beatRun.result.usage, failures: beatRun.result.failures, rawResponses: beatRun.result.rawResponses } } : await runCached(`S4-narration-script:${moduleTag}`, { request: moduleRequest, graph, plan: modulePlan, vocabulary: moduleVocabulary }, 'claude-script/v1', 'S4-module-script-v10-claim-semantics', () => writeScript(moduleRequest, graph, modulePlan, { visualVocabulary: moduleVocabulary, ...(prewarmAudio(sectionPrefix) ? { onSceneScript: prewarmAudio(sectionPrefix)! } : {}), model: modelFor('script'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, scriptRun.result.usage); failures.push(...scriptRun.result.failures); rawResponses[`script:${moduleTag}`] = scriptRun.result.rawResponses;
       if (!scriptRun.result.value) return preparedResult({ syllabus, graph, plan: modulePlan, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const prefixedSections = modulePlan.sections.map((section) => ({ ...section, id: `${sectionPrefix}${section.id}` }));

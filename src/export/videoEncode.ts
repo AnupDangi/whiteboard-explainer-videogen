@@ -86,7 +86,7 @@ async function rasterizeCachedFrameExclusive(
   } catch { /* Missing or damaged entries are regenerated below. */ }
 
   const configuredLimit = Number(process.env.HYPOTHESIS_RASTER_CONCURRENCY);
-  const rasterLimit = options.rasterLimit ?? (Number.isInteger(configuredLimit) && configuredLimit >= 1 ? Math.min(8, configuredLimit) : 2);
+  const rasterLimit = options.rasterLimit ?? (Number.isInteger(configuredLimit) && configuredLimit >= 1 ? Math.min(8, configuredLimit) : 4);
   if (!Number.isInteger(rasterLimit) || rasterLimit < 1 || rasterLimit > 8) throw new Error('Raster frame concurrency must be an integer from 1 to 8');
   const png = await withHostResourcePermit('raster-work', rasterLimit, () => render(svg, options.width), options.resourcePoolOptions);
   if (!png.subarray(0, 8).equals(pngSignature)) throw new Error('Raster renderer returned invalid PNG data');

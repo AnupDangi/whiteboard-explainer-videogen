@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CONTRACT_CODES, claimRelationContractProblems, teachingContractFindings, teachingContractProblems } from '../plan/contracts.js';
 import { RELATION_TYPES, SceneContractSchema, type ConceptGraph, type SceneContract, type TeachingPlan } from '../plan/schemas.js';
-import { epistemicClaimProblems } from '../evidence/ledger.js';
+import { epistemicClaimProblems, epistemicTextFramingProblem } from '../evidence/ledger.js';
 import { CANONICAL_RELATION_WORDING, claimIdentityMismatch, deriveClaimIdentity } from '../evidence/claimIdentity.js';
 
 const heatRef = { sourceId: 'source_a', spanId: 'span_heat', startChar: 0, endChar: 11, startLine: 1, endLine: 1, quote: 'heat enters' };
@@ -87,7 +87,7 @@ test('generated claims require consistent explicit epistemic types and framed ex
   noRelation.sections[0]!.contract!.essentialClaims[0]!.relations = [];
   assert.ok(teachingContractFindings(noRelation, graph).some((finding) => /derived_relation but lists no graph relation/.test(finding.message)));
 
-  assert.deepEqual(epistemicClaimProblems({ id: 'example', statement: 'The river carries the water.', relations: [], epistemicType: 'illustrative_example' }), ['claim example needs explicit example framing']);
+  assert.deepEqual(epistemicClaimProblems({ id: 'example', statement: 'The river carries the water.', relations: [], epistemicType: 'illustrative_example' }), ['claim example needs explicit example framing (use "for example", "for instance", "as an example", "suppose" or "imagine")']);
   assert.deepEqual(epistemicClaimProblems({ id: 'example', statement: 'For example, a river carries water.', relations: [], epistemicType: 'illustrative_example' }), []);
   assert.deepEqual(epistemicClaimProblems({ id: 'analogy', statement: 'A queue works like a line at a shop.', relations: [], epistemicType: 'analogy' }), []);
   assert.deepEqual(epistemicClaimProblems({ id: 'analogy', statement: 'A queue stores tasks.', relations: [], epistemicType: 'analogy' }), ['claim analogy needs explicit analogy framing']);
@@ -174,4 +174,10 @@ test('relation wording guidance does not accept endpoint aliases, changed predic
     'Alpha component produces a result; Beta output is stored.',
     'Alpha component produces a result, and Beta output is stored.',
   ]) assert.ok(claimRelationContractProblems('one', { ...claim, statement }, identityGraph).some((finding) => finding.code === CONTRACT_CODES.ESSENTIAL_CLAIM_RELATION_IDENTITY), statement);
+});
+
+test('example framing accepts "in this example" and the message names every accepted marker', () => {
+  assert.equal(epistemicTextFramingProblem('illustrative_example', 'In this example, 27 is found.'), undefined);
+  const problem = epistemicTextFramingProblem('illustrative_example', 'The river carries the water.')!;
+  for (const marker of ['for example', 'for instance', 'as an example', 'suppose', 'imagine']) assert.ok(problem.includes(marker), marker);
 });

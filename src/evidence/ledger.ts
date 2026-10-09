@@ -128,7 +128,7 @@ export interface EvidenceLedgerValidation {
 
 /** Conservative structural checks for explicit claim classes; this is not an entailment classifier. */
 export function epistemicTextFramingProblem(type: EpistemicType, text: string): string | undefined {
-  if (type === 'illustrative_example' && !/\b(?:for example|as an example|for instance|suppose|imagine|hypothetical(?:ly)?)\b/iu.test(text)) return 'needs explicit example framing';
+  if (type === 'illustrative_example' && !/\b(?:for example|as an example|for instance|suppose|imagine|hypothetical(?:ly)?|example)\b/iu.test(text)) return 'needs explicit example framing (use "for example", "for instance", "as an example", "suppose" or "imagine")';
   if (type === 'analogy' && !/\b(?:analogy|analogous|as if|similar to|think of .{1,48} as|(?:is|are|works|functions|acts) like|imagine)\b/iu.test(text)) return 'needs explicit analogy framing';
   if (type === 'unverified_explanation' && !/\bnot (?:verified|established|confirmed) by the (?:provided|supplied) source\b/iu.test(text)) return 'must say it is not verified by the supplied source';
   return undefined;

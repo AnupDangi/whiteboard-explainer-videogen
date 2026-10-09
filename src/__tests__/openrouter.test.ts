@@ -69,3 +69,20 @@ test('non-strict routes state schema length/count limits in the system prompt', 
   const schema = { type: 'object', properties: { intro: { type: 'object', properties: { sections: { type: 'array', maxItems: 12, items: { type: 'string', maxLength: 80 } } } } } };
   assert.deepEqual(schemaLimitLines(schema), ['intro.sections: at most 12 items', 'intro.sections[]: at most 80 characters']);
 });
+
+test('an Anthropic route that rejects the compiled grammar is retried once without a response_format, schema stays validated by the caller', async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const result = await chatStructured('test-key', {
+    model: 'anthropic/claude-sonnet-test', system: 'system', user: 'user', schema: { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] },
+    schemaName: 'test', maxTokens: 100, temperature: 0,
+  }, async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    if (bodies.length === 1) return new Response(JSON.stringify({ error: { message: 'Provider returned error', code: 400, metadata: { raw: 'The compiled grammar is too large, which would cause performance issues.' } } }), { status: 400 });
+    return new Response(JSON.stringify({ id: 'gen-2', model: 'anthropic/claude-sonnet-test', choices: [{ message: { content: '{"a":"x"}' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.001 } }), { status: 200 });
+  });
+  assert.equal(bodies.length, 2);
+  assert.ok(bodies[0]!.response_format, 'first attempt is constrained');
+  assert.equal(bodies[1]!.response_format, undefined, 'retry relies on the prompt JSON contract');
+  assert.equal(result.schemaConstrained, false);
+  assert.equal(result.content, '{"a":"x"}');
+});

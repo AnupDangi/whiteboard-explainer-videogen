@@ -306,8 +306,9 @@ test('per-beat duration budgets scale with the planned semantic obligations', as
   const { client, requests } = scripted([goodJson[0]!, JSON.stringify(second)]);
   const result = await writeBeatNarration({ ctx: { ...ctx, beats: weightedBeats }, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
   assert.ok(result.value);
-  assert.match(requests[0]!.user, /About 11 spoken words for 5 s/);
-  assert.match(requests[1]!.user, /About 34 spoken words for 15 s/);
+  // 20 s over weights 1:3 would be 5 s and 15 s; the six-second floor pins the first beat and the second keeps the remaining 14 s.
+  assert.match(requests[0]!.user, /About 14 spoken words for 6 s/);
+  assert.match(requests[1]!.user, /spoken words for 14 s/);
 });
 
 test('revision duration ceilings follow the measured per-beat word targets', async () => {
@@ -578,4 +579,54 @@ test('a claim anchored past the last sentence is moved to the last sentence, led
   assert.equal(fixed.value.beats[0]!.claimSentences[0]!.sentenceIndex, 1);
   assert.equal(fixed.entries[0]!.path, '/beats/0/claimSentences/0/sentenceIndex');
   assert.equal(clampClaimAnchors(draft(), ctx), undefined, 'a valid draft is left alone');
+});
+
+test('a beat over its word budget is repaired through its own sentences, not a scene-level /beats pointer', async () => {
+  const first = draft().beats[0]!;
+  const longSentence = 'Every call pushes a brand new frame onto the stack and that frame remembers exactly where the program must return afterwards.';
+  assert.ok(tokenizeWords(longSentence).length > 15);
+  const tooLong = JSON.stringify({ ...first, sentences: [longSentence], semanticAnchors: [{ ...first.semanticAnchors[0]!, phrase: 'Every call pushes a brand new frame' }] });
+  const shortPatch = JSON.stringify({ patches: [
+    { op: 'replace', path: '/sentences', valueJson: JSON.stringify(['Every call pushes a frame.']) },
+    { op: 'replace', path: '/semanticAnchors/0/phrase', valueJson: JSON.stringify('Every call pushes a frame.') },
+  ] });
+  const { client, requests } = scripted([tooLong, shortPatch, goodJson[1]!]);
+  const result = await writeBeatNarration({ ctx: { ...ctx, durationSec: 4 }, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+  assert.ok(result.value, JSON.stringify({ failures: result.failures, repair: requests[1]?.user.slice(0, 600) }));
+  assert.equal(requests[1]!.schemaName, 'json_patch');
+  assert.doesNotMatch(requests[1]!.user, /"\/beats"|path.{0,6}\/beats\b/);
+  assert.match(requests[1]!.user, /\/sentences/);
+});
+
+test('a one-claim beat is not squeezed below a six-second floor, and the scene total is preserved', async () => {
+  const weightedBeats = structuredClone(ctx.beats);
+  weightedBeats[1]!.requiredSemanticChanges.push(
+    { ...weightedBeats[1]!.requiredSemanticChanges[0]!, toState: 'The active frame is removed.' },
+    { ...weightedBeats[1]!.requiredSemanticChanges[0]!, toState: 'Control returns to the caller.' },
+  );
+  const { client, requests } = scripted([goodJson[0]!, '{}']);
+  await writeBeatNarration({ ctx: { ...ctx, beats: weightedBeats, durationSec: 20 }, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+  assert.match(requests[0]!.user, /for 6 s \(never more/);
+  assert.match(requests[1]!.user, /for 14 s \(never more/);
+});
+
+test('a beat whose claim an earlier beat already stated is told to restate it in new words', async () => {
+  const sharedBeats = [planBeat(1, ['c1']), planBeat(2, ['c1'])];
+  const { client, requests } = scripted([goodJson[0]!, '{}']);
+  await writeBeatNarration({ ctx: { ...ctx, beats: sharedBeats }, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+  assert.doesNotMatch(requests[0]!.user, /already stated in an earlier beat/);
+  assert.match(requests[1]!.user, /claim c1 was already stated in an earlier beat/i);
+  assert.match(requests[1]!.user, /different words/);
+});
+
+test('a claim-mismatched sentence may be split: the repair scope names /sentences and the claim sentence index', async () => {
+  const concepts = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }];
+  const claim = { statement: 'Alpha causes Beta.', conceptIds: ['alpha', 'beta'], relations: [{ from: 'alpha', to: 'beta', type: 'causes' as const }] };
+  const splitCtx: NarrationContext = { ...ctx, beats: [beats[0]!], canonicalClaims: { c1: { statement: claim.statement, identity: deriveClaimIdentity(claim, concepts) } } };
+  const wrong = { beatId: 'scene.b1', sentences: ['Alpha supports Beta.'], claimSentences: [{ claimId: 'c1', sentenceIndex: 0 }], semanticAnchors: [{ semanticEventId: 'scene.b1.e1', sentenceIndex: 0, phrase: 'Alpha supports Beta' }], emphasisTerms: [] };
+  const { client, requests } = scripted([JSON.stringify(wrong), '{}', '{}']);
+  await writeBeatNarration({ ctx: splitCtx, scene: { title: 'T', goal: 'g' }, sourceExcerpt: 'x' }, { model: 'google/x', apiKey: 'k', remainingBudgetUsd: 1, client });
+  assert.equal(requests[1]!.schemaName, 'json_patch');
+  assert.match(requests[1]!.user, /\/sentences\b(?!\/)/);
+  assert.match(requests[1]!.user, /\/claimSentences\/0\/sentenceIndex/);
 });

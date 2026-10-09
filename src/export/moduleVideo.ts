@@ -75,7 +75,7 @@ export async function encodeModuleVideos(modules: ModuleVideoInput[], outputDir:
   const fps = options.fps ?? 30;
   const workerCount = options.workerCount;
   const configuredRasterLimit = Number(process.env.HYPOTHESIS_RASTER_CONCURRENCY);
-  const rasterLimit = options.rasterLimit ?? (Number.isInteger(configuredRasterLimit) && configuredRasterLimit >= 1 ? Math.min(8, configuredRasterLimit) : 2);
+  const rasterLimit = options.rasterLimit ?? (Number.isInteger(configuredRasterLimit) && configuredRasterLimit >= 1 ? Math.min(8, configuredRasterLimit) : 4);
   const encode = options.encode ?? encodeVideoAtomically;
   const probeDuration = options.probeDuration ?? probeMediaDurationMs;
   if (!Number.isInteger(fps) || fps < 1 || fps > 120) throw new Error('fps must be an integer from 1 to 120');

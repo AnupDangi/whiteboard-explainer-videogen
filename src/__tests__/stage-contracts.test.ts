@@ -220,6 +220,22 @@ test('S4 stores a provider sentence selector as a verbatim public claim span', a
   assert.equal(result.failures.filter((failure) => failure.hard).length, 0);
   assert.equal(result.value?.scenes[0]?.claimSpans?.[0]?.exactText, 'Watch heat move into cool water.');
 });
+test('S4 reports each finished scene script immediately so audio can start while other scenes are still being written', async () => {
+  const doc = sourceDocFromText('Heat moves into cool water. The water becomes warmer.', 'text');
+  const span = doc.spans[0]!;
+  const section: TeachingPlan['sections'][number] = { id: 's1', title: 'Transfer', goal: 'Explain heat transfer', kind: 'explain', conceptIds: ['heat'], budgetSec: 15, contract: { learningDelta: 'Explain heat transfer', targetDurationSec: 15, requiredConceptIds: ['heat'], essentialClaims: [{ id: 'transfer', statement: 'Heat moves into cool water.', conceptIds: ['heat'], relations: [], evidenceSpanIds: [span.id] }], misconceptionRisk: [], priorKnowledge: [], mentalModel: 'Heat flows.', visualForm: 'process' } } as never;
+  const plan: TeachingPlan = { targetDurationSec: 15, intro: { sourceTitle: 'Notes', sections: [] }, sections: [section], recap: { keyPoints: [] } };
+  const text = 'Watch [[heat|heat]] move into [[water|cool water]]. The [[water_change|water]] becomes [[warmer|warmer]] as energy arrives. This change tells you which way the heat traveled, from the warmer place toward the cooler one.';
+  const seen: Array<{ sectionId: string; plainText: string }> = [];
+  const result = await writeScript({ source: doc.text, sourceDoc: doc, targetDurationSec: 15 }, { concepts: [], relations: [], prerequisites: [] }, plan, {
+    model: 'test/model', apiKey: 'test-only', remainingBudgetUsd: 0.05,
+    onSceneScript: (scene) => { seen.push({ sectionId: scene.sectionId, plainText: scene.plainText }); },
+    fetcher: async () => response({ text, claimSpans: [{ claimId: 'transfer', sentenceIndex: 0 }] }),
+  });
+  assert.equal(result.failures.filter((failure) => failure.hard).length, 0);
+  assert.deepEqual(seen.map((scene) => scene.sectionId), ['s1']);
+  assert.equal(seen[0]!.plainText, result.value!.scenes[0]!.text.replace(/\[\[[^|\]]+\|([^\]]*)\]\]/g, '$1'));
+});
 test('word budget compares rounded bounds: an exact-boundary count passes', () => {
   // 12s at 2.25 words/s = 27 words; tolerance band rounds to 16-38.
   // A 38-word script hit the displayed max but failed the unrounded 37.8
