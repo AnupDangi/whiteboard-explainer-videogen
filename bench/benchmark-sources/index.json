@@ -1,0 +1,122 @@
+{
+  "AIML-01": {
+    "domain": "ai_ml",
+    "duration": 120,
+    "objective": "Explain why moving opposite the gradient can reduce a loss function."
+  },
+  "AIML-02": {
+    "domain": "ai_ml",
+    "duration": 135,
+    "objective": "Explain how relative relevance produces weights that mix information, introducing Q/K/V only after motivation."
+  },
+  "AIML-03": {
+    "domain": "ai_ml",
+    "duration": 140,
+    "objective": "Explain how downstream error information propagates through dependencies to parameters."
+  },
+  "BIO-01": {
+    "domain": "biology",
+    "duration": 110,
+    "objective": "Explain and predict water movement across a semipermeable membrane."
+  },
+  "BIO-02": {
+    "domain": "biology",
+    "duration": 120,
+    "objective": "Explain how complementary pairing lets each original DNA strand guide copying."
+  },
+  "BIO-03": {
+    "domain": "biology",
+    "duration": 120,
+    "objective": "Explain inputs, outputs, and the role of light energy without conflating matter and energy."
+  },
+  "CHEM-01": {
+    "domain": "chemistry",
+    "duration": 105,
+    "objective": "Explain electron transfer versus sharing and how that distinction defines the bond model."
+  },
+  "CHEM-02": {
+    "domain": "chemistry",
+    "duration": 110,
+    "objective": "Explain what a one-unit pH difference means quantitatively before compact notation."
+  },
+  "CHEM-03": {
+    "domain": "chemistry",
+    "duration": 100,
+    "objective": "Explain why equilibrium can have continuing forward/reverse reactions."
+  },
+  "CS-01": {
+    "domain": "computer_science",
+    "duration": 100,
+    "objective": "Explain why sorted order allows repeated elimination of half the search space."
+  },
+  "CS-02": {
+    "domain": "computer_science",
+    "duration": 120,
+    "objective": "Explain call stacking, base case, and return unwinding using visible program state."
+  },
+  "CS-03": {
+    "domain": "computer_science",
+    "duration": 105,
+    "objective": "Explain why collisions happen and how lookup remains correct after collision handling."
+  },
+  "MATH-01": {
+    "domain": "mathematics",
+    "duration": 75,
+    "objective": "Explain why changing numerator and denominator together can preserve the same quantity."
+  },
+  "MATH-02": {
+    "domain": "mathematics",
+    "duration": 100,
+    "objective": "Build an intuitive model of a2+b2=c2 before relying on symbolic manipulation."
+  },
+  "MATH-03": {
+    "domain": "mathematics",
+    "duration": 120,
+    "objective": "Explain how average rate of change approaches instantaneous rate of change."
+  },
+  "PHYS-01": {
+    "domain": "physics",
+    "duration": 90,
+    "objective": "Explain how force and mass relate to acceleration so a novice can make predictions."
+  },
+  "PHYS-02": {
+    "domain": "physics",
+    "duration": 120,
+    "objective": "Explain independent horizontal and vertical components of projectile motion."
+  },
+  "PHYS-03": {
+    "domain": "physics",
+    "duration": 100,
+    "objective": "Explain the distinct roles and relationship of voltage, current, and resistance."
+  },
+  "STAT-01": {
+    "domain": "statistics_probability",
+    "duration": 85,
+    "objective": "Explain how an extreme observation changes mean and median differently."
+  },
+  "STAT-02": {
+    "domain": "statistics_probability",
+    "duration": 135,
+    "objective": "Build conditional probability from concrete counts before compact Bayes notation."
+  },
+  "STAT-03": {
+    "domain": "statistics_probability",
+    "duration": 100,
+    "objective": "Explain why association alone does not identify a causal mechanism and how a confounder can matter."
+  },
+  "SYS-01": {
+    "domain": "systems_networking",
+    "duration": 120,
+    "objective": "Trace the roles and request path that resolve a domain name."
+  },
+  "SYS-02": {
+    "domain": "systems_networking",
+    "duration": 120,
+    "objective": "Trace a request, processing state, and response across service boundaries."
+  },
+  "SYS-03": {
+    "domain": "systems_networking",
+    "duration": 105,
+    "objective": "Compare cached and uncached request paths and explain the freshness tradeoff."
+  }
+}

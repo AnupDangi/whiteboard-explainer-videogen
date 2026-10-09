@@ -31,7 +31,7 @@ test('canonical and numeric lesson durations map to bounded modules', () => {
   assert.deepEqual(moduleBudgetShape(601), [301, 300]);
   assert.equal(moduleBudgetShape(59), undefined);
   assert.equal(moduleBudgetShape(3601), undefined);
-  assert.deepEqual([60, 300, 600, 1800, 3600].map(lessonCostCapUsd), [0.1, 0.5, 0.7, 1, 1]);
+  assert.deepEqual([60, 300, 600, 1800, 3600].map(lessonCostCapUsd), [0.05, 0.2, 0.4, 1, 1.5]);
 });
 
 test('S1 label instruction matches the schema word limit', () => {

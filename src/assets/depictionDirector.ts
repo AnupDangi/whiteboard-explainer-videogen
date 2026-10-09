@@ -4,7 +4,7 @@ import type { PersistentBudgetLedger } from '../run/budgetLedger.js';
 import type { StageFailure } from '../shared/types.js';
 import type { CatalogEntry } from './catalog.js';
 import { referentKeys } from './referent.js';
-import { domainMatches } from './ladder.js';
+import { domainMatches, similarityAdmissible } from './ladder.js';
 import { FAMILY_ORDER, isExemptFamily } from './sceneFamily.js';
 
 /**
@@ -22,6 +22,13 @@ export interface DirectorItem {
   context: string;
   /** Concept/icon names retrieved for this referent (vocabulary the library really has). */
   vocabulary: string[];
+  /**
+   * Embedding-retrieved catalog candidates for this referent, best first. Used only as a
+   * guarded fallback when the model's proposed nouns match no exact catalog name, so a
+   * correct-enough picture can still be chosen instead of a labelled box. The
+   * `similarityAdmissible` guard rejects look-alikes (flags, siblings, antonyms).
+   */
+  candidates?: Array<{ id: string; name: string; score: number }>;
 }
 
 const SCHEMA = z.object({
@@ -45,7 +52,7 @@ export async function proposeDepictionNouns(args: {
   const listing = items.map((item, index) => `${index + 1}. referent: "${item.referent}"\n   meaning: ${item.context}\n   vocabulary: ${item.vocabulary.slice(0, 30).join(', ') || '(none)'}`).join('\n');
   const result = await structuredCall({
     stage: 'depiction-director', subject: 'depiction nouns', model: args.model, apiKey: args.apiKey,
-    system: 'You are the illustrator of a whiteboard explainer (flat icons with a black outline, like a teacher sketching). For each referent, name up to 3 simple drawable nouns, best first, that a teacher would sketch to stand for it. Use concrete things (leaf, sun, flask, robot, building, brain, coin, clock, wrench, droplet, magnet, cell) and well-known pictograms or visual metaphors (energy -> lightning bolt, time -> clock, security -> shield, balance -> scale, selection -> funnel, growth -> plant, transfer -> arrow, barrier -> wall or fence). Prefer a noun from the given vocabulary when one fits. Each noun must be a single plain lowercase word or two-word name, never a brand or a file name. Return an empty list for numbers and amounts, comparisons, and anything with no recognisable picture. Abstract technical components (a layer, an operation, a vector, a mechanism, a data structure or a software or mathematical step) have no object to sketch: return an empty list for them unless a standard diagram symbol exists, because the labelled box is the correct drawing. One picture never stands for two different referents. Return JSON only.',
+    system: 'You are the illustrator of a whiteboard explainer (flat icons with a black outline, like a teacher sketching). For each referent, name up to 3 simple drawable nouns, best first, that a teacher would sketch to stand for it. Use concrete things (leaf, sun, flask, robot, building, brain, coin, clock, wrench, droplet, magnet, cell) and well-known pictograms or visual metaphors (energy -> lightning bolt, time -> clock, security -> shield, balance -> scale, selection -> funnel, growth -> plant, transfer -> arrow, barrier -> wall or fence, attention -> spotlight, probability -> dice, gradient -> slope, cache -> box). Prefer to name a noun from the given vocabulary whenever one is at all plausible, because those nouns have a real picture. Return an empty list ONLY for numbers and amounts that have no object meaning. For an abstract idea, name the standard symbol or metaphor a teacher would sketch when one would read correctly beside the label; leave the list empty only when no such symbol exists and a labelled box is genuinely better. One picture never stands for two different referents. Return JSON only. Example OUTPUT: {"items":[{"referent":"energy","nouns":["lightning bolt","battery"]},{"referent":"temperature","nouns":["thermometer"]},{"referent":"gradient","nouns":[]}]}',
     user: `Return {"items":[{"referent":"<referent exactly as given>","nouns":["noun1","noun2"]}]} with one entry per referent.\n\n${listing}`,
     schema: SCHEMA, schemaName: 'depiction_nouns', maxTokens: 2000,
     validate: (value) => value.items.flatMap((entry) => (items.some((item) => item.referent === entry.referent) ? [] : [`unknown referent "${entry.referent}"`])),
@@ -172,6 +179,25 @@ export async function selectDepictions(args: {
     for (const noun of directed.nouns.get(item.referent) ?? []) {
       const found = resolveNouns([noun], args.catalog, { ...(args.sceneFamily ? { sceneFamily: args.sceneFamily } : {}), ...(args.lessonDomain ? { lessonDomain: args.lessonDomain } : {}), avoid, avoidNouns: args.takenNouns });
       if (found && !list.some((entry) => entry.nounKey === found.nounKey)) { list.push(found); pairs.push({ referent: item.referent, context: item.context, picture: found.noun }); }
+    }
+    // Fallback when the model's nouns match no exact catalog name: use the embedding-retrieved
+    // candidates, but only one that passes the same near-synonym guard (no flags/siblings/antonyms)
+    // and the scene-family/domain constraints. A wrong picture is still worse than a label.
+    if (!list.length && item.candidates?.length) {
+      const admissible = item.candidates
+        .map((candidate) => ({ candidate, entry: args.catalog.find((entry) => entry.id === candidate.id) }))
+        .filter((pair): pair is { candidate: { id: string; name: string; score: number }; entry: NonNullable<typeof pair.entry> } => Boolean(pair.entry))
+        .filter(({ candidate, entry }) => !avoid.has(entry.id)
+          && !args.takenNouns.has(referentKeys(candidate.name)[0] ?? '')
+          && (!args.sceneFamily || entry.houseFamily === undefined || isExemptFamily(entry.houseFamily) || entry.houseFamily === args.sceneFamily)
+          && similarityAdmissible([item.referent, ...referentKeys(item.referent)], entry.names, candidate.score))
+        .sort((a, b) => Number(domainMatches(b.entry, args.lessonDomain)) - Number(domainMatches(a.entry, args.lessonDomain)) || b.candidate.score - a.candidate.score);
+      for (const { candidate, entry } of admissible.slice(0, 2)) {
+        const nounKey = referentKeys(candidate.name)[0] ?? candidate.name;
+        if (list.some((existing) => existing.nounKey === nounKey)) continue;
+        list.push({ entryId: entry.id, noun: candidate.name, nounKey, ...(entry.houseFamily ? { houseFamily: entry.houseFamily } : {}) });
+        pairs.push({ referent: item.referent, context: item.context, picture: candidate.name });
+      }
     }
     if (list.length) candidates.set(item.referent, list);
   }

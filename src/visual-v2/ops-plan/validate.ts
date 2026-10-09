@@ -36,6 +36,8 @@ export interface BoardContext {
 }
 
 const MAX_LABEL_WORDS = 4;
+/** At most three regions fit a scene before every kit and its labels shrink below readable. */
+const MAX_REGIONS = 3;
 const words = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
 function specText(spec: ElementSpec): string[] {
   switch (spec.type) {
@@ -131,6 +133,28 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
   const opProblems = validateBoardOps(draft.ops, initial, ctx.grounding, beatOrder);
   problems.push(...opProblems);
 
+  // At most three regions: every extra region shrinks every kit and its labels
+  // (a fourth/fifth region cuts the center band and can push slots below the
+  // readable floor). This is a hard cap, not just prompt guidance.
+  const regionOps = new Map<string, number>();
+  const noteRegion = (region: string | undefined, index: number): void => { if (region && !regionOps.has(region)) regionOps.set(region, index); };
+  draft.ops.forEach((op, i) => {
+    switch (op.op) {
+      case 'add': noteRegion(op.at.region, i); break;
+      case 'split': for (const part of op.into) noteRegion(part.at.region, i); break;
+      case 'merge': noteRegion(op.into.at.region, i); break;
+      case 'move': noteRegion(op.to.region, i); break;
+      case 'revealRegion': case 'clearRegion': noteRegion(op.region, i); break;
+      default: break;
+    }
+  });
+  if (regionOps.size > MAX_REGIONS) {
+    const regions = [...regionOps.keys()];
+    for (const [region, index] of [...regionOps.entries()].slice(MAX_REGIONS)) {
+      problems.push({ path: `/ops/${index}`, message: `scene uses ${regionOps.size} regions (${regions.join(', ')}); at most ${MAX_REGIONS} fit, because every extra region shrinks every kit and its labels — put region ${region} back into one of the first ${MAX_REGIONS}, or remove it` });
+    }
+  }
+
   for (const beat of ctx.beats) if (!beat.narrationOnly && !lastOpOfBeat.has(beat.beatId)) problems.push({ path: '/ops', message: `beat ${beat.beatId} shows a change (${beat.visualInvariant}), so it needs at least one op` });
 
   // A retain nobody uses is a clean in disguise (cuts feel arbitrary when some
@@ -201,6 +225,11 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
     for (const word of text.toLowerCase().match(/[\p{L}\p{M}]+/gu) ?? []) if (word.length >= 2) vocab.add(word);
   };  for (const concept of ctx.concepts) harvest(concept.label);
   for (const narration of ctx.narration) for (const sentence of narration.sentences) harvest(sentence);
+  // Source words are lesson words: a board label taken verbatim from a cited source
+  // quote is grounded by the source even when it is not a concept label or a spoken
+  // word (the source is what the lesson teaches from). This keeps sourcing strict
+  // (the quote is still verified separately) without inventing vocabulary.
+  for (const concept of ctx.concepts) for (const reference of concept.evidence ?? []) harvest(reference.quote);
   const wordingOf = (spec: ElementSpec): string[] => {
     switch (spec.type) {
       case 'entity': return [spec.label];
@@ -269,6 +298,15 @@ export function validateSceneBoard(draft: SceneBoardDraft, ctx: BoardContext): V
       const opIndexes = new Set<number>();
       if (diagnostic.edgeId !== undefined) { const index = creatorOf.get(diagnostic.edgeId); if (index !== undefined) opIndexes.add(index); }
       for (const id of diagnostic.elementIds) { const index = creatorOf.get(id); if (index !== undefined) opIndexes.add(index); }
+      // A movement-path collision is caused by the transition that MOVED the element, not by
+      // the add that created it. Target ONLY that move op so repair must change the transition
+      // (route around the resting element, or move into an empty zone) instead of reshaping the
+      // whole board by editing element origins.
+      if (diagnostic.code === 'movement_path_collision' && diagnostic.stateIndex !== undefined) {
+        opIndexes.clear();
+        const moveIndex = diagnostic.stateIndex - 1;
+        if (moveIndex >= 0 && moveIndex < draft.ops.length) opIndexes.add(moveIndex);
+      }
       if (opIndexes.size === 0) problems.push({ path: '/transition', message });
       else for (const index of opIndexes) problems.push({ path: `/ops/${index}`, message });
     }

@@ -20,7 +20,7 @@ test('bridge-driven catalogs carry bridge concept ids, families and domains, and
   }
 });
 
-test('review-licence catalogs never carry an allowlisted licence and are marked for local-dev only', () => {
+test('review-licence catalogs carry review licences (owner-approved; not release-clean)', () => {
   for (const file of ['flaticon-local.json', 'bridge-streamline.json']) {
     for (const entry of read(file).entries) assert.ok(['Flaticon-review', 'Review-local-dev'].includes(entry.license), `${file}:${entry.id} ${entry.license}`);
   }

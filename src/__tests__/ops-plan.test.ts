@@ -263,3 +263,21 @@ test('the prompt lists each kit\'s exact parameter fields and enumerations from 
   assert.match(describeKitParams('axes-plot'), /fn: one of linear\|quadratic\|cubic\|sine\|exp\|log\|normal/);
   assert.match(describeKitParams('graph'), /layout\?: one of ring\|grid\|compound/);
 });
+
+test('a scene using more than three regions is rejected with an actionable region message', () => {
+  const regions = draft({ transition: { mode: 'clean' }, ops: [
+    boardAdd('a', kit, { region: 'center' }),
+    boardAdd('b', token, { region: 'left' }),
+    boardAdd('c', token, { region: 'right' }),
+    boardAdd('d', token, { region: 'top' }),
+  ] });
+  const messages = validateSceneBoard(regions, ctx).map((p) => (typeof p === 'string' ? p : p.message));
+  assert.ok(messages.some((m) => /at most 3 fit/.test(m)), messages.join('\n'));
+});
+
+test('a movement-path collision is classified soft (recorded, not blocking); other geometry problems stay hard', async () => {
+  const { isSoftBoardProblem } = await import('../visual-v2/ops-plan/plan.js');
+  assert.equal(isSoftBoardProblem({ path: '/ops/2', message: 'layout[movement_path_collision]: transition 3: a and b collide along a movement path (keep text readable, shorten labels before changing layout, and preserve the board meaning)' }), true);
+  assert.equal(isSoftBoardProblem({ path: '/ops/1', message: 'layout[text_overflow]: state 2: x text "solute" does not fit' }), false);
+  assert.equal(isSoftBoardProblem({ path: '/ops/1', message: 'layout[top_level_overlap]: state 2: a overlaps b' }), false);
+});

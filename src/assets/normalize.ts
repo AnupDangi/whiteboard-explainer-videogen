@@ -8,13 +8,25 @@ import type { CatalogEntry } from './catalog.js';
 export const LICENSE_ALLOWLIST = ['MIT', 'ISC', 'Apache-2.0', 'CC0-1.0', 'CC-BY-4.0', 'manual'];
 
 /**
+ * Owner-authorized review licences admitted by default. The user has authorized using the
+ * flat Flaticon set and the hand-drawn Sketchi set now (licence evidence to be supplied
+ * later); attribution is written next to every rendered video. `ASSET_USAGE_CONTEXT=release`
+ * can still gate these for a rights-clean release.
+ */
+export const OWNER_APPROVED_LICENSES = ['Flaticon-review', 'Review-local-dev'];
+
+/**
  * Review-status licences (Flaticon packs awaiting licence evidence, final_plan/02 §10).
  * Admitted ONLY under the explicit `ASSET_USAGE_CONTEXT=local-dev` context the user
  * approved for local development; never in a release or production run.
  */
 export const LOCAL_DEV_REVIEW_LICENSES = ['Flaticon-review', 'Review-local-dev'];
-export const assetUsageContext = (): 'local-dev' | 'production' => (process.env.ASSET_USAGE_CONTEXT === 'local-dev' ? 'local-dev' : 'production');
+export const assetUsageContext = (): 'local-dev' | 'production' | 'release' => {
+  const context = process.env.ASSET_USAGE_CONTEXT;
+  return context === 'local-dev' ? 'local-dev' : context === 'release' ? 'release' : 'production';
+};
 export const licenseAllowed = (license: string): boolean => LICENSE_ALLOWLIST.includes(license)
+  || (assetUsageContext() !== 'release' && OWNER_APPROVED_LICENSES.includes(license))
   || (assetUsageContext() === 'local-dev' && LOCAL_DEV_REVIEW_LICENSES.includes(license));
 
 export interface NormalizationResult {

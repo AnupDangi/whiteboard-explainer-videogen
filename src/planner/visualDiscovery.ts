@@ -110,8 +110,9 @@ export async function discoverVisualVocabulary(args: DiscoveryArgs): Promise<Dis
       const ranked = await (args.rank ?? rankConcepts)(needDirection.map((concept) => concept.label), 30);
       const items: DirectorItem[] = needDirection.map((concept) => {
         const seen = new Set<string>();
-        const vocabulary = (ranked.get(concept.label.trim().toLowerCase()) ?? []).filter((candidate: Candidate) => candidate.score >= 0.25 && (seen.has(candidate.name) ? false : (seen.add(candidate.name), true))).map((candidate: Candidate) => candidate.name);
-        return { referent: concept.label.trim().toLowerCase(), context: `${concept.kind}: ${concept.definition.slice(0, 160)}`, vocabulary };
+        const retrieved = ranked.get(concept.label.trim().toLowerCase()) ?? [];
+        const vocabulary = retrieved.filter((candidate: Candidate) => candidate.score >= 0.25 && (seen.has(candidate.name) ? false : (seen.add(candidate.name), true))).map((candidate: Candidate) => candidate.name);
+        return { referent: concept.label.trim().toLowerCase(), context: `${concept.kind}: ${concept.definition.slice(0, 160)}`, vocabulary, candidates: retrieved.map((candidate: Candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score })) };
       });
       const selected = await selectDepictions({ items, catalog, model: args.model, apiKey: args.apiKey, remainingBudgetUsd: args.remainingBudgetUsd, ...(args.budgetLedger ? { budgetLedger: args.budgetLedger } : {}), ...(args.fetcher ? { fetcher: args.fetcher } : {}), ...(lessonDomain ? { lessonDomain } : {}), takenEntries, takenNouns, ...(args.direct ? { propose: args.direct } : {}), ...(args.judge ? { judge: args.judge } : {}) });
       usage.calls += selected.usage.calls; usage.promptTokens += selected.usage.promptTokens; usage.completionTokens += selected.usage.completionTokens; usage.cachedTokens += selected.usage.cachedTokens; usage.costUsd += selected.usage.costUsd; usage.repairs += selected.usage.repairs;

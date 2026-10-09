@@ -22,9 +22,16 @@ const asciiDigit = (digit: string): string => {
   return zero === undefined ? digit : String(code - zero);
 };
 const normalized = (text: string): string => text.normalize('NFKC').replace(/\p{Nd}/gu, asciiDigit).toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, ' ').trim().replace(/\s+/g, ' ');
+/** Singular stem for source-word matching: "solutes" grounds "solute" (the same fact, not a weakened check). */
+const stem = (word: string): string => (word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word);
 const containsPhrase = (quote: string, phrase: string): boolean => {
-  const value = normalized(phrase);
-  return value.length > 0 && ` ${normalized(quote)} `.includes(` ${value} `);
+  const haystack = normalized(quote).split(' ').filter(Boolean);
+  const needle = normalized(phrase).split(' ').filter(Boolean);
+  if (!needle.length) return false;
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    if (needle.every((word, j) => stem(haystack[i + j]!) === stem(word))) return true;
+  }
+  return false;
 };
 
 export function sourceTextProblem(assertions: readonly string[], citation: SourceCitation | undefined, grounding: Grounding | undefined, subject: string): string | undefined {

@@ -12,8 +12,7 @@
       "libraryId": "flaticon",
       "file": "flaticon-local.json",
       "embeddings": "flaticon-local.emb.bin",
-      "house": false,
-      "devOnly": true
+      "house": false
     },
     {
       "libraryId": "bridge-iconify",
@@ -32,8 +31,7 @@
       "libraryId": "bridge-sketchi",
       "file": "bridge-sketchi.json",
       "embeddings": "bridge-sketchi.emb.bin",
-      "house": false,
-      "devOnly": true
+      "house": false
     },
     {
       "libraryId": "assetlab-mit",

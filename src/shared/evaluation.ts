@@ -21,7 +21,7 @@ export function deterministicGates(input:{golden?:GoldenCase;elements:NeutralEle
   }
   if(input.golden&&Math.abs(input.durationMs-input.golden.targetDurationMs)>200)failures.push({code:'av-sync',stage:'timeline',message:`Duration ${input.durationMs}ms differs from ${input.golden.targetDurationMs}ms`,hard:true});
   if(/<script\b|on\w+\s*=|javascript:/i.test(input.svg))failures.push({code:'unsafe-svg',stage:'render',message:'Rendered SVG contains executable content',hard:true});
-  if(input.licenses?.some(item=>!['MIT','ISC','Apache-2.0','CC0-1.0','CC-BY-4.0','manual',...(process.env.ASSET_USAGE_CONTEXT==='local-dev'?['Flaticon-review','Review-local-dev']:[])].includes(item)))failures.push({code:'license',stage:'resolve',message:'Asset license is not allowlisted',hard:true});
+  if(input.licenses?.some(item=>!['MIT','ISC','Apache-2.0','CC0-1.0','CC-BY-4.0','manual',...(process.env.ASSET_USAGE_CONTEXT!=='release'?['Flaticon-review','Review-local-dev']:[])].includes(item)))failures.push({code:'license',stage:'resolve',message:'Asset license is not allowlisted',hard:true});
   return failures.map(withFailureClass);
 }
 

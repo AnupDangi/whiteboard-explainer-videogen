@@ -13,9 +13,14 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
     { id: 'clouds', label: 'Clouds', kind: 'entity', definition: 'Cooling forms clouds.', evidence: [{ spanId: span.id, quote: 'cooling forms clouds.' }], level: 'one-step' },
   ];
   const graph = { concepts, relations: [], prerequisites: [] };
+  const intentByConcept: Record<string, { conceptType: 'entity' | 'process' | 'quantity'; strategy: 'literal' | 'diagram' | 'plot' }> = {
+    sunlight: { conceptType: 'quantity', strategy: 'plot' },
+    evaporation: { conceptType: 'process', strategy: 'diagram' },
+    clouds: { conceptType: 'entity', strategy: 'literal' },
+  };
   const sections = concepts.map((concept, index) => ({
     id: `idea_${index + 1}`, title: concept.label, goal: `Explain how ${concept.label} starts this process.`, kind: index === 0 ? 'intro' : 'explain', conceptIds: [concept.id], budgetSec: 20,
-    contract: { learningDelta: `Explain how ${concept.label} starts this process.`, targetDurationSec: 20, requiredConceptIds: [concept.id], requiredRelations: [], evidenceSpanIds: [span.id], essentialClaims: [{ id: `idea_${index + 1}_claim`, statement: concept.definition, conceptIds: [concept.id], relations: [], evidenceSpanIds: [span.id] }], mentalModel: `One idea: ${concept.label}.`, semanticVisualIntents: [{ claimId: `idea_${index + 1}_claim`, conceptType: 'entity', strategy: 'literal', conceptIds: [concept.id], roles: [] }], teachingSkill: 'definition', candidateMechanisms: ['focus'] },
+    contract: { learningDelta: `Explain how ${concept.label} starts this process.`, targetDurationSec: 20, requiredConceptIds: [concept.id], requiredRelations: [], evidenceSpanIds: [span.id], essentialClaims: [{ id: `idea_${index + 1}_claim`, statement: concept.definition, conceptIds: [concept.id], relations: [], evidenceSpanIds: [span.id] }], mentalModel: `One idea: ${concept.label}.`, semanticVisualIntents: [{ claimId: `idea_${index + 1}_claim`, ...intentByConcept[concept.id]!, conceptIds: [concept.id], roles: [] }], teachingSkill: 'definition', candidateMechanisms: ['focus'] },
   }));
   const plan = { targetDurationSec: 60, intro: { sourceTitle: 'Water cycle', sections: ['Heating', 'Evaporation', 'Cloud formation'] }, lessonBible: { audience: 'general learner', terminology: concepts.map((concept) => ({ conceptId: concept.id, label: concept.label })), persistentConceptIds: [] }, sections, recap: { keyPoints: ['Sunlight starts the cycle.'] } };
   const scriptText = 'First consider [[sunlight|the sunlight]]. It adds energy to [[water|the water]], which helps the next stage begin. This connects [[evaporation|evaporation]] with [[clouds|clouds]], completing one useful part of the water cycle and showing how these changes fit together.';
@@ -56,6 +61,7 @@ test('canonical 1-minute request uses syllabus then bounded module stages and pr
   assert.equal(prepared.plan?.lessonBible?.terminology.length, 3);
   assert.deepEqual(seen.map((item) => item.name), ['lesson_syllabus', 'concept_graph', 'teaching_plan', 'scene_narration', 'scene_narration', 'scene_narration']);
   assert.match(seen.find((item) => item.name === 'concept_graph')!.system, /sunlight.*evaporation.*clouds/s);
+  assert.match(seen.find((item) => item.name === 'concept_graph')!.system, /Drawable actors/);
   const live = lessonToLiveInput('water-cycle', prepared);
   assert.equal(live.targetDurationMs, 60_000);
   assert.equal(live.requestedDurationSec, 60);

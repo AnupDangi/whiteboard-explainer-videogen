@@ -54,7 +54,7 @@ export async function validateIconCandidates(args: {
   const listing = items.map((item, index) => `${index + 1}. referent: "${item.concept}" (${item.context})\n   candidates: ${item.candidates.map((candidate) => `"${candidate.name}" [${candidate.id}]`).join('; ')}`).join('\n');
   const result = await structuredCall({
     stage: 'icon-validation', subject: 'icon candidate validation', model: args.model, apiKey: args.apiKey,
-    system: 'You validate icon choices for a whiteboard teaching video. For each referent, pick the candidate icon that literally depicts that exact thing, or null. Pick null when the candidate is only related, a different object, an abstract idea drawn as an unrelated picture, a brand, a flag, or merely shares a word. A wrong icon is worse than none. Return JSON only.',
+    system: 'You validate icon choices for a whiteboard teaching video. For each referent, pick the candidate icon that literally depicts that exact thing, or null. Pick null when the candidate is only related, a different object, an abstract idea drawn as an unrelated picture, a brand, a flag, or merely shares a word. A wrong icon is worse than none. Return JSON only. Example OUTPUT: {"choices":[{"concept":"red blood cell","pick":"lib:red-blood-cell"},{"concept":"gradient","pick":null}]}',
     user: `Return {"choices":[{"concept":"<referent exactly as given>","pick":"<candidate id or null>"}]} with one entry per referent.\n\n${listing}`,
     schema: SCHEMA, schemaName: 'icon_validation', maxTokens: 1500,
     validate: (value) => {

@@ -42,9 +42,8 @@ test('brand: R7 technical brand', () => {
 test('missing asset: labelled primitive R10 (never a similar icon)', () => {
   assert.equal(rung('quarterly synergy').strategy, 'R10-labelled-primitive');
 });
-test('license unavailable: a review-licence asset is unusable outside local-dev and falls to R10', () => {
-  assert.equal(process.env.ASSET_USAGE_CONTEXT === 'local-dev', false, 'suite runs in the production context');
-  assert.equal(rung('syringe').strategy, 'R10-labelled-primitive');
+test('owner-approved review licence: a Flaticon-review asset is usable outside local-dev (owner-authorized)', () => {
+  assert.equal(rung('syringe').strategy, 'R4-curated-flaticon');
 });
 test('family mismatch: an asset outside the scene family is filtered, not mixed', () => {
   assert.equal(rung('beaker', { sceneFamily: G }).strategy, 'R10-labelled-primitive');

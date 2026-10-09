@@ -80,7 +80,7 @@ export interface LessonLock {
   media: { audio?: string; audioHash?: string; video?: string; videoHash?: string; captions?: string; captionsHash?: string };
   render?: { fps: number; durationMs: number; width: number; height: number; sceneGapMs?: number; diagnosticCaptionlessVideo?: boolean };
   modules?: Array<{ id: string; title: string; sceneIds: string[]; durationMs?: number }>;
-  assets: { bridgeVersion?: string; bridgeDigest?: string; catalogVersion?: string; /** `local-dev` admits review-licence assets; such a lock can never pass the release gates. */ usageContext?: 'production' | 'local-dev' };
+  assets: { bridgeVersion?: string; bridgeDigest?: string; catalogVersion?: string; /** `local-dev` admits review-licence assets; such a lock can never pass the release gates. */ usageContext?: 'production' | 'local-dev' | 'release' };
   /** S3b Visual Discovery output (how each concept was drawn), pinned so replay never rediscovers. */
   visualVocabulary?: { file: string; hash: string };
   versions: {
@@ -135,7 +135,7 @@ export interface BuildLockInput {
   sourceFiles?: string[];
   /** Failure locks retain whatever evidence exists; renderable locks require every listed source. */
   allowMissingSourceFiles?: boolean;
-  assets?: { bridgeVersion?: string; bridgeDigest?: string; catalogVersion?: string; usageContext?: 'production' | 'local-dev' };
+  assets?: { bridgeVersion?: string; bridgeDigest?: string; catalogVersion?: string; usageContext?: 'production' | 'local-dev' | 'release' };
   inputs?: LessonLock['inputs'];
   execution?: LessonLock['execution'];
   modelSettings?: LessonLock['modelSettings'];
@@ -311,7 +311,7 @@ function renderableLockProblems(lock: LessonLock): string[] {
     if (!nonEmpty(settings.run.cache) || !Number.isFinite(settings.run.maxCostUsd) || settings.run.maxCostUsd < 0 || !Number.isInteger(settings.run.maxRepairs) || settings.run.maxRepairs < 0) problems.push('run settings are incomplete');
   }
   if (!lock.source || !lock.source.files?.length || lock.source.files.some((file) => !hash(lock.source!.hashes?.[file]))) problems.push('source hashes are required in every renderable lock');
-  if (lock.assets?.usageContext !== 'production' && lock.assets?.usageContext !== 'local-dev') problems.push('asset usage context is required');
+  if (lock.assets?.usageContext !== 'production' && lock.assets?.usageContext !== 'local-dev' && lock.assets?.usageContext !== 'release') problems.push('asset usage context is required');
   if (!lock.narration || !hash(lock.narration.hash)) problems.push('narration artifact hash is required');
   if (!lock.alignment || !hash(lock.alignment.hash)) problems.push('alignment artifact hash is required');
   if (!lock.events || !hash(lock.events.hash)) problems.push('scene event artifact hash is required');

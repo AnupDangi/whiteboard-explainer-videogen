@@ -16,6 +16,7 @@ import type { ConceptGraph, Script, TeachingPlan } from '../plan/schemas.js';
 import { teachingContractFindings, teachingContractProblems, uniquifyClaimIds } from '../plan/contracts.js';
 import { sourceDocFromText, type SourceDoc, type SourceBundle } from '../intake/sourceDoc.js';
 import { buildConceptGraph, buildTeachingPlan, writeScript, DEFAULT_PLAN_PROMPT_VARIANT, type LessonRequest } from '../plan/stages.js';
+import { AGENT_EXAMPLES_HASH } from '../plan/prompts/stageExamples.js';
 import type { HypothesisLiveInput, LiveSceneInput } from './runLive.js';
 import type { PersistentBudgetLedger } from './budgetLedger.js';
 import { ContentAddressedArtifactStore } from './artifactCache.js';
@@ -62,6 +63,8 @@ export interface PreparedLesson {
 /** Content stages whose model can be chosen independently (OPENROUTER_<STAGE>_MODEL). */
 export type ContentStage = 'syllabus' | 'concepts' | 'plan' | 'script';
 const CONTENT_STAGE_FOR: Array<[prefix: string, stage: ContentStage]> = [['S1-syllabus', 'syllabus'], ['S2-concepts', 'concepts'], ['S3-teaching-plan', 'plan'], ['S4-narration-script', 'script']];
+/** Example-bank content hash folded into prompt versions so editing an example invalidates its cached stage, never serving a stale plan. */
+const AGENT_EXAMPLES_TAG = AGENT_EXAMPLES_HASH.slice(0, 12);
 
 export async function prepareLesson(req: LessonRequest, m: { model: string; stageModels?: Partial<Record<ContentStage, string>>; apiKey: string; budgetUsd: number; budgetLedger?: PersistentBudgetLedger; artifactStore?: ContentAddressedArtifactStore; visionModel?: string; fetcher?: typeof fetch; speechAligner?: typeof synthesizeAndAlign; speechLanguage?: string; speechVoice?: string; alignmentCalibrationMedianErrorMs?: number; /** Plan beats and write beat narration instead of the marker script (V2 plan Phases 2-3). */ beats?: boolean; beatClient?: ModelClient }): Promise<PreparedLesson> {
   const sourceStartedAtMs = Date.now();
@@ -144,7 +147,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
   const beatNarrationContexts: Record<string, NarrationContext> = {};
   /** S3b Visual Discovery: decide how every scene concept will be drawn BEFORE narration is written. */
   const discoverFor = async (tag: string, graph: ConceptGraph, plan: TeachingPlan, sectionPrefix = ''): Promise<Record<string, VisualVocabulary>> => {
-    const run = await runCached(`S3b-visual-discovery${tag}`, { graph, plan, catalog: enabledCatalogVersion(), domain: process.env.ASSET_USAGE_CONTEXT ?? 'production' }, 'claude-visual-discovery/v1', 'S3b-discovery-v3-vision-check', () => discoverVisualVocabulary({ plan, graph, model: modelFor('plan'), apiKey: m.apiKey, ...(m.visionModel ? { visionModel: m.visionModel } : {}), remainingBudgetUsd: budget(), ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}) }), 'S3b-visual-discovery-prompt-v1');
+    const run = await runCached(`S3b-visual-discovery${tag}`, { graph, plan, catalog: enabledCatalogVersion(), domain: process.env.ASSET_USAGE_CONTEXT ?? 'production' }, 'claude-visual-discovery/v1', 'S3b-discovery-v5-embedding-fallback', () => discoverVisualVocabulary({ plan, graph, model: modelFor('plan'), apiKey: m.apiKey, ...(m.visionModel ? { visionModel: m.visionModel } : {}), remainingBudgetUsd: budget(), ...(m.budgetLedger ? { budgetLedger: m.budgetLedger } : {}), ...(m.fetcher ? { fetcher: m.fetcher } : {}) }), 'S3b-visual-discovery-prompt-v1');
     addUsage(usage, run.result.usage); failures.push(...run.result.failures);
     Object.assign(validatedByConcept, run.result.validatedByConcept);
     for (const [sectionId, vocabulary] of Object.entries(run.result.vocabularies)) vocabularies[`${sectionPrefix}${sectionId}`] = { ...vocabulary, sceneId: `${sectionPrefix}${sectionId}` };
@@ -155,7 +158,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
 
   if (isSupportedLessonDuration(groundedRequest.targetDurationSec)) {
     const requestedDurationSec = groundedRequest.targetDurationSec;
-    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v5', 'hierarchical-syllabus-v8-clamped', () => buildSyllabus(groundedRequest, { model: modelFor('syllabus'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), 'S1-syllabus-prompt-v2-tristate-source-support');
+    const syllabusRun = await runCached('S1-syllabus', { request: groundedRequest }, 'lesson-syllabus/v5', 'hierarchical-syllabus-v8-clamped', () => buildSyllabus(groundedRequest, { model: modelFor('syllabus'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S1-syllabus-prompt-v4-source-examples+${AGENT_EXAMPLES_TAG}`);
     const syllabusResult = syllabusRun.result;
     addUsage(usage, syllabusResult.usage); failures.push(...syllabusResult.failures); rawResponses.syllabus = syllabusResult.rawResponses;
     if (!syllabusResult.value) return preparedResult({ requestedDurationSec });
@@ -210,7 +213,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
       const moduleLabels = remainingModules.map((candidate, index) => `${index + 1}. ${candidate.title}: ${candidate.goal} (${candidate.budgetSec}s)`).join('\n');
       const moduleRequest: LessonRequest = { ...groundedRequest, source: scopedSource.text, sourceDoc: scopedSource, sourceBundle: undefined, targetDurationSec: effectiveModule.budgetSec, instruction: `Course objective: ${syllabus.learningObjective}\nFull course modules:\n${moduleLabels}\n\nCurrent module ${moduleIndex + 1}: ${module.title}. ${module.goal}\nEffective time budget: ${effectiveModule.budgetSec} seconds. Write narration with enough explanation to teach this module inside that budget; do not repeat or pad.\nUse only this module's assigned concepts; preserve global IDs and labels.`, conceptScope: scopedConcepts.map(({ id, label, definition }) => ({ id, label, definition })) };
       const moduleTag = `${String(moduleIndex + 1).padStart(2, '0')}-${module.id}`;
-      const graphRun = await runCached(`S2-concepts:${moduleTag}`, { request: moduleRequest, syllabusConcepts: scopedConcepts }, 'claude-concept-graph/v1', 'S2-module-concept-graph-v4-semantic-relations', () => buildConceptGraph(moduleRequest, { model: modelFor('concepts'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), 'S2-concept-graph-prompt-v2-semantic-relations');
+      const graphRun = await runCached(`S2-concepts:${moduleTag}`, { request: moduleRequest, syllabusConcepts: scopedConcepts }, 'claude-concept-graph/v1', 'S2-module-concept-graph-v4-semantic-relations', () => buildConceptGraph(moduleRequest, { model: modelFor('concepts'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher     }), `S2-concept-graph-prompt-v6-drawable-actors+${AGENT_EXAMPLES_TAG}`);
       addUsage(usage, graphRun.result.usage); failures.push(...graphRun.result.failures); rawResponses[`concepts:${moduleTag}`] = graphRun.result.rawResponses;
       if (!graphRun.result.value) return preparedResult({ syllabus, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const rawGraph = graphRun.result.value;
@@ -218,7 +221,7 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
         const syllabusConcept = allConcepts.get(concept.id);
         return syllabusConcept ? { ...concept, label: syllabusConcept.label, definition: syllabusConcept.definition, evidence: syllabusConcept.evidence } : concept;
       }) };
-      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v5', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v8-visual-form`, () => buildTeachingPlan(moduleRequest, graph, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
+      const planRun = await runCached(`S3-teaching-plan:${moduleTag}`, { request: moduleRequest, graph, module }, 'claude-teaching-plan/v5', `S3-module-${DEFAULT_PLAN_PROMPT_VARIANT}-v10-math-notation+${AGENT_EXAMPLES_TAG}`, () => buildTeachingPlan(moduleRequest, graph, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }));
       addUsage(usage, planRun.result.usage); failures.push(...planRun.result.failures); rawResponses[`plan:${moduleTag}`] = planRun.result.rawResponses;
       if (!planRun.result.value) return preparedResult({ syllabus, graph, modules: completedModules, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
       const modulePlan = uniquifyClaimIds(planRun.result.value, lessonClaimIds);
@@ -300,12 +303,12 @@ export async function prepareLesson(req: LessonRequest, m: { model: string; stag
     return preparedResult({ syllabus, modules: completedModules, graph: globalGraph, plan, script: { scenes: allScenes }, requestedDurationSec, plannedDurationSec: syllabus.plannedDurationSec, coverageReason: syllabus.coverageReason });
   }
 
-  const gRun = await runCached('S2-concepts', groundedRequest, 'claude-concept-graph/v1', 'S2-concept-graph-v7-semantic-relations', () => buildConceptGraph(groundedRequest, { model: modelFor('concepts'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), 'S2-concept-graph-prompt-v2-semantic-relations');
+  const gRun = await runCached('S2-concepts', groundedRequest, 'claude-concept-graph/v1', 'S2-concept-graph-v7-semantic-relations', () => buildConceptGraph(groundedRequest, { model: modelFor('concepts'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher     }), `S2-concept-graph-prompt-v6-drawable-actors+${AGENT_EXAMPLES_TAG}`);
   const g = gRun.result;
   addUsage(usage, g.usage); failures.push(...g.failures); rawResponses.concepts = g.rawResponses;
   if (!g.value) return preparedResult({});
 
-  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v5', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v8-visual-form`, () => buildTeachingPlan(groundedRequest, g.value!, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v8-visual-form`);
+  const pRun = await runCached('S3-teaching-plan', { request: groundedRequest, graph: g.value }, 'claude-teaching-plan/v5', `S3-teaching-plan-${DEFAULT_PLAN_PROMPT_VARIANT}-v10-math-notation+${AGENT_EXAMPLES_TAG}`, () => buildTeachingPlan(groundedRequest, g.value!, { model: modelFor('plan'), apiKey: m.apiKey, remainingBudgetUsd: budget(), budgetLedger: m.budgetLedger, fetcher: m.fetcher }), `S3-teaching-plan-prompt-${DEFAULT_PLAN_PROMPT_VARIANT}-v10-math-notation+${AGENT_EXAMPLES_TAG}`);
   const p = pRun.result;
   addUsage(usage, p.usage); failures.push(...p.failures); rawResponses.plan = p.rawResponses;
   if (!p.value) return preparedResult({ graph: g.value });

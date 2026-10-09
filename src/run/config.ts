@@ -10,19 +10,20 @@ import type { RELATION_TYPES } from '../plan/schemas.js';
 /** Canonical suggested lengths; numeric requests from 60 through 3600 seconds are also supported. */
 export const LESSON_DURATIONS_SEC = [60, 300, 600, 1800, 3600] as const;
 export type LessonDurationSec = typeof LESSON_DURATIONS_SEC[number];
-export const LESSON_COST_CAP_USD: Record<LessonDurationSec, number> = { 60: 0.1, 300: 0.5, 600: 0.7, 1800: 1, 3600: 1 };
+/** Hard per-duration spend caps (owner budget): <30 min under $1, 1 h within $1.50. */
+export const LESSON_COST_CAP_USD: Record<LessonDurationSec, number> = { 60: 0.05, 300: 0.2, 600: 0.4, 1800: 1, 3600: 1.5 };
 
 export function isSupportedLessonDuration(durationSec: number): boolean {
   return Number.isInteger(durationSec) && durationSec >= 60 && durationSec <= 3600;
 }
 
-/** Cap for a duration off the table: $0.10 per minute, clamped to [$0.10, $1]. */
+/** Cap for a duration off the table: $0.03 per minute, clamped to [$0.05, $1.50]. */
 export function lessonCostCapUsd(durationSec: number): number {
   // Explicit, owner-approved experiments only: LESSON_COST_CAP_USD=<0..2> replaces the table for the run (recorded by the budget ledger).
   const override = Number(process.env.LESSON_COST_CAP_USD);
   if (Number.isFinite(override) && override > 0 && override <= 2) return override;
   if (durationSec in LESSON_COST_CAP_USD) return LESSON_COST_CAP_USD[durationSec as LessonDurationSec];
-  return Math.min(1, Math.max(0.1, durationSec / 60 * 0.1));
+  return Math.min(1.5, Math.max(0.05, durationSec / 60 * 0.03));
 }
 
 export const PIPELINE = {

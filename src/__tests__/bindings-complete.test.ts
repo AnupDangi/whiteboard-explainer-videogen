@@ -55,4 +55,20 @@ describe('completeBindings', () => {
     const out = completeBindings(draftOf([add, edge]), ctx(['c1']));
     assert.deepEqual((out.ops[1] as { bindings: unknown }).bindings, { conceptIds: ['c1'], claimIds: ['c1'] });
   });
+
+  it('snaps a factual edge with no valid quote to a source quote stating the directed sequence; leaves it unsnapped otherwise', () => {
+    const base = ctx(['c1']);
+    const withQuote: BoardContext = { ...base, concepts: [{ id: 'c1', label: 'Water', evidence: [{ spanId: 'S1', quote: 'water moves toward the cell and the cell swells' }] }] };
+    const add = (id: string, label: string) => ({
+      op: 'add', opId: `o-${id}`, beatId: 'sc.b1', id,
+      element: { type: 'entity', conceptId: 'c1', label, provenance: 'illustrative' },
+      at: { region: 'center' }, cue: 0,
+    });
+    const edge = { op: 'connect', opId: 'o-e', beatId: 'sc.b1', id: 'e', from: 'water', to: 'cell', relation: 'causes' };
+    const snapped = completeBindings(draftOf([add('water', 'Water'), add('cell', 'Cell'), edge]), withQuote);
+    assert.deepEqual((snapped.ops[2] as { evidence?: unknown }).evidence, { spanId: 'S1', quote: 'water moves toward the cell and the cell swells' });
+
+    const noQuote = completeBindings(draftOf([add('water', 'Water'), add('cell', 'Cell'), edge]), { ...base, concepts: [{ id: 'c1', label: 'Water' }] });
+    assert.equal((noQuote.ops[2] as { evidence?: unknown }).evidence, undefined, 'no containing quote means no snap; the edge still fails validation');
+  });
 });

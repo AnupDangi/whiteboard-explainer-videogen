@@ -37,7 +37,7 @@ export const compartmentKit: KitDef<P> = {
     zones.forEach((zone, i) => { const text = params.zoneLabels?.[i]; if (text) frame.texts.push(textRun(zoneRects[i]!.x + zoneRects[i]!.w / 2, zoneRects[i]!.y + 38, text, 28)); });
     const cells = zones.map((zone, i) => {
       const area: Rect = inset({ x: zoneRects[i]!.x, y: zoneRects[i]!.y + (params.zoneLabels?.[i] ? heading : 0), w: zoneRects[i]!.w, h: zoneRects[i]!.h - (params.zoneLabels?.[i] ? heading : 0) }, 18);
-      return gridCells(area, Math.max(1, zoneCapacity[zone] ?? 1), 110, 14);
+      return gridCells(area, Math.max(1, zoneCapacity[zone] ?? 1), 200, 14);
     });
     return {
       frame,

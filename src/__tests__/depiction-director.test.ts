@@ -86,3 +86,20 @@ test('selectDepictions: director nouns -> exact entries -> approved pictures onl
   assert.equal(result.picks.get('time')!.entryId, 'clock-g');
   assert.ok(taken.takenEntries.has('clock-g') && !taken.takenEntries.has('shears-g'));
 });
+
+test('selectDepictions: when the director nouns match no exact name, a guarded embedding candidate supplies the picture; a look-alike is rejected', async () => {
+  const catalog = [entry('gauge-g', 'pressure gauge', { houseFamily: G }), entry('berry-x', 'strawberry', { houseFamily: G })];
+  const taken = { takenEntries: new Set<string>(), takenNouns: new Set<string>() };
+  const usage = { calls: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: 0, repairs: 0 };
+  const result = await selectDepictions({
+    items: [
+      { referent: 'pressure', context: 'quantity', vocabulary: ['pressure gauge'], candidates: [{ id: 'gauge-g', name: 'pressure gauge', score: 0.9 }] },
+      { referent: 'blueberry', context: 'entity', vocabulary: ['strawberry'], candidates: [{ id: 'berry-x', name: 'strawberry', score: 0.7 }] },
+    ],
+    catalog, model: 'm', apiKey: 'k', remainingBudgetUsd: 1, ...taken,
+    propose: async () => ({ nouns: new Map([['pressure', ['dial']], ['blueberry', ['berry']]]), usage, failures: [] }),
+    judge: async ({ pairs }) => ({ approved: new Set(pairs.map((pair) => `${pair.referent}\u0000${pair.picture}`)), usage, failures: [] }),
+  });
+  assert.equal(result.picks.get('pressure')?.entryId, 'gauge-g', 'a containing name at cosine >= 0.80 is admitted');
+  assert.equal(result.picks.get('blueberry'), undefined, 'a different object at low cosine is not admitted');
+});
